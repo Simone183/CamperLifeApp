@@ -1,0 +1,300 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --breakpoint-xs: 420px;
+}
+
+:root {
+  --bg-app: #D1CDBF;
+  --bg-header: rgba(255, 255, 255, 0.85);
+  --bg-card: #ffffff;
+  --text-main: #2D2926;
+  --text-muted: #5A6B4E;
+  --border-main: rgba(62, 74, 53, 0.15);
+  --btn-secondary-bg: #E7EBDC;
+  --bg-widget: #F4F6F0;
+  --bg-glass: rgba(255, 255, 255, 0.85);
+}
+
+.dark {
+  --bg-app: #0D110C; /* Deep Forest Night black */
+  --bg-header: rgba(19, 25, 18, 0.85);
+  --bg-card: #161E14; /* Cozy dark moss card */
+  --text-main: #ECF1EB; /* Warm green-white glow text */
+  --text-muted: #86997F; /* Soft sage text shadow */
+  --border-main: rgba(134, 153, 127, 0.2);
+  --btn-secondary-bg: #222E1F;
+  --bg-widget: #1B2419;
+  --bg-glass: rgba(22, 30, 20, 0.85);
+}
+
+/* Layer utility custom components if needed, or let's specify custom glassmorphism */
+@utility glass-card {
+  background: var(--bg-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-main);
+}
+
+@utility accent-green {
+  background-color: #5A6B4E;
+}
+
+@utility accent-forest {
+  background-color: #3E4A35;
+}
+
+@utility accent-terracotta {
+  background-color: #A45C40;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-family: "Outfit", sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Invert map tiles automatically for beautiful night view routing map and stops map! */
+.dark .leaflet-tile-container {
+  filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(100%);
+}
+
+.dark .leaflet-bar,
+.dark .leaflet-control-zoom-in,
+.dark .leaflet-control-zoom-out {
+  background-color: #161E14 !important;
+  color: #ECF1EB !important;
+  border-color: rgba(134, 153, 127, 0.2) !important;
+}
+
+.dark .leaflet-popup-content-wrapper {
+  background-color: #161E14 !important;
+  color: #ECF1EB !important;
+  border: 1px solid rgba(134, 153, 127, 0.2);
+}
+
+.dark .leaflet-popup-tip {
+  background-color: #161E14 !important;
+}
+
+/* Forest Night Theme Overrides for smooth fully styled CamperLife night mode experience */
+.dark body,
+.dark #root-container {
+  background-color: #0D110C !important;
+  color: #ECF1EB !important;
+}
+
+.dark header {
+  background-color: rgba(19, 25, 18, 0.85) !important;
+  border-color: rgba(134, 153, 127, 0.15) !important;
+}
+
+/* Base generic classes mapping */
+.dark .bg-white {
+  background-color: #161E14 !important;
+  border-color: rgba(134, 153, 127, 0.15) !important;
+}
+
+/* Correctly escape tailwind bracket classes so they are understood by CSS engine */
+.dark .text-\[\#2D2926\],
+.dark .text-\[\#3E4A35\],
+.dark .text-\[\#5A6B4E\],
+.dark .text-\[\#262626\],
+.dark .text-slate-900,
+.dark .text-slate-850,
+.dark .text-slate-800,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-zinc-900,
+.dark .text-zinc-800 {
+  color: #ECF1EB !important;
+}
+
+.dark .text-slate-705,
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-gray-700,
+.dark .text-gray-600,
+.dark .text-zinc-700,
+.dark .text-zinc-600 {
+  color: #C3CDC0 !important;
+}
+
+.dark .text-\[\#2D2926\]\/75,
+.dark .text-\[\#2D2926\]\/60,
+.dark .text-\[\#3E4A35\]\/60,
+.dark .text-slate-500,
+.dark .text-gray-500,
+.dark .text-zinc-500 {
+  color: #86997F !important;
+}
+
+/* Global typography overrides nested inside .dark to ensure comprehensive legibility */
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6 {
+  color: #ECF1EB !important;
+}
+
+.dark p,
+.dark li,
+.dark label,
+.dark span:not(.no-dark-text):not(.text-white):not(.text-amber-500):not(.text-red-500):not(.text-emerald-500):not(.text-sky-500):not(.text-blue-500):not(.text-yellow-500):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-amber"]):not([class*="text-sky"]):not([class*="text-blue"]):not([class*="text-green"]) {
+  color: #C3CDC0 !important;
+}
+
+.dark strong,
+.dark b {
+  color: #ECF1EB !important;
+}
+
+.dark .bg-\[\#F4F6F0\] {
+  background-color: #1B2419 !important;
+  border-color: rgba(134, 153, 127, 0.15) !important;
+}
+
+.dark .bg-\[\#F4F6F0\]\/50 {
+  background-color: rgba(27, 36, 25, 0.4) !important;
+}
+
+.dark .bg-\[\#E7EBDC\] {
+  background-color: #222E1F !important;
+  color: #ECF1EB !important;
+}
+
+.dark .bg-\[\#D1CDBF\]\/50 {
+  background-color: rgba(34, 46, 31, 0.4) !important;
+}
+
+.dark .bg-\[\#E7EBDC\]\/50 {
+  background-color: rgba(34, 46, 31, 0.3) !important;
+}
+
+/* Form elements */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #1B2419 !important;
+  color: #ECF1EB !important;
+  border-color: rgba(134, 153, 127, 0.2) !important;
+}
+
+.dark input::placeholder {
+  color: #86997F !important;
+  opacity: 0.7;
+}
+
+/* Modals and specific cards */
+.dark .bg-white\/90 {
+  background-color: rgba(22, 30, 20, 0.95) !important;
+  border-color: rgba(134, 153, 127, 0.2) !important;
+}
+
+.dark .bg-white\/95 {
+  background-color: rgba(22, 30, 20, 0.95) !important;
+  border-color: rgba(134, 153, 127, 0.2) !important;
+}
+
+/* Specific elements to preserve clarity */
+.dark .bg-stone-50,
+.dark .bg-slate-50 {
+  background-color: #151B13 !important;
+}
+
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-200\/80,
+.dark .border-orange-200,
+.dark .border-\[\#3E4A35\]\/15,
+.dark .border-\[\#3E4A35\]\/10 {
+  border-color: rgba(134, 153, 127, 0.15) !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: #222E1F !important;
+}
+
+.dark .hover\:bg-slate-50:hover {
+  background-color: #222E1F !important;
+}
+
+/* Tab labels, lists, overlays */
+.dark .text-slate-400 {
+  color: #6C7D66 !important;
+}
+
+/* For active navigation item but keeping light active elements original */
+.dark .bg-\[\#3E4A35\] {
+  background-color: #4A5B40 !important;
+}
+
+.dark .text-\[\#3E4A35\] {
+  color: #A4B29E !important;
+}
+
+.dark .hover\:bg-\[\#3E4A35\]\/15:hover {
+  background-color: rgba(74, 91, 64, 0.25) !important;
+}
+
+.dark .border-\[\#3E4A35\]\/20 {
+  border-color: rgba(134, 153, 127, 0.2) !important;
+}
+
+.dark .bg-\[\#3E4A35\]\/15 {
+  background-color: rgba(74, 91, 64, 0.2) !important;
+}
+
+.dark .text-\[\#3E4A35\]\/60 {
+  color: rgba(164, 178, 158, 0.7) !important;
+}
+
+/* Markdown Styles */
+.markdown-body {
+  font-family: var(--font-sans);
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: var(--text-main);
+}
+.markdown-body p {
+  margin-bottom: 1em;
+}
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+.markdown-body li {
+  margin-bottom: 0.25em;
+}
+.markdown-body li::marker {
+  color: var(--text-muted);
+}
+.markdown-body strong {
+  font-weight: 700;
+  color: var(--text-main);
+}
+.markdown-body em {
+  font-style: italic;
+}
+.markdown-body blockquote {
+  border-left: 4px solid var(--border-main);
+  padding-left: 1em;
+  margin-bottom: 1em;
+  color: var(--text-muted);
+}

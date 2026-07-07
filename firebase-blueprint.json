@@ -1,0 +1,150 @@
+{
+  "entities": {
+    "Place": {
+      "title": "Place",
+      "description": "A camper stop, campsite, or off-grid camper area",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the place" },
+        "category": { "type": "string", "description": "Category: camper_stop, campsite, etc." },
+        "lat": { "type": "number", "description": "Latitude coordinate" },
+        "lng": { "type": "number", "description": "Longitude coordinate" },
+        "address": { "type": "string", "description": "Address of the place" },
+        "priceInfo": { "type": "string", "description": "Free or fee-based description" },
+        "priceEuro": { "type": "number", "description": "Price in Euros" },
+        "phone": { "type": "string", "description": "Phone number" },
+        "imageUrl": { "type": "string", "description": "URL of the image" },
+        "facilities": { "type": "array", "description": "List of facilities available" },
+        "hasMaxHeightLimit": { "type": "boolean", "description": "Whether there is a max height limit" },
+        "maxHeight": { "type": "number", "description": "Max height limit in meters" },
+        "hasMaxWeightLimit": { "type": "boolean", "description": "Whether there is a max weight limit" },
+        "maxWeight": { "type": "number", "description": "Max weight limit in tons" },
+        "isNarrowAccess": { "type": "boolean", "description": "Whether access road is narrow" },
+        "rating": { "type": "number", "description": "Average review rating" },
+        "reviews": { "type": "array", "description": "Review objects" },
+        "status": { "type": "string", "description": "moderation status: pending or approved" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["name", "category", "lat", "lng", "status"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A registered camper account in CamperLifeApp",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "password": { "type": "string", "description": "Plaintext simple password" },
+        "name": { "type": "string", "description": "First name" },
+        "surname": { "type": "string", "description": "Last name" },
+        "dob": { "type": "string", "description": "Date of birth" },
+        "nickname": { "type": "string", "description": "Unique community nickname" },
+        "favorites": { "type": "array", "description": "List of favorite place IDs" },
+        "isModerator": { "type": "boolean", "description": "Whether user is a designated chat moderator" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["email", "password", "nickname"]
+    },
+    "CommunityMessage": {
+      "title": "CommunityMessage",
+      "description": "A group discussion post shared by a registered camper",
+      "type": "object",
+      "properties": {
+        "user": { "type": "string", "description": "Author's nickname" },
+        "avatar": { "type": "string", "description": "Selectable avatar status representation" },
+        "avatarColor": { "type": "string", "description": "Selectable hexagon background hex color" },
+        "text": { "type": "string", "description": "Content text" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Post timestamp" },
+        "likes": { "type": "number", "description": "Total number of camper thumbs up" },
+        "likedByCurrentUser": { "type": "boolean", "description": "Whether currently liked" },
+        "tag": { "type": "string", "description": "Topic tag filter" },
+        "isResolved": { "type": "boolean", "description": "Whether an SOS message is declared resolved" },
+        "replies": { "type": "array", "description": "Discussion replies array" }
+      },
+      "required": ["user", "text", "timestamp"]
+    },
+    "FuelLog": {
+      "title": "FuelLog",
+      "description": "A synced fuel refuel log entry for the user",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date of refueling" },
+        "liters": { "type": "number", "description": "Volume of fuel in liters" },
+        "pricePerLiter": { "type": "number", "description": "Cost per liter" },
+        "totalCost": { "type": "number", "description": "Total cost of refuel" },
+        "odometer": { "type": "number", "description": "Vehicle odometer at refuel" },
+        "isFullTank": { "type": "boolean", "description": "Whether it was a full tank" },
+        "fuelCompany": { "type": "string", "description": "Fuel station company name" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["date", "liters", "pricePerLiter", "totalCost", "odometer"]
+    },
+    "Itinerary": {
+      "title": "Itinerary",
+      "description": "An AI-generated camper itinerary for the user",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the itinerary" },
+        "description": { "type": "string", "description": "Description of the itinerary" },
+        "totalKm": { "type": "string", "description": "Total kilometers" },
+        "totalDrivingTime": { "type": "string", "description": "Total driving time" },
+        "days": { "type": "array", "description": "List of days/stops" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["title", "days"]
+    },
+    "CamperSettings": {
+      "title": "CamperSettings",
+      "description": "User's camper vehicle settings and dimensions",
+      "type": "object",
+      "properties": {
+        "length": { "type": "number", "description": "Camper length in meters" },
+        "width": { "type": "number", "description": "Camper width in meters" },
+        "height": { "type": "number", "description": "Camper height in meters" },
+        "weight": { "type": "number", "description": "Camper weight in tons" }
+      }
+    },
+    "AdminNotification": {
+      "title": "AdminNotification",
+      "description": "An admin notification about a rejected review or proposal due to profanity",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Type of notification" },
+        "reason": { "type": "string", "description": "Reason for rejection" },
+        "author": { "type": "string", "description": "Author of content" },
+        "content": { "type": "string", "description": "Rejected content text" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Notification creation timestamp" }
+      },
+      "required": ["type", "reason", "author", "content", "timestamp"]
+    }
+  },
+  "firestore": {
+    "places/{placeId}": {
+      "schema": { "$ref": "#/entities/Place" },
+      "description": "Collection of camper stops and places"
+    },
+    "users/{email}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Collection of camper users indexed by their lowercase email"
+    },
+    "users/{email}/fuelLogs/{logId}": {
+      "schema": { "$ref": "#/entities/FuelLog" },
+      "description": "Subcollection of fuel logs for a specific user"
+    },
+    "users/{email}/itineraries/{itineraryId}": {
+      "schema": { "$ref": "#/entities/Itinerary" },
+      "description": "Subcollection of AI itineraries for a specific user"
+    },
+    "users/{email}/camperSettings/{settingsId}": {
+      "schema": { "$ref": "#/entities/CamperSettings" },
+      "description": "Camper settings for the user"
+    },
+    "communityMessages/{msgId}": {
+      "schema": { "$ref": "#/entities/CommunityMessage" },
+      "description": "Collection of group chat posts"
+    },
+    "adminNotifications/{notifId}": {
+      "schema": { "$ref": "#/entities/AdminNotification" },
+      "description": "Collection of admin notifications for moderation events"
+    }
+  }
+}

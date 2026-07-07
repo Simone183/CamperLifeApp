@@ -1,0 +1,6 @@
+{
+	"appId": "com.camperlife.app",
+	"appName": "CamperLifeApp",
+	"webDir": "dist",
+	"bundledWebRuntime": false
+}

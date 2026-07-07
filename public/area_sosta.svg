@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="100%" height="100%">
+  <rect width="120" height="120" rx="24" fill="#22c55e"/>
+  
+  <rect x="25" y="40" width="70" height="40" rx="8" fill="#ffffff" />
+  <path d="M75 40 L85 55 L95 55 L95 80 L25 80 L25 40 Z" fill="#ffffff"/>
+  
+  <rect x="35" y="48" width="15" height="12" rx="2" fill="#22c55e" />
+  <rect x="55" y="48" width="15" height="12" rx="2" fill="#22c55e" />
+  <path d="M78 48 L83 55 L90 55 L90 48 Z" fill="#22c55e"/>
+  
+  <circle cx="40" cy="80" r="10" fill="#1e293b"/>
+  <circle cx="80" cy="80" r="10" fill="#1e293b"/>
+  
+  <circle cx="40" cy="80" r="4" fill="#e2e8f0"/>
+  <circle cx="80" cy="80" r="4" fill="#e2e8f0"/>
+
+  <text x="60" y="30" font-family="'Inter', sans-serif" font-weight="900" font-size="20" fill="white" letter-spacing="1" text-anchor="middle">SOSTA</text>
+</svg>

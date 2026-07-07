@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "scope": "/",
+  "name": "CamperLife",
+  "short_name": "CamperLife",
+  "description": "Applicazione per la gestione del viaggio, checklist, scadenze e diario di bordo per la vita in camper.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3E4A35",
+  "orientation": "portrait",
+  "categories": ["travel", "utilities"],
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

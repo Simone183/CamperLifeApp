@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CamperLifeApp</title>
+    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="theme-color" content="#3E4A35" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      // Register the service worker for Android installability PWA support immediately with strong safety guards
+      try {
+        if ('serviceWorker' in navigator && window.self === window.top) {
+          const registerSW = () => {
+            navigator.serviceWorker.register('/sw.js').then(
+              (registration) => {
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+              },
+              (err) => {
+                console.log('ServiceWorker registration failed: ', err);
+              }
+            );
+          };
+          if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            registerSW();
+          } else {
+            window.addEventListener('load', registerSW);
+          }
+        }
+      } catch (err) {
+        console.warn('ServiceWorker registration failed:', err);
+      }
+    </script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
