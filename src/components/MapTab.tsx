@@ -563,25 +563,25 @@ export default function MapTab({
     const cat = category.toLowerCase();
     if (cat.includes("sosta")) {
       return [
-        "/area_sosta.svg",
+        "/area_sosta.jpg",
         "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
       ];
     }
     if (cat.includes("campeggio")) {
       return [
-        "/campeggio.svg",
+        "/campeggio.jpg",
         "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&q=80&w=600",
       ];
     }
     if (cat.includes("service")) {
       return [
-        "/camper_service.svg",
+        "/camper_service.jpg",
         "https://images.unsplash.com/photo-1596524430615-b46475ddff6e?auto=format&fit=crop&q=80&w=600",
       ];
     }
     if (cat.includes("parcheggio")) {
       return [
-        "/parcheggio_camper.svg",
+        "/parcheggio_camper.jpg",
         "https://images.unsplash.com/photo-1568285634123-0130f146a47a?auto=format&fit=crop&q=80&w=600",
       ];
     }
@@ -625,8 +625,17 @@ export default function MapTab({
     return originalUrl;
   };
 
-  const isImageFallback = (category: string, originalUrl: string) => {
-    return false;
+  const isImageFallback = (category: string, originalUrl: string | undefined) => {
+    if (!originalUrl) return true;
+    const lower = originalUrl.toLowerCase();
+    return (
+      lower.includes("unsplash.com") ||
+      lower.includes("unsplash-placeholder") ||
+      lower.includes("placeholder") ||
+      lower.includes(".svg") ||
+      lower.includes("default_icons") ||
+      isUrlBroken(originalUrl)
+    );
   };
 
   // Map type state (roadmap, satellite, hybrid, terrain)

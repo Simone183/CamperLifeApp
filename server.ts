@@ -43,10 +43,10 @@ const bucketName = (firebaseConfig as any).storageBucket || `${firebaseConfig.pr
 const bucket = getStorage(app).bucket(bucketName);
 
 const defaultIcons: Record<string, string> = {
-  'Area di sosta': 'default_icons/area_sosta.svg',
-  'Campeggio': 'default_icons/campeggio.svg',
-  'Camper service': 'default_icons/camper_service.svg',
-  'Parcheggio': 'default_icons/parcheggio_camper.svg',
+  'Area di sosta': 'default_icons/area_sosta.jpg',
+  'Campeggio': 'default_icons/campeggio.jpg',
+  'Camper service': 'default_icons/camper_service.jpg',
+  'Parcheggio': 'default_icons/parcheggio_camper.jpg',
 };
 
 async function uploadDefaultIcons() {
@@ -64,7 +64,7 @@ async function uploadDefaultIcons() {
         if (fs.existsSync(localPath)) {
           await file.save(fs.readFileSync(localPath), {
             metadata: {
-              contentType: 'image/svg+xml',
+              contentType: 'image/jpeg',
               cacheControl: 'public, max-age=3600'
             }
           });
@@ -97,7 +97,13 @@ async function fixExistingPlaces() {
     const snapshot = await placesRef.get();
     for (const doc of snapshot.docs) {
       const data = doc.data();
-      if (!data.imageUrl || data.imageUrl.startsWith("https://images.unsplash.com/") || data.imageUrl.includes("default_icons/")) {
+      const needsFix =
+        !data.imageUrl ||
+        data.imageUrl.startsWith("https://images.unsplash.com/") ||
+        data.imageUrl.includes("default_icons/") ||
+        data.imageUrl.includes(".svg"); // Fix any old SVG icons or broken references
+
+      if (needsFix) {
          // Try case-insensitive and flexible matching
          const cat = data.category ? data.category.toLowerCase() : "";
          let iconPath = "";
