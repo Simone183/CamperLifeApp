@@ -867,42 +867,6 @@ async function startServer() {
     next();
   });
 
-  // HTTP Basic Authentication to protect the application during beta testing
-  app.use((req, res, next) => {
-    // Skip health check so Render/Cloud Run deployments succeed without authentication
-    if (req.path === "/api/health") {
-      return next();
-    }
-
-    const authUser = process.env.BASIC_AUTH_USER;
-    const authPass = process.env.BASIC_AUTH_PASSWORD;
-
-    if (authUser && authPass) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        res.setHeader("WWW-Authenticate", 'Basic realm="CamperLifeApp Beta Testing"');
-        return res.status(401).send("Accesso Negato: Autenticazione richiesta per accedere al beta test.");
-      }
-
-      try {
-        const auth = Buffer.from(authHeader.split(" ")[1], "base64").toString().split(":");
-        const user = auth[0];
-        const pass = auth[1];
-
-        if (user === authUser && pass === authPass) {
-          return next();
-        }
-      } catch (err) {
-        console.error("Error decoding basic auth header:", err);
-      }
-
-      res.setHeader("WWW-Authenticate", 'Basic realm="CamperLifeApp Beta Testing"');
-      return res.status(401).send("Accesso Negato: Credenziali non valide per il beta test.");
-    }
-
-    next();
-  });
-
   // API proxy routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
