@@ -1134,6 +1134,15 @@ export default function App() {
   }, [currentUser, activeTab, settingsSubTab]);
 
   React.useEffect(() => {
+    if (currentUser && !hasAcceptedTerms) {
+      if (activeTab !== "settings_tools" || settingsSubTab !== "copyright") {
+        setActiveTab("settings_tools");
+        setSettingsSubTab("copyright");
+      }
+    }
+  }, [currentUser, hasAcceptedTerms, activeTab, settingsSubTab]);
+
+  React.useEffect(() => {
     if (settingsSubTab === "feedback") {
       const loadUserFeedbacksList = async () => {
         try {
@@ -1556,6 +1565,33 @@ export default function App() {
     } catch (err) {
       console.error("Error deleting user:", err);
       alert("Impossibile rimuovere l'utente in questo momento.");
+    }
+  };
+
+  const handleApproveUser = async (email: string) => {
+    if (!confirm(`Sei sicuro di voler approvare l'utente ${email}?`)) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/admin/users/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: `Utente approvato con successo e notificato via email.` },
+          }),
+        );
+        fetchAdminUsers();
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || "Errore durante l'approvazione.");
+      }
+    } catch (err) {
+      console.error("Error approving user:", err);
+      alert("Impossibile approvare l'utente in questo momento.");
     }
   };
 
@@ -2833,70 +2869,74 @@ out center;`;
             <ChevronRight className="w-2.5 h-2.5 text-[#2D2926]/30 hidden md:block shrink-0" />
 
             {/* Quick action button to edit profile properties */}
-            <button
-              onClick={() => {
-                setActiveTab("settings_tools");
-                setSettingsSubTab("dimensions");
-              }}
-              className="p-0.5 text-[#2D2926]/60 hover:text-[#3E4A35] hover:bg-[#D1CDBF] rounded-lg transition-all cursor-pointer hidden sm:block shrink-0"
-              title="Dimensioni camper"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
+            {hasAcceptedTerms && (
+              <button
+                onClick={() => {
+                  setActiveTab("settings_tools");
+                  setSettingsSubTab("dimensions");
+                }}
+                className="p-0.5 text-[#2D2926]/60 hover:text-[#3E4A35] hover:bg-[#D1CDBF] rounded-lg transition-all cursor-pointer hidden sm:block shrink-0"
+                title="Dimensioni camper"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Tab Controls Navigation Rail - DESKTOP ONLY (Matches exactly the three request icons) */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 hidden md:block border-t border-[#3E4A35]/5">
-          <nav className="flex space-x-2 py-2">
-            <button
-              onClick={() => {
-                setActiveTab("map_nav");
-                setMapNavSubTab("map");
-              }}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === "map_nav"
-                  ? "bg-[#3E4A35] text-white shadow-md"
-                  : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10 hover:text-[#2D2926]"
-              }`}
-            >
-              <Compass className="w-4 h-4" />
-              1. Mappa & Navigatore
-            </button>
+        {hasAcceptedTerms && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 hidden md:block border-t border-[#3E4A35]/5">
+            <nav className="flex space-x-2 py-2">
+              <button
+                onClick={() => {
+                  setActiveTab("map_nav");
+                  setMapNavSubTab("map");
+                }}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === "map_nav"
+                    ? "bg-[#3E4A35] text-white shadow-md"
+                    : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10 hover:text-[#2D2926]"
+                }`}
+              >
+                <Compass className="w-4 h-4" />
+                1. Mappa & Navigatore
+              </button>
 
-            <button
-              onClick={() => setActiveTab("diary")}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === "diary"
-                  ? "bg-[#3E4A35] text-white shadow-md"
-                  : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10 hover:text-[#2D2926]"
-              }`}
-            >
-              <BookOpen className="w-4 h-4" />
-              2. Diario di Viaggio
-            </button>
+              <button
+                onClick={() => setActiveTab("diary")}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === "diary"
+                    ? "bg-[#3E4A35] text-white shadow-md"
+                    : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10 hover:text-[#2D2926]"
+                }`}
+              >
+                <BookOpen className="w-4 h-4" />
+                2. Diario di Viaggio
+              </button>
 
-            <button
-              onClick={() => {
-                setActiveTab("settings_tools");
-                setSettingsSubTab("hub");
-              }}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap relative ${
-                activeTab === "settings_tools"
-                  ? "bg-[#3E4A35] text-white shadow-md"
-                  : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10"
-              }`}
-            >
-              <Sliders className="w-4 h-4" />
-              3. Impostazioni & Strumenti
-              {totalWarnings > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#A45C40] text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center border border-white">
-                  {totalWarnings}
-                </span>
-              )}
-            </button>
-          </nav>
-        </div>
+              <button
+                onClick={() => {
+                  setActiveTab("settings_tools");
+                  setSettingsSubTab("hub");
+                }}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap relative ${
+                  activeTab === "settings_tools"
+                    ? "bg-[#3E4A35] text-white shadow-md"
+                    : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10"
+                }`}
+              >
+                <Sliders className="w-4 h-4" />
+                3. Impostazioni & Strumenti
+                {totalWarnings > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-[#A45C40] text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center border border-white">
+                    {totalWarnings}
+                  </span>
+                )}
+              </button>
+            </nav>
+          </div>
+        )}
       </header>
 
       {/* Offline Mode Alert Banner */}
@@ -3962,7 +4002,7 @@ out center;`;
             ) : (
               <div className="space-y-4">
                 {/* Page Breadcrumb / Navigation back bar */}
-                {currentUser && (
+                {currentUser && hasAcceptedTerms && (
                   <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-3 shadow-xs">
                     <button
                       onClick={() => setSettingsSubTab("hub")}
@@ -4038,11 +4078,14 @@ out center;`;
                         setIsRegistered(true);
                         localStorage.setItem("camper_is_registered", "true");
                         setSettingsSubTab("login");
+                        const isPending = user && user.approved === false;
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
                             detail: {
-                              message: `🎉 Registrazione completata! Ora puoi effettuare il login.`,
-                              duration: 4000,
+                              message: isPending
+                                ? `🎉 Registrazione completata! Il tuo account è in attesa di approvazione da parte di un moderatore.`
+                                : `🎉 Registrazione completata! Ora puoi effettuare il login.`,
+                              duration: 6000,
                             },
                           }),
                         );
@@ -5019,77 +5062,79 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
       </main>
 
       {/* Persistent Sticky Bottom Navigation Bar with EXACTLY THREE icons/tabs optimized for mobile hand fingers */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 h-[50px] px-0.5 flex justify-around items-center md:hidden z-50 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-        {/* Tab 1: Mappa & Navigatore */}
-        <button
-          onClick={() => {
-            playTapSound();
-            setActiveTab("map_nav");
-            setMapNavSubTab("map");
-          }}
-          className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all ${
-            activeTab === "map_nav"
-              ? "text-[#3E4A35] font-black"
-              : "text-[#2D2926]/50 font-semibold"
-          }`}
-        >
-          <Compass
-            className={`w-5 h-5 mb-0.5 ${activeTab === "map_nav" ? "text-[#3E4A35]" : "text-slate-400"}`}
-          />
-          <span className="text-[9px] tracking-tight leading-none">
-            {appLang === 'en' ? 'Map & Nav' : appLang === 'fr' ? 'Carte & Nav' : 'Mappa & Nav'}
-          </span>
-        </button>
-
-        {/* Tab 2: Diario (Creare viaggi, spese, foto, ecc) */}
-        <button
-          onClick={() => {
-            playTapSound();
-            setActiveTab("diary");
-          }}
-          className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
-            activeTab === "diary"
-              ? "text-[#3E4A35] font-black"
-              : "text-[#2D2926]/50 font-semibold"
-          }`}
-        >
-          <BookOpen
-            className={`w-5 h-5 mb-0.5 ${activeTab === "diary" ? "text-[#3E4A35]" : "text-slate-400"}`}
-          />
-          <span className="text-[9px] tracking-tight leading-none">
-            {appLang === 'en' ? 'Trip Diary' : appLang === 'fr' ? 'Journal' : 'Diario Viaggio'}
-          </span>
-          {hasActiveTrip && (
-            <span className="absolute top-1.5 right-6 w-1.5 h-1.5 bg-[#5A6B4E] rounded-full animate-ping" />
-          )}
-        </button>
-
-        {/* Tab 3: Impostazioni al cui interno c'è sagoma, chat, checklist, ecc */}
-        <button
-          onClick={() => {
-            playTapSound();
-            setActiveTab("settings_tools");
-            setSettingsSubTab("hub");
-          }}
-          className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
-            activeTab === "settings_tools"
-              ? "text-[#3E4A35] font-black"
-              : "text-[#2D2926]/50 font-semibold"
-          }`}
-        >
-          <Sliders
-            className={`w-5 h-5 mb-0.5 ${activeTab === "settings_tools" ? "text-[#3E4A35]" : "text-slate-400"}`}
-          />
-          <span className="text-[9px] tracking-tight leading-none">
-            {appLang === 'en' ? 'Tools & Settings' : appLang === 'fr' ? 'Outils & Paramètres' : 'Strumenti & Imp'}
-          </span>
-          {totalWarnings > 0 && (
-            <span className="absolute top-1 right-6 bg-[#A45C40] text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white">
-              {totalWarnings}
+      {hasAcceptedTerms && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 h-[50px] px-0.5 flex justify-around items-center md:hidden z-50 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+          {/* Tab 1: Mappa & Navigatore */}
+          <button
+            onClick={() => {
+              playTapSound();
+              setActiveTab("map_nav");
+              setMapNavSubTab("map");
+            }}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all ${
+              activeTab === "map_nav"
+                ? "text-[#3E4A35] font-black"
+                : "text-[#2D2926]/50 font-semibold"
+            }`}
+          >
+            <Compass
+              className={`w-5 h-5 mb-0.5 ${activeTab === "map_nav" ? "text-[#3E4A35]" : "text-slate-400"}`}
+            />
+            <span className="text-[9px] tracking-tight leading-none">
+              {appLang === 'en' ? 'Map & Nav' : appLang === 'fr' ? 'Carte & Nav' : 'Mappa & Nav'}
             </span>
-          )}
-        </button>
-      </div>
+          </button>
+
+          {/* Tab 2: Diario (Creare viaggi, spese, foto, ecc) */}
+          <button
+            onClick={() => {
+              playTapSound();
+              setActiveTab("diary");
+            }}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
+              activeTab === "diary"
+                ? "text-[#3E4A35] font-black"
+                : "text-[#2D2926]/50 font-semibold"
+            }`}
+          >
+            <BookOpen
+              className={`w-5 h-5 mb-0.5 ${activeTab === "diary" ? "text-[#3E4A35]" : "text-slate-400"}`}
+            />
+            <span className="text-[9px] tracking-tight leading-none">
+              {appLang === 'en' ? 'Trip Diary' : appLang === 'fr' ? 'Journal' : 'Diario Viaggio'}
+            </span>
+            {hasActiveTrip && (
+              <span className="absolute top-1.5 right-6 w-1.5 h-1.5 bg-[#5A6B4E] rounded-full animate-ping" />
+            )}
+          </button>
+
+          {/* Tab 3: Impostazioni al cui interno c'è sagoma, chat, checklist, ecc */}
+          <button
+            onClick={() => {
+              playTapSound();
+              setActiveTab("settings_tools");
+              setSettingsSubTab("hub");
+            }}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
+              activeTab === "settings_tools"
+                ? "text-[#3E4A35] font-black"
+                : "text-[#2D2926]/50 font-semibold"
+            }`}
+          >
+            <Sliders
+              className={`w-5 h-5 mb-0.5 ${activeTab === "settings_tools" ? "text-[#3E4A35]" : "text-slate-400"}`}
+            />
+            <span className="text-[9px] tracking-tight leading-none">
+              {appLang === 'en' ? 'Tools & Settings' : appLang === 'fr' ? 'Outils & Paramètres' : 'Strumenti & Imp'}
+            </span>
+            {totalWarnings > 0 && (
+              <span className="absolute top-1 right-6 bg-[#A45C40] text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white">
+                {totalWarnings}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Safety info Alert panel bar */}
       <div className="bg-[#3E4A35] text-white/80 text-xs py-3.5 border-t border-[#3E4A35]/25 text-center hidden md:block md:fixed md:bottom-0 md:left-0 md:right-0 md:z-40">
@@ -6140,6 +6185,15 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                                               Mod Chat
                                             </span>
                                           )}
+                                          {u.approved === false ? (
+                                            <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-0.5 select-none animate-pulse">
+                                              ⚠️ In attesa
+                                            </span>
+                                          ) : (
+                                            <span className="bg-emerald-50 text-emerald-700 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-0.5 select-none">
+                                              ✅ Attivo
+                                            </span>
+                                          )}
                                           <span className="text-[10px] text-slate-400 font-normal">
                                             ({u.email})
                                           </span>
@@ -6205,6 +6259,15 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
 
                                     {/* Action Buttons */}
                                     <div className="flex justify-between items-center pt-2 border-t border-slate-100/80 mt-1">
+                                      {u.approved === false && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleApproveUser(u.email)}
+                                          className="text-[10px] bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer mr-2 inline-flex items-center"
+                                        >
+                                          ✅ Approva
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() =>

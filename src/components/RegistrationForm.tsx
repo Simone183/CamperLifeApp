@@ -1,9 +1,9 @@
 import React from 'react';
-import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Key } from 'lucide-react';
 
 interface RegistrationFormProps {
   onBack: () => void;
-  onSuccess: (user: { nickname: string; email: string; name: string }) => void;
+  onSuccess: (user: { nickname: string; email: string; name: string; approved?: boolean }) => void;
   onSwitchToLogin?: () => void;
   hideBack?: boolean;
 }
@@ -16,6 +16,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
   const [surname, setSurname] = React.useState('');
   const [dob, setDob] = React.useState('');
   const [nickname, setNickname] = React.useState('');
+  const [inviteCode, setInviteCode] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
@@ -28,7 +29,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, surname, dob, nickname })
+        body: JSON.stringify({ email, password, name, surname, dob, nickname, inviteCode })
       });
 
       const data = await res.json();
@@ -144,6 +145,17 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
+          </div>
+
+          <div className="relative">
+            <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Codice Invito (opzionale se non richiesto)"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20"
+            />
           </div>
           
           <button 

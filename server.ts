@@ -867,6 +867,42 @@ async function startServer() {
     next();
   });
 
+  // HTTP Basic Authentication to protect the application during beta testing
+  app.use((req, res, next) => {
+    // Skip health check so Render/Cloud Run deployments succeed without authentication
+    if (req.path === "/api/health") {
+      return next();
+    }
+
+    const authUser = process.env.BASIC_AUTH_USER;
+    const authPass = process.env.BASIC_AUTH_PASSWORD;
+
+    if (authUser && authPass) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        res.setHeader("WWW-Authenticate", 'Basic realm="CamperLifeApp Beta Testing"');
+        return res.status(401).send("Accesso Negato: Autenticazione richiesta per accedere al beta test.");
+      }
+
+      try {
+        const auth = Buffer.from(authHeader.split(" ")[1], "base64").toString().split(":");
+        const user = auth[0];
+        const pass = auth[1];
+
+        if (user === authUser && pass === authPass) {
+          return next();
+        }
+      } catch (err) {
+        console.error("Error decoding basic auth header:", err);
+      }
+
+      res.setHeader("WWW-Authenticate", 'Basic realm="CamperLifeApp Beta Testing"');
+      return res.status(401).send("Accesso Negato: Credenziali non valide per il beta test.");
+    }
+
+    next();
+  });
+
   // API proxy routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
@@ -1630,9 +1666,15 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // --- USER AUTHENTICATION & REGISTRATION ENDPOINTS ---
   app.post("/api/register", async (req, res) => {
     try {
-      const { email, password, name, surname, dob, nickname } = req.body;
+      const { email, password, name, surname, dob, nickname, inviteCode } = req.body;
       if (!email || !password || !nickname) {
         return res.status(400).json({ error: "Email, password e nickname sono richiesti per la registrazione." });
+      }
+
+      // Check if server is configured with a registration invite/beta code
+      const serverInviteCode = process.env.REGISTRATION_INVITE_CODE;
+      if (serverInviteCode && (!inviteCode || inviteCode.trim() !== serverInviteCode.trim())) {
+        return res.status(400).json({ error: "Codice di invito non valido o mancante. Contatta l'amministratore per ottenere l'accesso." });
       }
 
       // Check if user exists
@@ -1647,6 +1689,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Questo nickname è già stato scelto da un altro camperista." });
       }
 
+      const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
+      const isRegisteredUserAdmin = email.toLowerCase().trim() === adminEmail;
+
       const newUserDoc = {
         email: email.toLowerCase().trim(),
         password: password,
@@ -1655,11 +1700,12 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         dob: dob || "",
         nickname: nickname.trim(),
         favorites: [],
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        approved: isRegisteredUserAdmin ? true : false
       };
 
       await usersRef.doc(email.toLowerCase().trim()).set(newUserDoc);
-      console.log(`[Firestore Auth] User registered successfully: ${email}`);
+      console.log(`[Firestore Auth] User registered successfully: ${email} (Approved: ${newUserDoc.approved})`);
 
       // Send email notification to admin if Resend is configured
       if (process.env.RESEND_API_KEY && process.env.ADMIN_EMAIL) {
@@ -1669,10 +1715,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           await resend.emails.send({
             from: 'CamperLifeApp <onboarding@resend.dev>',
             to: process.env.ADMIN_EMAIL,
-            subject: 'Nuovo utente registrato su CamperLifeApp',
+            subject: `Richiesta di approvazione nuovo utente su CamperLifeApp [${newUserDoc.nickname}]`,
             html: `
-              <h2>Nuovo utente iscritto!</h2>
-              <p>Ecco i dettagli della registrazione:</p>
+              <h2>Richiesta di approvazione nuovo utente registrato</h2>
+              <p>Un nuovo camperista si è appena iscritto ed è in attesa di essere approvato per accedere all'app:</p>
               <ul>
                 <li><strong>Email:</strong> ${newUserDoc.email}</li>
                 <li><strong>Nickname:</strong> ${newUserDoc.nickname}</li>
@@ -1680,7 +1726,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 <li><strong>Cognome:</strong> ${newUserDoc.surname || 'N/D'}</li>
                 <li><strong>Data di Nascita:</strong> ${newUserDoc.dob || 'N/D'}</li>
                 <li><strong>Data registrazione:</strong> ${newUserDoc.createdAt}</li>
+                <li><strong>Stato approvazione:</strong> IN ATTESA DI APPROVAZIONE</li>
               </ul>
+              <br/>
+              <p>Puoi approvare questo utente direttamente dal pannello amministratore di CamperLifeApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
             `
           });
           console.log(`[Email] Admin notification sent for user: ${email}`);
@@ -1690,7 +1739,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         }
       }
 
-      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname } });
+      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, approved: newUserDoc.approved } });
     } catch (err: any) {
       console.error("Error in register endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown register error" });
@@ -1714,6 +1763,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Password non corretta." });
       }
 
+      if (userData.approved === false) {
+        return res.status(403).json({ error: "Il tuo account è in attesa di approvazione da parte di un moderatore." });
+      }
+
       console.log(`[Firestore Auth] User logged in: ${email}`);
       res.json({ 
         success: true, 
@@ -1732,6 +1785,48 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   });
 
   // --- ADMIN USERS ENDPOINTS ---
+  // Approve user (admin action)
+  app.post("/api/admin/users/approve", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email mancante." });
+      }
+      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
+        approved: true
+      });
+      console.log(`[Firestore Auth] User ${email} approved by administrator.`);
+
+      // Send email to the user letting them know they are approved! (If Resend is configured)
+      if (process.env.RESEND_API_KEY) {
+        try {
+          const { Resend } = await import('resend');
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: 'CamperLifeApp <onboarding@resend.dev>',
+            to: email,
+            subject: 'Il tuo account CamperLifeApp è stato approvato! 🎉',
+            html: `
+              <h2>Benvenuto su CamperLifeApp!</h2>
+              <p>Siamo felici di comunicarti che il tuo account è stato approvato dall'amministratore.</p>
+              <p>Ora puoi effettuare il login con la tua email e password e iniziare ad utilizzare l'applicazione.</p>
+              <br/>
+              <p>Buon viaggio! 🚐💨</p>
+            `
+          });
+          console.log(`[Email] Approval notification sent to user: ${email}`);
+        } catch (emailErr) {
+          console.error("Error sending approval email to user:", emailErr);
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error approving user on Firestore:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Toggle moderator status (admin action)
   app.post("/api/admin/users/toggle-moderator", async (req, res) => {
     try {
@@ -1779,6 +1874,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           dob: data.dob || "",
           createdAt: data.createdAt || "",
           isModerator: !!data.isModerator,
+          approved: data.approved !== false, // default to true for existing users
           favoritesCount: (data.favorites || []).length,
           proposalsCount: proposalCounts[email] || 0
         });
