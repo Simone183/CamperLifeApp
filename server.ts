@@ -58,19 +58,16 @@ async function uploadDefaultIcons() {
     }
     for (const [category, filename] of Object.entries(defaultIcons)) {
       const file = bucket.file(filename);
-      const exists = await file.exists();
-      if (!exists[0]) {
-        const localPath = path.join(process.cwd(), "public", filename.replace("default_icons/", ""));
-        if (fs.existsSync(localPath)) {
-          await file.save(fs.readFileSync(localPath), {
-            metadata: {
-              contentType: 'image/jpeg',
-              cacheControl: 'public, max-age=3600'
-            }
-          });
-          await file.makePublic();
-          console.log(`Uploaded default icon: ${filename}`);
-        }
+      const localPath = path.join(process.cwd(), "public", filename.replace("default_icons/", ""));
+      if (fs.existsSync(localPath)) {
+        await file.save(fs.readFileSync(localPath), {
+          metadata: {
+            contentType: 'image/jpeg',
+            cacheControl: 'public, max-age=3600'
+          }
+        });
+        await file.makePublic();
+        console.log(`Uploaded/Updated default icon: ${filename}`);
       }
     }
   } catch (err) {
