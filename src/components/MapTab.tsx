@@ -563,25 +563,25 @@ export default function MapTab({
     const cat = category.toLowerCase();
     if (cat.includes("sosta")) {
       return [
-        "/area_sosta.jpg",
+        "/area_sosta.svg",
         "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
       ];
     }
     if (cat.includes("campeggio")) {
       return [
-        "/campeggio.jpg",
+        "/campeggio.svg",
         "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&q=80&w=600",
       ];
     }
     if (cat.includes("service")) {
       return [
-        "/camper_service.jpg",
+        "/camper_service.svg",
         "https://images.unsplash.com/photo-1596524430615-b46475ddff6e?auto=format&fit=crop&q=80&w=600",
       ];
     }
     if (cat.includes("parcheggio")) {
       return [
-        "/parcheggio_camper.jpg",
+        "/parcheggio_camper.svg",
         "https://images.unsplash.com/photo-1568285634123-0130f146a47a?auto=format&fit=crop&q=80&w=600",
       ];
     }

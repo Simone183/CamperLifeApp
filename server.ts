@@ -43,10 +43,10 @@ const bucketName = (firebaseConfig as any).storageBucket || `${firebaseConfig.pr
 const bucket = getStorage(app).bucket(bucketName);
 
 const defaultIcons: Record<string, string> = {
-  'Area di sosta': 'default_icons/area_sosta.jpg',
-  'Campeggio': 'default_icons/campeggio.jpg',
-  'Camper service': 'default_icons/camper_service.jpg',
-  'Parcheggio': 'default_icons/parcheggio_camper.jpg',
+  'Area di sosta': 'default_icons/area_sosta.svg',
+  'Campeggio': 'default_icons/campeggio.svg',
+  'Camper service': 'default_icons/camper_service.svg',
+  'Parcheggio': 'default_icons/parcheggio_camper.svg',
 };
 
 async function uploadDefaultIcons() {
@@ -62,7 +62,7 @@ async function uploadDefaultIcons() {
       if (fs.existsSync(localPath)) {
         await file.save(fs.readFileSync(localPath), {
           metadata: {
-            contentType: 'image/jpeg',
+            contentType: 'image/svg+xml',
             cacheControl: 'public, max-age=3600'
           }
         });
@@ -110,7 +110,8 @@ async function fixExistingPlaces() {
          else if (cat.includes("parcheggio")) iconPath = defaultIcons['Parcheggio'];
          
          if (iconPath) {
-           const newUrl = `https://storage.googleapis.com/${bucket.name}/${iconPath}`;
+           const iconFilename = iconPath.replace("default_icons/", "");
+           const newUrl = `/${iconFilename}`;
            await firestoreDb.collection("places").doc(doc.id).update({ imageUrl: newUrl });
            console.log(`Updated place ${doc.id} with default icon per category ${data.category}`);
          }
