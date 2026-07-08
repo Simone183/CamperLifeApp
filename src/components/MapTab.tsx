@@ -511,20 +511,6 @@ export default function MapTab({
 
   const activeTrip = trips?.find((t) => t.status === "Attivo");
 
-  // Persistent Category-level Custom Images State
-  const [customCategoryImages, setCustomCategoryImages] = React.useState<
-    Record<string, string>
-  >(() => {
-    try {
-      const saved = localStorage.getItem(
-        "camper_custom_category_images_direct",
-      );
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) {
-      return {};
-    }
-  });
-
   // Local state for Google Maps API Key to support custom configuration (e.g. on APK / Production)
   const [googleMapsKey, setGoogleMapsKey] = React.useState<string>(() => {
     try {
@@ -548,93 +534,6 @@ export default function MapTab({
       return "";
     }
   });
-
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(
-        "camper_custom_category_images_direct",
-        JSON.stringify(customCategoryImages),
-      );
-    } catch (e) {
-      console.error("Error saving custom category images", e);
-    }
-  }, [customCategoryImages]);
-
-  const handleImageUpload = (
-    category: string,
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (file.size > 20 * 1024 * 1024) {
-        alert("L'immagine supera il limite massimo di 20 MB.");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Data = reader.result as string;
-
-        // Apply compression quality from settings
-        let finalBase64 = base64Data;
-        if (settings?.photoQuality) {
-          finalBase64 = await compressImage(base64Data, settings.photoQuality);
-        }
-
-        // Show a message if Solo Wi-Fi is active
-        if (settings?.wifiOnlySync) {
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: {
-                message: "ℹ️ Solo Wi-Fi attivo: caricamento ottimizzato per risparmio dati.",
-              },
-            }),
-          );
-        }
-
-        // Optimistically set locally first
-        setCustomCategoryImages((prev) => ({
-          ...prev,
-          [category]: finalBase64,
-        }));
-
-        try {
-          const response = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              image: finalBase64,
-              category: category,
-            }),
-          });
-          const resData = await response.json();
-          if (resData.success && resData.url) {
-            // Server successfully processed and saved it as permanent /public/${category}.png!
-            setCustomCategoryImages((prev) => ({
-              ...prev,
-              [category]: resData.url,
-            }));
-
-            // Dispatch toast to notify successful customize
-            window.dispatchEvent(
-              new CustomEvent("show-toast", {
-                detail: {
-                  message: `🎨 Immagine "${category.replace("_", " ")}" salvata in modo permanente per tutti!`,
-                },
-              }),
-            );
-          } else {
-            console.warn(
-              "Server upload failed, falling back to local base64:",
-              resData,
-            );
-          }
-        } catch (err) {
-          console.error("Error saving category image to server:", err);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
 
   // Tracks image error loads (so if /area_sosta.png etc. fails or is missing, we fallback)
   const [imageErrorUrls, setImageErrorUrls] = React.useState<
@@ -698,11 +597,6 @@ export default function MapTab({
 
     if (originalUrl && !isGenericImageCheck && !isUrlBroken(originalUrl)) {
       return originalUrl;
-    }
-
-    if (customCategoryImages[category]) {
-      const url = customCategoryImages[category];
-      return url;
     }
 
     if (isUrlBroken(originalUrl)) {
@@ -3357,24 +3251,7 @@ out center;`;
                           }}
                         />
                       )}
-                      {isAdmin && (
-                        <label
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute inset-0 bg-black/45 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[8px] font-black tracking-wider text-center"
-                          title="Carica foto personalizzata per questa categoria"
-                        >
-                          <Camera className="w-4 h-4 text-white mb-0.5" />
-                          <span>FOTO 📷</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) =>
-                              handleImageUpload(place.category, e)
-                            }
-                            className="hidden"
-                          />
-                        </label>
-                      )}
+                        {/* Upload functionality disabled */}
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex justify-between items-start gap-1">
@@ -4496,24 +4373,7 @@ out center;`;
                       }}
                     />
                   )}
-                  {isAdmin && (
-                    <label
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute inset-0 bg-black/45 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[8px] font-black tracking-wider text-center"
-                      title="Carica foto personalizzata per questa categoria"
-                    >
-                      <Camera className="w-4 h-4 text-white mb-0.5" />
-                      <span>CARICA 📷</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) =>
-                          handleImageUpload(selectedPlace.category, e)
-                        }
-                        className="hidden"
-                      />
-                    </label>
-                  )}
+                  {/* Upload functionality disabled */}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -5065,58 +4925,7 @@ out center;`;
                 )}
 
                 {/* Customize/Replace controls directly inline! */}
-                {isAdmin && (
-                  <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                    {customCategoryImages[selectedPlace.category] && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (
-                            window.confirm(
-                              "Sei sicuro di voler ripristinare la foto predefinita per questa categoria?",
-                            )
-                          ) {
-                            setCustomCategoryImages((prev) => {
-                              const brandNew = { ...prev };
-                              delete brandNew[selectedPlace.category];
-                              return brandNew;
-                            });
-                            window.dispatchEvent(
-                              new CustomEvent("show-toast", {
-                                detail: {
-                                  message:
-                                    "📷 Ripristinata l'immagine predefinita.",
-                                },
-                              }),
-                            );
-                          }
-                        }}
-                        className="bg-[#A45C40]/90 hover:bg-[#A45C40] text-white hover:scale-105 transition-all text-[10px] font-black px-3 py-1.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1 border-none"
-                        title="Ripristina l'immagine predefinita"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Reset</span>
-                      </button>
-                    )}
-
-                    <label
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-white/95 hover:bg-white text-[#3E4A35] hover:scale-105 transition-all text-[10px] font-black px-3 py-1.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 border-none select-none"
-                      title="Seleziona la tua foto personalizzata"
-                    >
-                      <Camera className="w-3.5 h-3.5 text-[#3E4A35]" />
-                      <span>Personalizza Foto Categoria</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) =>
-                          handleImageUpload(selectedPlace.category, e)
-                        }
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                )}
+                {/* Customize/Replace controls disabled */}
                 <div className="absolute top-3 left-3 flex gap-2">
                   <span
                     className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm ${
