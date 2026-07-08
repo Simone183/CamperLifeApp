@@ -98,7 +98,7 @@ async function fixExistingPlaces() {
         !data.imageUrl ||
         data.imageUrl.startsWith("https://images.unsplash.com/") ||
         data.imageUrl.includes("default_icons/") ||
-        data.imageUrl.includes(".svg"); // Fix any old SVG icons or broken references
+        data.imageUrl.includes(".jpg"); // Fix any old JPG icons or broken references
 
       if (needsFix) {
          // Try case-insensitive and flexible matching
