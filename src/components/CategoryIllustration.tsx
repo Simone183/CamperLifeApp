@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { MapPin, Tent, Droplets } from 'lucide-react';
 
 interface CategoryIllustrationProps {
   category: string;
@@ -14,18 +15,47 @@ export const CategoryIllustration: React.FC<CategoryIllustrationProps> = ({ cate
   // Normalize category key
   const normCategory = category?.toLowerCase().trim() || 'default';
 
+  // Soste (Area Sosta) -> Peach/Orange gradient
   if (normCategory.includes('sosta')) {
-    return <img src="/area_sosta.svg" alt="Area di Sosta" className={className} />;
-  }
-  if (normCategory.includes('campeggio') || normCategory.includes('camping')) {
-    return <img src="/campeggio.svg" alt="Campeggio" className={className} />;
-  }
-  if (normCategory.includes('service')) {
-    return <img src="/camper_service.svg" alt="Camper Service" className={className} />;
-  }
-  if (normCategory.includes('parcheggio') || normCategory.includes('camper')) {
-    return <img src="/parcheggio_camper.svg" alt="Parcheggio Camper" className={className} />;
+    return (
+      <div className={`flex items-center justify-center text-white bg-gradient-to-br from-[#FF9E79] to-[#FF8552] ${className}`}>
+        <MapPin className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
+      </div>
+    );
   }
 
-  return <img src="/parcheggio_camper.svg" alt="Parcheggio Camper" className={className} />;
+  // Campeggio -> Green gradient
+  if (normCategory.includes('campeggio') || normCategory.includes('camping')) {
+    return (
+      <div className={`flex items-center justify-center text-white bg-gradient-to-br from-[#5A6B4E] to-[#3E4A35] ${className}`}>
+        <Tent className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
+      </div>
+    );
+  }
+
+  // Camper Service -> Light Blue gradient
+  if (normCategory.includes('service')) {
+    return (
+      <div className={`flex items-center justify-center text-white bg-gradient-to-br from-[#4EA8DE] to-[#0077B6] ${className}`}>
+        <Droplets className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
+      </div>
+    );
+  }
+
+  // Parcheggio -> Italian-style Blue Parking Sign (P)
+  if (normCategory.includes('parcheggio') || normCategory.includes('camper')) {
+    return (
+      <div className={`flex items-center justify-center text-white bg-[#0056b3] font-bold select-none ${className}`}>
+        <span className="text-2xl md:text-3xl font-sans tracking-normal leading-none">P</span>
+      </div>
+    );
+  }
+
+  // Default Fallback
+  return (
+    <div className={`flex items-center justify-center text-white bg-gradient-to-br from-slate-400 to-slate-600 ${className}`}>
+      <MapPin className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
+    </div>
+  );
 };
+
