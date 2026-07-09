@@ -3525,16 +3525,23 @@ out center;`;
                       return true;
                     })
                     .map((place) => {
-                    let colorClass = "bg-[#A45C40]"; // Service (terracotta)
+                    const normCat = (place.category || "").toLowerCase();
+                    let colorClass = "bg-[#0077B6]"; // Default/Service (blue)
                     let labelLetter = "💧";
-                    if (place.category === "area_sosta") {
+                    if (normCat.includes("sosta")) {
+                      colorClass = "bg-[#FF8552]";
+                      labelLetter = "📍";
+                    } else if (normCat.includes("campeggio") || normCat.includes("camping")) {
                       colorClass = "bg-[#5A6B4E]";
                       labelLetter = "⛺";
-                    } else if (place.category === "campeggio") {
-                      colorClass = "bg-[#3E4A35]";
-                      labelLetter = "🌲";
-                    } else if (place.category === "parcheggio_camper") {
-                      colorClass = "bg-sky-600";
+                    } else if (normCat.includes("parcheggio") || normCat.includes("parcheggio_camper")) {
+                      colorClass = "bg-[#0056b3]";
+                      labelLetter = "🅿️";
+                    } else if (normCat.includes("service")) {
+                      colorClass = "bg-[#0077B6]";
+                      labelLetter = "💧";
+                    } else if (normCat.includes("camper")) {
+                      colorClass = "bg-[#0056b3]";
                       labelLetter = "🅿️";
                     }
 
@@ -6539,16 +6546,23 @@ export function LeafletOfflineMap({
   // Add markers for all filtered places
     console.log("MapTab: rendering places:", places.length);
     places.forEach((place) => {
+      const normCat = (place.category || "").toLowerCase();
       let emoji = "💧";
-      let colorClass = "bg-[#A45C40]";
-      if (place.category === "area_sosta") {
+      let colorClass = "bg-[#0077B6]";
+      if (normCat.includes("sosta")) {
+        colorClass = "bg-[#FF8552]";
+        emoji = "📍";
+      } else if (normCat.includes("campeggio") || normCat.includes("camping")) {
         colorClass = "bg-[#5A6B4E]";
         emoji = "⛺";
-      } else if (place.category === "campeggio") {
-        colorClass = "bg-[#3E4A35]";
-        emoji = "🌲";
-      } else if (place.category === "parcheggio_camper") {
-        colorClass = "bg-sky-600";
+      } else if (normCat.includes("parcheggio") || normCat.includes("parcheggio_camper")) {
+        colorClass = "bg-[#0056b3]";
+        emoji = "🅿️";
+      } else if (normCat.includes("service")) {
+        colorClass = "bg-[#0077B6]";
+        emoji = "💧";
+      } else if (normCat.includes("camper")) {
+        colorClass = "bg-[#0056b3]";
         emoji = "🅿️";
       }
 

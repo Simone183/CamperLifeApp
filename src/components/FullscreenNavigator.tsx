@@ -949,20 +949,25 @@ out center;`;
 
       if (isNearRoute && minDistance < POI_THRESHOLD) {
         // Let's draw a beautiful visual badge based on category
-        let markerBg = "#22c55e"; // default light-green
-        let markerIcon = "🏕️";
+        let markerBg = "#FF8552"; // peach/orange for sosta
+        let markerIcon = "📍";
         let categoryName = "Area Sosta";
         
-        if (place.category === 'campeggio') {
-          markerBg = "#3b82f6"; // blue
-          markerIcon = "🌲";
+        const normCat = (place.category || "").toLowerCase();
+        if (normCat.includes('campeggio') || normCat.includes('camping')) {
+          markerBg = "#5A6B4E"; // green
+          markerIcon = "⛺";
           categoryName = "Campeggio";
-        } else if (place.category === 'camper_service') {
-          markerBg = "#f59e0b"; // amber/orange
+        } else if (normCat.includes('parcheggio') || normCat.includes('parcheggio_camper')) {
+          markerBg = "#0056b3"; // blue
+          markerIcon = "🅿️";
+          categoryName = "Parcheggio Camper";
+        } else if (normCat.includes('service')) {
+          markerBg = "#0077B6"; // blue
           markerIcon = "💧";
           categoryName = "Camper Service";
-        } else if (place.category === 'parcheggio_camper') {
-          markerBg = "#6366f1"; // indigo
+        } else if (normCat.includes('camper')) {
+          markerBg = "#0056b3"; // blue
           markerIcon = "🅿️";
           categoryName = "Parcheggio Camper";
         }
@@ -1360,20 +1365,25 @@ out center;`;
                 </div>
               ) : (
                 nearbyPlaces.map(({ place, minDistance }) => {
-                  let badgeBg = "bg-green-500/15 text-green-400 border-green-500/30";
+                  let badgeBg = "bg-orange-500/15 text-orange-400 border-orange-500/30";
                   let categoryText = "Area Sosta";
-                  let icon = "🏕️";
+                  let icon = "📍";
                   
-                  if (place.category === 'campeggio') {
-                    badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
+                  const normCat = (place.category || "").toLowerCase();
+                  if (normCat.includes('campeggio') || normCat.includes('camping')) {
+                    badgeBg = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
                     categoryText = "Campeggio";
-                    icon = "🌲";
-                  } else if (place.category === 'camper_service') {
-                    badgeBg = "bg-amber-500/15 text-amber-400 border-amber-500/30";
+                    icon = "⛺";
+                  } else if (normCat.includes('parcheggio') || normCat.includes('parcheggio_camper')) {
+                    badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
+                    categoryText = "Parcheggio";
+                    icon = "🅿️";
+                  } else if (normCat.includes('service')) {
+                    badgeBg = "bg-sky-500/15 text-sky-400 border-sky-500/30";
                     categoryText = "Camper Service";
                     icon = "💧";
-                  } else if (place.category === 'parcheggio_camper') {
-                    badgeBg = "bg-indigo-500/15 text-indigo-400 border-indigo-500/30";
+                  } else if (normCat.includes('camper')) {
+                    badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
                     categoryText = "Parcheggio";
                     icon = "🅿️";
                   }
