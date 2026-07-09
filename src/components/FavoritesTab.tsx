@@ -26,6 +26,40 @@ export default function FavoritesTab({
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState<PlaceCategory | 'all'>('all');
 
+  const getCoverPhotoForPlace = (place: Place) => {
+    const serverPhotos = (place.reviews || [])
+      .map(rev => rev.imageUrl)
+      .filter((url): url is string => Boolean(url));
+    
+    let localPhotos: string[] = [];
+    try {
+      const savedPhotos = localStorage.getItem(`camper_photos_${place.id}`);
+      if (savedPhotos) {
+        localPhotos = JSON.parse(savedPhotos);
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    let localReviewsPhotos: string[] = [];
+    try {
+      const savedReviews = localStorage.getItem(`camper_reviews_${place.id}`);
+      if (savedReviews) {
+        const parsed = JSON.parse(savedReviews);
+        if (Array.isArray(parsed)) {
+          localReviewsPhotos = parsed
+            .map((rev: any) => rev.imageUrl)
+            .filter((url: any) => Boolean(url));
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const allPhotos = [...serverPhotos, ...localPhotos, ...localReviewsPhotos];
+    return allPhotos[0] || null;
+  };
+
   // Filter actual place objects that are favorited
   const favoritePlaces = places.filter(p => favoriteIds.includes(p.id));
 
@@ -168,7 +202,16 @@ export default function FavoritesTab({
                   <div className="flex gap-4">
                     {/* Visual Place Representation */}
                     <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-700 flex-shrink-0 relative">
-                      <CategoryIllustration category={place.category} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      {getCoverPhotoForPlace(place) ? (
+                        <img
+                          src={getCoverPhotoForPlace(place)!}
+                          alt={place.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 animate-fade-in"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <CategoryIllustration category={place.category} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      )}
                     </div>
 
                     {/* Metadata */}

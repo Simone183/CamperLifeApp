@@ -7,7 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
-import { ClientFirestoreAdapter } from "./src/client-firestore.js";
+import { ClientFirestoreAdapter } from "./src/client-firestore.ts";
 
 // Use dynamic Firebase Project configuration from our provisioned workspace
 let firebaseConfig = {
@@ -2227,7 +2227,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   });
 
   // Overpass database caching helper to avoid 429 rate limit issues
-  const overpassCache = new Map<string, { data: any; timestamp: number }>();
+  const overpassCache = new globalThis.Map<string, { data: any; timestamp: number }>();
   const OVERPASS_CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
 
   // Proxy for OpenStreetMap Overpass Interpreter with support for multiple public instances (fallback)

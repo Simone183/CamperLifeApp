@@ -1,4 +1,5 @@
-import { initializeApp, FirebaseApp } from "firebase/app";
+import { initializeApp } from "firebase/app";
+import type { FirebaseApp } from "firebase/app";
 import {
   initializeFirestore,
   collection,
@@ -13,7 +14,7 @@ import {
   where,
   orderBy,
   limit
-} from "firebase/firestore/lite";
+} from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 export class ClientFirestoreAdapter {
@@ -29,7 +30,7 @@ export class ClientFirestoreAdapter {
   }, databaseId: string) {
     const appName = "client-" + Date.now();
     this.app = initializeApp(firebaseConfig, appName);
-    this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true, preferRest: true } as any, databaseId);
+    this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true } as any, databaseId);
   }
 
   getStorage() {

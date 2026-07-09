@@ -4,9 +4,9 @@
  */
 
 import React from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl } from "../unit-helpers";
-import { compressImage } from "../utils/photoCompressor";
 import {
   Place,
   Review,
@@ -42,6 +42,8 @@ import {
   Banknote,
   Route,
   Sparkles,
+  Image,
+  Upload,
 } from "lucide-react";
 import L from "leaflet";
 import { CategoryIllustration } from "./CategoryIllustration";
@@ -168,7 +170,10 @@ function MapEventsHelper({
       }
     };
 
-    const originalGetCenter = map.getCenter;
+    if (!(map as any).__originalGetCenter) {
+      (map as any).__originalGetCenter = map.getCenter;
+    }
+    const originalGetCenter = (map as any).__originalGetCenter;
     map.getCenter = () => {
       const c = originalGetCenter.call(map);
       if (!c) {
@@ -470,6 +475,51 @@ export function parseMetricValue(str: string | undefined): number | null {
   return null;
 }
 
+const compressImage = (file: File, maxWidth = 600, maxHeight = 600, quality = 0.65): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new globalThis.Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => {
+        resolve(event.target?.result as string);
+      };
+    };
+    reader.onerror = () => {
+      resolve("");
+    };
+  });
+};
+
 export default function MapTab({
   places,
   onPlacesChange,
@@ -638,6 +688,40 @@ export default function MapTab({
     );
   };
 
+  const getCoverPhotoForPlace = (place: Place) => {
+    const serverPhotos = (place.reviews || [])
+      .map(rev => rev.imageUrl)
+      .filter((url): url is string => Boolean(url) && !isUrlBroken(url));
+    
+    let localPhotos: string[] = [];
+    try {
+      const savedPhotos = localStorage.getItem(`camper_photos_${place.id}`);
+      if (savedPhotos) {
+        localPhotos = JSON.parse(savedPhotos).filter((url: string) => !isUrlBroken(url));
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    let localReviewsPhotos: string[] = [];
+    try {
+      const savedReviews = localStorage.getItem(`camper_reviews_${place.id}`);
+      if (savedReviews) {
+        const parsed = JSON.parse(savedReviews);
+        if (Array.isArray(parsed)) {
+          localReviewsPhotos = parsed
+            .map((rev: any) => rev.imageUrl)
+            .filter((url: any) => Boolean(url) && !isUrlBroken(url));
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const allPhotos = [...serverPhotos, ...localPhotos, ...localReviewsPhotos];
+    return allPhotos[0] || null;
+  };
+
   // Map type state (roadmap, satellite, hybrid, terrain)
   const [mapTypeId, setMapTypeId] = React.useState<string>("roadmap");
   const [showMapTypeMenu, setShowMapTypeMenu] = React.useState<boolean>(false);
@@ -687,6 +771,7 @@ export default function MapTab({
   const [mobileView, setMobileView] = React.useState<"map" | "list">("map");
   const [isMobileDetailsOpen, setIsMobileDetailsOpen] = React.useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
+  const [brokenReviewImages, setBrokenReviewImages] = React.useState<Record<string, boolean>>({});
 
   // --- INTELLIGENT ROUTING ENGINE STATES ---
   const [showSmartRoute, setShowSmartRoute] = React.useState<boolean>(false);
@@ -757,6 +842,9 @@ export default function MapTab({
     noiseLevel: 3,
     maneuverability: 3,
     cellularSignal: 3,
+    groundLevelness: 3,
+    shade: 3,
+    cleanliness: 3,
   });
 
   const [newPlaceQuery, setNewPlaceQuery] = React.useState("");
@@ -766,6 +854,226 @@ export default function MapTab({
   const [isSearchingNewPlaceAddress, setIsSearchingNewPlaceAddress] =
     React.useState(false);
   const [isLocatingGPS, setIsLocatingGPS] = React.useState(false);
+
+  // --- CHOOSE NAVIGATOR MODAL STATES ---
+  const [showNavigatorSelector, setShowNavigatorSelector] = React.useState(false);
+  const [navigatorTargetPlace, setNavigatorTargetPlace] = React.useState<Place | null>(null);
+
+  const handleOpenNavigatorSelector = (place: Place) => {
+    setNavigatorTargetPlace(place);
+    setShowNavigatorSelector(true);
+  };
+
+  const [uploadedPhotos, setUploadedPhotos] = React.useState<string[]>(() => {
+    if (!selectedPlace) return [];
+    const saved = localStorage.getItem(`camper_photos_${selectedPlace.id}`);
+    console.log(`[MapTab] Initializing uploadedPhotos for ${selectedPlace.id}:`, saved);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [isPhotoAlbumOpen, setIsPhotoAlbumOpen] = React.useState(false);
+  const [activeLightboxPhoto, setActiveLightboxPhoto] = React.useState<string | null>(null);
+  const albumFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
+  const [deleteConfirmPhotoUrl, setDeleteConfirmPhotoUrl] = React.useState<string | null>(null);
+
+  const handleAlbumPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedPlace) return;
+    
+    try {
+      const newBase64s: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressed = await compressImage(files[i]);
+        newBase64s.push(compressed);
+      }
+      
+      const updatedPhotos = [...uploadedPhotos, ...newBase64s];
+      setUploadedPhotos(updatedPhotos);
+      localStorage.setItem(`camper_photos_${selectedPlace.id}`, JSON.stringify(updatedPhotos));
+    } catch (err) {
+      console.error("Error uploading to album:", err);
+    }
+  };
+  
+  React.useEffect(() => {
+    if (!selectedPlace) {
+      setUploadedPhotos([]);
+      return;
+    }
+    const saved = localStorage.getItem(`camper_photos_${selectedPlace.id}`);
+    console.log(`[MapTab] Updating uploadedPhotos for ${selectedPlace.id}:`, saved);
+    setUploadedPhotos(saved ? JSON.parse(saved) : []);
+  }, [selectedPlace?.id]);
+
+  const isUserAdmin = isAdmin || Boolean(currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com");
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!selectedPlace || !isUserAdmin) return;
+    
+    // 1. Remove from localReviews
+    const updatedLocal = localReviews.filter(rev => rev.id !== reviewId);
+    setLocalReviews(updatedLocal);
+    localStorage.setItem(`camper_reviews_${selectedPlace.id}`, JSON.stringify(updatedLocal));
+    
+    // 2. Remove from server reviews in places state
+    let targetPlace: Place | undefined;
+    const updatedPlaces = places.map((p) => {
+      if (p.id === selectedPlace.id) {
+        const filteredReviews = (p.reviews || []).filter(r => r.id !== reviewId);
+        
+        let average = 3;
+        let avgNoise = 3;
+        let avgManeuver = 3;
+        let avgSignal = 3;
+        let avgGround = 3;
+        let avgShade = 3;
+        let avgClean = 3;
+        
+        if (filteredReviews.length > 0) {
+          const totalRating = filteredReviews.reduce((sum, r) => sum + r.rating, 0);
+          average = parseFloat((totalRating / filteredReviews.length).toFixed(1));
+          
+          avgNoise = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.noiseLevel ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+          avgManeuver = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.maneuverability ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+          avgSignal = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.cellularSignal ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+          avgGround = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.groundLevelness ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+          avgShade = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.shade ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+          avgClean = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.cleanliness ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+        }
+        
+        targetPlace = {
+          ...p,
+          rating: average,
+          noiseLevel: avgNoise,
+          maneuverability: avgManeuver,
+          cellularSignal: avgSignal,
+          groundLevelness: avgGround,
+          shade: avgShade,
+          cleanliness: avgClean,
+          reviews: filteredReviews,
+        };
+        return targetPlace;
+      }
+      return p;
+    });
+    
+    onPlacesChange(updatedPlaces);
+
+    // 3. Persist to Firestore via the admin API
+    if (targetPlace) {
+      try {
+        const response = await fetch("/api/admin/update-place", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: selectedPlace.id, updatedData: targetPlace }),
+        });
+        if (!response.ok) {
+          console.error("Failed to update place on Firestore, status:", response.status);
+        } else {
+          console.log("Successfully updated place on Firestore");
+        }
+      } catch (err) {
+        console.error("Error persisting review deletion to Firestore:", err);
+      }
+    }
+    
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: {
+          message: "💬 Recensione rimossa con successo!",
+        },
+      }),
+    );
+  };
+
+  const handleDeletePhoto = async (photoUrl: string) => {
+    if (!selectedPlace || !isUserAdmin) return;
+    
+    // 1. Remove from uploadedPhotos
+    const updatedUploaded = uploadedPhotos.filter(url => url !== photoUrl);
+    setUploadedPhotos(updatedUploaded);
+    localStorage.setItem(`camper_photos_${selectedPlace.id}`, JSON.stringify(updatedUploaded));
+    
+    // 2. Remove from localReviews
+    const updatedLocal = localReviews.map(rev => {
+      if (rev.imageUrl === photoUrl) {
+        return { ...rev, imageUrl: undefined };
+      }
+      return rev;
+    });
+    setLocalReviews(updatedLocal);
+    localStorage.setItem(`camper_reviews_${selectedPlace.id}`, JSON.stringify(updatedLocal));
+    
+    // 3. Remove from server reviews in places state
+    let targetPlace: Place | undefined;
+    const updatedPlaces = places.map(p => {
+      if (p.id === selectedPlace.id) {
+        const updatedRevs = (p.reviews || []).map(rev => {
+          if (rev.imageUrl === photoUrl) {
+            const { imageUrl, ...rest } = rev;
+            return rest;
+          }
+          return rev;
+        });
+        targetPlace = {
+          ...p,
+          reviews: updatedRevs,
+        };
+        return targetPlace;
+      }
+      return p;
+    });
+    onPlacesChange(updatedPlaces);
+
+    // 4. Persist to Firestore via the admin API
+    if (targetPlace) {
+      try {
+        const response = await fetch("/api/admin/update-place", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: selectedPlace.id, updatedData: targetPlace }),
+        });
+        if (!response.ok) {
+          console.error("Failed to update place on Firestore, status:", response.status);
+        } else {
+          console.log("Successfully updated place on Firestore with photo deletion");
+        }
+      } catch (err) {
+        console.error("Error persisting photo deletion to Firestore:", err);
+      }
+    }
+    
+    // Close lightbox if the deleted photo is currently open
+    if (activeLightboxPhoto === photoUrl) {
+      setActiveLightboxPhoto(null);
+    }
+    
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: {
+          message: "📸 Foto rimossa con successo!",
+        },
+      }),
+    );
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && selectedPlace) {
+      try {
+        const compressedBase64 = await compressImage(file);
+        const newPhotos = [...uploadedPhotos, compressedBase64];
+        setUploadedPhotos(newPhotos);
+        localStorage.setItem(`camper_photos_${selectedPlace.id}`, JSON.stringify(newPhotos));
+        setPhotoSimulation(compressedBase64);
+      } catch (err) {
+        console.error("Error compressing file:", err);
+      }
+    }
+  };
 
   // --- ADD STOP (TAPPA) TO ACTIVE TRIP STATES ---
   const [showAddMovementModal, setShowAddMovementModal] = React.useState(false);
@@ -995,6 +1303,9 @@ export default function MapTab({
         noiseLevel: newPlaceForm.noiseLevel,
         maneuverability: newPlaceForm.maneuverability,
         cellularSignal: newPlaceForm.cellularSignal,
+        groundLevelness: newPlaceForm.groundLevelness,
+        shade: newPlaceForm.shade,
+        cleanliness: newPlaceForm.cleanliness,
         rating: 5,
         reviews: [],
         createdBy: currentUser?.email || "",
@@ -1064,6 +1375,9 @@ export default function MapTab({
           noiseLevel: newPlaceForm.noiseLevel,
           maneuverability: newPlaceForm.maneuverability,
           cellularSignal: newPlaceForm.cellularSignal,
+          groundLevelness: newPlaceForm.groundLevelness,
+          shade: newPlaceForm.shade,
+          cleanliness: newPlaceForm.cleanliness,
           rating: 5,
           reviews: [],
           createdBy: currentUser?.email || "",
@@ -1094,6 +1408,9 @@ export default function MapTab({
           noiseLevel: newPlaceForm.noiseLevel,
           maneuverability: newPlaceForm.maneuverability,
           cellularSignal: newPlaceForm.cellularSignal,
+          groundLevelness: newPlaceForm.groundLevelness,
+          shade: newPlaceForm.shade,
+          cleanliness: newPlaceForm.cleanliness,
           rating: 5,
           reviews: [],
           createdBy: currentUser?.email || "",
@@ -1208,6 +1525,9 @@ export default function MapTab({
   const [noiseLevel, setNoiseLevel] = React.useState(5);
   const [maneuverability, setManeuverability] = React.useState(5);
   const [cellularSignal, setCellularSignal] = React.useState(5);
+  const [groundLevelness, setGroundLevelness] = React.useState(5);
+  const [shade, setShade] = React.useState(5);
+  const [cleanliness, setCleanliness] = React.useState(5);
   const [commentText, setCommentText] = React.useState("");
   const [priceUpdated, setPriceUpdated] = React.useState("");
   const [photoSimulation, setPhotoSimulation] = React.useState("");
@@ -1747,8 +2067,53 @@ out center;`;
   // NOTE: Automated OSM loading at startup and on GPS tracking has been removed on user request.
   // OSM elements will now ONLY load when user explicitly clicks "Intorno a me", "Intorno a questo luogo" or from the popup.
 
+  // Load local reviews for the selected place
+  const [localReviews, setLocalReviews] = React.useState<Review[]>(() => {
+    if (!selectedPlace) return [];
+    const saved = localStorage.getItem(`camper_reviews_${selectedPlace.id}`);
+    console.log(`[MapTab] Initializing localReviews for ${selectedPlace.id}:`, saved);
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  React.useEffect(() => {
+    if (!selectedPlace) return;
+    const saved = localStorage.getItem(`camper_reviews_${selectedPlace.id}`);
+    console.log(`[MapTab] Updating localReviews for ${selectedPlace.id}:`, saved);
+    setLocalReviews(saved ? JSON.parse(saved) : []);
+  }, [selectedPlace?.id]);
+
+  const combinedReviews = React.useMemo(() => {
+    if (!selectedPlace) return [];
+    // Assume server reviews are always in selectedPlace.reviews
+    const serverReviews = selectedPlace.reviews || [];
+    const combined = [...serverReviews];
+    localReviews.forEach(localRev => {
+      if (!combined.find(rev => rev.id === localRev.id)) {
+        combined.push(localRev);
+      }
+    });
+    return combined;
+  }, [selectedPlace?.reviews, localReviews]);
+
+  const allAlbumPhotos = React.useMemo(() => {
+    if (!selectedPlace) return [];
+    
+    // 1. Gather photos from combinedReviews
+    const reviewPhotos = combinedReviews
+      .map(rev => rev.imageUrl)
+      .filter((url): url is string => Boolean(url) && !brokenReviewImages[url]);
+    
+    // 2. Gather photos from uploadedPhotos
+    const extraPhotos = uploadedPhotos.filter(url => !brokenReviewImages[url]);
+    
+    // Combine them, keeping unique URLs
+    const uniquePhotos = Array.from(new Set([...reviewPhotos, ...extraPhotos]));
+    return uniquePhotos;
+  }, [combinedReviews, uploadedPhotos, brokenReviewImages, selectedPlace]);
+
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("[MapTab] handleAddReview called", { selectedPlace, reviewerName, commentText });
     if (!selectedPlace || !reviewerName.trim() || !commentText.trim()) return;
 
     try {
@@ -1789,10 +2154,19 @@ out center;`;
       noiseLevel: noiseLevel,
       maneuverability: maneuverability,
       cellularSignal: cellularSignal,
+      groundLevelness: groundLevelness,
+      shade: shade,
+      cleanliness: cleanliness,
     };
+
+    // Update local reviews persistence
+    const updatedLocalReviews = [...localReviews, newReview];
+    setLocalReviews(updatedLocalReviews);
+    localStorage.setItem(`camper_reviews_${selectedPlace.id}`, JSON.stringify(updatedLocalReviews));
 
     // Calculate new average rating
     const expandedReviews = [...selectedPlace.reviews, newReview];
+    console.log("[MapTab] New reviews count:", expandedReviews.length);
     const totalRating = expandedReviews.reduce(
       (sum, rev) => sum + rev.rating,
       0,
@@ -1801,18 +2175,35 @@ out center;`;
       (totalRating / expandedReviews.length).toFixed(1),
     );
 
+    // Compute updated averages for sub-metrics
+    const validReviews = expandedReviews;
+    const avgNoise = parseFloat((validReviews.reduce((sum, r) => sum + (r.noiseLevel ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+    const avgManeuver = parseFloat((validReviews.reduce((sum, r) => sum + (r.maneuverability ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+    const avgSignal = parseFloat((validReviews.reduce((sum, r) => sum + (r.cellularSignal ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+    const avgGround = parseFloat((validReviews.reduce((sum, r) => sum + (r.groundLevelness ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+    const avgShade = parseFloat((validReviews.reduce((sum, r) => sum + (r.shade ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+    const avgClean = parseFloat((validReviews.reduce((sum, r) => sum + (r.cleanliness ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+
     // Update place
     const updatedPlaces = places.map((p) => {
       if (p.id === selectedPlace.id) {
-        return {
+        const updatedPlace = {
           ...p,
           rating: average,
           priceInfo: priceUpdated ? `${priceUpdated}` : p.priceInfo,
           priceEuro: priceUpdated
             ? parseFloat(priceUpdated.replace(/[^0-9.]/g, "")) || p.priceEuro
             : p.priceEuro,
+          noiseLevel: avgNoise,
+          maneuverability: avgManeuver,
+          cellularSignal: avgSignal,
+          groundLevelness: avgGround,
+          shade: avgShade,
+          cleanliness: avgClean,
           reviews: expandedReviews,
         };
+        console.log("[MapTab] Updating place:", updatedPlace);
+        return updatedPlace;
       }
       return p;
     });
@@ -1824,23 +2215,30 @@ out center;`;
     setCommentText("");
     setPriceUpdated("");
     setPhotoSimulation("");
+    setNoiseLevel(5);
+    setManeuverability(5);
+    setCellularSignal(5);
+    setGroundLevelness(5);
+    setShade(5);
+    setCleanliness(5);
     setReviewSuccess(true);
     setTimeout(() => setReviewSuccess(false), 3000);
   };
 
-  const handleNewPlaceImageUpload = (
+  const handleNewPlaceImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
+      try {
+        const compressedBase64 = await compressImage(file);
         setNewPlaceForm((prev) => ({
           ...prev,
-          imageUrl: reader.result as string,
+          imageUrl: compressedBase64,
         }));
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error("Error compressing file:", err);
+      }
     }
   };
 
@@ -2677,7 +3075,7 @@ out center;`;
             <button
               type="button"
               onClick={() => {
-                onNavigateFullscreen(selectedPlace);
+                handleOpenNavigatorSelector(selectedPlace);
               }}
               className="flex-1 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg text-[10px] flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 uppercase tracking-wide cursor-pointer text-center"
             >
@@ -3217,7 +3615,14 @@ out center;`;
                     }`}
                   >
                     <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 group/img shadow-xs">
-                      {isImageFallback(place.category, place.imageUrl) ? (
+                      {getCoverPhotoForPlace(place) ? (
+                        <img
+                          src={getCoverPhotoForPlace(place)!}
+                          alt={place.name}
+                          className="w-full h-full object-cover animate-fade-in"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : isImageFallback(place.category, place.imageUrl) ? (
                         <CategoryIllustration
                           category={place.category}
                           className="w-full h-full object-cover"
@@ -3943,7 +4348,7 @@ out center;`;
                       source: "inserito_a_mano",
                       reviews: [],
                     };
-                    onNavigateFullscreen(tempPlace);
+                    handleOpenNavigatorSelector(tempPlace);
                   }}
                   className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 text-center w-full"
                 >
@@ -3980,6 +4385,9 @@ out center;`;
                         noiseLevel: 3,
                         maneuverability: 3,
                         cellularSignal: 3,
+                        groundLevelness: 3,
+                        shade: 3,
+                        cleanliness: 3,
                       });
 
                       setNewPlaceQuery(
@@ -4320,6 +4728,9 @@ out center;`;
                 noiseLevel: 3,
                 maneuverability: 3,
                 cellularSignal: 3,
+                groundLevelness: 3,
+                shade: 3,
+                cleanliness: 3,
               });
               setShowAddPlaceModal(true);
             }}
@@ -4340,7 +4751,14 @@ out center;`;
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex gap-4">
                 <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 group/img shadow-xs">
-                  {isImageFallback(
+                  {allAlbumPhotos.length > 0 ? (
+                    <img
+                      src={allAlbumPhotos[0]}
+                      alt={selectedPlace.name}
+                      className="w-full h-full object-cover animate-fade-in"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : isImageFallback(
                     selectedPlace.category,
                     selectedPlace.imageUrl,
                   ) ? (
@@ -4476,25 +4894,12 @@ out center;`;
                 ) : (
                   <>
                     <button
-                      onClick={() => onNavigateFullscreen(selectedPlace)}
-                      className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider border border-emerald-500 whitespace-nowrap"
-                      title="Calcola rotta sicura per le dimensioni del tuo Camper (evita ponti bassi OSM)"
+                      onClick={() => handleOpenNavigatorSelector(selectedPlace)}
+                      className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider border border-emerald-500 flex-1 min-w-[120px]"
+                      title="Scegli il tuo navigatore (Interno sicuro, Google Maps, Waze, Apple Maps)"
                     >
                       <Compass className="w-5 h-5 text-white animate-pulse" />
                       <span>Naviga</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        let url = `https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.lat},${selectedPlace.lng}&travelmode=driving`;
-                        if (settings?.avoidTolls) url += `&dirflg=t`;
-                        window.open(url, "_blank");
-                      }}
-                      className="px-5 py-3.5 bg-[#4285F4] hover:bg-[#357ae8] active:bg-[#1a56c5] text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-[10px] tracking-wider border border-blue-500 whitespace-nowrap"
-                      title="Apri navigazione con Google Maps esterno"
-                    >
-                      <Navigation className="w-3.5 h-3.5 text-white" />
-                      <span>Google Maps</span>
                     </button>
 
                     <button
@@ -4595,7 +5000,7 @@ out center;`;
             />
 
             {/* Rating Details */}
-            <div className="grid grid-cols-3 gap-3 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-center">
                 <div className="text-[10px] font-bold text-slate-500 uppercase">
                   Rumorosità
@@ -4620,6 +5025,30 @@ out center;`;
                   {selectedPlace.cellularSignal || 3}/5
                 </div>
               </div>
+              <div className="text-center border-t border-slate-200/50 pt-2">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  Terreno
+                </div>
+                <div className="text-sm font-black text-[#3E4A35]">
+                  {selectedPlace.groundLevelness || 3}/5
+                </div>
+              </div>
+              <div className="text-center border-t border-slate-200/50 pt-2">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  Ombra
+                </div>
+                <div className="text-sm font-black text-[#3E4A35]">
+                  {selectedPlace.shade || 3}/5
+                </div>
+              </div>
+              <div className="text-center border-t border-slate-200/50 pt-2">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  Pulizia
+                </div>
+                <div className="text-sm font-black text-[#3E4A35]">
+                  {selectedPlace.cleanliness || 3}/5
+                </div>
+              </div>
             </div>
 
             {/* Facilities lists */}
@@ -4640,12 +5069,63 @@ out center;`;
               </div>
             </div>
 
-            {/* Reviews list panel inside */}
+            {/* Photos and Reviews */}
             <div className="border-t border-slate-100 pt-4 space-y-4">
+              
+              {/* Photo Album Preview Button */}
+              <button
+                type="button"
+                onClick={() => setIsPhotoAlbumOpen(true)}
+                className="w-full text-left bg-slate-50 hover:bg-slate-100/80 active:scale-[0.99] transition-all p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 group shrink-0"
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  {allAlbumPhotos.length > 0 ? (
+                    <div className="flex -space-x-3 overflow-hidden shrink-0">
+                      {allAlbumPhotos.slice(0, 4).map((url, idx) => (
+                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-white shadow-sm shrink-0">
+                          <img
+                            src={url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={() => setBrokenReviewImages(prev => ({ ...prev, [url]: true }))}
+                          />
+                          {idx === 3 && allAlbumPhotos.length > 4 && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-[10px] font-bold text-white">
+                              +{allAlbumPhotos.length - 4}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-450 shrink-0">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                  )}
+                  
+                  <div className="overflow-hidden min-w-0">
+                    <div className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
+                      <Image className="w-3.5 h-3.5 text-[#5A6B4E]" />
+                      <span>Album Fotografico ({allAlbumPhotos.length})</span>
+                    </div>
+                    <p className="text-slate-400 text-[10px] truncate">
+                      {allAlbumPhotos.length > 0
+                        ? "Clicca per guardare tutte le foto o caricarne di nuove"
+                        : "Nessuna foto presente. Condividi la tua prima foto!"}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="bg-white group-hover:bg-slate-200 p-1.5 rounded-lg border border-slate-200/60 transition-colors">
+                  <Plus className="w-3.5 h-3.5 text-slate-500" />
+                </div>
+              </button>
+
+              {/* Reviews list panel inside */}
               <div className="flex justify-between items-center">
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
                   Recensioni della Community in Tempo Reale (
-                  {selectedPlace.reviews.length})
+                  {combinedReviews.length})
                 </h4>
                 <div className="flex items-center gap-1 font-bold text-[#3E4A35]">
                   <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
@@ -4655,10 +5135,10 @@ out center;`;
 
               {/* Scroller review records */}
               <div className="space-y-3 max-h-44 overflow-y-auto pr-1">
-                {selectedPlace.reviews.map((rev) => (
+                {combinedReviews.map((rev) => (
                   <div
                     key={rev.id}
-                    className="bg-slate-50/50 p-3 rounded-xl border border-slate-100/50 space-y-1.5"
+                    className="bg-slate-200 p-4 rounded-xl border border-slate-300 shadow-sm space-y-1.5"
                   >
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-slate-700">
@@ -4679,6 +5159,35 @@ out center;`;
                             />
                           ))}
                         </div>
+                        {isUserAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (deleteConfirmId === rev.id) {
+                                handleDeleteReview(rev.id);
+                                setDeleteConfirmId(null);
+                              } else {
+                                setDeleteConfirmId(rev.id);
+                                setTimeout(() => setDeleteConfirmId(prev => prev === rev.id ? null : prev), 4000);
+                              }
+                            }}
+                            className={`p-1 rounded transition-all cursor-pointer flex items-center gap-1 text-[10px] ${
+                              deleteConfirmId === rev.id
+                                ? "bg-rose-600 text-white hover:bg-rose-700 px-1.5 py-0.5 font-bold"
+                                : "text-rose-600 hover:text-rose-800 hover:bg-rose-50"
+                            }`}
+                            title={deleteConfirmId === rev.id ? "Clicca di nuovo per eliminare definitivamente" : "Elimina recensione"}
+                          >
+                            {deleteConfirmId === rev.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-white" />
+                                <span>Sicuro?</span>
+                              </>
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                     <p className="text-slate-600 leading-relaxed font-normal">
@@ -4689,12 +5198,17 @@ out center;`;
                         Prezzo confermato: {rev.priceUpdated}
                       </span>
                     )}
-                    {rev.imageUrl && (
+                    {rev.imageUrl && !brokenReviewImages[rev.imageUrl] && (
                       <img
                         style={{ height: "4rem" }}
                         src={rev.imageUrl}
                         alt="Revision post"
                         className="rounded-lg object-cover border mt-1"
+                        onError={() => {
+                          if (rev.imageUrl) {
+                            setBrokenReviewImages(prev => ({ ...prev, [rev.imageUrl!]: true }));
+                          }
+                        }}
                         referrerPolicy={
                           rev.imageUrl?.startsWith("http")
                             ? "no-referrer"
@@ -4709,7 +5223,7 @@ out center;`;
               {/* Write review form */}
               <form
                 onSubmit={handleAddReview}
-                className="p-4 border border-slate-100 rounded-xl space-y-3 bg-slate-50/20"
+                className="p-5 border border-slate-300 rounded-xl space-y-4 bg-slate-200 shadow-sm"
               >
                 <span className="text-[10px] font-bold text-slate-700 block uppercase tracking-wider">
                   Aggiungi la tua recensione sul posto
@@ -4763,48 +5277,131 @@ out center;`;
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">
                       Rumorosità (1-5)
                     </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={noiseLevel}
-                      onChange={(e) => setNoiseLevel(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                    />
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setNoiseLevel(val)}
+                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            val === noiseLevel
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">
                       Manovrabilità (1-5)
                     </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={maneuverability}
-                      onChange={(e) =>
-                        setManeuverability(Number(e.target.value))
-                      }
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                    />
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setManeuverability(val)}
+                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            val === maneuverability
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Segnale (1-5)
+                      Segnale Cell. (1-5)
                     </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={cellularSignal}
-                      onChange={(e) =>
-                        setCellularSignal(Number(e.target.value))
-                      }
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                    />
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setCellularSignal(val)}
+                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            val === cellularSignal
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                      Terreno in bolla (1-5)
+                    </label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setGroundLevelness(val)}
+                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            val === groundLevelness
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                      Ombreggiatura (1-5)
+                    </label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setShade(val)}
+                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            val === shade
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                      Pulizia / Decoro (1-5)
+                    </label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setCleanliness(val)}
+                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            val === cleanliness
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -4824,23 +5421,22 @@ out center;`;
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        const presets = [
-                          "https://images.unsplash.com/photo-1510312305653-8ed496efae75?auto=format&fit=crop&q=80&w=600",
-                          "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
-                          "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&q=80&w=600",
-                        ];
-                        const randomImg =
-                          presets[Math.floor(Math.random() * presets.length)];
-                        setPhotoSimulation(randomImg);
-                      }}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-[10px] flex items-center gap-1.5 transition-all text-slate-700"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 rounded-lg font-bold text-[10px] flex items-center gap-1.5 transition-all text-emerald-700 border border-emerald-200 cursor-pointer"
                     >
                       <Camera className="w-3.5 h-3.5" />
                       {photoSimulation
                         ? "Foto Caricata ✅"
-                        : "Simula Caricamento Foto"}
+                        : "Carica foto"}
                     </button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      className="hidden"
+                      accept="image/*"
+                      capture="environment"
+                    />
                     {photoSimulation && (
                       <span className="text-[10px] text-[#5A6B4E] font-bold">
                         Pronta per l'invio!
@@ -4890,7 +5486,14 @@ out center;`;
             {/* Image & Main Info Card */}
             <div className="space-y-3">
               <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 aspect-video bg-slate-100 group/img">
-                {isImageFallback(
+                {allAlbumPhotos.length > 0 ? (
+                  <img
+                    src={allAlbumPhotos[0]}
+                    alt={selectedPlace.name}
+                    className="w-full h-full object-cover animate-fade-in"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : isImageFallback(
                   selectedPlace.category,
                   selectedPlace.imageUrl,
                 ) ? (
@@ -5006,7 +5609,7 @@ out center;`;
             </div>
 
             {/* Rating Details */}
-            <div className="grid grid-cols-3 gap-3 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-center">
                 <div className="text-[10px] font-bold text-slate-500 uppercase">
                   Rumorosità
@@ -5029,6 +5632,30 @@ out center;`;
                 </div>
                 <div className="text-sm font-black text-[#3E4A35]">
                   {selectedPlace.cellularSignal || 3}/5
+                </div>
+              </div>
+              <div className="text-center border-t border-slate-200/50 pt-2">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  Terreno
+                </div>
+                <div className="text-sm font-black text-[#3E4A35]">
+                  {selectedPlace.groundLevelness || 3}/5
+                </div>
+              </div>
+              <div className="text-center border-t border-slate-200/50 pt-2">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  Ombra
+                </div>
+                <div className="text-sm font-black text-[#3E4A35]">
+                  {selectedPlace.shade || 3}/5
+                </div>
+              </div>
+              <div className="text-center border-t border-slate-200/50 pt-2">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  Pulizia
+                </div>
+                <div className="text-sm font-black text-[#3E4A35]">
+                  {selectedPlace.cleanliness || 3}/5
                 </div>
               </div>
             </div>
@@ -5071,13 +5698,11 @@ out center;`;
                 <>
                   <button
                     onClick={() => {
-                      let url = `https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.lat},${selectedPlace.lng}&travelmode=driving`;
-                        if (settings?.avoidTolls) url += `&dirflg=t`;
-                      window.open(url, "_blank");
+                      handleOpenNavigatorSelector(selectedPlace);
                     }}
-                    className="w-full py-4 bg-[#4285F4] hover:bg-[#357ae8] text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs tracking-wider border border-blue-500 cursor-pointer flex-1"
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs tracking-wider border border-emerald-500 cursor-pointer flex-1"
                   >
-                    <Navigation className="w-4 h-4 text-white" />
+                    <Compass className="w-4 h-4 text-white animate-pulse" />
                     <span>🗺️ Naviga</span>
                   </button>
 
@@ -5191,9 +5816,59 @@ out center;`;
 
             {/* Reviews Section */}
             <div className="border-t border-slate-100 pt-5 space-y-4">
+              
+              {/* Photo Album Preview Button */}
+              <button
+                type="button"
+                onClick={() => setIsPhotoAlbumOpen(true)}
+                className="w-full text-left bg-slate-50 hover:bg-slate-100/80 active:scale-[0.99] transition-all p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 group shrink-0"
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  {allAlbumPhotos.length > 0 ? (
+                    <div className="flex -space-x-3 overflow-hidden shrink-0">
+                      {allAlbumPhotos.slice(0, 4).map((url, idx) => (
+                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-white shadow-sm shrink-0">
+                          <img
+                            src={url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={() => setBrokenReviewImages(prev => ({ ...prev, [url]: true }))}
+                          />
+                          {idx === 3 && allAlbumPhotos.length > 4 && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-[10px] font-bold text-white">
+                              +{allAlbumPhotos.length - 4}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-450 shrink-0">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                  )}
+                  
+                  <div className="overflow-hidden min-w-0">
+                    <div className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
+                      <Image className="w-3.5 h-3.5 text-[#5A6B4E]" />
+                      <span>Album Fotografico ({allAlbumPhotos.length})</span>
+                    </div>
+                    <p className="text-slate-400 text-[10px] truncate">
+                      {allAlbumPhotos.length > 0
+                        ? "Clicca per guardare tutte le foto o caricarne di nuove"
+                        : "Nessuna foto presente. Condividi la tua prima foto!"}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="bg-white group-hover:bg-slate-200 p-1.5 rounded-lg border border-slate-200/60 transition-colors">
+                  <Plus className="w-3.5 h-3.5 text-slate-500" />
+                </div>
+              </button>
+
               <div className="flex justify-between items-center">
                 <h4 className="font-black text-slate-800 text-xs uppercase tracking-wider">
-                  Recensioni ({selectedPlace.reviews.length})
+                  Recensioni ({combinedReviews.length})
                 </h4>
                 <div className="flex items-center gap-1 font-bold text-[#3E4A35] bg-[#3E4A35]/5 px-2.5 py-1 rounded-lg">
                   <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
@@ -5205,15 +5880,15 @@ out center;`;
 
               {/* Reviews List */}
               <div className="space-y-3">
-                {selectedPlace.reviews.length === 0 ? (
+                {combinedReviews.length === 0 ? (
                   <p className="text-slate-450 italic text-center py-4">
                     Nessuna recensione presente. Sii il primo a scriverne una!
                   </p>
                 ) : (
-                  selectedPlace.reviews.map((rev) => (
+                  combinedReviews.map((rev) => (
                     <div
                       key={rev.id}
-                      className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5"
+                      className="bg-slate-200 p-4 rounded-xl border border-slate-300 shadow-sm space-y-1.5"
                     >
                       <div className="flex justify-between items-start gap-2">
                         <div>
@@ -5225,9 +5900,40 @@ out center;`;
                           </span>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className="text-slate-400 text-[9px]">
-                            {rev.date.split("-").reverse().join("/")}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400 text-[9px]">
+                              {rev.date.split("-").reverse().join("/")}
+                            </span>
+                            {isUserAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (deleteConfirmId === rev.id) {
+                                    handleDeleteReview(rev.id);
+                                    setDeleteConfirmId(null);
+                                  } else {
+                                    setDeleteConfirmId(rev.id);
+                                    setTimeout(() => setDeleteConfirmId(prev => prev === rev.id ? null : prev), 4000);
+                                  }
+                                }}
+                                className={`p-1 rounded transition-all cursor-pointer flex items-center gap-1 text-[9px] ${
+                                  deleteConfirmId === rev.id
+                                    ? "bg-rose-600 text-white hover:bg-rose-700 px-1 font-bold"
+                                    : "text-rose-600 hover:text-rose-800 hover:bg-rose-50"
+                                }`}
+                                title={deleteConfirmId === rev.id ? "Clicca di nuovo per eliminare definitivamente" : "Elimina recensione"}
+                              >
+                                {deleteConfirmId === rev.id ? (
+                                  <>
+                                    <Check className="w-2.5 h-2.5 text-white" />
+                                    <span>Sicuro?</span>
+                                  </>
+                                ) : (
+                                  <Trash2 className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
                           <div className="flex text-amber-400">
                             {Array.from({ length: 5 }).map((_, i) => (
                               <Star
@@ -5246,11 +5952,16 @@ out center;`;
                           Prezzo confermato: {rev.priceUpdated}
                         </span>
                       )}
-                      {rev.imageUrl && (
+                      {rev.imageUrl && !brokenReviewImages[rev.imageUrl] && (
                         <img
                           src={rev.imageUrl}
                           alt="Allegato"
                           className="rounded-lg object-cover w-full max-h-40 border mt-1.5"
+                          onError={() => {
+                            if (rev.imageUrl) {
+                              setBrokenReviewImages(prev => ({ ...prev, [rev.imageUrl!]: true }));
+                            }
+                          }}
                           referrerPolicy={
                             rev.imageUrl?.startsWith("http")
                               ? "no-referrer"
@@ -5264,7 +5975,7 @@ out center;`;
               </div>
 
               {/* Add Review Panel */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
+              <div className="bg-slate-200 rounded-2xl p-5 border border-slate-300 shadow-sm space-y-4">
                 <span className="text-[10px] font-black text-slate-705 block uppercase tracking-wider">
                   Aggiungi la tua recensione
                 </span>
@@ -5319,48 +6030,131 @@ out center;`;
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">
                         Rumorosità (1-5)
                       </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        value={noiseLevel}
-                        onChange={(e) => setNoiseLevel(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                      />
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setNoiseLevel(val)}
+                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                              val === noiseLevel
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">
                         Manovrabilità (1-5)
                       </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        value={maneuverability}
-                        onChange={(e) =>
-                          setManeuverability(Number(e.target.value))
-                        }
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                      />
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setManeuverability(val)}
+                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                              val === maneuverability
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">
                         Segnale Cell. (1-5)
                       </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        value={cellularSignal}
-                        onChange={(e) =>
-                          setCellularSignal(Number(e.target.value))
-                        }
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                      />
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setCellularSignal(val)}
+                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                              val === cellularSignal
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Terreno in bolla (1-5)
+                      </label>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setGroundLevelness(val)}
+                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                              val === groundLevelness
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Ombreggiatura (1-5)
+                      </label>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setShade(val)}
+                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                              val === shade
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Pulizia / Decoro (1-5)
+                      </label>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setCleanliness(val)}
+                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                              val === cleanliness
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -5381,23 +6175,22 @@ out center;`;
                   <div className="flex flex-col gap-2 pt-1 border-t border-slate-200/60">
                     <button
                       type="button"
-                      onClick={() => {
-                        const presets = [
-                          "https://images.unsplash.com/photo-1510312305653-8ed496efae75?auto=format&fit=crop&q=80&w=600",
-                          "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
-                          "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&q=80&w=600",
-                        ];
-                        const randomImg =
-                          presets[Math.floor(Math.random() * presets.length)];
-                        setPhotoSimulation(randomImg);
-                      }}
-                      className="w-full py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all text-slate-700"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all text-emerald-700 cursor-pointer"
                     >
                       <Camera className="w-3.5 h-3.5" />
                       {photoSimulation
                         ? "Foto Collegata ✅"
-                        : "Simula Caricamento Foto"}
+                        : "Carica foto"}
                     </button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      className="hidden"
+                      accept="image/*"
+                      capture="environment"
+                    />
 
                     <button
                       type="button"
@@ -5421,6 +6214,161 @@ out center;`;
           </div>
         </div>
       )}
+
+      {/* --- NAVIGATOR SELECTOR MODAL --- */}
+      <AnimatePresence>
+        {showNavigatorSelector && navigatorTargetPlace && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="bg-white rounded-2xl border border-slate-150 shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                    <Compass className="w-5 h-5 animate-spin-slow" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-sm">
+                      Scegli il tuo Navigatore
+                    </h3>
+                    <p className="text-[10px] text-slate-500 font-medium font-sans">
+                      Seleziona come raggiungere questa destinazione
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNavigatorSelector(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-y-auto space-y-4">
+                {/* Target place card */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-2.5">
+                  <div className="text-xl mt-0.5">
+                    {navigatorTargetPlace.category?.includes("sosta") ? "📍" :
+                     navigatorTargetPlace.category?.includes("campeggio") || navigatorTargetPlace.category?.includes("camping") ? "⛺" :
+                     navigatorTargetPlace.category?.includes("parcheggio") ? "🅿️" : "💧"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-800 truncate">{navigatorTargetPlace.name}</p>
+                    <p className="text-[10px] text-slate-500 truncate">{navigatorTargetPlace.address || "Coordinate GPS"}</p>
+                  </div>
+                </div>
+
+                {/* Camper Dimensions Warning */}
+                <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl text-[11px] text-amber-850 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Attenzione alle dimensioni del Camper</span>
+                  </div>
+                  <p className="text-slate-600 font-medium">
+                    Il tuo camper misura <strong className="text-slate-850">{vehicleDimensions.height}m di altezza</strong> e pesa <strong className="text-slate-850">{vehicleDimensions.weight}t</strong>. I navigatori standard (come Google Maps o Waze) potrebbero farti passare sotto ponti bassi o strade vietate ai mezzi pesanti.
+                  </p>
+                </div>
+
+                {/* Options list */}
+                <div className="space-y-2.5">
+                  {[
+                    {
+                      id: "internal",
+                      name: "Navigatore Camper Interno",
+                      description: "Rotte calcolate in base ad altezza, peso e limiti camper (offline).",
+                      icon: <Compass className="w-5 h-5 text-emerald-600 animate-pulse" />,
+                      action: () => onNavigateFullscreen(navigatorTargetPlace),
+                      badge: "Consigliato & Sicuro",
+                      badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    },
+                    {
+                      id: "google_maps",
+                      name: "Google Maps",
+                      description: "Navigazione stradale classica, traffico in tempo reale e vista satellite.",
+                      icon: <Navigation className="w-5 h-5 text-blue-600" />,
+                      action: () => {
+                        let url = `https://www.google.com/maps/dir/?api=1&destination=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}&travelmode=driving`;
+                        if (settings?.avoidTolls) url += `&dirflg=t`;
+                        window.open(url, "_blank");
+                      },
+                      badge: "Traffico Live",
+                      badgeColor: "bg-blue-50 text-blue-700 border-blue-200"
+                    },
+                    {
+                      id: "waze",
+                      name: "Waze",
+                      description: "Social GPS con segnalazioni autovelox, polizia e pericoli live.",
+                      icon: <Route className="w-5 h-5 text-sky-500" />,
+                      action: () => {
+                        const url = `https://waze.com/ul?ll=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}&navigate=yes`;
+                        window.open(url, "_blank");
+                      },
+                      badge: "Community",
+                      badgeColor: "bg-sky-50 text-sky-700 border-sky-200"
+                    },
+                    {
+                      id: "apple_maps",
+                      name: "Apple Maps",
+                      description: "Ideale per dispositivi Apple, pulito ed integrato.",
+                      icon: <Layers className="w-5 h-5 text-indigo-500" />,
+                      action: () => {
+                        const url = `https://maps.apple.com/?daddr=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}`;
+                        window.open(url, "_blank");
+                      },
+                      badge: "iOS Nativo",
+                      badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200"
+                    }
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        opt.action();
+                        setShowNavigatorSelector(false);
+                      }}
+                      className={`w-full p-3 rounded-xl border flex items-start gap-3 transition-all text-left cursor-pointer ${
+                        opt.id === "internal"
+                          ? "bg-emerald-50/20 hover:bg-emerald-50/45 border-emerald-200/80 hover:border-emerald-300"
+                          : "bg-slate-50/30 hover:bg-slate-50/70 border-slate-100 hover:border-slate-200"
+                      }`}
+                    >
+                      <div className={`p-2 rounded-lg ${opt.id === "internal" ? "bg-emerald-50" : "bg-slate-100/80"} shrink-0 mt-0.5`}>
+                        {opt.icon}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-slate-800">{opt.name}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${opt.badgeColor}`}>
+                            {opt.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 leading-normal font-medium">
+                          {opt.description}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+                <button
+                  onClick={() => setShowNavigatorSelector(false)}
+                  className="px-4 py-2 hover:bg-slate-100 text-slate-500 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Annulla
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* --- ADD MOVEMENT/STOP TO ACTIVE TRIP MODAL --- */}
       {showAddMovementModal && (
@@ -5966,60 +6914,162 @@ out center;`;
               </div>
 
               {/* Rating Fields */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 text-xs">
                     Rumorosità (1-5)
                   </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={newPlaceForm.noiseLevel || 3}
-                    onChange={(e) =>
-                      setNewPlaceForm((prev) => ({
-                        ...prev,
-                        noiseLevel: parseInt(e.target.value),
-                      }))
-                    }
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                  />
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setNewPlaceForm((prev) => ({
+                            ...prev,
+                            noiseLevel: val,
+                          }))
+                        }
+                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          (newPlaceForm.noiseLevel || 3) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 text-xs">
                     Manovrabilità (1-5)
                   </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={newPlaceForm.maneuverability || 3}
-                    onChange={(e) =>
-                      setNewPlaceForm((prev) => ({
-                        ...prev,
-                        maneuverability: parseInt(e.target.value),
-                      }))
-                    }
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                  />
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setNewPlaceForm((prev) => ({
+                            ...prev,
+                            maneuverability: val,
+                          }))
+                        }
+                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          (newPlaceForm.maneuverability || 3) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
-                    Segnale (1-5)
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 text-xs">
+                    Segnale Cell. (1-5)
                   </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={newPlaceForm.cellularSignal || 3}
-                    onChange={(e) =>
-                      setNewPlaceForm((prev) => ({
-                        ...prev,
-                        cellularSignal: parseInt(e.target.value),
-                      }))
-                    }
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#3E4A35]"
-                  />
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setNewPlaceForm((prev) => ({
+                            ...prev,
+                            cellularSignal: val,
+                          }))
+                        }
+                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          (newPlaceForm.cellularSignal || 3) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 text-xs">
+                    Terreno in bolla (1-5)
+                  </label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setNewPlaceForm((prev) => ({
+                            ...prev,
+                            groundLevelness: val,
+                          }))
+                        }
+                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          (newPlaceForm.groundLevelness || 3) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 text-xs">
+                    Ombreggiatura (1-5)
+                  </label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setNewPlaceForm((prev) => ({
+                            ...prev,
+                            shade: val,
+                          }))
+                        }
+                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          (newPlaceForm.shade || 3) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 text-xs">
+                    Pulizia / Decoro (1-5)
+                  </label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setNewPlaceForm((prev) => ({
+                            ...prev,
+                            cleanliness: val,
+                          }))
+                        }
+                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          (newPlaceForm.cleanliness || 3) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -6193,6 +7243,234 @@ out center;`;
                 Invia Proposta Sosta
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- PHOTO ALBUM MODAL DIALOG --- */}
+      {isPhotoAlbumOpen && selectedPlace && (
+        <div className="fixed inset-0 bg-slate-900/85 backdrop-blur-xs z-[10010] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-[#3E4A35]/10 rounded-xl text-[#3E4A35]">
+                  <Image className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <h3 className="font-extrabold text-slate-800 text-sm leading-tight">
+                    Album Fotografico della Sosta
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono leading-none mt-0.5">
+                    {selectedPlace.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPhotoAlbumOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content area */}
+            <div className="flex-1 p-6 overflow-y-auto min-h-0 bg-slate-50 flex flex-col">
+              
+              {/* Photo album actions (Upload button) */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200/50 shrink-0">
+                <div className="text-left">
+                  <h4 className="font-bold text-slate-700 text-xs">
+                    Immagini caricate dai camperisti ({allAlbumPhotos.length})
+                  </h4>
+                  <p className="text-[10.5px] text-slate-400 mt-0.5">
+                    Sfoglia le foto caricate per questa sosta o aggiungi una nuova foto scattata durante il tuo soggiorno.
+                  </p>
+                </div>
+                <div>
+                  <input
+                    type="file"
+                    ref={albumFileInputRef}
+                    onChange={handleAlbumPhotoUpload}
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => albumFileInputRef.current?.click()}
+                    className="px-4 py-2 bg-[#3E4A35] hover:bg-[#3E4A35]/90 text-white font-extrabold text-xs rounded-xl flex items-center gap-2 shadow-sm hover:shadow-md active:scale-98 transition-all cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4 text-white" />
+                    <span>Aggiungi Foto all'Album</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Photo grid */}
+              {allAlbumPhotos.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {allAlbumPhotos.map((url, index) => (
+                    <div
+                      key={index}
+                      onClick={() => setActiveLightboxPhoto(url)}
+                      className="group relative aspect-square bg-slate-200 rounded-xl overflow-hidden border border-slate-200 shadow-xs hover:shadow-md hover:-translate-y-0.5 cursor-pointer transition-all duration-200"
+                    >
+                      <img
+                        src={url}
+                        alt={`Sosta foto ${index + 1}`}
+                        className="w-full h-full object-cover transition-all duration-300 group-hover:scale-105"
+                        onError={() => setBrokenReviewImages(prev => ({ ...prev, [url]: true }))}
+                      />
+                      {/* Hover Overlay */}
+                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-white font-bold text-[10px] bg-black/55 px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-xs">
+                          <Search className="w-3 h-3" />
+                          Ingrandisci
+                        </span>
+                      </div>
+                      {/* Admin delete button */}
+                      {isUserAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (deleteConfirmPhotoUrl === url) {
+                              handleDeletePhoto(url);
+                              setDeleteConfirmPhotoUrl(null);
+                            } else {
+                              setDeleteConfirmPhotoUrl(url);
+                              setTimeout(() => setDeleteConfirmPhotoUrl(prev => prev === url ? null : prev), 4000);
+                            }
+                          }}
+                          className={`absolute top-2 right-2 z-10 p-1.5 text-white rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
+                            deleteConfirmPhotoUrl === url
+                              ? "bg-rose-700 hover:bg-rose-800 px-2 py-1"
+                              : "bg-rose-600 hover:bg-rose-700 hover:scale-105"
+                          }`}
+                          title={deleteConfirmPhotoUrl === url ? "Clicca di nuovo per eliminare definitivamente" : "Elimina foto"}
+                        >
+                          {deleteConfirmPhotoUrl === url ? (
+                            <>
+                              <Check className="w-3 h-3 text-white" />
+                              <span>Sicuro?</span>
+                            </>
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center py-12 text-center">
+                  <div className="p-4 bg-slate-100 rounded-full border border-slate-200 text-slate-450 mb-4 animate-pulse">
+                    <Camera className="w-8 h-8" />
+                  </div>
+                  <h5 className="font-extrabold text-slate-700 text-xs">Nessuna foto presente</h5>
+                  <p className="text-slate-400 text-[10.5px] max-w-xs mt-1 mb-4 leading-relaxed">
+                    Nessun utente ha ancora caricato una foto per questa sosta. Sii il primo a condividerne una!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => albumFileInputRef.current?.click()}
+                    className="px-4 py-2 bg-[#3E4A35]/10 hover:bg-[#3E4A35]/20 text-[#3E4A35] font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Carica la prima foto</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- LIGHTBOX PHOTO VIEW OVERLAY --- */}
+      {activeLightboxPhoto && (
+        <div className="fixed inset-0 bg-slate-950/95 z-[10020] flex flex-col items-center justify-center p-4 animate-fade-in font-sans">
+          {/* Top buttons row */}
+          <div className="absolute top-4 right-4 flex items-center gap-3 z-10">
+            {isUserAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (deleteConfirmPhotoUrl === activeLightboxPhoto) {
+                    handleDeletePhoto(activeLightboxPhoto);
+                    setDeleteConfirmPhotoUrl(null);
+                  } else {
+                    setDeleteConfirmPhotoUrl(activeLightboxPhoto);
+                    setTimeout(() => setDeleteConfirmPhotoUrl(prev => prev === activeLightboxPhoto ? null : prev), 4000);
+                  }
+                }}
+                className={`p-2 rounded-full text-white border border-rose-500/20 transition-all cursor-pointer shadow-lg flex items-center gap-1.5 px-3.5 text-xs font-bold ${
+                  deleteConfirmPhotoUrl === activeLightboxPhoto
+                    ? "bg-rose-700 hover:bg-rose-800"
+                    : "bg-rose-600 hover:bg-rose-700 hover:scale-105"
+                }`}
+                title={deleteConfirmPhotoUrl === activeLightboxPhoto ? "Clicca di nuovo per eliminare definitivamente" : "Elimina questa foto"}
+              >
+                {deleteConfirmPhotoUrl === activeLightboxPhoto ? (
+                  <>
+                    <Check className="w-5 h-5 text-white animate-pulse" />
+                    <span>Conferma?</span>
+                  </>
+                ) : (
+                  <Trash2 className="w-5 h-5" />
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveLightboxPhoto(null)}
+              className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Main Image container with Prev/Next buttons */}
+          <div className="relative max-w-5xl w-full max-h-[80vh] flex items-center justify-center px-12">
+            {allAlbumPhotos.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const idx = allAlbumPhotos.indexOf(activeLightboxPhoto);
+                  const prevIdx = idx === 0 ? allAlbumPhotos.length - 1 : idx - 1;
+                  setActiveLightboxPhoto(allAlbumPhotos[prevIdx]);
+                }}
+                className="absolute left-0 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs focus:outline-none"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            <img
+              src={activeLightboxPhoto}
+              alt="Immagine ingrandita"
+              className="max-w-full max-h-[80vh] rounded-xl object-contain border border-white/10 shadow-2xl"
+            />
+
+            {allAlbumPhotos.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const idx = allAlbumPhotos.indexOf(activeLightboxPhoto);
+                  const nextIdx = idx === allAlbumPhotos.length - 1 ? 0 : idx + 1;
+                  setActiveLightboxPhoto(allAlbumPhotos[nextIdx]);
+                }}
+                className="absolute right-0 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs focus:outline-none rotate-180"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {/* Lightbox Footer indicator */}
+          <div className="absolute bottom-6 bg-black/60 px-4 py-1.5 rounded-full border border-white/10 text-[11px] font-bold text-white tracking-widest font-mono shrink-0 backdrop-blur-xs">
+            {allAlbumPhotos.indexOf(activeLightboxPhoto) + 1} / {allAlbumPhotos.length}
           </div>
         </div>
       )}

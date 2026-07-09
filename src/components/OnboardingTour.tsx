@@ -46,7 +46,7 @@ export const OnboardingTour = ({ onComplete }: { onComplete: () => void }) => {
         exit={{ opacity: 0 }}
       >
         <motion.div
-          className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full"
+          className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full -translate-y-[25vh]"
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
         >

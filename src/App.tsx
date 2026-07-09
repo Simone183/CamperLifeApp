@@ -2029,10 +2029,16 @@ out center;`;
           const approvedPlaces = await res.json();
           console.log("[App] Fetched approved places count:", approvedPlaces.length);
           setPlaces((prevPlaces) => {
-            const basePlaces = prevPlaces.filter(
-              (p) => !p.id.startsWith("user_place_"),
-            );
-            const merged = [...basePlaces, ...approvedPlaces];
+            const userPlaces = prevPlaces.filter((p) => p.id.startsWith("user_place_"));
+            const mergedMap = new globalThis.Map<string, Place>();
+            
+            // Add user places first
+            userPlaces.forEach(p => mergedMap.set(p.id, p));
+            
+            // Add approved places (overwriting if there's a match, though ideally they shouldn't conflict)
+            approvedPlaces.forEach(p => mergedMap.set(p.id, p));
+            
+            const merged = Array.from(mergedMap.values());
             localStorage.setItem("camper_places", JSON.stringify(merged));
             return merged;
           });
@@ -6714,7 +6720,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
       {/* Global Toast System */}
       <AnimatePresence>
         {toastMessage && (
-          <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-[10001] p-4">
+          <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-[10001] p-4 translate-y-[25vh]">
             <motion.div
               drag="x"
               dragConstraints={{ left: 0, right: 0 }}

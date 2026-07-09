@@ -17,6 +17,9 @@ export interface Review {
   noiseLevel?: number; // 1-5
   maneuverability?: number; // 1-5
   cellularSignal?: number; // 1-5
+  groundLevelness?: number; // 1-5
+  shade?: number; // 1-5
+  cleanliness?: number; // 1-5
 }
 
 export interface DashboardSettings {
@@ -82,6 +85,9 @@ export interface Place {
   noiseLevel?: number;
   maneuverability?: number;
   cellularSignal?: number;
+  groundLevelness?: number;
+  shade?: number;
+  cleanliness?: number;
   facilities: string[];
   reviews: Review[];
   imageUrl: string;

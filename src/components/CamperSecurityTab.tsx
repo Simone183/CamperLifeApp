@@ -425,6 +425,7 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
         <div className="lg:col-span-6 space-y-5">
           
           {/* Section C: Web Audio Anti-Theft Alarm Siren testing */}
+          {false && (
           <div className="bg-white rounded-2xl border border-slate-200/60 p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-stone-100 pb-2.5">
               <h3 className="font-bold text-[#3E4A35] text-sm flex items-center gap-2">
@@ -467,6 +468,7 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
               </div>
             </div>
           </div>
+          )}
 
           {/* Section D: Emergency SOS Template copy-paste */}
           <div className="bg-white rounded-2xl border border-slate-200/60 p-5 space-y-4">
