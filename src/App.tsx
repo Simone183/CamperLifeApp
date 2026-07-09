@@ -3989,18 +3989,20 @@ out center;`;
                       <span className="truncate">Tutela & Licenza</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        fetchPendingPlaces();
-                        fetchFeedbacks();
-                        setShowAdminPanel(true);
-                      }}
-                      className="px-3 py-2.5 bg-slate-50 hover:bg-slate-200/60 text-slate-700 border border-slate-250/50 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1"
-                    >
-                      <Shield className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span className="truncate">Moderazione</span>
-                    </button>
+                    {(isAdminLoggedIn || currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fetchPendingPlaces();
+                          fetchFeedbacks();
+                          setShowAdminPanel(true);
+                        }}
+                        className="px-3 py-2.5 bg-slate-50 hover:bg-slate-200/60 text-slate-700 border border-slate-250/50 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <span className="truncate">Moderazione</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -428,7 +428,7 @@ interface MapTabProps {
   onToggleFavorite?: (placeId: string) => void;
   focusedPlaceId?: string | null;
   onClearFocusedPlaceId?: () => void;
-  currentUser?: { nickname: string; email: string; name: string } | null;
+  currentUser?: { nickname: string; email: string; name: string; isModerator?: boolean } | null;
   onRedirectToLogin?: () => void;
   isOnline?: boolean;
   onNavigateToFuelCard?: () => void;
@@ -3854,7 +3854,7 @@ out center;`;
               )}
 
               {/* Google Maps Key Configuration Button - visible only to admins */}
-              {isAdmin && (
+              {isAdmin && (currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && (
                 <button
                   type="button"
                   onClick={() => setShowKeyModal(true)}
@@ -6191,7 +6191,7 @@ out center;`;
       )}
 
       {/* Google Maps API Key Modal */}
-      {isAdmin && showKeyModal && (
+      {isAdmin && (currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && showKeyModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10005] flex items-center justify-center p-4 animate-fade-in font-sans">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full p-6 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center mb-4">
