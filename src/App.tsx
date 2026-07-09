@@ -52,6 +52,7 @@ import { playAlertSound, playTapSound } from "./utils/soundHelper";
 import WorkLogTab from "./components/WorkLogTab";
 import SharedTripsTab from "./components/SharedTripsTab";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
+import { OnboardingTour } from "./components/OnboardingTour";
 import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
 import EventsTab from "./components/EventsTab";
@@ -242,6 +243,10 @@ export default function App() {
 
   const [showTermsModal, setShowTermsModal] = React.useState<boolean>(() => {
     return localStorage.getItem("has_accepted_terms") !== "true";
+  });
+
+  const [showTour, setShowTour] = React.useState<boolean>(() => {
+    return localStorage.getItem("has_seen_onboarding_tour") !== "true";
   });
 
   const [showOfflinePromptModal, setShowOfflinePromptModal] =
@@ -6693,6 +6698,15 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
             )}
           </div>
         </div>
+      )}
+
+      {showTour && (
+        <OnboardingTour
+          onComplete={() => {
+            setShowTour(false);
+            localStorage.setItem("has_seen_onboarding_tour", "true");
+          }}
+        />
       )}
 
       {/* Global Toast System */}
