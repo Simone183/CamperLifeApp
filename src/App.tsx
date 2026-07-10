@@ -331,6 +331,8 @@ export default function App() {
     null,
   );
 
+  const [navigationMode, setNavigationMode] = React.useState<'google' | 'internal'>('google');
+
   // --- Offline Support & Simulation States ---
   const [isSimulatedOffline, setIsSimulatedOffline] = React.useState<boolean>(
     () => {
@@ -3009,8 +3011,9 @@ out center;`;
                   setTrips={setTrips}
                   vehicleDimensions={vehicleDimensions}
                   onSelectRoute={handleSelectRouteFromMap}
-                  onNavigateFullscreen={(place) => {
+                  onNavigateFullscreen={(place, mode) => {
                     setNavDestination(place);
+                    setNavigationMode(mode);
                     setIsFullscreenNav(true);
                     handleGPSEnabledChange(true);
                   }}
@@ -5172,6 +5175,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
       {isFullscreenNav && navDestination && (
         <FullscreenNavigator
           dest={navDestination}
+          navigationMode={navigationMode}
           vehicleDimensions={vehicleDimensions}
           onClose={() => setIsFullscreenNav(false)}
           userLocation={userLocation}

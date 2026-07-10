@@ -44,6 +44,8 @@ import {
   Sparkles,
   Image,
   Upload,
+  ExternalLink,
+  Map as MapIcon,
 } from "lucide-react";
 import L from "leaflet";
 import { CategoryIllustration } from "./CategoryIllustration";
@@ -372,29 +374,8 @@ function SmartRouteDisplay({
       )}
 
       {/* Start indicator Pin */}
-      <AdvancedMarker
-        position={{ lat: Number(startPt[0]), lng: Number(startPt[1]) }}
-        title="Partenza"
-      >
-        <div className="w-8 h-8 bg-indigo-600 ring-4 ring-indigo-100 border-2 border-white text-white rounded-full flex items-center justify-center font-black text-[9px] shadow-xl">
-          PART
-        </div>
-      </AdvancedMarker>
-
       {/* Hidden Gems Overlay */}
-      {places
-        .filter((p) => p.category === "hidden_gem")
-        .map((gem) => (
-          <AdvancedMarker
-            key={gem.id}
-            position={{ lat: Number(gem.lat), lng: Number(gem.lng) }}
-            title={gem.name}
-          >
-            <div className="w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center border border-white shadow-md animate-pulse">
-              💎
-            </div>
-          </AdvancedMarker>
-        ))}
+
 
       {/* Bridge warnings indicator if height violated */}
       {isBridgeObstacleExceeded && (
@@ -6279,15 +6260,6 @@ out center;`;
                 <div className="space-y-2.5">
                   {[
                     {
-                      id: "internal",
-                      name: "Navigatore Camper Interno",
-                      description: "Rotte calcolate in base ad altezza, peso e limiti camper (offline).",
-                      icon: <Compass className="w-5 h-5 text-emerald-600 animate-pulse" />,
-                      action: () => onNavigateFullscreen(navigatorTargetPlace),
-                      badge: "Consigliato & Sicuro",
-                      badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    },
-                    {
                       id: "google_maps",
                       name: "Google Maps",
                       description: "Navigazione stradale classica, traffico in tempo reale e vista satellite.",
@@ -6301,28 +6273,33 @@ out center;`;
                       badgeColor: "bg-blue-50 text-blue-700 border-blue-200"
                     },
                     {
-                      id: "waze",
-                      name: "Waze",
-                      description: "Social GPS con segnalazioni autovelox, polizia e pericoli live.",
-                      icon: <Route className="w-5 h-5 text-sky-500" />,
-                      action: () => {
-                        const url = `https://waze.com/ul?ll=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}&navigate=yes`;
-                        window.open(url, "_blank");
-                      },
-                      badge: "Community",
-                      badgeColor: "bg-sky-50 text-sky-700 border-sky-200"
+                      id: "google_maps_plus",
+                      name: "Google Maps Plus",
+                      description: "Rotte calcolate in base ad altezza, peso e limiti camper con Google Maps.",
+                      icon: <Compass className="w-5 h-5 text-blue-600 animate-pulse" />,
+                      action: () => onNavigateFullscreen(navigatorTargetPlace, 'google'),
+                      badge: "Offline & OSM",
+                      badgeColor: "bg-blue-50 text-blue-700 border-blue-200"
                     },
                     {
-                      id: "apple_maps",
-                      name: "Apple Maps",
-                      description: "Ideale per dispositivi Apple, pulito ed integrato.",
-                      icon: <Layers className="w-5 h-5 text-indigo-500" />,
+                      id: "internal",
+                      name: "Navigatore Camper Interno",
+                      description: "Rotte calcolate in base ad altezza, peso e limiti camper (utilizza OpenStreetMap)",
+                      icon: <Compass className="w-5 h-5 text-emerald-600 animate-pulse" />,
+                      action: () => onNavigateFullscreen(navigatorTargetPlace, 'internal'),
+                      badge: "Offline & OSM",
+                      badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    },
+                    {
+                      id: "other",
+                      name: "Altra App",
+                      description: "Scegli tra le applicazioni di navigazione installate sul tuo dispositivo.",
+                      icon: <ExternalLink className="w-5 h-5 text-slate-600" />,
                       action: () => {
-                        const url = `https://maps.apple.com/?daddr=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}`;
-                        window.open(url, "_blank");
+                        window.open(`geo:${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}`);
                       },
-                      badge: "iOS Nativo",
-                      badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200"
+                      badge: "App Esterne",
+                      badgeColor: "bg-slate-100 text-slate-700 border-slate-200"
                     }
                   ].map((opt) => (
                     <button

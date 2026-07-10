@@ -36,6 +36,7 @@ import {
 
 interface FullscreenNavigatorProps {
   dest: Place;
+  navigationMode: 'google' | 'internal';
   vehicleDimensions: VehicleDimensions;
   onClose: () => void;
   userLocation: { lat: number; lng: number } | null;
@@ -48,6 +49,7 @@ interface FullscreenNavigatorProps {
 
 export default function FullscreenNavigator({
   dest,
+  navigationMode,
   vehicleDimensions,
   onClose,
   userLocation,
@@ -1429,49 +1431,48 @@ out center;`;
         {/* Floating Controls Overlay */}
         <div className="absolute bottom-8 inset-x-0 mx-auto flex justify-center z-10 pointer-events-none">
           <div className="flex bg-[#0b0f19]/95 backdrop-blur-md rounded-3xl p-2 shadow-2xl border border-slate-800/90 pointer-events-auto gap-2">
-            <button
-              type="button"
-              disabled={loadingRoute}
-              onClick={() => {
-                    let url = `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}&travelmode=driving`;
-                    if (settings?.avoidTolls) {
-                      url += `&dirflg=t`;
-                    }
-                    if (settings?.avoidUnpaved) {
-                      // Non c'è un dirflg specifico per strade sterrate in GMaps, ma usiamo dirflg=h (avoid highways) se richiesto o simile, altrimenti nulla.
-                    }
-                    
-                    if (!isGPSEnabled && startLoc) {
-                        url += `&origin=${startLoc[0]},${startLoc[1]}`;
-                    }
-                    
-                    if (osrmRoute && osrmRoute.length > 20) {
-                        const waypoints = [];
-                        const numWaypoints = 3;
-                        const step = Math.floor(osrmRoute.length / (numWaypoints + 1));
-                        for (let i = 1; i <= numWaypoints; i++) {
-                            const pt = osrmRoute[i * step];
-                            if (pt) {
-                              waypoints.push(`${pt[0]},${pt[1]}`);
-                            }
-                        }
-                        if (waypoints.length > 0) {
-                          url += `&waypoints=${waypoints.join('%7C')}`;
-                        }
-                    }
-                    
-                    window.open(url, '_blank');
-              }}
-              className={`px-8 py-3.5 text-white font-extrabold text-sm rounded-2xl border flex items-center gap-2.5 transition-all shadow-md ${
-                loadingRoute 
-                 ? 'bg-orange-600 border-orange-500 opacity-90 cursor-not-allowed' 
-                 : 'bg-[#4285F4] hover:bg-[#357ae8] border-blue-500 cursor-pointer'
-              }`}
-              title={loadingRoute ? "Calcolo rotta in corso..." : routeError ? "La rotta contiene ostacoli evitabili calcolati. Procedere verso Google Maps." : "Apri Google Maps"}
-            >
-              <Navigation className={`w-5 h-5 text-white ${!loadingRoute ? 'animate-pulse' : ''}`} />
-              <span>{loadingRoute ? "Attendi..." : "Naviga"}</span>
-            </button>
+            {navigationMode === 'google' && (
+              <button
+                type="button"
+                disabled={loadingRoute}
+                onClick={() => {
+                      let url = `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}&travelmode=driving`;
+                      if (settings?.avoidTolls) {
+                        url += `&dirflg=t`;
+                      }
+                      
+                      if (!isGPSEnabled && startLoc) {
+                          url += `&origin=${startLoc[0]},${startLoc[1]}`;
+                      }
+                      
+                      if (osrmRoute && osrmRoute.length > 20) {
+                          const waypoints = [];
+                          const numWaypoints = 3;
+                          const step = Math.floor(osrmRoute.length / (numWaypoints + 1));
+                          for (let i = 1; i <= numWaypoints; i++) {
+                              const pt = osrmRoute[i * step];
+                              if (pt) {
+                                waypoints.push(`${pt[0]},${pt[1]}`);
+                              }
+                          }
+                          if (waypoints.length > 0) {
+                            url += `&waypoints=${waypoints.join('%7C')}`;
+                          }
+                      }
+                      
+                      window.open(url, '_blank');
+                }}
+                className={`px-8 py-3.5 text-white font-extrabold text-sm rounded-2xl border flex items-center gap-2.5 transition-all shadow-md ${
+                  loadingRoute 
+                  ? 'bg-orange-600 border-orange-500 opacity-90 cursor-not-allowed' 
+                  : 'bg-[#4285F4] hover:bg-[#357ae8] border-blue-500 cursor-pointer'
+                }`}
+                title={loadingRoute ? "Calcolo rotta in corso..." : routeError ? "La rotta contiene ostacoli evitabili calcolati. Procedere verso Google Maps." : "Apri Google Maps"}
+              >
+                <Navigation className={`w-5 h-5 text-white ${!loadingRoute ? 'animate-pulse' : ''}`} />
+                <span>{loadingRoute ? "Attendi..." : "Naviga"}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
