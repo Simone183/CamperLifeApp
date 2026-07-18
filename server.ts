@@ -694,6 +694,7 @@ out center;`;
               priceInfo,
               rating: Number((4.1 + Math.random() * 0.8).toFixed(1)),
               facilities,
+              source: "OpenStreetMap",
               nearestCity: findNearestCity(Number(elLat.toFixed(5)), Number(elLng.toFixed(5)))
             };
           }).filter(Boolean);
@@ -1048,16 +1049,17 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
       try {
         // Step 1: Use Google Search Grounding to find actual real, active places
         const searchPrompt = `Cerca sul web (usando Google Search Grounding) reali, esistenti, attivi ed ufficiali punti di sosta camper, aree di sosta attrezzate, campeggi o camper service (carico/scarico acque) situati nel territorio di "${province}" (Italia) o nelle immediate vicinanze.
-Focalizza la ricerca su portali e fonti dedicati e altamente attendibili come:
-- Camperonline (es. "site:camperonline.it ${province}")
-- Park4night (es. "site:park4night.com ${province}")
-- Campercontact (es. "site:campercontact.com ${province}")
-- area-sosta-camper (es. "site:area-sosta-camper.it ${province}")
-- Caramaps / CaraMaps (es. "site:caramaps.com ${province}")
-- Campermaps (es. "site:campermaps.com ${province}")
-- Camperlife (es. "site:camperlife.it ${province}")
-- Arianna (es. "site:associazionecamperistiarianna.it ${province}" o aree di sosta Arianna)
-- Camperpass (es. "site:camperpass.it ${province}")
+Esegui una ricerca approfondita e ad ampio spettro che interroghi e combini i risultati provenienti sia da Camperpass.it sia da tutti gli altri principali portali specializzati italiani ed europei. Non limitarti ad un solo portale: vogliamo ottenere la massima copertura raccogliendo tutti i punti sosta reali documentati in uno o più di questi siti:
+- Camperpass.it
+- Camperonline.it
+- Park4night.com
+- Campercontact.com
+- area-sosta-camper.it
+- Caramaps / CaraMaps.com
+- Campermaps.com
+- Camperlife.it
+- Associazionecamperistiarianna.it (aree sosta Arianna)
+- Siti ufficiali di enti turistici e comuni locali della zona
 
 Elenchi SOLO luoghi che esistono realmente e sono ampiamente documentati su questi siti. 
 ATTENZIONE CRITICA: Non inventare o allucinare NOMI o INDIRIZZI che non esistono sul web. Se per "${province}" esistono solo pochissimi luoghi reali o nessuno, restituisci solo quelli realmente esistenti o non restituirne affatto. Non forzare l'inserimento di luoghi fittizi.`;
@@ -1085,6 +1087,7 @@ REGOLE DI RIGORE ASSOLUTO:
   2. Identifica la categoria: "sosta" (area sosta attrezzata), "campeggio" (camping), "parcheggio" (parcheggio generico dove è tollerata la sosta camper), "scarico" (camper service, solo carico/scarico).
   3. Trova le coordinate GPS (latitudine e longitudine) REALI e ACCURATE del luogo. Se non esplicitate nel testo, calcolale in modo accurato e veritiero per la posizione reale dell'indirizzo nel comune di riferimento.
   4. Compila fedelmente i prezzi (priceEuro e priceInfo) e i servizi (facilities) sulla base delle informazioni reali.
+  5. Identifica e compila il campo "source" (fonte) per ciascun luogo reale sulla base del portale o sito da cui sono stati estratti i dati (es. "Camperpass.it", "Camperonline.it", "Park4night", "Campercontact", ecc.).
 La tua risposta deve essere ESATTAMENTE e SOLO l'oggetto JSON richiesto. Nessun commento aggiuntivo.`;
 
         const parsePrompt = `Dati i seguenti risultati reali di ricerca web:
@@ -1104,7 +1107,8 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
       "priceEuro": 12,
       "priceInfo": "12€/24h",
       "rating": 4.5,
-      "facilities": ["Acqua", "Scarico", "Elettricità"]
+      "facilities": ["Acqua", "Scarico", "Elettricità"],
+      "source": "Camperpass.it"
     }
   ]
 }`;
@@ -1131,9 +1135,10 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
                       priceEuro: { type: Type.NUMBER },
                       priceInfo: { type: Type.STRING },
                       rating: { type: Type.NUMBER },
-                      facilities: { type: Type.ARRAY, items: { type: Type.STRING } }
+                      facilities: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      source: { type: Type.STRING, description: "La fonte web da cui è stato estratto il luogo (es. Camperpass.it, Camperonline.it, Park4night, OpenStreetMap)" }
                     },
-                    required: ["name", "category", "lat", "lng", "address", "priceEuro", "priceInfo", "rating", "facilities"]
+                    required: ["name", "category", "lat", "lng", "address", "priceEuro", "priceInfo", "rating", "facilities", "source"]
                   }
                 }
               },
@@ -1182,6 +1187,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
             console.log(`[Fallback Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
             const enriched = VERIFIED_REAL_PLACES[norm].map((p: any) => ({
               ...p,
+              source: "Database Certificato CamperLife",
               nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
             }));
             saveCachedProvincePlaces(province, enriched);
@@ -1190,8 +1196,12 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
           const coords = await getProvinceCoordinates(province);
           const realPlaces = await fetchActualOSMPlaces(province, coords);
           if (realPlaces && realPlaces.length > 0) {
-            saveCachedProvincePlaces(province, realPlaces);
-            return res.json({ places: realPlaces, isFallback: true, isOSM: true });
+            const mappedPlaces = realPlaces.map((p: any) => ({
+              ...p,
+              source: p.source || "OpenStreetMap"
+            }));
+            saveCachedProvincePlaces(province, mappedPlaces);
+            return res.json({ places: mappedPlaces, isFallback: true, isOSM: true });
           } else {
             console.log(`[OpenStreetMap Fallback] Nessun risultato sosta reale da OSM per ${province}.`);
             return res.status(404).json({ 
@@ -1213,6 +1223,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
           console.log(`[Fallback Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
           const enriched = VERIFIED_REAL_PLACES[norm].map((p: any) => ({
             ...p,
+            source: "Database Certificato CamperLife",
             nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
           }));
           saveCachedProvincePlaces(province, enriched);
@@ -1221,8 +1232,12 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
         const coords = await getProvinceCoordinates(province);
         const realPlaces = await fetchActualOSMPlaces(province, coords);
         if (realPlaces && realPlaces.length > 0) {
-          saveCachedProvincePlaces(province, realPlaces);
-          return res.json({ places: realPlaces, isFallback: true, isOSM: true });
+          const mappedPlaces = realPlaces.map((p: any) => ({
+            ...p,
+            source: p.source || "OpenStreetMap"
+          }));
+          saveCachedProvincePlaces(province, mappedPlaces);
+          return res.json({ places: mappedPlaces, isFallback: true, isOSM: true });
         } else {
           return res.status(404).json({ 
             error: `Nessuna area di sosta camper reale trovata per la provincia o località "${province}" su OpenStreetMap o tramite ricerca web.` 
@@ -2357,8 +2372,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app.get("/api/map-tile/:z/:x/:y", async (req, res) => {
     try {
       const { z, x, y } = req.params;
+      const lyrs = (req.query.lyrs as string) || "m";
       // Use Google Maps directly as CartoDB might block our datacenter IPs
-      const targetUrl = `https://mt1.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}`;
+      const targetUrl = `https://mt1.google.com/vt/lyrs=${lyrs}&x=${x}&y=${y}&z=${z}`;
       
       const response = await fetch(targetUrl, {
         headers: {
@@ -2385,52 +2401,201 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  const osrmCache = new Map<string, any>();
+  const brouterCache = new Map<string, any>();
+
+  async function snapToRoad(coord: string): Promise<string> {
+    const servers = [
+      `https://routing.openstreetmap.de/routed-car/nearest/v1/driving/${coord}?number=1`,
+      `https://router.project-osrm.org/nearest/v1/driving/${coord}?number=1`
+    ];
+    
+    try {
+      const fetchPromises = servers.map(async (url) => {
+        const res = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          },
+          signal: AbortSignal.timeout(3000) // 3.0s timeout for high performance but reliable snapping
+        });
+        if (!res.ok) throw new Error("Fetch failed");
+        const data = await res.json();
+        if (data.code === 'Ok' && data.waypoints && data.waypoints[0]) {
+          const loc = data.waypoints[0].location; // [lon, lat]
+          return `${loc[0]},${loc[1]}`;
+        }
+        throw new Error("Invalid format");
+      });
+      return await Promise.any(fetchPromises);
+    } catch (e) {
+      console.log(`[OSRM Proxy] All parallel snapping servers returned busy/timeout for coord ${coord}. Using original.`);
+      return coord; // Fallback to original
+    }
+  }
+
+async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false', avoidTolls: string = 'false', nogos?: string) {
+  const params = new URLSearchParams();
+  params.append("lonlats", `${s}|${e}`);
+  params.append("profile", "car-eco");
+  params.append("format", "geojson");
+  if (avoidHighways === 'true') {
+    params.append("avoid_motorways", "1");
+  }
+  if (avoidTolls === 'true') {
+    params.append("avoid_toll", "1");
+  }
+  if (nogos) {
+    params.append("nogos", nogos);
+  }
+
+  const url = `https://brouter.de/brouter?${params.toString()}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    signal: AbortSignal.timeout(30000)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[BRouter Proxy] BRouter error ${response.status}: ${errorText}`);
+    throw new Error(`Failed to fetch from Brouter: status ${response.status}`);
+  }
+  const rawText = await response.text();
+  try {
+    return JSON.parse(rawText);
+  } catch (e) {
+    console.error("[BRouter Proxy] Failed to parse BRouter JSON. Raw:", rawText.substring(0, 500));
+    throw new Error("Failed to parse BRouter response as JSON");
+  }
+}
+
   app.get("/api/brouter", async (req, res) => {
     try {
-      const { start, end, nogos } = req.query;
+      const { start, end, avoidHighways, avoidTolls, nogos } = req.query;
       if (!start || !end) {
         return res.status(400).json({ error: "Missing parameters start and/or end" });
       }
-      
-      let targetUrl = `https://brouter.de/brouter?lonlats=${start}|${end}&profile=car-eco&format=geojson`;
-      if (nogos && typeof nogos === 'string' && nogos.length > 0) {
-        targetUrl += `&nogos=${encodeURIComponent(nogos)}`;
+
+      const cacheKey = `${start}-${end}-${avoidHighways}-${avoidTolls}-${nogos || ""}`;
+      if (brouterCache.has(cacheKey)) {
+        console.log(`[BRouter Proxy] Returning cached route for ${cacheKey}`);
+        return res.json(brouterCache.get(cacheKey));
       }
-      
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
-        },
-        signal: AbortSignal.timeout(10000)
-      });
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to fetch from Brouter" });
-      }
-      const data = await response.json();
+
+      const [s, e] = [start as string, end as string];
+      const data = await fetchBRouter(s, e, avoidHighways as string, avoidTolls as string, nogos as string);
+
+      brouterCache.set(cacheKey, data);
       res.json(data);
     } catch (err: any) {
       console.error("Brouter proxy error:", err);
-      res.status(500).json({ error: err.message || "Unknown error" });
+      res.status(502).json({ error: err.message || "Failed to fetch from Brouter" });
     }
   });
 
   app.get("/api/osrm", async (req, res) => {
     try {
-      const { start, end } = req.query;
+      const { start, end, avoidHighways, avoidTolls } = req.query;
       if (!start || !end) {
         return res.status(400).json({ error: "Missing parameters start and/or end" });
       }
-      const targetUrl = `https://router.project-osrm.org/route/v1/driving/${start};${end}?overview=full&geometries=geojson&steps=true`;
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
-        },
-        signal: AbortSignal.timeout(10000)
-      });
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to fetch from OSRM" });
+
+      const cacheKey = `${start}-${end}-${avoidHighways}-${avoidTolls}`;
+      if (osrmCache.has(cacheKey)) {
+        console.log(`[OSRM Proxy] Returning cached route for ${cacheKey}`);
+        return res.json(osrmCache.get(cacheKey));
       }
-      const data = await response.json();
+
+      const convertBRouterToOSRM = (brouterData: any) => {
+        if (!brouterData || !brouterData.features || !brouterData.features[0]) {
+          throw new Error("Invalid BRouter response format for conversion");
+        }
+        const feature = brouterData.features[0];
+        const coordinates = feature.geometry?.coordinates || [];
+        const trackLength = parseFloat(feature.properties?.["track-length"] || "0");
+
+        return {
+          code: "Ok",
+          routes: [
+            {
+              geometry: {
+                coordinates: coordinates,
+                type: "LineString"
+              },
+              legs: [
+                {
+                  steps: [],
+                  distance: trackLength,
+                  duration: trackLength / 13 // approx 13 m/s (~50 km/h)
+                }
+              ],
+              distance: trackLength,
+              duration: trackLength / 13
+            }
+          ]
+        };
+      };
+
+      const getRoute = async (s: string, e: string) => {
+        const servers = [
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100`,
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100`
+        ];
+        
+        for (const url of servers) {
+          try {
+            const resObj = await fetch(url, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              },
+              signal: AbortSignal.timeout(5000) // Generous 5s timeout
+            });
+            if (resObj.ok) {
+              const resData = await resObj.json();
+              if (resData.code === "Ok") {
+                return resData;
+              }
+            }
+          } catch (err) {
+            console.log(`[OSRM Proxy] Server response was busy for ${url}, trying next...`);
+          }
+        }
+        throw new Error("All OSRM routing servers were busy");
+      };
+
+      // Pre-snap coordinates in parallel always!
+      console.log(`[OSRM Proxy] Snapping coordinates in parallel: ${start} and ${end}`);
+      const [snappedStart, snappedEnd] = await Promise.all([
+        snapToRoad(start as string),
+        snapToRoad(end as string)
+      ]);
+      console.log(`[OSRM Proxy] Snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
+
+      let data: any;
+      try {
+        console.log(`[OSRM Proxy] Routing with snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
+        data = await getRoute(snappedStart, snappedEnd);
+      } catch (err) {
+        console.log("[OSRM Proxy] Routing with snapped coordinates was unsuccessful. Retrying with original coordinates...");
+        try {
+          data = await getRoute(start as string, end as string);
+        } catch (retryErr) {
+          console.log("[OSRM Proxy] All OSRM routing servers were busy. Fetching BRouter backup...");
+          try {
+            const brouterData = await fetchBRouter(start as string, end as string, avoidHighways as string, avoidTolls as string);
+            data = convertBRouterToOSRM(brouterData);
+            console.log("[OSRM Proxy] Successfully fell back to backend BRouter and converted to OSRM format.");
+          } catch (brouterErr) {
+            console.log("[OSRM Proxy] Both OSRM and backend BRouter fallback were unsuccessful");
+            return res.status(502).json({ error: "All OSRM routing servers and BRouter fallback were unsuccessful" });
+          }
+        }
+      }
+
+      osrmCache.set(cacheKey, data);
       res.json(data);
     } catch (err: any) {
       console.error("OSRM proxy error:", err);

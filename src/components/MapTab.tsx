@@ -150,12 +150,14 @@ function MapEventsHelper({
   onMapContextMenu,
   onIdle,
   mapMovedByUserRef,
+  onMapInstance,
 }: {
   mapRef: React.MutableRefObject<any>;
   onMapClick: (lat: number, lng: number) => void;
   onMapContextMenu: (lat: number, lng: number) => void;
   onIdle: (lat: number, lng: number) => void;
   mapMovedByUserRef: React.MutableRefObject<boolean>;
+  onMapInstance?: (map: any) => void;
 }) {
   const map = useMap();
 
@@ -227,6 +229,7 @@ function MapEventsHelper({
     };
 
     mapRef.current = map;
+    onMapInstance?.(map);
 
     // Bind event listeners using Google Maps Client API
     const clickListener = map.addListener(
@@ -254,7 +257,11 @@ function MapEventsHelper({
     });
 
     const zoomchangedListener = map.addListener("zoom_changed", () => {
-      mapMovedByUserRef.current = true;
+      if ((map as any)._isProgrammatic) {
+        (map as any)._isProgrammatic = false;
+      } else {
+        mapMovedByUserRef.current = true;
+      }
     });
 
     const idleListener = map.addListener("idle", () => {
@@ -271,8 +278,9 @@ function MapEventsHelper({
       zoomchangedListener.remove();
       idleListener.remove();
       mapRef.current = null;
+      onMapInstance?.(null);
     };
-  }, [map, onMapClick, onMapContextMenu, onIdle, mapRef, mapMovedByUserRef]);
+  }, [map, onMapClick, onMapContextMenu, onIdle, mapRef, mapMovedByUserRef, onMapInstance]);
 
   return null;
 }
@@ -403,7 +411,7 @@ interface MapTabProps {
   onPlacesChange: (places: Place[]) => void;
   vehicleDimensions: VehicleDimensions;
   onSelectRoute: (startLat: number, startLng: number, destPlace: Place) => void;
-  onNavigateFullscreen: (place: Place) => void;
+  onNavigateFullscreen: (place: Place, mode: 'google' | 'internal') => void;
   userLocation: { lat: number; lng: number } | null;
   userAccuracy: number | null;
   isGPSEnabled: boolean;
@@ -539,6 +547,7 @@ export default function MapTab({
     userLocationRef.current = userLocation;
   }, [userLocation]);
   const mapMovedByUserRef = React.useRef<boolean>(false);
+  const [googleMapInstance, setGoogleMapInstance] = React.useState<any>(null);
 
   const activeTrip = trips?.find((t) => t.status === "Attivo");
 
@@ -1526,6 +1535,54 @@ export default function MapTab({
   const [clickedAddress, setClickedAddress] = React.useState<string>("");
   const [isResolvingClick, setIsResolvingClick] =
     React.useState<boolean>(false);
+
+  const handleMapClick = (lat: number, lng: number) => {
+    setClickedCoords({ lat, lng });
+    setShowClickedPopup(true);
+    mapMovedByUserRef.current = false;
+    setClickedPlaceName("Puntina Sulla Mappa");
+    setClickedAddress(
+      `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
+    );
+    setIsResolvingClick(true);
+    fetch(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`)
+      .then((res) => {
+        if (!res.ok) {
+          return {
+            display_name: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
+            address: { amenity: "Punto Sulla Mappa" }
+          };
+        }
+        return res.json().catch(() => ({
+          display_name: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
+          address: { amenity: "Punto Sulla Mappa" }
+        }));
+      })
+      .catch(() => ({
+        display_name: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
+        address: { amenity: "Punto Sulla Mappa" }
+      }))
+      .then((data) => {
+        if (data && data.display_name) {
+          let resolvedName =
+            data.display_name.split(",")[0] ||
+            "Punto Sulla Mappa";
+          if (data.address) {
+            resolvedName =
+              data.address.amenity ||
+              data.address.tourism ||
+              data.address.historic ||
+              data.address.leisure ||
+              data.address.building ||
+              resolvedName;
+          }
+          setClickedPlaceName(resolvedName);
+          setClickedAddress(data.display_name);
+        }
+      })
+      .finally(() => setIsResolvingClick(false));
+  };
+
   const [customCreationCoords, setCustomCreationCoords] = React.useState<{
     lat: number;
     lng: number;
@@ -1853,8 +1910,10 @@ export default function MapTab({
   };
 
   const handleCenterOnUser = () => {
-    if (mapRef.current && userLocation) {
-      mapRef.current.setView([userLocation.lat, userLocation.lng], 14);
+    const activeMap = googleMapInstance || mapRef.current;
+    if (activeMap && userLocation) {
+      (activeMap as any)._isProgrammatic = true;
+      activeMap.setView([userLocation.lat, userLocation.lng], 14);
       mapMovedByUserRef.current = false;
     }
   };
@@ -1874,20 +1933,36 @@ export default function MapTab({
 
   // Centra automaticamente sul camper appena il GPS aggancia la posizione
   const hasAutoCenteredOnGPSRef = React.useRef(false);
+  const centeredOnceRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!userLocation) {
-      hasAutoCenteredOnGPSRef.current = false;
-    } else if (
-      userLocation &&
-      !hasAutoCenteredOnGPSRef.current &&
-      mapRef.current
-    ) {
-      mapRef.current.setView([userLocation.lat, userLocation.lng], 14);
-      hasAutoCenteredOnGPSRef.current = true;
-      // GPS auto-centering message silenced on user request
+    if (googleMapInstance) {
+      mapRef.current = googleMapInstance;
     }
-  }, [userLocation]);
+  }, [googleMapInstance]);
+
+  React.useEffect(() => {
+    if (!isGPSEnabled) {
+      hasAutoCenteredOnGPSRef.current = false;
+      centeredOnceRef.current = false;
+    }
+  }, [isGPSEnabled]);
+
+  React.useEffect(() => {
+    if (isGPSEnabled && userLocation) {
+      const activeMap = googleMapInstance || mapRef.current;
+      if (activeMap && !mapMovedByUserRef.current && !selectedPlace) {
+        try {
+          (activeMap as any)._isProgrammatic = true;
+          const currentZoom = typeof activeMap.getZoom === "function" ? activeMap.getZoom() : null;
+          const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;
+          activeMap.setView([userLocation.lat, userLocation.lng], targetZoom);
+        } catch (e) {
+          console.warn("[GPS Centering] Failed to set center:", e);
+        }
+      }
+    }
+  }, [userLocation, googleMapInstance, isGPSEnabled, selectedPlace]);
 
   const loadOsmObstaclesOnMap = async (lat: number, lng: number) => {
     if (!showOsmObstacles) return;
@@ -3717,7 +3792,7 @@ out center;`;
         {/* Leaflet Frame & forms layer */}
         <div className="relative bg-slate-100 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-[300px] w-full shrink">
           {/* Map canvas */}
-          {!hasValidKey || !isOnline ? (
+          {!hasValidKey || !isOnline || settings?.mapEngine === "leaflet" ? (
             <LeafletOfflineMap
               places={getFilteredPlaces()}
               userLocation={userLocation}
@@ -3726,8 +3801,16 @@ out center;`;
               setSelectedPlace={setSelectedPlace}
               setIsMobileDetailsOpen={setIsMobileDetailsOpen}
               isOnline={isOnline}
+              clickedCoords={clickedCoords}
+              onMapClick={handleMapClick}
+              activeDistanceFilter={activeDistanceFilter}
+              filterCenter={filterCenter}
+              onMapInstance={setGoogleMapInstance}
+              mapMovedByUserRef={mapMovedByUserRef}
               indicatorTitle={
-                !hasValidKey
+                settings?.mapEngine === "leaflet" && hasValidKey && isOnline
+                  ? "Mappa Leaflet Ultra-Rapida ⚡"
+                  : !hasValidKey
                   ? isOnline
                     ? "Mappa Leaflet (Senza API Key) 🗺️"
                     : "Mappa Offline Leaflet 🗺️"
@@ -3755,52 +3838,8 @@ out center;`;
                 >
                   <MapEventsHelper
                     mapRef={mapRef}
-                    onMapClick={(lat, lng) => {
-                      setClickedCoords({ lat, lng });
-                      setShowClickedPopup(true);
-                      mapMovedByUserRef.current = false;
-                      setClickedPlaceName("Puntina Sulla Mappa");
-                      setClickedAddress(
-                        `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
-                      );
-                      setIsResolvingClick(true);
-                      fetch(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`)
-                        .then((res) => {
-                          if (!res.ok) {
-                            return {
-                              display_name: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
-                              address: { amenity: "Punto Sulla Mappa" }
-                            };
-                          }
-                          return res.json().catch(() => ({
-                            display_name: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
-                            address: { amenity: "Punto Sulla Mappa" }
-                          }));
-                        })
-                        .catch(() => ({
-                          display_name: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
-                          address: { amenity: "Punto Sulla Mappa" }
-                        }))
-                        .then((data) => {
-                          if (data && data.display_name) {
-                            let resolvedName =
-                              data.display_name.split(",")[0] ||
-                              "Punto Sulla Mappa";
-                            if (data.address) {
-                              resolvedName =
-                                data.address.amenity ||
-                                data.address.tourism ||
-                                data.address.historic ||
-                                data.address.leisure ||
-                                data.address.building ||
-                                resolvedName;
-                            }
-                            setClickedPlaceName(resolvedName);
-                            setClickedAddress(data.display_name);
-                          }
-                        })
-                        .finally(() => setIsResolvingClick(false));
-                    }}
+                    onMapInstance={setGoogleMapInstance}
+                    onMapClick={handleMapClick}
                     onMapContextMenu={(lat, lng) => {
                       const customPlace: Place = {
                         id: `custom-point-${Date.now()}`,
@@ -4234,6 +4273,41 @@ out center;`;
                 />
                 <span>{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
               </button>
+
+              {!userLocation && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const map = mapRef.current;
+                    if (map) {
+                      const center = map.getCenter();
+                      let lat = 42.5;
+                      let lng = 12.5;
+                      if (center) {
+                        if (typeof center.lat === "function") {
+                          lat = center.lat();
+                        } else {
+                          lat = Number(center.lat);
+                        }
+                        if (typeof center.lng === "function") {
+                          lng = center.lng();
+                        } else {
+                          lng = Number(center.lng);
+                        }
+                      }
+                      window.dispatchEvent(
+                        new CustomEvent("simulate-camper-location", {
+                          detail: { lat, lng },
+                        }),
+                      );
+                    }
+                  }}
+                  className="h-8 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow font-extrabold text-[9px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border border-amber-500 shrink-0"
+                  title="Posiziona il camper manualmente al centro attuale della mappa"
+                >
+                  📍 Posiziona Camper Qui
+                </button>
+              )}
 
               {isGPSEnabled && userLocation && (
                 <button
@@ -4731,65 +4805,67 @@ out center;`;
           <div className="hidden lg:block bg-white rounded-2xl border border-slate-100 p-5 shadow-sm text-xs space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex gap-4">
-                <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 group/img shadow-xs">
-                  {allAlbumPhotos.length > 0 ? (
-                    <img
-                      src={allAlbumPhotos[0]}
-                      alt={selectedPlace.name}
-                      className="w-full h-full object-cover animate-fade-in"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : isImageFallback(
-                    selectedPlace.category,
-                    selectedPlace.imageUrl,
-                  ) ? (
-                    <CategoryIllustration
-                      category={selectedPlace.category}
-                      className="w-full h-full object-cover animate-fade-in"
-                    />
-                  ) : (
-                    <img
-                      src={resolveImage(
-                        selectedPlace.category,
-                        selectedPlace.imageUrl,
-                      )}
-                      alt={selectedPlace.name}
-                      className="w-full h-full object-cover animate-fade-in"
-                      referrerPolicy={
-                        resolveImage(
+                {selectedPlace.id !== "current_location" && (
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 group/img shadow-xs">
+                    {allAlbumPhotos.length > 0 ? (
+                      <img
+                        src={allAlbumPhotos[0]}
+                        alt={selectedPlace.name}
+                        className="w-full h-full object-cover animate-fade-in"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : isImageFallback(
+                      selectedPlace.category,
+                      selectedPlace.imageUrl,
+                    ) ? (
+                      <CategoryIllustration
+                        category={selectedPlace.category}
+                        className="w-full h-full object-cover animate-fade-in"
+                      />
+                    ) : (
+                      <img
+                        src={resolveImage(
                           selectedPlace.category,
                           selectedPlace.imageUrl,
-                        ).startsWith("http")
-                          ? "no-referrer"
-                          : undefined
-                      }
-                      onError={(e) => {
-                        const currentSrc = e.currentTarget.src;
-                        try {
-                          const url = new URL(currentSrc);
-                          const path = url.pathname;
-                          const key = currentSrc.includes("unsplash.com")
-                            ? currentSrc
-                            : path;
-                          if (!imageErrorUrls[key]) {
-                            setImageErrorUrls((prev) => ({
-                              ...prev,
-                              [key]: true,
-                            }));
-                          }
-                        } catch (err) {
-                          if (!imageErrorUrls[currentSrc]) {
-                            setImageErrorUrls((prev) => ({
-                              ...prev,
-                              [currentSrc]: true,
-                            }));
-                          }
+                        )}
+                        alt={selectedPlace.name}
+                        className="w-full h-full object-cover animate-fade-in"
+                        referrerPolicy={
+                          resolveImage(
+                            selectedPlace.category,
+                            selectedPlace.imageUrl,
+                          ).startsWith("http")
+                            ? "no-referrer"
+                            : undefined
                         }
-                      }}
-                    />
-                  )}
-                  {/* Upload functionality disabled */}
-                </div>
+                        onError={(e) => {
+                          const currentSrc = e.currentTarget.src;
+                          try {
+                            const url = new URL(currentSrc);
+                            const path = url.pathname;
+                            const key = currentSrc.includes("unsplash.com")
+                              ? currentSrc
+                              : path;
+                            if (!imageErrorUrls[key]) {
+                              setImageErrorUrls((prev) => ({
+                                ...prev,
+                                [key]: true,
+                              }));
+                            }
+                          } catch (err) {
+                            if (!imageErrorUrls[currentSrc]) {
+                              setImageErrorUrls((prev) => ({
+                                ...prev,
+                                [currentSrc]: true,
+                              }));
+                            }
+                          }
+                        }}
+                      />
+                    )}
+                    {/* Upload functionality disabled */}
+                  </div>
+                )}
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
@@ -4805,9 +4881,11 @@ out center;`;
                     >
                       {selectedPlace.category.replace("_", " ")}
                     </span>
-                    <span className="text-slate-600 font-bold font-mono text-[10px]">
-                      {selectedPlace.priceInfo}
-                    </span>
+                    {selectedPlace.id !== "current_location" && (
+                      <span className="text-slate-600 font-bold font-mono text-[10px]">
+                        {selectedPlace.priceInfo}
+                      </span>
+                    )}
                     {selectedPlace.source && (
                       <span
                         className="text-[8px] text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded font-black tracking-wider flex items-center gap-1"
@@ -4836,6 +4914,47 @@ out center;`;
                       <Phone className="w-3.5 h-3.5" />
                       {selectedPlace.phone}
                     </p>
+                  )}
+
+                  {selectedPlace.id === "current_location" && (
+                    <div className="mt-4 p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2.5">
+                        <Shield className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <div>
+                          <p className="font-extrabold text-[#2D2926] dark:text-white text-xs">Visibilità Camper su Mappa</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Mostra la tua posizione agli altri utenti</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const currentShare = !!settings?.shareLocation;
+                          try {
+                            const saved = localStorage.getItem("camper_app_settings");
+                            const currentSettings = saved ? JSON.parse(saved) : {};
+                            const updatedSettings = {
+                              ...currentSettings,
+                              shareLocation: !currentShare
+                            };
+                            localStorage.setItem("camper_app_settings", JSON.stringify(updatedSettings));
+                            window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: updatedSettings }));
+                            window.dispatchEvent(
+                              new CustomEvent("show-toast", {
+                                detail: {
+                                  message: !currentShare 
+                                    ? "🟢 Visibilità Camper su Mappa attivata!" 
+                                    : "🔴 Visibilità Camper su Mappa disattivata!"
+                                }
+                              })
+                            );
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className={`w-11 h-6 shrink-0 rounded-full relative transition-colors cursor-pointer ${settings?.shareLocation ? 'bg-[#3E4A35]' : 'bg-slate-200 dark:bg-slate-600'}`}
+                      >
+                        <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings?.shareLocation ? 'translate-x-5' : ''}`} />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -4881,6 +5000,20 @@ out center;`;
                     >
                       <Compass className="w-5 h-5 text-white animate-pulse" />
                       <span>Naviga</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent("simulate-camper-location", {
+                            detail: { lat: selectedPlace.lat, lng: selectedPlace.lng },
+                          }),
+                        );
+                      }}
+                      className="px-5 py-3.5 border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-[10px] tracking-wider whitespace-nowrap"
+                      title="Imposta questa sosta come posizione attuale del camper"
+                    >
+                      <span>🚐 Imposta Camper</span>
                     </button>
 
                     <button
@@ -4981,77 +5114,82 @@ out center;`;
             />
 
             {/* Rating Details */}
-            <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Rumorosità
+            {selectedPlace.id !== "current_location" && (
+              <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="text-center">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Rumorosità
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.noiseLevel || 3}/5
+                  </div>
                 </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.noiseLevel || 3}/5
+                <div className="text-center">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Manovre
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.maneuverability || 3}/5
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Segnale
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.cellularSignal || 3}/5
+                  </div>
+                </div>
+                <div className="text-center border-t border-slate-200/50 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Terreno
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.groundLevelness || 3}/5
+                  </div>
+                </div>
+                <div className="text-center border-t border-slate-200/50 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Ombra
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.shade || 3}/5
+                  </div>
+                </div>
+                <div className="text-center border-t border-slate-200/50 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Pulizia
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.cleanliness || 3}/5
+                  </div>
                 </div>
               </div>
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Manovre
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.maneuverability || 3}/5
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Segnale
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.cellularSignal || 3}/5
-                </div>
-              </div>
-              <div className="text-center border-t border-slate-200/50 pt-2">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Terreno
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.groundLevelness || 3}/5
-                </div>
-              </div>
-              <div className="text-center border-t border-slate-200/50 pt-2">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Ombra
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.shade || 3}/5
-                </div>
-              </div>
-              <div className="text-center border-t border-slate-200/50 pt-2">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Pulizia
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.cleanliness || 3}/5
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Facilities lists */}
-            <div>
-              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                Servizi Disponibili
-              </span>
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {selectedPlace.facilities.map((fac) => (
-                  <span
-                    key={fac}
-                    className="bg-slate-50 text-slate-700 font-semibold px-2 py-1 rounded-lg border border-slate-100 flex items-center gap-1"
-                  >
-                    <span className="w-1.5 h-1.5 bg-[#5A6B4E] rounded-full"></span>
-                    {fac}
-                  </span>
-                ))}
+            {selectedPlace.id !== "current_location" && (
+              <div>
+                <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                  Servizi Disponibili
+                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {selectedPlace.facilities.map((fac) => (
+                    <span
+                      key={fac}
+                      className="bg-slate-50 text-slate-700 font-semibold px-2 py-1 rounded-lg border border-slate-100 flex items-center gap-1"
+                    >
+                      <span className="w-1.5 h-1.5 bg-[#5A6B4E] rounded-full"></span>
+                      {fac}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Photos and Reviews */}
-            <div className="border-t border-slate-100 pt-4 space-y-4">
+            {selectedPlace.id !== "current_location" && (
+              <div className="border-t border-slate-100 pt-4 space-y-4">
               
               {/* Photo Album Preview Button */}
               <button
@@ -5434,6 +5572,7 @@ out center;`;
                 </div>
               </form>
             </div>
+            )}
           </div>
         )}
       </div>
@@ -5466,7 +5605,8 @@ out center;`;
           <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-8">
             {/* Image & Main Info Card */}
             <div className="space-y-3">
-              <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 aspect-video bg-slate-100 group/img">
+              {selectedPlace.id !== "current_location" && (
+                <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 aspect-video bg-slate-100 group/img">
                 {allAlbumPhotos.length > 0 ? (
                   <img
                     src={allAlbumPhotos[0]}
@@ -5547,18 +5687,21 @@ out center;`;
                   )}
                 </div>
               </div>
+            )}
 
               <div className="space-y-2 pt-1">
                 <div className="flex justify-between items-start gap-3">
                   <h2 className="text-base font-black text-slate-800 leading-snug break-words flex-1">
                     {selectedPlace.name}
                   </h2>
-                  <div className="flex items-center gap-1 bg-[#5A6B4E]/10 px-2 py-1 rounded-lg shrink-0">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
-                    <span className="font-extrabold text-slate-800 font-mono text-xs">
-                      {Number(selectedPlace.rating).toFixed(1)}
-                    </span>
-                  </div>
+                  {selectedPlace.id !== "current_location" && (
+                    <div className="flex items-center gap-1 bg-[#5A6B4E]/10 px-2 py-1 rounded-lg shrink-0">
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                      <span className="font-extrabold text-slate-800 font-mono text-xs">
+                        {Number(selectedPlace.rating).toFixed(1)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-slate-500 font-medium text-xs break-words">
@@ -5566,9 +5709,11 @@ out center;`;
                 </p>
 
                 <div className="flex flex-wrap gap-2 items-center pt-1.5">
-                  <span className="font-black text-slate-700 font-mono text-[11px] bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200/50">
-                    💰 {selectedPlace.priceInfo}
-                  </span>
+                  {selectedPlace.id !== "current_location" && (
+                    <span className="font-black text-slate-700 font-mono text-[11px] bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200/50">
+                      💰 {selectedPlace.priceInfo}
+                    </span>
+                  )}
 
                   {selectedPlace.nearestCity && (
                     <span className="text-xs text-indigo-600 font-bold bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-xl">
@@ -5586,60 +5731,103 @@ out center;`;
                     </a>
                   )}
                 </div>
+
+                {selectedPlace.id === "current_location" && (
+                  <div className="mt-4 p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2.5">
+                      <Shield className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <div>
+                        <p className="font-extrabold text-[#2D2926] dark:text-white text-xs">Visibilità Camper su Mappa</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Mostra la tua posizione agli altri utenti</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const currentShare = !!settings?.shareLocation;
+                        try {
+                          const saved = localStorage.getItem("camper_app_settings");
+                          const currentSettings = saved ? JSON.parse(saved) : {};
+                          const updatedSettings = {
+                            ...currentSettings,
+                            shareLocation: !currentShare
+                          };
+                          localStorage.setItem("camper_app_settings", JSON.stringify(updatedSettings));
+                          window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: updatedSettings }));
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: {
+                                message: !currentShare 
+                                  ? "🟢 Visibilità Camper su Mappa attivata!" 
+                                  : "🔴 Visibilità Camper su Mappa disattivata!"
+                              }
+                            })
+                          );
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className={`w-11 h-6 shrink-0 rounded-full relative transition-colors cursor-pointer ${settings?.shareLocation ? 'bg-[#3E4A35]' : 'bg-slate-200 dark:bg-slate-600'}`}
+                    >
+                      <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings?.shareLocation ? 'translate-x-5' : ''}`} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Rating Details */}
-            <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Rumorosità
+            {selectedPlace.id !== "current_location" && (
+              <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="text-center">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Rumorosità
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.noiseLevel || 3}/5
+                  </div>
                 </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.noiseLevel || 3}/5
+                <div className="text-center">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Manovre
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.maneuverability || 3}/5
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Segnale
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.cellularSignal || 3}/5
+                  </div>
+                </div>
+                <div className="text-center border-t border-slate-200/50 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Terreno
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.groundLevelness || 3}/5
+                  </div>
+                </div>
+                <div className="text-center border-t border-slate-200/50 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Ombra
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.shade || 3}/5
+                  </div>
+                </div>
+                <div className="text-center border-t border-slate-200/50 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Pulizia
+                  </div>
+                  <div className="text-sm font-black text-[#3E4A35]">
+                    {selectedPlace.cleanliness || 3}/5
+                  </div>
                 </div>
               </div>
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Manovre
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.maneuverability || 3}/5
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Segnale
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.cellularSignal || 3}/5
-                </div>
-              </div>
-              <div className="text-center border-t border-slate-200/50 pt-2">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Terreno
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.groundLevelness || 3}/5
-                </div>
-              </div>
-              <div className="text-center border-t border-slate-200/50 pt-2">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Ombra
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.shade || 3}/5
-                </div>
-              </div>
-              <div className="text-center border-t border-slate-200/50 pt-2">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">
-                  Pulizia
-                </div>
-                <div className="text-sm font-black text-[#3E4A35]">
-                  {selectedPlace.cleanliness || 3}/5
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Quick Actions Panel */}
             <div className="grid grid-cols-2 gap-2.5 pt-2">
@@ -5676,35 +5864,50 @@ out center;`;
                   </button>
                 </>
               ) : (
-                <>
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex gap-2 w-full">
+                    <button
+                      onClick={() => {
+                        handleOpenNavigatorSelector(selectedPlace);
+                      }}
+                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs tracking-wider border border-emerald-500 cursor-pointer flex-1"
+                    >
+                      <Compass className="w-4 h-4 text-white animate-pulse" />
+                      <span>🗺️ Naviga</span>
+                    </button>
+
+                    <button
+                      onClick={() => onToggleFavorite?.(selectedPlace.id)}
+                      className={`w-full py-3.5 border font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider whitespace-nowrap flex-1 ${
+                        favoriteIds?.includes(selectedPlace.id)
+                          ? "bg-rose-50 text-rose-600 border-rose-200"
+                          : "bg-white border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 hover:border-rose-200"
+                      }`}
+                    >
+                      <Heart
+                        className={`w-4 h-4 ${favoriteIds?.includes(selectedPlace.id) ? "fill-current text-rose-600 animate-pulse" : "text-slate-400"}`}
+                      />
+                      <span>
+                        {favoriteIds?.includes(selectedPlace.id)
+                          ? "Salvato"
+                          : "Salva"}
+                      </span>
+                    </button>
+                  </div>
+                  
                   <button
                     onClick={() => {
-                      handleOpenNavigatorSelector(selectedPlace);
+                      window.dispatchEvent(
+                        new CustomEvent("simulate-camper-location", {
+                          detail: { lat: selectedPlace.lat, lng: selectedPlace.lng },
+                        }),
+                      );
                     }}
-                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs tracking-wider border border-emerald-500 cursor-pointer flex-1"
+                    className="w-full py-3 bg-amber-50 text-amber-800 border border-amber-300 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider"
                   >
-                    <Compass className="w-4 h-4 text-white animate-pulse" />
-                    <span>🗺️ Naviga</span>
+                    <span>🚐 Imposta Sosta come Posizione Camper</span>
                   </button>
-
-                  <button
-                    onClick={() => onToggleFavorite?.(selectedPlace.id)}
-                    className={`w-full py-4 border font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider whitespace-nowrap flex-1 ${
-                      favoriteIds?.includes(selectedPlace.id)
-                        ? "bg-rose-50 text-rose-600 border-rose-200"
-                        : "bg-white border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 hover:border-rose-200"
-                    }`}
-                  >
-                    <Heart
-                      className={`w-4 h-4 ${favoriteIds?.includes(selectedPlace.id) ? "fill-current text-rose-600 animate-pulse" : "text-slate-400"}`}
-                    />
-                    <span>
-                      {favoriteIds?.includes(selectedPlace.id)
-                        ? "Salvato"
-                        : "Salva"}
-                    </span>
-                  </button>
-                </>
+                </div>
               )}
             </div>
 
@@ -5778,25 +5981,28 @@ out center;`;
             />
 
             {/* Facilities lists */}
-            <div className="space-y-2">
-              <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">
-                Servizi Disponibili
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedPlace.facilities.map((fac) => (
-                  <span
-                    key={fac}
-                    className="bg-slate-50 text-slate-700 font-bold px-2.5 py-1.5 rounded-xl border border-slate-100 flex items-center gap-1.5 text-[11px]"
-                  >
-                    <span className="w-1.5 h-1.5 bg-[#5A6B4E] rounded-full"></span>
-                    {fac}
-                  </span>
-                ))}
+            {selectedPlace.id !== "current_location" && (
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">
+                  Servizi Disponibili
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedPlace.facilities.map((fac) => (
+                    <span
+                      key={fac}
+                      className="bg-slate-50 text-slate-700 font-bold px-2.5 py-1.5 rounded-xl border border-slate-100 flex items-center gap-1.5 text-[11px]"
+                    >
+                      <span className="w-1.5 h-1.5 bg-[#5A6B4E] rounded-full"></span>
+                      {fac}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Reviews Section */}
-            <div className="border-t border-slate-100 pt-5 space-y-4">
+            {selectedPlace.id !== "current_location" && (
+              <div className="border-t border-slate-100 pt-5 space-y-4">
               
               {/* Photo Album Preview Button */}
               <button
@@ -6192,6 +6398,7 @@ out center;`;
                 </div>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
@@ -6266,7 +6473,6 @@ out center;`;
                       icon: <Navigation className="w-5 h-5 text-blue-600" />,
                       action: () => {
                         let url = `https://www.google.com/maps/dir/?api=1&destination=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}&travelmode=driving`;
-                        if (settings?.avoidTolls) url += `&dirflg=t`;
                         window.open(url, "_blank");
                       },
                       badge: "Traffico Live",
@@ -7600,6 +7806,12 @@ export function LeafletOfflineMap({
   setIsMobileDetailsOpen,
   isOnline = false,
   indicatorTitle,
+  clickedCoords,
+  onMapClick,
+  activeDistanceFilter = "none",
+  filterCenter = null,
+  onMapInstance,
+  mapMovedByUserRef,
 }: {
   places: Place[];
   userLocation: { lat: number; lng: number } | null;
@@ -7609,10 +7821,47 @@ export function LeafletOfflineMap({
   setIsMobileDetailsOpen: (open: boolean) => void;
   isOnline?: boolean;
   indicatorTitle?: string;
+  clickedCoords?: { lat: number; lng: number } | null;
+  onMapClick?: (lat: number, lng: number) => void;
+  activeDistanceFilter?: "none" | "me" | "place";
+  filterCenter?: { lat: number; lng: number } | null;
+  onMapInstance?: (map: L.Map | null) => void;
+  mapMovedByUserRef?: React.MutableRefObject<boolean>;
 }) {
   const settings = useAppSettings();
   const mapRef = React.useRef<L.Map | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const [leafletMapInstance, setLeafletMapInstance] = React.useState<L.Map | null>(null);
+  const circleLayerRef = React.useRef<L.Circle | null>(null);
+
+  const onMapClickRef = React.useRef(onMapClick);
+  React.useEffect(() => {
+    onMapClickRef.current = onMapClick;
+  }, [onMapClick]);
+
+  const onMapInstanceRef = React.useRef(onMapInstance);
+  React.useEffect(() => {
+    onMapInstanceRef.current = onMapInstance;
+  }, [onMapInstance]);
+
+  const fallbackMapMovedRef = React.useRef(false);
+  const movedRef = mapMovedByUserRef || fallbackMapMovedRef;
+  const isProgrammaticRef = React.useRef(false);
+
+  // Auto-center on user location whenever it updates, unless the user moved/panned the map
+  React.useEffect(() => {
+    if (userLocation && leafletMapInstance && !movedRef.current && !selectedPlace) {
+      try {
+        (leafletMapInstance as any)._isProgrammatic = true;
+        const currentZoom = leafletMapInstance.getZoom();
+        const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;
+        leafletMapInstance.setView([userLocation.lat, userLocation.lng], targetZoom);
+      } catch (e) {
+        console.warn("[Leaflet GPS Centering] Failed to set center:", e);
+      }
+    }
+  }, [userLocation, leafletMapInstance, selectedPlace]);
+
   const markersRef = React.useRef<L.Marker[]>([]);
 
   // 1) Initialize Map and Tile Layer ONCE
@@ -7641,6 +7890,23 @@ export function LeafletOfflineMap({
     });
 
     mapRef.current = map;
+    setLeafletMapInstance(map);
+    onMapInstanceRef.current?.(map);
+
+    map.on("click", (e: any) => {
+      if (onMapClickRef.current) {
+        onMapClickRef.current(e.latlng.lat, e.latlng.lng);
+      }
+    });
+
+    map.on("movestart", () => {
+      if ((map as any)._isProgrammatic) {
+        (map as any)._isProgrammatic = false;
+      } else {
+        movedRef.current = true;
+      }
+    });
+
     setTimeout(() => {
       try {
         map.invalidateSize();
@@ -7674,7 +7940,6 @@ export function LeafletOfflineMap({
       tile.height = 256;
       tile.alt = "";
       tile.setAttribute("role", "presentation");
-
       tile.onload = function () {
         done(null, tile);
       };
@@ -7686,24 +7951,21 @@ export function LeafletOfflineMap({
           "Mappa Offline",
         );
       };
-
-      const key = `${coords.z}-${coords.x}-${coords.y}`;
-
-      getBestTile(coords.z, coords.x, coords.y)
-        .then((cachedBase64) => {
-          if (cachedBase64) {
-            tile.src = cachedBase64;
-          } else {
-            // Check if we are simulated offline or physically offline
-            const isSimulated =
-              localStorage.getItem("camper_simulated_offline") === "true";
-            const offlineActive =
-              isSimulated ||
-              !isOnline ||
-              (typeof navigator !== "undefined" && !navigator.onLine);
-
-            if (!offlineActive) {
-              tile.src = `https://mt1.google.com/vt/lyrs=m&x=${coords.x}&y=${coords.y}&z=${coords.z}`;
+      
+      const isSimulated = localStorage.getItem("camper_simulated_offline") === "true";
+      const offlineActive = isSimulated || !isOnline || (typeof navigator !== "undefined" && !navigator.onLine);
+      
+      if (!offlineActive) {
+        const theme = settings?.mapTheme || 'standard';
+        let lyrsType = 'm';
+        if (theme === 'satellite') lyrsType = 's';
+        else if (theme === 'hybrid') lyrsType = 'y';
+        tile.src = `/api/map-tile/${coords.z}/${coords.x}/${coords.y}?lyrs=${lyrsType}`;
+      } else {
+        getBestTile(coords.z, coords.x, coords.y)
+          .then((cachedBase64) => {
+            if (cachedBase64) {
+              tile.src = cachedBase64;
             } else {
               tile.src = generatePlaceholderTile(
                 coords.z,
@@ -7712,17 +7974,16 @@ export function LeafletOfflineMap({
                 "Mappa Offline",
               );
             }
-          }
-        })
-        .catch(() => {
-          tile.src = generatePlaceholderTile(
-            coords.z,
-            coords.x,
-            coords.y,
-            "Mappa Offline",
-          );
-        });
-
+          })
+          .catch(() => {
+            tile.src = generatePlaceholderTile(
+              coords.z,
+              coords.x,
+              coords.y,
+              "Mappa Offline",
+            );
+          });
+      }
       return tile;
     };
 
@@ -7733,6 +7994,8 @@ export function LeafletOfflineMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      setLeafletMapInstance(null);
+      onMapInstanceRef.current?.(null);
     };
   }, []); // Run ONCE on mount
 
@@ -7798,6 +8061,30 @@ export function LeafletOfflineMap({
       markersRef.current.push(userMarker);
     }
 
+    // Add marker for Clicked Coords (Puntina Mappa)
+    if (clickedCoords) {
+      const clickIcon = L.divIcon({
+        className: "custom-div-icon",
+        html: `
+          <div class="flex flex-col items-center justify-center">
+            <div class="w-8 h-8 rounded-full bg-amber-500 ring-4 ring-amber-500/20 border-2 border-white flex items-center justify-center shadow-lg relative">
+              <span style="font-size: 14px;">📍</span>
+            </div>
+            <div class="w-1.5 h-1.5 bg-amber-500 rotate-45 -mt-0.5 shadow-sm"></div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+
+      const clickMarker = L.marker([clickedCoords.lat, clickedCoords.lng], {
+        icon: clickIcon,
+        zIndexOffset: 1100
+      }).addTo(map);
+
+      markersRef.current.push(clickMarker);
+    }
+
   // Add markers for all filtered places
     console.log("MapTab: rendering places:", places.length);
     places.forEach((place) => {
@@ -7861,7 +8148,44 @@ export function LeafletOfflineMap({
     vehicleDimensions,
     setSelectedPlace,
     setIsMobileDetailsOpen,
+    clickedCoords,
+    settings?.shareLocation,
   ]);
+
+  // Draw search radius circles for "Intorno a me" and "Intorno a sosta"
+  React.useEffect(() => {
+    if (!leafletMapInstance) return;
+
+    if (circleLayerRef.current) {
+      circleLayerRef.current.remove();
+      circleLayerRef.current = null;
+    }
+
+    if (activeDistanceFilter === "me" && userLocation) {
+      circleLayerRef.current = L.circle([userLocation.lat, userLocation.lng], {
+        radius: 15000, // 15km
+        color: "#3E4A35",
+        fillColor: "#3E4A35",
+        fillOpacity: 0.08,
+        weight: 1.5,
+      }).addTo(leafletMapInstance);
+    } else if (activeDistanceFilter === "place" && filterCenter) {
+      circleLayerRef.current = L.circle([filterCenter.lat, filterCenter.lng], {
+        radius: 15000, // 15km
+        color: "#A45C40",
+        fillColor: "#A45C40",
+        fillOpacity: 0.08,
+        weight: 1.5,
+      }).addTo(leafletMapInstance);
+    }
+
+    return () => {
+      if (circleLayerRef.current) {
+        circleLayerRef.current.remove();
+        circleLayerRef.current = null;
+      }
+    };
+  }, [leafletMapInstance, activeDistanceFilter, filterCenter, userLocation]);
 
   // Adjust zoom/center when selectedPlace changes
   React.useEffect(() => {

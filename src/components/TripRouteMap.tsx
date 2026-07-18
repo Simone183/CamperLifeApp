@@ -459,11 +459,11 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
     });
 
     const initialUrl = isSatellite
-      ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+      ? "/api/map-tile/{z}/{x}/{y}?lyrs=s"
+      : "/api/map-tile/{z}/{x}/{y}?lyrs=m";
     const initialAttr = isSatellite
       ? "Tiles &copy; Esri &mdash; Source: Esri"
-      : "© OpenStreetMap contributors";
+      : "Dati cartografici © contributori di OpenStreetMap";
 
     const layer = L.tileLayer(initialUrl, {
       attribution: initialAttr
@@ -522,8 +522,8 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
     }
 
     const url = isSatellite
-      ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+      ? "/api/map-tile/{z}/{x}/{y}?lyrs=s"
+      : "/api/map-tile/{z}/{x}/{y}?lyrs=m";
     const attr = isSatellite
       ? "Tiles &copy; Esri &mdash; Source: Esri"
       : "© OpenStreetMap contributors";
@@ -695,7 +695,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
   // Helper to determine what segment/location the camper is currently passing
   const getCurrentSegmentName = () => {
     if (points.length === 0) return "";
-    if (points.length === 1) return points[0].name || "Partenza";
+    if (points.length === 1) return points[0].name || "Inizio";
     
     // Find the approximate stop index
     const totalSteps = finalCoords.length;
@@ -1140,7 +1140,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
 
           {/* Progress Slider Track */}
           <div className="flex-1 w-full flex items-center gap-3">
-            <span className="text-[10px] font-bold text-stone-400 font-mono">Partenza</span>
+            <span className="text-[10px] font-bold text-stone-400 font-mono">Inizio</span>
             <input
               type="range"
               min={0}

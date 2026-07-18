@@ -4,6 +4,7 @@ import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUn
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
 import { compressImage } from "../utils/photoCompressor";
 import { TripRouteMap } from "./TripRouteMap";
+import { generateTripPDF } from "../utils/pdfGenerator";
 import {
   BookOpen,
   Plus,
@@ -27,6 +28,8 @@ import {
   Fuel,
   Route,
   Navigation,
+  Printer,
+  FileDown,
 } from "lucide-react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -162,7 +165,7 @@ export default function DiaryTab({
   const [expenseTitle, setExpenseTitle] = React.useState("");
   const [expenseAmount, setExpenseAmount] = React.useState("");
   const [expenseCategory, setExpenseCategory] =
-    React.useState<DiaryExpense["category"]>("Carburante");
+    React.useState<DiaryExpense["category"]>("Autostrada");
   const [expenseDate, setExpenseDate] = React.useState("");
   const [editingExpenseId, setEditingExpenseId] = React.useState<string | null>(null);
 
@@ -216,6 +219,14 @@ export default function DiaryTab({
   // State to control Custom Delete Confirmation Modal
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [photoToDelete, setPhotoToDelete] = React.useState<string | null>(null);
+
+  // PDF Export Modal State
+  const [showPdfExportModal, setShowPdfExportModal] = React.useState(false);
+  const [pdfPaperSize, setPdfPaperSize] = React.useState<"a4" | "a5">("a4");
+  const [pdfIncludeMovements, setPdfIncludeMovements] = React.useState(true);
+  const [pdfIncludeExpenses, setPdfIncludeExpenses] = React.useState(true);
+  const [pdfIncludePhotos, setPdfIncludePhotos] = React.useState(true);
+  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
 
   React.useEffect(() => {
     localStorage.setItem("camper_trips", JSON.stringify(trips));
@@ -512,6 +523,7 @@ export default function DiaryTab({
     setExpenseTitle("");
     setExpenseAmount("");
     setExpenseDate("");
+    setExpenseCategory("Autostrada");
 
     // Reset fuel fields
     setFuelLiters("");
@@ -1174,7 +1186,7 @@ export default function DiaryTab({
 
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                    Descrizione & Sogni
+                    Racconto
                   </label>
                   <textarea
                     rows={3}
@@ -1317,6 +1329,16 @@ export default function DiaryTab({
                   {activeTrip?.title}
                 </span>
               </span>
+              {activeTrip && (
+                <button
+                  type="button"
+                  onClick={() => setShowPdfExportModal(true)}
+                  className="px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 rounded-lg flex items-center gap-1.5 transition-all border border-emerald-200/60 shadow-xs cursor-pointer select-none active:scale-95 font-sans"
+                  title="Genera e scarica un PDF stampabile in formato A4 o A5"
+                >
+                  <Printer className="w-3.5 h-3.5 text-emerald-600" /> Esporta Diario
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
@@ -1440,7 +1462,7 @@ export default function DiaryTab({
 
                         <div>
                           <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                            Descrizione & Sogni
+                            Racconto
                           </label>
                           <textarea
                             rows={3}
@@ -1541,8 +1563,8 @@ export default function DiaryTab({
                         </div>
 
                         {/* Trip Odometer & quick stats indicator */}
-                        <div className="flex gap-4">
-                          <div className="bg-[#F5F2ED]/60 border border-slate-150 p-2 px-3 rounded-xl text-center">
+                        <div className="flex gap-4 flex-wrap sm:flex-nowrap items-center">
+                          <div className="bg-[#F5F2ED]/60 border border-slate-150 p-2 px-3 rounded-xl text-center min-w-[75px]">
                             <span className="text-[8px] font-bold text-slate-400 uppercase block">
                               Distanza
                             </span>
@@ -1550,7 +1572,7 @@ export default function DiaryTab({
                               {odometerDiff > 0 ? `${formatDistance(odometerDiff, settings)}` : "---"}
                             </span>
                           </div>
-                          <div className="bg-[#A45C40]/10 border border-transparent p-2 px-3 rounded-xl text-center">
+                          <div className="bg-[#A45C40]/10 border border-transparent p-2 px-3 rounded-xl text-center min-w-[90px]">
                             <span className="text-[8px] font-bold text-[#A45C40] uppercase block">
                               Budget Speso
                             </span>
@@ -1561,19 +1583,8 @@ export default function DiaryTab({
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-600 mt-3 leading-relaxed bg-[#F5F2ED]/40 p-3 rounded-xl border border-[#3E4A35]/5 italic relative group">
-                        &quot;
-                        {activeTrip.description ||
-                          "Nessuna descrizione o nota inserita per questa escursione."}
-                        &quot;
-                        <button
-                          onClick={startEditingActiveTrip}
-                          className="absolute right-2 bottom-2 p-1.5 bg-white text-[10px] font-black text-[#3E4A35] hover:bg-[#3E4A35] hover:text-white rounded border border-[#3E4A35]/20 transition-all shadow-xs cursor-pointer"
-                        >
-                          Modifica nota
-                        </button>
-                      </p>
-                    </div>
+
+                  </div>
                   )}
                 </div>
 
@@ -1705,6 +1716,7 @@ export default function DiaryTab({
                                   setExpenseTitle("");
                                   setExpenseAmount("");
                                   setExpenseDate("");
+                                  setExpenseCategory("Autostrada");
                                 }}
                                 className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[11px] font-black uppercase tracking-wider cursor-pointer"
                               >
@@ -2584,6 +2596,23 @@ export default function DiaryTab({
                 <div className="mt-6 border-t border-stone-100 pt-6">
                   <TripRouteMap trip={activeTrip} onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} />
                 </div>
+
+                {/* Racconto Section */}
+                <div className="mt-6 p-4 bg-[#F5F2ED]/40 rounded-xl border border-[#3E4A35]/10">
+                  <h3 className="text-xs font-black text-[#3E4A35] uppercase tracking-wider mb-2">
+                    Racconto
+                  </h3>
+                  <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {activeTrip.description ||
+                      "Nessuna storia o racconto inserito per questa escursione."}
+                  </p>
+                  <button
+                    onClick={startEditingActiveTrip}
+                    className="mt-3 px-3 py-1.5 bg-white text-[10px] font-black text-[#3E4A35] hover:bg-[#3E4A35] hover:text-white rounded border border-[#3E4A35]/20 transition-all shadow-xs cursor-pointer"
+                  >
+                    Modifica racconto
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center text-slate-400 space-y-2">
@@ -2788,6 +2817,198 @@ export default function DiaryTab({
                 <Trash2 className="w-3.5 h-3.5" />
                 Sì, Elimina
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF EXPORT MODAL */}
+      {showPdfExportModal && activeTrip && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => {
+            if (!isGeneratingPdf) setShowPdfExportModal(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-stone-200 space-y-5 font-sans animate-scale-up text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-stone-950 flex items-center gap-2">
+                  <Printer className="w-5 h-5 text-emerald-600" />
+                  Stampa Diario di Viaggio
+                </h3>
+                <p className="text-xs text-stone-500 font-medium">
+                  Esporta e conserva la tua copia cartacea del viaggio
+                </p>
+              </div>
+              {!isGeneratingPdf && (
+                <button
+                  onClick={() => setShowPdfExportModal(false)}
+                  className="p-1.5 hover:bg-stone-100 rounded-lg text-stone-400 hover:text-stone-600 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Form selections */}
+            <div className="space-y-4">
+              {/* Formato Carta (A4 / A5) */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black uppercase text-stone-400 tracking-wider">
+                  Dimensioni Foglio (Formato)
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPdfPaperSize("a4")}
+                    disabled={isGeneratingPdf}
+                    className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-20 cursor-pointer select-none ${
+                      pdfPaperSize === "a4"
+                        ? "border-emerald-600 bg-emerald-50/40 text-stone-900 ring-2 ring-emerald-500/10"
+                        : "border-stone-200 bg-white hover:border-stone-300 text-stone-700 hover:bg-stone-50/50"
+                    }`}
+                  >
+                    <span className="text-sm font-black">A4 Standard</span>
+                    <span className="text-[10px] text-stone-400 font-medium leading-tight">
+                      210 x 297 mm • Ideale per raccoglitori grandi
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPdfPaperSize("a5")}
+                    disabled={isGeneratingPdf}
+                    className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-20 cursor-pointer select-none ${
+                      pdfPaperSize === "a5"
+                        ? "border-emerald-600 bg-emerald-50/40 text-stone-900 ring-2 ring-emerald-500/10"
+                        : "border-stone-200 bg-white hover:border-stone-300 text-stone-700 hover:bg-stone-50/50"
+                    }`}
+                  >
+                    <span className="text-sm font-black">A5 Compatto</span>
+                    <span className="text-[10px] text-stone-400 font-medium leading-tight">
+                      148 x 210 mm • Ideale per taccuini di bordo
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sezioni da Includere */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black uppercase text-stone-400 tracking-wider">
+                  Sezioni da Includere nel PDF
+                </label>
+                
+                <div className="space-y-2.5 bg-stone-50 p-3 rounded-xl border border-stone-200/60">
+                  {/* Riepilogo (Sempre incluso) */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-stone-700">Riepilogo e Statistiche Generali</span>
+                    <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-100/60 px-1.5 py-0.5 rounded font-mono">Incluso</span>
+                  </div>
+
+                  {/* Racconto (Sempre incluso se presente) */}
+                  <div className="flex items-center justify-between text-xs pt-1.5 border-t border-stone-200/60">
+                    <span className="font-semibold text-stone-700">Il Racconto (Storia scritta)</span>
+                    <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-100/60 px-1.5 py-0.5 rounded font-mono">Incluso</span>
+                  </div>
+
+                  {/* Spostamenti */}
+                  <label className="flex items-center justify-between text-xs pt-1.5 border-t border-stone-200/60 cursor-pointer select-none">
+                    <span className="font-semibold text-stone-700">Registro Spostamenti e Tappe</span>
+                    <input
+                      type="checkbox"
+                      checked={pdfIncludeMovements}
+                      onChange={(e) => setPdfIncludeMovements(e.target.checked)}
+                      disabled={isGeneratingPdf}
+                      className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 accent-emerald-600"
+                    />
+                  </label>
+
+                  {/* Spese */}
+                  <label className="flex items-center justify-between text-xs pt-1.5 border-t border-stone-200/60 cursor-pointer select-none">
+                    <span className="font-semibold text-stone-700">Rendiconto Spese di Viaggio</span>
+                    <input
+                      type="checkbox"
+                      checked={pdfIncludeExpenses}
+                      onChange={(e) => setPdfIncludeExpenses(e.target.checked)}
+                      disabled={isGeneratingPdf}
+                      className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 accent-emerald-600"
+                    />
+                  </label>
+
+                  {/* Foto */}
+                  <label className="flex items-center justify-between text-xs pt-1.5 border-t border-stone-200/60 cursor-pointer select-none">
+                    <span className="font-semibold text-stone-700">Galleria Foto e Ricordi</span>
+                    <input
+                      type="checkbox"
+                      checked={pdfIncludePhotos}
+                      onChange={(e) => setPdfIncludePhotos(e.target.checked)}
+                      disabled={isGeneratingPdf}
+                      className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 accent-emerald-600"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2.5 pt-2">
+              {!isGeneratingPdf ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowPdfExportModal(false)}
+                    className="flex-1 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsGeneratingPdf(true);
+                      try {
+                        await generateTripPDF(activeTrip, pdfPaperSize, settings, {
+                          includeMovements: pdfIncludeMovements,
+                          includeExpenses: pdfIncludeExpenses,
+                          includePhotos: pdfIncludePhotos,
+                        });
+                        window.dispatchEvent(
+                          new CustomEvent("show-toast", {
+                            detail: {
+                              message: `📄 PDF del viaggio generato e scaricato correttamente!`,
+                            },
+                          })
+                        );
+                        setShowPdfExportModal(false);
+                      } catch (err) {
+                        console.error("PDF generation failed:", err);
+                        window.dispatchEvent(
+                          new CustomEvent("show-toast", {
+                            detail: {
+                              message: `❌ Errore durante la generazione del PDF.`,
+                            },
+                          })
+                        );
+                      } finally {
+                        setIsGeneratingPdf(false);
+                      }
+                    }}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    Genera PDF
+                  </button>
+                </>
+              ) : (
+                <div className="w-full py-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-center gap-2.5 text-xs text-[#3E4A35] font-black font-mono">
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                  Elaborazione impaginazione e foto...
+                </div>
+              )}
             </div>
           </div>
         </div>

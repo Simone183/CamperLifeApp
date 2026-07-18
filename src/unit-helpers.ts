@@ -134,11 +134,11 @@ export function getWeightUnitTonnes(settings: AppSettings): string {
 export function getTileUrl(mapTheme: string): string {
   switch (mapTheme) {
     case 'satellite':
-      return 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+      return '/api/map-tile/{z}/{x}/{y}?lyrs=s';
     case 'hybrid':
-      return 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+      return '/api/map-tile/{z}/{x}/{y}?lyrs=y';
     case 'standard':
     default:
-      return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+      return '/api/map-tile/{z}/{x}/{y}?lyrs=m';
   }
 }

@@ -24,11 +24,11 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
   const [metric, setMetric] = React.useState(initialSettings.metric ?? true);
   const [sounds, setSounds] = React.useState(initialSettings.sounds ?? true);
   const [vibrations, setVibrations] = React.useState(initialSettings.vibrations ?? true);
+  const [ttsEnabled, setTtsEnabled] = React.useState(initialSettings.ttsEnabled ?? true);
   const [autoBackup, setAutoBackup] = React.useState(initialSettings.autoBackup ?? false);
   const [isBackingUp, setIsBackingUp] = React.useState(false);
 
   // New settings states
-  const [avoidTolls, setAvoidTolls] = React.useState(initialSettings.avoidTolls ?? false);
   const [avoidUnpaved, setAvoidUnpaved] = React.useState(initialSettings.avoidUnpaved ?? true);
   const [publicProfile, setPublicProfile] = React.useState(initialSettings.publicProfile ?? true);
   const [shareData, setShareData] = React.useState(initialSettings.shareData ?? false);
@@ -45,6 +45,7 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
   const [photoQuality, setPhotoQuality] = React.useState(initialSettings.photoQuality ?? "medium");
   const [deadlineReminder, setDeadlineReminder] = React.useState(initialSettings.deadlineReminder ?? "15");
   const [mapTheme, setMapTheme] = React.useState(initialSettings.mapTheme ?? "standard");
+  const [mapEngine, setMapEngine] = React.useState(initialSettings.mapEngine ?? "google");
   const [shareLocation, setShareLocation] = React.useState(initialSettings.shareLocation ?? false);
   const [weatherAlerts, setWeatherAlerts] = React.useState(initialSettings.weatherAlerts ?? true);
   const [drivingStyle, setDrivingStyle] = React.useState(initialSettings.drivingStyle ?? "relax");
@@ -90,14 +91,14 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
   React.useEffect(() => {
     const appSettings = {
       language, textSize, metric, dimensionUnit, temperatureUnit, currency, fuelUnit,
-      avoidTolls, avoidUnpaved, mapTheme, defaultPOI, deadlineReminder,
-      sounds, vibrations, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
-      autoBackup, wifiOnlySync, photoQuality, pinEnabled, appPin
+      avoidUnpaved, mapTheme, defaultPOI, deadlineReminder,
+      sounds, vibrations, ttsEnabled, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
+      autoBackup, wifiOnlySync, photoQuality, pinEnabled, appPin, mapEngine
     };
     localStorage.setItem("camper_app_settings", JSON.stringify(appSettings));
     
     // Dispatch to App
-    window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { textSize, pinEnabled, appPin } }));
+    window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { textSize, pinEnabled, appPin, ttsEnabled } }));
 
     // Apply text size locally
     if (textSize === "small") {
@@ -109,9 +110,9 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
     }
   }, [
     language, textSize, metric, dimensionUnit, temperatureUnit, currency, fuelUnit,
-    avoidTolls, avoidUnpaved, mapTheme, defaultPOI, deadlineReminder,
-    sounds, vibrations, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
-    autoBackup, wifiOnlySync, photoQuality, pinEnabled
+    avoidUnpaved, mapTheme, defaultPOI, deadlineReminder,
+    sounds, vibrations, ttsEnabled, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
+    autoBackup, wifiOnlySync, photoQuality, pinEnabled, mapEngine
   ]);
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -329,18 +330,6 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
             <h3 className="font-bold text-slate-700 dark:text-slate-300 text-sm uppercase tracking-wider">Navigazione e Mappe</h3>
           </div>
           <div className="p-5 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-bold text-[#2D2926] dark:text-white">Evita Pedaggi</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Calcola percorsi senza autostrade a pagamento</p>
-              </div>
-              <button
-                onClick={() => setAvoidTolls(!avoidTolls)}
-                className={`w-12 h-6 shrink-0 rounded-full relative transition-colors ${avoidTolls ? 'bg-[#3E4A35]' : 'bg-slate-200 dark:bg-slate-600'}`}
-              >
-                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${avoidTolls ? 'translate-x-6' : ''}`} />
-              </button>
-            </div>
             <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
             <div className="flex items-center justify-between">
               <div>
@@ -353,6 +342,24 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
               >
                 <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${avoidUnpaved ? 'translate-x-6' : ''}`} />
               </button>
+            </div>
+            <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-[#2D2926] dark:text-white">Motore Mappa</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Scegli tra Google Maps (online 3D) o Leaflet (ultra-veloce/offline)</p>
+              </div>
+              <select
+                value={mapEngine}
+                onChange={(e) => {
+                  setMapEngine(e.target.value);
+                  window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { mapEngine: e.target.value } }));
+                }}
+                className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl px-3 py-1.5 text-sm outline-none cursor-pointer"
+              >
+                <option value="google">Google Maps (Interattivo/3D)</option>
+                <option value="leaflet">Leaflet (Rapido 5G/Offline)</option>
+              </select>
             </div>
             <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
             <div className="flex items-center justify-between">
@@ -446,6 +453,22 @@ export default function GeneralSettingsTab({ isDarkMode, onThemeChange, showTopN
                 className={`w-12 h-6 shrink-0 rounded-full relative transition-colors ${showTopNotifications ? 'bg-[#3E4A35]' : 'bg-slate-200 dark:bg-slate-600'}`}
               >
                 <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${showTopNotifications ? 'translate-x-6' : ''}`} />
+              </button>
+            </div>
+            <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Volume2 className="w-5 h-5 text-slate-400" />
+                <div>
+                  <p className="font-bold text-[#2D2926] dark:text-white">Sintesi Vocale Notifiche</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Leggi ad alta voce le notifiche ricevute</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setTtsEnabled(!ttsEnabled)}
+                className={`w-12 h-6 shrink-0 rounded-full relative transition-colors ${ttsEnabled ? 'bg-[#3E4A35]' : 'bg-slate-200 dark:bg-slate-600'}`}
+              >
+                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${ttsEnabled ? 'translate-x-6' : ''}`} />
               </button>
             </div>
             <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />

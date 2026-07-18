@@ -17,7 +17,6 @@ export function useAppSettings(): AppSettings {
       temperatureUnit: "celsius",
       currency: "EUR",
       fuelUnit: "km_l",
-      avoidTolls: false,
       avoidUnpaved: true,
       mapTheme: "standard",
       defaultPOI: "all",
@@ -33,7 +32,9 @@ export function useAppSettings(): AppSettings {
       autoBackup: false,
       wifiOnlySync: true,
       photoQuality: "medium",
-      pinEnabled: false
+      pinEnabled: false,
+      mapEngine: "google",
+      ttsEnabled: true
     } as AppSettings;
   });
 

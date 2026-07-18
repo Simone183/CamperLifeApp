@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet" />
+</head>
+<body>
+    <div id="map" style="width: 400px; height: 400px;"></div>
+    <script>
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: 'https://demotiles.maplibre.org/style.json',
+            center: [0, 0],
+            zoom: 2,
+            bearing: 90
+        });
+        setTimeout(() => {
+            // log the bearing
+            console.log("Bearing is:", map.getBearing());
+        }, 1000);
+    </script>
+</body>
+</html>

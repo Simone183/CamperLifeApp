@@ -52,7 +52,6 @@ export interface AppSettings {
   temperatureUnit: string;
   currency: string;
   fuelUnit: string;
-  avoidTolls: boolean;
   avoidUnpaved: boolean;
   mapTheme: string;
   defaultPOI: string;
@@ -70,6 +69,8 @@ export interface AppSettings {
   photoQuality: string;
   pinEnabled: boolean;
   appPin?: string;
+  mapEngine?: string; // "google" | "leaflet"
+  ttsEnabled: boolean;
 }
 
 export interface Place {

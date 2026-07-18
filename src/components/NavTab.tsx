@@ -29,6 +29,9 @@ interface SimulatedStep {
   isViolation?: boolean;
 }
 
+let navTabLastSpokenText = "";
+let navTabLastSpokenTime = 0;
+
 export default function NavTab({
   activeDestination,
   vehicleDimensions,
@@ -63,10 +66,28 @@ export default function NavTab({
 
   // Sound and Vocal Guidance helper
   const speakInstruction = (text: string) => {
-    if (!voiceEnabled) return;
+    if (!voiceEnabled || !text) return;
+    
+    // Clean emojis and double spaces
+    const cleanText = text
+      .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")
+      .replace(/\p{Extended_Pictographic}/gu, "")
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) return;
+
+    // Temporal deduplication using the module-level variables (e.g., 4 seconds)
+    const now = Date.now();
+    if (navTabLastSpokenText === cleanText && (now - navTabLastSpokenTime) < 4000) {
+      return;
+    }
+    navTabLastSpokenText = cleanText;
+    navTabLastSpokenTime = now;
+
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.lang = 'it-IT';
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
@@ -85,7 +106,7 @@ export default function NavTab({
   const stepsList = React.useMemo((): SimulatedStep[] => {
     if (!dest) {
       return [
-        { distanceLeft: 1200, heading: "NORD", instruction: "Procedi dritto su S.S. Gardesana Est" }
+        { distanceLeft: 1200, heading: "NORD", instruction: "Dritto su S.S. Gardesana Est" }
       ];
     }
 
@@ -163,7 +184,7 @@ export default function NavTab({
       {
         distanceLeft: 1400,
         heading: "NE",
-        instruction: "Alla rotonda prendi la 2ª uscita e continua su via Nazionale"
+        instruction: "Alla rotonda prendi la 2ª uscita su via Nazionale"
       },
       {
         distanceLeft: 700,

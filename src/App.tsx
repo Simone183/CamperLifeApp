@@ -544,35 +544,32 @@ export default function App() {
       return;
     }
 
-    setFavoriteIds((prev) => {
-      const exists = prev.includes(placeId);
-      let updated;
-      if (exists) {
-        updated = prev.filter((id) => id !== placeId);
-        window.dispatchEvent(
-          new CustomEvent("show-toast", {
-            detail: { message: "💔 Rimossa dai preferiti!" },
-          }),
-        );
-      } else {
-        updated = [...prev, placeId];
-        window.dispatchEvent(
-          new CustomEvent("show-toast", {
-            detail: { message: "❤️ Aggiunta ai tuoi preferiti!" },
-          }),
-        );
-      }
+    const exists = favoriteIds.includes(placeId);
+    let updated;
+    if (exists) {
+      updated = favoriteIds.filter((id) => id !== placeId);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "💔 Rimossa dai preferiti!" },
+        }),
+      );
+    } else {
+      updated = [...favoriteIds, placeId];
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "❤️ Aggiunta ai tuoi preferiti!" },
+        }),
+      );
+    }
+    setFavoriteIds(updated);
 
-      // Sync favorites with Firestore for logged-in user
-      fetch("/api/user/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: currentUser.email, favorites: updated }),
-      }).catch((err) => {
-        console.error("Error syncing favorites to Firestore:", err);
-      });
-
-      return updated;
+    // Sync favorites with Firestore for logged-in user
+    fetch("/api/user/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: currentUser.email, favorites: updated }),
+    }).catch((err) => {
+      console.error("Error syncing favorites to Firestore:", err);
     });
   };
 
@@ -993,8 +990,13 @@ export default function App() {
           localStorage.setItem("camper_app_settings", JSON.stringify(settings));
           window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: settings }));
         }
-      } catch (err) {
-        console.error("Error loading settings from Firestore:", err);
+      } catch (err: any) {
+        const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
+        if (isOffline) {
+          console.warn("Settings loading from Firestore deferred (app is offline):", err?.message || err);
+        } else {
+          console.error("Error loading settings from Firestore:", err);
+        }
       }
     };
     loadSettings();
@@ -1039,7 +1041,12 @@ export default function App() {
       }
       setLoadedFromFirestore(true);
     }, (error) => {
-      console.error("App.tsx Firestore sync error:", error);
+      const isOffline = error?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
+      if (isOffline) {
+        console.warn("Trips Firestore sync deferred (app is offline):", error.message);
+      } else {
+        console.error("App.tsx Firestore sync error:", error);
+      }
       setLoadedFromFirestore(true);
     });
     return unsubscribe;
@@ -1083,8 +1090,13 @@ export default function App() {
             );
           }
         })
-        .catch((err) => {
-          console.error("Error loading camper settings from Firestore:", err);
+        .catch((err: any) => {
+          const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
+          if (isOffline) {
+            console.warn("Camper settings loading from Firestore deferred (app is offline):", err?.message || err);
+          } else {
+            console.error("Error loading camper settings from Firestore:", err);
+          }
         });
     }
   }, [currentUser, activeTab]);
@@ -1111,8 +1123,13 @@ export default function App() {
             path + "/default",
           );
         })
-        .catch((err) => {
-          console.error("Error saving camper settings to Firestore:", err);
+        .catch((err: any) => {
+          const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
+          if (isOffline) {
+            console.warn("Camper settings saving to Firestore deferred (app is offline):", err?.message || err);
+          } else {
+            console.error("Error saving camper settings to Firestore:", err);
+          }
         });
     } else {
       console.warn("Cannot save camper settings: No user logged in.");
@@ -1199,6 +1216,12 @@ export default function App() {
       if (e.detail && e.detail.message) {
         setToastMessage(e.detail.message);
         playAlertSound();
+        const settings = JSON.parse(localStorage.getItem("camper_app_settings") || "{}");
+        if (settings.ttsEnabled !== false && 'speechSynthesis' in window) {
+           const utterance = new SpeechSynthesisUtterance(e.detail.message);
+           utterance.lang = 'it-IT';
+           window.speechSynthesis.speak(utterance);
+        }
       }
     };
     const handleTripStatusEvent = (e: any) => {
@@ -1301,9 +1324,10 @@ export default function App() {
 
   const handleSaveAiPlace = async (aiPlace: any) => {
     try {
-      // Simulate ID and add to pending to use the same flow, or push directly to public API
+      // Stripping source and fonte before saving to prevent showing on the map
+      const { source, fonte, ...cleanedPlace } = aiPlace;
       const placeToSave = {
-        ...aiPlace,
+        ...cleanedPlace,
         id: "ai_" + Math.random().toString(36).substring(2, 9),
         status: "approved",
         proposedBy: "AI Gemini",
@@ -1365,8 +1389,9 @@ export default function App() {
 
     for (const place of placesToSave) {
       try {
+        const { source, fonte, ...cleanedPlace } = place;
         const placeToSaveData = {
-          ...place,
+          ...cleanedPlace,
           id: "ai_" + Math.random().toString(36).substring(2, 9),
           status: "approved",
           proposedBy: "AI Gemini",
@@ -2030,8 +2055,7 @@ out center;`;
         if (contentType && contentType.includes("application/json")) {
           const approvedPlaces = await res.json();
           console.log("[App] Fetched approved places count:", approvedPlaces.length);
-          setPlaces((prevPlaces) => {
-            const userPlaces = prevPlaces.filter((p) => p.id.startsWith("user_place_"));
+          const userPlaces = places.filter((p) => p.id.startsWith("user_place_"));
             const mergedMap = new globalThis.Map<string, Place>();
             
             // Add user places first
@@ -2041,9 +2065,8 @@ out center;`;
             approvedPlaces.forEach(p => mergedMap.set(p.id, p));
             
             const merged = Array.from(mergedMap.values());
+            setPlaces(merged);
             localStorage.setItem("camper_places", JSON.stringify(merged));
-            return merged;
-          });
         } else {
           console.warn(
             "Refresh public places returned non-JSON:",
@@ -2272,16 +2295,22 @@ out center;`;
   const [hasDeniedGPS, setHasDeniedGPS] = React.useState<boolean>(false);
 
   const handleGPSEnabledChange = (enabled: boolean) => {
-    if (enabled) {
-      setHasDeniedGPS(false);
-    }
-    setIsGPSEnabled(enabled);
+    setTimeout(() => {
+      if (enabled) {
+        setHasDeniedGPS(false);
+      }
+      setIsGPSEnabled(enabled);
+    }, 0);
   };
 
   const handleRequestSingleGPS = () => {
     if (typeof window !== "undefined" && navigator.geolocation) {
+      let resolvedFast = false;
+
+      // 1. Fast network-based fallback first
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          resolvedFast = true;
           setUserLocation({
             lat: position.coords.latitude,
             lng: position.coords.longitude,
@@ -2289,14 +2318,38 @@ out center;`;
           window.dispatchEvent(
             new CustomEvent("show-toast", {
               detail: {
-                message:
-                  "✅ Posizione rilevata con successo! Meteo GPS caricato.",
+                message: "⚡ Posizione rapida rilevata! Affinamento GPS in corso...",
               },
             }),
           );
         },
+        () => {
+          // If fast path fails, we'll wait for the high accuracy one
+        },
+        { timeout: 3000, enableHighAccuracy: false, maximumAge: 10000 }
+      );
+
+      // 2. High accuracy hardware GPS query
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+          if (!resolvedFast) {
+            window.dispatchEvent(
+              new CustomEvent("show-toast", {
+                detail: {
+                  message: "✅ Posizione GPS accurata rilevata! Meteo caricato.",
+                },
+              }),
+            );
+          }
+        },
         (error) => {
-          console.warn("GPS fetch warning: ", error);
+          console.warn("GPS high-accuracy fetch warning: ", error);
+          if (resolvedFast) return; // Keep the fast network location if high accuracy failed
+
           const isPermissionDenied =
             error.code === 1 ||
             error.code === 0 ||
@@ -2310,7 +2363,7 @@ out center;`;
             new CustomEvent("show-toast", {
               detail: {
                 message:
-                  "⚠️ Impossibile rilevare la posizione GPS. Accetta i permessi di localizzazione nelle impostazioni.",
+                  "⚠️ Impossibile rilevare la posizione GPS accurata. Accetta i permessi di localizzazione nelle impostazioni.",
               },
             }),
           );
@@ -2336,6 +2389,51 @@ out center;`;
       typeof window !== "undefined" &&
       navigator.geolocation
     ) {
+      // Parallel fast IP fallback to avoid being stuck on the generic center of Italy
+      // especially inside iframes/sandboxes and desktops without GPS hardware
+      if (!userLocation) {
+        fetch("https://ipapi.co/json/")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data && data.latitude && data.longitude) {
+              console.log("[App GPS] IP Fallback location found:", data.latitude, data.longitude);
+              setUserLocation((prev) => prev || {
+                lat: data.latitude,
+                lng: data.longitude,
+              });
+              setUserAccuracy((prev) => prev || 5000);
+            }
+          })
+          .catch((err) => {
+            console.warn("[App GPS] First IP Geolocation fallback failed:", err);
+            fetch("https://ipwho.is/")
+              .then((res) => res.json())
+              .then((data) => {
+                if (data && data.success && data.latitude && data.longitude) {
+                  console.log("[App GPS] ipwho.is fallback location found:", data.latitude, data.longitude);
+                  setUserLocation((prev) => prev || {
+                    lat: data.latitude,
+                    lng: data.longitude,
+                  });
+                  setUserAccuracy((prev) => prev || 5000);
+                }
+              })
+              .catch((err2) => console.warn("[App GPS] Second IP Geolocation fallback failed:", err2));
+          });
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation(prev => prev || {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+          setUserAccuracy(prev => prev || position.coords.accuracy);
+        },
+        (err) => console.warn("getCurrentPosition warn:", err),
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: Infinity }
+      );
+      
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           setUserLocation({
@@ -2371,7 +2469,7 @@ out center;`;
             // Don't spam toast for simple timeouts if we are still enabled
           }
         },
-        { enableHighAccuracy: false, timeout: 30000, maximumAge: 5000 },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
       );
     } else {
       // Do not clear the last known location when disabling GPS to save battery, just stop updating it.
@@ -2382,6 +2480,30 @@ out center;`;
       }
     };
   }, [isGPSEnabled]);
+
+  // Listen for simulated/manual camper location updates
+  React.useEffect(() => {
+    const handleSimulate = (e: any) => {
+      if (e.detail && e.detail.lat && e.detail.lng) {
+        setUserLocation({
+          lat: e.detail.lat,
+          lng: e.detail.lng,
+        });
+        setUserAccuracy(10); // manually placed camper has high precision (10m)
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: "📍 Posizione Camper impostata manualmente sulla mappa!",
+            },
+          })
+        );
+      }
+    };
+    window.addEventListener("simulate-camper-location", handleSimulate);
+    return () => {
+      window.removeEventListener("simulate-camper-location", handleSimulate);
+    };
+  }, []);
 
   // Attiva automaticamente il GPS quando si entra nella scheda "mappa & navigatore" o se c'è un viaggio attivo, e lo disattiva nelle altre per risparmiare batteria
   React.useEffect(() => {
@@ -2592,8 +2714,10 @@ out center;`;
   };
 
   const handleSelectPlaceDirectly = (place: Place) => {
-    setNavDestination(place);
-    setIsFullscreenNav(true);
+    setTimeout(() => {
+      setNavDestination(place);
+      setIsFullscreenNav(true);
+    }, 0);
   };
 
   // Safe checks for deadlines and checklists for header alerts count
@@ -3003,6 +3127,16 @@ out center;`;
                   }}
                   onBack={() => setMapNavSubTab("map")}
                 />
+              ) : isFullscreenNav ? (
+                <div className="flex-1 bg-[#0b101d] flex flex-col items-center justify-center text-slate-400 text-xs p-6 rounded-3xl border border-slate-800/40">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-bold text-slate-200">Navigatore a tutto schermo attivo</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 max-w-xs text-center leading-normal">
+                    La mappa principale è temporaneamente in pausa per ottimizzare le risorse del dispositivo.
+                  </p>
+                </div>
               ) : (
                 <MapTab
                   places={places}
@@ -4851,6 +4985,13 @@ out center;`;
                               <strong>Simone Sambucci</strong>.
                             </p>
                             <p>
+                              Dati cartografici © contributori di OpenStreetMap.
+                              Google Maps © Google.
+                            </p>
+                            <p>
+                              I dati relativi a campeggi e aree di sosta sono estratti da © OpenStreetMap contributors e rilasciati sotto licenza ODbL.
+                            </p>
+                            <p>
                               In quanto licenza{" "}
                               <strong>
                                 "All Rights Reserved" (Tutti i diritti
@@ -4966,14 +5107,12 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                       vehicleDimensions={vehicleDimensions}
                       currentUser={currentUser}
                       onAddPlace={(newPlace) => {
-                        setPlaces((prevPlaces) => {
-                          const updatedPlaces = [...prevPlaces, newPlace];
-                          localStorage.setItem(
-                            "camper_places",
-                            JSON.stringify(updatedPlaces),
-                          );
-                          return updatedPlaces;
-                        });
+                        const updatedPlaces = [...places, newPlace];
+                        setPlaces(updatedPlaces);
+                        localStorage.setItem(
+                          "camper_places",
+                          JSON.stringify(updatedPlaces),
+                        );
                       }}
                       onShowOnMap={(lat, lng, label) => {
                         setActiveTab("map_nav");
@@ -5177,7 +5316,11 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
           dest={navDestination}
           navigationMode={navigationMode}
           vehicleDimensions={vehicleDimensions}
-          onClose={() => setIsFullscreenNav(false)}
+          onClose={() => {
+            setTimeout(() => {
+              setIsFullscreenNav(false);
+            }, 0);
+          }}
           userLocation={userLocation}
           userAccuracy={userAccuracy}
           isGPSEnabled={isGPSEnabled}
@@ -6576,6 +6719,11 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                                     <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
                                       {place.category}
                                     </span>
+                                    {place.source && (
+                                      <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                                        Fonte: {place.source}
+                                      </span>
+                                    )}
                                     <h6 className="font-bold text-slate-800 text-sm">
                                       {place.name}
                                     </h6>

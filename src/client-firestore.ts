@@ -13,9 +13,15 @@ import {
   query,
   where,
   orderBy,
-  limit
+  limit,
+  setLogLevel
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+
+// Silence Firestore SDK console warnings about offline mode and long polling timeouts
+try {
+  setLogLevel("silent");
+} catch (e) {}
 
 export class ClientFirestoreAdapter {
   private db: any;
@@ -30,7 +36,7 @@ export class ClientFirestoreAdapter {
   }, databaseId: string) {
     const appName = "client-" + Date.now();
     this.app = initializeApp(firebaseConfig, appName);
-    this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true } as any, databaseId);
+    this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true }, databaseId);
   }
 
   getStorage() {
