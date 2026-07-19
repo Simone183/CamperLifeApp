@@ -5316,6 +5316,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
           dest={navDestination}
           navigationMode={navigationMode}
           vehicleDimensions={vehicleDimensions}
+          currentUser={currentUser}
           onClose={() => {
             setTimeout(() => {
               setIsFullscreenNav(false);

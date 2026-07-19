@@ -6,7 +6,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppSettings } from "../useAppSettings";
-import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl } from "../unit-helpers";
+import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getFuelEfficiencyUnit, getFuelEfficiencyValue } from "../unit-helpers";
 import {
   Place,
   Review,
@@ -809,6 +809,97 @@ export default function MapTab({
     number | null
   >(null);
   const [importError, setImportError] = React.useState<string | null>(null);
+
+  // --- MAP FUEL LOGS STATES ---
+  const [fuelLogs, setFuelLogs] = React.useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('camper_last_fuel_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [fuelStatsLoading, setFuelStatsLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!currentUser?.email) {
+      setFuelLogs([]);
+      return;
+    }
+    const fetchMapFuelLogs = async () => {
+      try {
+        setFuelStatsLoading(true);
+        const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setFuelLogs(data);
+          try {
+            localStorage.setItem('camper_last_fuel_logs', JSON.stringify(data));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn("[MapTab Fuel Logs] Failed to fetch fuel logs:", err);
+      } finally {
+        setFuelStatsLoading(false);
+      }
+    };
+    fetchMapFuelLogs();
+  }, [currentUser]);
+
+  const getCamperFuelStats = () => {
+    let lastPrice = 1.80; // standard default
+    let hasRealPrice = false;
+    let hasRealConsumption = false;
+    let consumptionKmPerL = 10; // standard default (10 km/L)
+
+    // Adjust standard default consumption based on driving style
+    const style = settings?.drivingStyle || "relax";
+    if (style === "relax") {
+      consumptionKmPerL = 11;
+    } else if (style === "eco") {
+      consumptionKmPerL = 12.5;
+    } else if (style === "veloce") {
+      consumptionKmPerL = 9;
+    }
+
+    if (fuelLogs && fuelLogs.length > 0) {
+      // Find the most recent log by date (or by createdAt)
+      const sortedByDate = [...fuelLogs].sort((a, b) => {
+        const dateA = new Date(a.date || a.createdAt || 0).getTime();
+        const dateB = new Date(b.date || b.createdAt || 0).getTime();
+        return dateB - dateA; // descending
+      });
+
+      if (sortedByDate.length > 0) {
+        lastPrice = sortedByDate[0].pricePerLiter;
+        hasRealPrice = true;
+      }
+
+      // Calculate consumption
+      const sortedByOdo = [...fuelLogs]
+        .filter(l => typeof l.odometer === 'number' && l.odometer > 0)
+        .sort((a, b) => a.odometer - b.odometer);
+
+      if (sortedByOdo.length >= 2) {
+        const startOdo = sortedByOdo[0].odometer;
+        const endOdo = sortedByOdo[sortedByOdo.length - 1].odometer;
+        const distanceCovered = endOdo - startOdo;
+        const litersBurned = sortedByOdo.slice(1).reduce((sum, l) => sum + (l.liters || 0), 0);
+
+        if (distanceCovered > 0 && litersBurned > 0) {
+          consumptionKmPerL = distanceCovered / litersBurned;
+          hasRealConsumption = true;
+        }
+      }
+    }
+
+    return {
+      lastPrice,
+      consumptionKmPerL,
+      hasRealPrice,
+      hasRealConsumption
+    };
+  };
 
   // --- USER PROPOSAL & ADMIN MODERATION STATES ---
   const [showAddPlaceModal, setShowAddPlaceModal] = React.useState(false);
@@ -2968,38 +3059,60 @@ out center;`;
       ) : (
         <div className="space-y-2 font-sans text-left">
           {/* Active Route Telemetry values */}
-          <div className="grid grid-cols-3 gap-1 bg-white border border-slate-200/50 p-1.5 text-center rounded-xl shadow-sm">
-            <div>
-              <span className="text-[7.5px] text-slate-400 font-bold uppercase block">
-                Distanza
-              </span>
-              <span className="text-[10px] font-extrabold text-slate-800 font-mono">
-                {selectedRouteStats
-                  ? `${formatDistance(selectedRouteStats.distanceKm, settings)}`
-                  : "..."}
-              </span>
-            </div>
-            <div>
-              <span className="text-[7.5px] text-slate-400 font-bold uppercase block">
-                ETA Camper
-              </span>
-              <span className="text-[10px] font-extrabold text-[#3E4A35] font-mono">
-                {selectedRouteStats
-                  ? `~${selectedRouteStats.etaMinutes} min`
-                  : "..."}
-              </span>
-            </div>
-            <div>
-              <span className="text-[7.5px] text-slate-400 font-bold uppercase block font-sans">
-                CO₂
-              </span>
-              <span className="text-[10px] font-extrabold text-[#A45C40] font-mono">
-                {selectedRouteStats
-                  ? `${selectedRouteStats.co2Kg.toFixed(1)} kg`
-                  : "..."}
-              </span>
-            </div>
-          </div>
+          {(() => {
+            const { lastPrice, consumptionKmPerL, hasRealPrice, hasRealConsumption } = getCamperFuelStats();
+            const fuelCost = selectedRouteStats ? (selectedRouteStats.distanceKm / consumptionKmPerL) * lastPrice : 0;
+            const arrivalTime = selectedRouteStats ? (() => {
+              const now = new Date();
+              now.setMinutes(now.getMinutes() + selectedRouteStats.etaMinutes);
+              const hrs = now.getHours().toString().padStart(2, "0");
+              const mins = now.getMinutes().toString().padStart(2, "0");
+              return `${hrs}:${mins}`;
+            })() : "...";
+
+            return (
+              <div className="grid grid-cols-4 gap-1 bg-white border border-slate-200/50 p-1.5 text-center rounded-xl shadow-sm">
+                <div>
+                  <span className="text-[7.5px] text-slate-400 font-bold uppercase block">
+                    Distanza
+                  </span>
+                  <span className="text-[9.5px] font-extrabold text-slate-800 font-mono block truncate" title={selectedRouteStats ? `${selectedRouteStats.distanceKm.toFixed(1)} km` : ""}>
+                    {selectedRouteStats
+                      ? `${formatDistance(selectedRouteStats.distanceKm, settings)}`
+                      : "..."}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[7.5px] text-slate-400 font-bold uppercase block">
+                    Tempo
+                  </span>
+                  <span className="text-[9.5px] font-extrabold text-[#3E4A35] font-mono block truncate">
+                    {selectedRouteStats
+                      ? `~${selectedRouteStats.etaMinutes} min`
+                      : "..."}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[7.5px] text-slate-400 font-bold uppercase block">
+                    Arrivo
+                  </span>
+                  <span className="text-[9.5px] font-extrabold text-blue-600 font-mono block truncate">
+                    {selectedRouteStats ? arrivalTime : "..."}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[7.5px] text-slate-400 font-bold uppercase block" title={hasRealPrice ? `Prezzo ultimo rifornimento: ${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L\nConsumo: ${consumptionKmPerL.toFixed(1)} km/L` : `Prezzo standard di default: 1.80 €/L\nConsumo standard: ${consumptionKmPerL.toFixed(1)} km/L`}>
+                    Carburante {hasRealPrice ? "✓" : "⚠"}
+                  </span>
+                  <span className="text-[9.5px] font-extrabold text-[#A45C40] font-mono block truncate" title={hasRealPrice ? `Costo stimato con ultimo rifornimento (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)` : "Costo stimato con prezzo standard"}>
+                    {selectedRouteStats
+                      ? `${fuelCost.toFixed(2)} ${getCurrencySymbol(settings)}`
+                      : "..."}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Switch to show stops/poi along route */}
           <label className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-xl cursor-pointer select-none hover:bg-slate-50 transition-all shadow-xs">

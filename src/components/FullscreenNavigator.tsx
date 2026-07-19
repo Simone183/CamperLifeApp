@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { useAppSettings } from '../useAppSettings';
-import { getTileUrl } from '../unit-helpers';
+import { getTileUrl, getCurrencySymbol } from '../unit-helpers';
 import { Place, VehicleDimensions, OSMObstacle } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
@@ -48,6 +48,7 @@ interface FullscreenNavigatorProps {
   onGPSEnabledChange: (enabled: boolean) => void;
   places: Place[];
   onSelectPlaceDirectly: (place: Place) => void;
+  currentUser?: { email: string; nickname?: string; name?: string; isModerator?: boolean } | null;
 }
 
 let globalLastSpokenText = "";
@@ -64,6 +65,7 @@ export default function FullscreenNavigator({
   onGPSEnabledChange,
   places,
   onSelectPlaceDirectly,
+  currentUser = null,
 }: FullscreenNavigatorProps) {
   const settings = useAppSettings();
   const mapContainerRef = React.useRef<HTMLDivElement>(null);
@@ -117,6 +119,87 @@ export default function FullscreenNavigator({
   const [deviceHeading, setDeviceHeading] = React.useState<number | null>(null);
   const [compassPermission, setCompassPermission] = React.useState<'default' | 'granted' | 'denied'>('default');
   const [useCompass, setUseCompass] = React.useState<boolean>(false);
+
+  // --- FUEL COST LOGS & ESTIMATES ---
+  const [fuelLogs, setFuelLogs] = React.useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('camper_last_fuel_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  React.useEffect(() => {
+    if (!currentUser?.email) return;
+    const fetchFuelLogs = async () => {
+      try {
+        const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setFuelLogs(data);
+          try {
+            localStorage.setItem('camper_last_fuel_logs', JSON.stringify(data));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn("[FullscreenNavigator] Failed to fetch fuel logs:", err);
+      }
+    };
+    fetchFuelLogs();
+  }, [currentUser]);
+
+  const getCamperFuelStats = () => {
+    let lastPrice = 1.80; // standard default
+    let hasRealPrice = false;
+    let hasRealConsumption = false;
+    let consumptionKmPerL = 10; // standard default
+
+    const style = settings?.drivingStyle || "relax";
+    if (style === "relax") {
+      consumptionKmPerL = 11;
+    } else if (style === "eco") {
+      consumptionKmPerL = 12.5;
+    } else if (style === "veloce") {
+      consumptionKmPerL = 9;
+    }
+
+    if (fuelLogs && fuelLogs.length > 0) {
+      const sortedByDate = [...fuelLogs].sort((a, b) => {
+        const dateA = new Date(a.date || a.createdAt || 0).getTime();
+        const dateB = new Date(b.date || b.createdAt || 0).getTime();
+        return dateB - dateA; // descending
+      });
+
+      if (sortedByDate.length > 0) {
+        lastPrice = sortedByDate[0].pricePerLiter;
+        hasRealPrice = true;
+      }
+
+      const sortedByOdo = [...fuelLogs]
+        .filter(l => typeof l.odometer === 'number' && l.odometer > 0)
+        .sort((a, b) => a.odometer - b.odometer);
+
+      if (sortedByOdo.length >= 2) {
+        const startOdo = sortedByOdo[0].odometer;
+        const endOdo = sortedByOdo[sortedByOdo.length - 1].odometer;
+        const distanceCovered = endOdo - startOdo;
+        const litersBurned = sortedByOdo.slice(1).reduce((sum, l) => sum + (l.liters || 0), 0);
+
+        if (distanceCovered > 0 && litersBurned > 0) {
+          consumptionKmPerL = distanceCovered / litersBurned;
+          hasRealConsumption = true;
+        }
+      }
+    }
+
+    return {
+      lastPrice,
+      consumptionKmPerL,
+      hasRealPrice,
+      hasRealConsumption
+    };
+  };
 
   const getCompassDirection = (deg: number | null) => {
     if (deg === null) return "N";
@@ -2113,6 +2196,68 @@ const newCenter = [targetCoords[1], targetCoords[0]];
   const remainingMinutes = remainingDistanceKm > 0.05 ? Math.max(1, Math.round((remainingDistanceKm / activeSpeed) * 85)) : 0;
   const etaTimeStr = getETA(remainingMinutes);
 
+  const { lastPrice, consumptionKmPerL, hasRealPrice, hasRealConsumption } = getCamperFuelStats();
+  const fuelCost = (remainingDistanceKm / consumptionKmPerL) * lastPrice;
+
+  const getCamperTollStats = () => {
+    let tollCost = 0;
+    let autostradaKm = 0;
+    
+    const stepsToAnalyze = directionsSequence;
+    
+    if (stepsToAnalyze && stepsToAnalyze.length > 0) {
+      stepsToAnalyze.forEach((step: any) => {
+        const desc = (step.desc || step.title || "").toLowerCase();
+        const title = (step.title || "").toLowerCase();
+        
+        // Match Italian autostrada identifiers like "A1", "A14", etc. but exclude "A90" (GRA which is free)
+        const hasAutostradaWord = desc.includes("autostrada") || title.includes("autostrada") || desc.includes("pedaggio") || desc.includes("toll") || desc.includes("tollbooth");
+        const hasAutostradaRef = /\bA[1-9][0-9]?\b/i.test(desc) || /\bA[1-9][0-9]?\b/i.test(title);
+        const isGRA = /\bA90\b/i.test(desc) || /\bA90\b/i.test(title) || desc.includes("raccordo") || title.includes("raccordo");
+        
+        if ((hasAutostradaWord || hasAutostradaRef) && !isGRA) {
+          // Parse distance
+          let distMeters = 0;
+          if (typeof step.distance === 'number') {
+            distMeters = step.distance;
+          } else if (typeof step.distance === 'string') {
+            const clean = step.distance.toLowerCase().replace(/,/g, ".");
+            if (clean.includes("km")) {
+              distMeters = parseFloat(clean) * 1000;
+            } else if (clean.includes("m")) {
+              distMeters = parseFloat(clean);
+            }
+          }
+          autostradaKm += distMeters / 1000;
+        }
+      });
+    }
+
+    const tollRatePerKm = 0.095; // Average Class B camper toll rate in Italy
+    
+    // If driving style is "veloce" (highway) and the route is long, but for some reason 0 autostrada steps are detected
+    // (e.g. fallback route or generic OSRM names), let's fallback to a realistic heuristic:
+    // if driving style is "veloce" and remainingDistanceKm > 20km, assume about 65% of the route is on highway.
+    // if driving style is "eco" and remainingDistanceKm > 30km, assume about 30% of the route is on highway.
+    if (autostradaKm === 0 && remainingDistanceKm > 20) {
+      const style = settings?.drivingStyle || "relax";
+      if (style === "veloce") {
+        autostradaKm = remainingDistanceKm * 0.65;
+      } else if (style === "eco") {
+        autostradaKm = remainingDistanceKm * 0.30;
+      }
+    }
+    
+    tollCost = autostradaKm * tollRatePerKm;
+    
+    return {
+      tollCost,
+      autostradaKm
+    };
+  };
+
+  const tollStats = getCamperTollStats();
+
   const formatDuration = (mins: number) => {
     if (mins < 60) {
       return `${mins} min`;
@@ -2136,9 +2281,9 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
         {/* Top Preview Stats Bar or Active Directions HUD Overlay */}
         {isPreview ? (
-          <div className="absolute top-4 inset-x-0 mx-auto max-w-2xl z-10 px-4">
-            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4 pointer-events-auto">
-              <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="absolute top-4 inset-x-0 mx-auto max-w-3xl z-10 px-4">
+            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4 pointer-events-auto">
+              <div className="flex items-center gap-3 w-full lg:w-auto">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
                   🗺️
                 </div>
@@ -2152,20 +2297,43 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 </div>
               </div>
               
-              <div className="flex items-center gap-4 md:gap-6 bg-slate-900/60 px-4 py-2 rounded-xl border border-slate-800/80 w-full md:w-auto justify-around md:justify-start">
-                <div className="flex flex-col items-center md:items-start">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Totale Distanza</span>
-                  <span className="text-sm font-black text-emerald-400 font-mono">{remainingDistanceKm.toFixed(1)} km</span>
+              <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-slate-900/60 py-2 rounded-xl border border-slate-800/80 w-full lg:w-[580px] text-center">
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Distanza</span>
+                    <span className="hidden sm:inline">Totale Distanza</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
                 </div>
-                <div className="h-6 w-px bg-slate-800/60" />
-                <div className="flex flex-col items-center md:items-start">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Tempo Percorrenza</span>
-                  <span className="text-sm font-black text-slate-200">{formatDuration(remainingMinutes)}</span>
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Tempo</span>
+                    <span className="hidden sm:inline">Tempo Percorrenza</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
                 </div>
-                <div className="h-6 w-px bg-slate-800/60" />
-                <div className="flex flex-col items-center md:items-start">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Orario di Arrivo</span>
-                  <span className="text-sm font-black text-slate-200">{etaTimeStr}</span>
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Arrivo</span>
+                    <span className="hidden sm:inline">Orario di Arrivo</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center px-1" title={hasRealPrice ? `Spesa stimata basata sul tuo ultimo rifornimento (${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L) e consumo (${consumptionKmPerL.toFixed(1)} km/L)` : `Spesa stimata basata su prezzo carburante di default (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)`}>
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Spesa Carb.</span>
+                    <span className="hidden sm:inline">Spesa Carburante</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center px-1" title={`Spesa pedaggio stimata basata sulle tratte autostradali rilevate (${tollStats.autostradaKm.toFixed(1)} km a 0.095 ${getCurrencySymbol(settings)}/km)`}>
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Spesa Ped.</span>
+                    <span className="hidden sm:inline">Spesa Pedaggio</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">
+                    {tollStats.tollCost > 0 ? `${tollStats.tollCost.toFixed(2)} ${getCurrencySymbol(settings)}` : "0.00 " + getCurrencySymbol(settings)}
+                  </span>
                 </div>
               </div>
             </div>
