@@ -736,6 +736,7 @@ out center;`;
   const lastSpokenTextRef = React.useRef<string>("");
   const lastSpokenStepRef = React.useRef<number>(-1);
   const previousIsPreviewRef = React.useRef<boolean>(true);
+  const prevDestIdRef = React.useRef<string>(dest.id);
   const spoken1kmRef = React.useRef<Record<number, boolean>>({});
   const spoken50mRef = React.useRef<Record<number, boolean>>({});
   const hasShownOffRoadToastRef = React.useRef<boolean>(false);
@@ -1265,8 +1266,14 @@ out center;`;
     const justStartedNavigation = previousIsPreviewRef.current === true && isPreview === false;
     previousIsPreviewRef.current = isPreview;
 
-    // Reset spoken refs when starting navigation or when starting from scratch
-    if (justStartedNavigation || simRouteIndex === 0) {
+    const destChanged = prevDestIdRef.current !== dest.id;
+    if (destChanged) {
+      prevDestIdRef.current = dest.id;
+    }
+    const simReset = !isGPSEnabled && simRouteIndex === 0;
+
+    // Reset spoken refs when starting navigation, changing destination, or resetting simulation
+    if (justStartedNavigation || destChanged || simReset) {
       spoken1kmRef.current = {};
       spoken50mRef.current = {};
       hasShownOffRoadToastRef.current = false;
