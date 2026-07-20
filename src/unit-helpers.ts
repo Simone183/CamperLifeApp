@@ -142,3 +142,11 @@ export function getTileUrl(mapTheme: string): string {
       return '/api/map-tile/{z}/{x}/{y}?lyrs=m';
   }
 }
+
+export function parseDimToNumber(val: string | number | undefined | null): number {
+  if (val === undefined || val === null) return 0;
+  if (typeof val === 'number') return val;
+  const cleaned = val.toString().replace(',', '.').replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}

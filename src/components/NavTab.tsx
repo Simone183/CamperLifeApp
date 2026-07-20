@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useAppSettings } from '../useAppSettings';
-import { formatSpeed } from '../unit-helpers';
+import { formatSpeed, parseDimToNumber } from '../unit-helpers';
 import { Place, VehicleDimensions } from '../types';
 import { Compass, Volume2, VolumeX, Play, Pause, AlertTriangle, ArrowUpRight, ArrowLeftRight, Navigation, RefreshCw, Eye, EyeOff, Search, Map, ShieldAlert, Check } from 'lucide-react';
 
@@ -112,8 +112,8 @@ export default function NavTab({
       ];
     }
 
-    const needsHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && vehicleDimensions.height > dest.maxHeight;
-    const needsWeightViolation = dest.hasMaxWeightLimit && dest.maxWeight && vehicleDimensions.weight > dest.maxWeight;
+    const needsHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && parseDimToNumber(vehicleDimensions.height) > dest.maxHeight;
+    const needsWeightViolation = dest.hasMaxWeightLimit && dest.maxWeight && parseDimToNumber(vehicleDimensions.weight) > dest.maxWeight;
 
     // IF REAL GPS IS CONNECTED AND ACTIVE
     if (isGPSEnabled && userLocation && liveDistance !== null) {

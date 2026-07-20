@@ -6,7 +6,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppSettings } from "../useAppSettings";
-import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getFuelEfficiencyUnit, getFuelEfficiencyValue } from "../unit-helpers";
+import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getFuelEfficiencyUnit, getFuelEfficiencyValue, parseDimToNumber } from "../unit-helpers";
 import {
   Place,
   Review,
@@ -313,7 +313,7 @@ function SmartRouteDisplay({
     }
   }, [map, userLocation, selectedPlace]);
 
-  const isBridgeObstacleExceeded = vehicleDimensions.height > 3.12;
+  const isBridgeObstacleExceeded = parseDimToNumber(vehicleDimensions.height) > 3.12;
   const midLat = (startPt[0] + endPt[0]) / 2;
   const midLng = (startPt[1] + endPt[1]) / 2;
 
@@ -1761,7 +1761,7 @@ export default function MapTab({
     const midCoord = direct[12];
 
     // Height limit check
-    const isBridgeObstacleExceeded = vehicleDimensions.height > 3.12;
+    const isBridgeObstacleExceeded = parseDimToNumber(vehicleDimensions.height) > 3.12;
 
     const obstacle: OSMObstacle = {
       id: 888123,
@@ -1815,17 +1815,17 @@ export default function MapTab({
 
     // Heavy camper safety speeds and driving style optimization
     const style = settings?.drivingStyle || "relax";
-    let baseSpeed = vehicleDimensions.weight > 3.5 ? 65 : 82;
+    let baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 65 : 82;
     let co2Multiplier = 0.24;
 
     if (style === "relax") {
-      baseSpeed = vehicleDimensions.weight > 3.5 ? 60 : 72;
+      baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 60 : 72;
       co2Multiplier = 0.21;
     } else if (style === "eco") {
-      baseSpeed = vehicleDimensions.weight > 3.5 ? 65 : 80;
+      baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 65 : 80;
       co2Multiplier = 0.18;
     } else if (style === "veloce") {
-      baseSpeed = vehicleDimensions.weight > 3.5 ? 80 : 95;
+      baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 80 : 95;
       co2Multiplier = 0.28;
     }
 
@@ -1954,11 +1954,11 @@ export default function MapTab({
         const heightViolation =
           p.hasMaxHeightLimit &&
           p.maxHeight &&
-          vehicleDimensions.height > p.maxHeight;
+          parseDimToNumber(vehicleDimensions.height) > p.maxHeight;
         const weightViolation =
           p.hasMaxWeightLimit &&
           p.maxWeight &&
-          vehicleDimensions.weight > p.maxWeight;
+          parseDimToNumber(vehicleDimensions.weight) > p.maxWeight;
         if (heightViolation || weightViolation) return false;
       }
 
@@ -2167,11 +2167,11 @@ out center;`;
           if (val === 0) return;
 
           let isViolation = false;
-          if (type === "height" && vehicleDimensions.height > val)
+          if (type === "height" && parseDimToNumber(vehicleDimensions.height) > val)
             isViolation = true;
-          if (type === "width" && vehicleDimensions.width > val)
+          if (type === "width" && parseDimToNumber(vehicleDimensions.width) > val)
             isViolation = true;
-          if (type === "weight" && vehicleDimensions.weight > val)
+          if (type === "weight" && parseDimToNumber(vehicleDimensions.weight) > val)
             isViolation = true;
 
           obstacles.push({
@@ -3005,11 +3005,11 @@ out center;`;
   const hasDimensionsExceeded =
     selectedPlace?.hasMaxHeightLimit &&
     selectedPlace.maxHeight &&
-    vehicleDimensions.height > selectedPlace.maxHeight;
+    parseDimToNumber(vehicleDimensions.height) > selectedPlace.maxHeight;
   const hasWeightExceeded =
     selectedPlace?.hasMaxWeightLimit &&
     selectedPlace.maxWeight &&
-    vehicleDimensions.weight > selectedPlace.maxWeight;
+    parseDimToNumber(vehicleDimensions.weight) > selectedPlace.maxWeight;
 
   const radarRottaCamperWidget = selectedPlace ? (
     <div className="bg-orange-50 rounded-xl border border-orange-200/80 p-2.5 flex flex-col space-y-2 select-none w-full mt-2 relative overflow-hidden">
@@ -3772,7 +3772,7 @@ out center;`;
                 const hasLimit =
                   place.hasMaxHeightLimit &&
                   place.maxHeight &&
-                  vehicleDimensions.height > place.maxHeight;
+                  parseDimToNumber(vehicleDimensions.height) > place.maxHeight;
 
                 return (
                   <button
@@ -4087,7 +4087,7 @@ out center;`;
                     const heightViolation =
                       place.hasMaxHeightLimit &&
                       place.maxHeight &&
-                      vehicleDimensions.height > place.maxHeight;
+                      parseDimToNumber(vehicleDimensions.height) > place.maxHeight;
                     const ringClass = heightViolation
                       ? "ring-4 ring-rose-500 animate-pulse bg-rose-600 border-rose-200"
                       : "border-white";
@@ -8225,7 +8225,7 @@ export function LeafletOfflineMap({
       const isViolation =
         place.hasMaxHeightLimit &&
         place.maxHeight &&
-        vehicleDimensions.height > place.maxHeight;
+        parseDimToNumber(vehicleDimensions.height) > place.maxHeight;
       const ringClass = isViolation
         ? "ring-4 ring-rose-500 bg-rose-600 border-rose-200 animate-pulse"
         : "border-white";

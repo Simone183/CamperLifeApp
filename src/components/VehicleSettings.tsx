@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useAppSettings } from '../useAppSettings';
-import { convertDimensionToDisplay, convertDimensionToMetric, convertWeightTonnesToDisplay, convertWeightDisplayToTonnes, getWeightUnitTonnes, getDimensionUnit } from '../unit-helpers';
+import { convertDimensionToDisplay, convertDimensionToMetric, convertWeightTonnesToDisplay, convertWeightDisplayToTonnes, getWeightUnitTonnes, getDimensionUnit, parseDimToNumber } from '../unit-helpers';
 import { VehicleDimensions } from '../types';
 import { Truck, Check, AlertTriangle, HelpCircle } from 'lucide-react';
 
@@ -23,18 +23,10 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
     setLocalDims(dimensions);
   }, [dimensions]);
 
-  const handleChange = (field: keyof VehicleDimensions, value: string | number) => {
-    let numericValue = typeof value === 'string' ? parseFloat(value) || 0 : value;
-
-    if (field === 'height' || field === 'width' || field === 'length') {
-      numericValue = convertDimensionToMetric(numericValue, settings);
-    } else if (field === 'weight') {
-      numericValue = convertWeightDisplayToTonnes(numericValue, settings);
-    }
-
+  const handleChange = (field: keyof VehicleDimensions, value: string) => {
     setLocalDims((prev) => ({
       ...prev,
-      [field]: numericValue,
+      [field]: value,
     }));
   };
 
@@ -59,9 +51,9 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
   };
 
   // Warnings for height parameters
-  const isTooTall = localDims.height >= 3.0;
-  const isHeavy = localDims.weight > 3.5;
-  const isVeryLong = localDims.length >= 7.0;
+  const isTooTall = parseDimToNumber(localDims.height) >= 3.0;
+  const isHeavy = parseDimToNumber(localDims.weight) > 3.5;
+  const isVeryLong = parseDimToNumber(localDims.length) >= 7.0;
 
   return (
     <div id="vehicle-settings" className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
@@ -99,9 +91,8 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
             <p className="text-[11px] text-slate-500 mb-1.5">Compresa antenna o pannelli solari</p>
             <div className="relative">
               <input
-                type="number"
-                step="0.05"
-                value={localDims.height || ''}
+                type="text"
+                value={localDims.height ?? ''}
                 onChange={(e) => handleChange('height', e.target.value)}
                 className={`w-full pl-4 pr-12 py-3 rounded-xl border outline-none text-slate-800 font-semibold font-mono focus:ring-4 focus:ring-[#3E4A35]/15 transition-all ${
                   isTooTall ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200 focus:border-[#3E4A35]'
@@ -116,14 +107,13 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
           {/* Length */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">
-              Lunghezza Totale (${getDimensionUnit(settings) === 'ft' ? 'piedi' : 'metri'})
+              Lunghezza Totale ({getDimensionUnit(settings) === 'ft' ? 'piedi' : 'metri'})
             </label>
             <p className="text-[11px] text-slate-500 mb-1.5">Compreso porta-biciclette posteriore</p>
             <div className="relative">
               <input
-                type="number"
-                step="0.05"
-                value={localDims.length || ''}
+                type="text"
+                value={localDims.length ?? ''}
                 onChange={(e) => handleChange('length', e.target.value)}
                 className={`w-full pl-4 pr-12 py-3 rounded-xl border outline-none text-slate-800 font-semibold font-mono focus:ring-4 focus:ring-[#3E4A35]/15 transition-all ${
                   isVeryLong ? 'border-amber-300' : 'border-slate-200 focus:border-[#3E4A35]'
@@ -138,14 +128,13 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
           {/* Width */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">
-              Larghezza (${getDimensionUnit(settings) === 'ft' ? 'piedi' : 'metri'})
+              Larghezza ({getDimensionUnit(settings) === 'ft' ? 'piedi' : 'metri'})
             </label>
             <p className="text-[11px] text-slate-500 mb-1.5">Inclusi specchietti retrovisori chiusi</p>
             <div className="relative">
               <input
-                type="number"
-                step="0.05"
-                value={localDims.width || ''}
+                type="text"
+                value={localDims.width ?? ''}
                 onChange={(e) => handleChange('width', e.target.value)}
                 className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-200 outline-none focus:border-[#3E4A35] focus:ring-4 focus:ring-[#3E4A35]/15 transition-all text-slate-800 font-semibold font-mono"
               />
@@ -158,14 +147,13 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
           {/* Weight */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">
-              Massa a pieno carico (${getWeightUnitTonnes(settings) === 'lbs' ? 'libbre' : 'tonnellate'})
+              Massa a pieno carico ({getWeightUnitTonnes(settings) === 'lbs' ? 'libbre' : 'tonnellate'})
             </label>
             <p className="text-[11px] text-slate-500 mb-1.5">Molto importante per ponti e restrizioni C</p>
             <div className="relative">
               <input
-                type="number"
-                step="0.1"
-                value={localDims.weight || ''}
+                type="text"
+                value={localDims.weight ?? ''}
                 onChange={(e) => handleChange('weight', e.target.value)}
                 className={`w-full pl-4 pr-12 py-3 rounded-xl border outline-none text-slate-800 font-semibold font-mono focus:ring-4 focus:ring-[#3E4A35]/15 transition-all ${
                   isHeavy ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200 focus:border-[#3E4A35]'
@@ -188,17 +176,17 @@ export default function VehicleSettings({ dimensions, onChange }: VehicleSetting
             <ul className="list-disc pl-5 text-[11px] text-amber-700 space-y-1 leading-relaxed">
               {isTooTall && (
                 <li>
-                  <strong>Altezza ({parseFloat(convertDimensionToDisplay(localDims.height, settings).toFixed(2))}{getDimensionUnit(settings)}) ≥ {parseFloat(convertDimensionToDisplay(3.0, settings).toFixed(2))} {getDimensionUnit(settings)}:</strong> Massima attenzione ai ponti ferroviari storici, passaggi coperti nel centro città e ai rami bassi nelle aree sosta naturali.
+                  <strong>Altezza ({parseFloat(convertDimensionToDisplay(parseDimToNumber(localDims.height), settings).toFixed(2))}{getDimensionUnit(settings)}) ≥ {parseFloat(convertDimensionToDisplay(3.0, settings).toFixed(2))} {getDimensionUnit(settings)}:</strong> Massima attenzione ai ponti ferroviari storici, passaggi coperti nel centro città e ai rami bassi nelle aree sosta naturali.
                 </li>
               )}
               {isHeavy && (
                 <li>
-                  <strong>Peso ({parseFloat(convertWeightTonnesToDisplay(localDims.weight, settings).toFixed(2))}{getWeightUnitTonnes(settings)}) &gt; {parseFloat(convertWeightTonnesToDisplay(3.5, settings).toFixed(2))} {getWeightUnitTonnes(settings)}:</strong> Richiede patente C o superiore. Molte strade secondarie montane e ponti impongono un divieto assoluto oltre le 3.5t.
+                  <strong>Peso ({parseFloat(convertWeightTonnesToDisplay(parseDimToNumber(localDims.weight), settings).toFixed(2))}{getWeightUnitTonnes(settings)}) &gt; {parseFloat(convertWeightTonnesToDisplay(3.5, settings).toFixed(2))} {getWeightUnitTonnes(settings)}:</strong> Richiede patente C o superiore. Molte strade secondarie montane e ponti impongono un divieto assoluto oltre le 3.5t.
                 </li>
               )}
               {isVeryLong && (
                 <li>
-                  <strong>Lunghezza ({parseFloat(convertDimensionToDisplay(localDims.length, settings).toFixed(2))}{getDimensionUnit(settings)}) ≥ {parseFloat(convertDimensionToDisplay(7.0, settings).toFixed(2))} {getDimensionUnit(settings)}:</strong> Ampio raggio di sterzata richiesto. Prestare grande cura nei tornanti montani alpini e nelle piccole rotatorie.
+                  <strong>Lunghezza ({parseFloat(convertDimensionToDisplay(parseDimToNumber(localDims.length), settings).toFixed(2))}{getDimensionUnit(settings)}) ≥ {parseFloat(convertDimensionToDisplay(7.0, settings).toFixed(2))} {getDimensionUnit(settings)}:</strong> Ampio raggio di sterzata richiesto. Prestare grande cura nei tornanti montani alpini e nelle piccole rotatorie.
                 </li>
               )}
             </ul>

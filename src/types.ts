@@ -125,10 +125,10 @@ export interface CommunityMessage {
 
 export interface VehicleDimensions {
   modelName: string;
-  height: number; // m
-  width: number;  // m
-  weight: number; // t
-  length: number; // m
+  height: number | string; // m
+  width: number | string;  // m
+  weight: number | string; // t
+  length: number | string; // m
 }
 
 export interface OSMObstacle {

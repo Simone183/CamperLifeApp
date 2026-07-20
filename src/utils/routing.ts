@@ -1,4 +1,5 @@
 import { OSMObstacle } from '../types';
+import { parseDimToNumber } from '../unit-helpers';
 
 export const isNearRoute = (obstacleLat: number, obstacleLng: number, routeCoords: [number, number][], thresholdMeters = 400) => {
   const degThreshold = thresholdMeters / 111000;
@@ -106,8 +107,8 @@ out body;>;out skel qt;`;
         if (val === 0) return;
 
         let isViolating = false;
-        if (type === 'height' && vehicleDimensions.height > val) isViolating = true;
-        if (type === 'width' && vehicleDimensions.width > val) isViolating = true;
+        if (type === 'height' && parseDimToNumber(vehicleDimensions.height) > val) isViolating = true;
+        if (type === 'width' && parseDimToNumber(vehicleDimensions.width) > val) isViolating = true;
 
         filtered.push({
           id: el.id,

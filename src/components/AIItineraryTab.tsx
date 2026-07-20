@@ -14,6 +14,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { Place, VehicleDimensions, PlaceCategory } from '../types';
+import { parseDimToNumber } from '../unit-helpers';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
@@ -139,9 +140,9 @@ export default function AIItineraryTab({
           travelStyle,
           vehicleType: vehicleDimensions.modelName || 'Mansardato',
           vehicleDims: {
-            length: vehicleDimensions.length,
-            width: vehicleDimensions.width,
-            height: vehicleDimensions.height
+            length: parseDimToNumber(vehicleDimensions.length),
+            width: parseDimToNumber(vehicleDimensions.width),
+            height: parseDimToNumber(vehicleDimensions.height)
           }
         }),
       });

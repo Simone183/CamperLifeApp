@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { useAppSettings } from '../useAppSettings';
-import { getTileUrl, getCurrencySymbol } from '../unit-helpers';
+import { getTileUrl, getCurrencySymbol, parseDimToNumber } from '../unit-helpers';
 import { Place, VehicleDimensions, OSMObstacle } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
@@ -90,7 +90,7 @@ export default function FullscreenNavigator({
 
   React.useEffect(() => {
     const style = settings?.drivingStyle || "relax";
-    const isHeavy = vehicleDimensions?.weight > 3.5;
+    const isHeavy = parseDimToNumber(vehicleDimensions?.weight) > 3.5;
     let targetSpeed = 80;
     if (style === "relax") {
       targetSpeed = isHeavy ? 60 : 70;
@@ -545,9 +545,9 @@ out center;`;
           if (val === 0) return;
 
           let isViolation = false;
-          if (type === 'height' && vehicleDimensions.height > val) isViolation = true;
-          if (type === 'width' && vehicleDimensions.width > val) isViolation = true;
-          if (type === 'weight' && vehicleDimensions.weight > val) isViolation = true;
+          if (type === 'height' && parseDimToNumber(vehicleDimensions.height) > val) isViolation = true;
+          if (type === 'width' && parseDimToNumber(vehicleDimensions.width) > val) isViolation = true;
+          if (type === 'weight' && parseDimToNumber(vehicleDimensions.weight) > val) isViolation = true;
 
           obstacles.push({
             id: el.id,
@@ -782,8 +782,8 @@ out center;`;
   };
 
   // Safe checks for sagoma dimensions
-  const hasHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && vehicleDimensions.height > dest.maxHeight;
-  const hasWeightViolation = dest.hasMaxWeightLimit && dest.maxWeight && vehicleDimensions.weight > dest.maxWeight;
+  const hasHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && parseDimToNumber(vehicleDimensions.height) > dest.maxHeight;
+  const hasWeightViolation = dest.hasMaxWeightLimit && dest.maxWeight && parseDimToNumber(vehicleDimensions.weight) > dest.maxWeight;
 
   // Dynamically generate turn-by-turn routing steps from geometry when not provided directly by the routing server
   const generateStepsFromGeometry = (coords: [number, number][]): { title: string; desc: string; icon: string; distance: string; coordinateIndex?: number }[] => {
