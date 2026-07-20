@@ -210,3 +210,14 @@ export interface Trip {
   }>;
 }
 
+export interface NavigationStep {
+  title: string;
+  desc: string;
+  icon: string;
+  distance: string;
+  coordinateIndex?: number;
+  streetName?: string;
+  maneuverType?: string;
+  modifier?: string;
+}
+

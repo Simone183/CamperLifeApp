@@ -150,3 +150,12 @@ export function parseDimToNumber(val: string | number | undefined | null): numbe
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
 }
+
+export function formatMeters(meters: number | undefined | null, longForm = false): string {
+  if (meters === undefined || meters === null) return "";
+  if (meters >= 1000) {
+    const km = meters / 1000;
+    return `${km.toFixed(1).replace('.', ',')} km`;
+  }
+  return longForm ? `${Math.round(meters)} metri` : `${Math.round(meters)} m`;
+}

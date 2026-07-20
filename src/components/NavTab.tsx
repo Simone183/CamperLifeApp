@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useAppSettings } from '../useAppSettings';
-import { formatSpeed, parseDimToNumber } from '../unit-helpers';
+import { formatSpeed, parseDimToNumber, formatMeters } from '../unit-helpers';
 import { Place, VehicleDimensions } from '../types';
 import { Compass, Volume2, VolumeX, Play, Pause, AlertTriangle, ArrowUpRight, ArrowLeftRight, Navigation, RefreshCw, Eye, EyeOff, Search, Map, ShieldAlert, Check } from 'lucide-react';
 
@@ -280,15 +280,6 @@ export default function NavTab({
     }
   }, [currentStepIndex, dest?.id]);
 
-  // Initial trigger vocal when navigator tab opens
-  React.useEffect(() => {
-    if (dest && !isGPSEnabled) {
-      speakInstruction(`Navigatore in modalità simulazione per ${dest.name}. Altezza impostata nel camper: ${vehicleDimensions.height} metri.`);
-    } else if (dest && isGPSEnabled) {
-      speakInstruction(`Navigatore GPS reale attivo per ${dest.name}. Rilevamento sagoma sagomata attivo.`);
-    }
-  }, [dest, isGPSEnabled]);
-
   const handleTogglePlay = () => {
     if (isGPSEnabled) {
       window.dispatchEvent(new CustomEvent('show-toast', {
@@ -298,9 +289,6 @@ export default function NavTab({
     }
     const nextState = !isDriving;
     setIsDriving(nextState);
-    if (nextState) {
-      speakInstruction(`Avvio simulazione guida per ${dest.name}. Velocità stimata ${simulatedSpeed} chilometri orari.`);
-    }
   };
 
   const currentWarning = currentStep?.warning;
@@ -393,8 +381,8 @@ export default function NavTab({
               <div className="flex justify-between items-center text-[11px] font-mono tracking-widest text-slate-400 font-bold uppercase">
                 <span>
                   {isGPSEnabled && userLocation 
-                    ? `Distanza reale: ${currentStep?.distanceLeft} metri`
-                    : `Prossima Manovra a ${currentStep?.distanceLeft} metri`
+                    ? `Distanza reale: ${formatMeters(currentStep?.distanceLeft, true)}`
+                    : `Prossima Manovra a ${formatMeters(currentStep?.distanceLeft, true)}`
                   }
                 </span>
                 <span>

@@ -109,7 +109,7 @@ const INITIAL_TRIPS: Trip[] = [
 interface DiaryTabProps {
   currentUser?: { email: string; nickname?: string } | null;
   initialTripId?: string | null;
-  initialSubTab?: "list" | "details";
+  initialSubTab?: "list" | "details" | "album";
   onNavigateToPlace: (place: Place) => void;
   trips?: Trip[];
   setTrips?: (trips: Trip[]) => void;
@@ -140,8 +140,8 @@ export default function DiaryTab({
     },
   );
 
-  // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details)
-  const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details">(
+  // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details, 'album' contains global photos)
+  const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details" | "album">(
     () => {
       if (initialSubTab) return initialSubTab;
       return "list";
@@ -199,7 +199,13 @@ export default function DiaryTab({
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = React.useState<string>("");
+  const [uploadedImages, setUploadedImages] = React.useState<Array<{ url: string; name: string }>>([]);
   const [dragActive, setDragActive] = React.useState(false);
+
+  // Album Foto search, filter, and lightbox states
+  const [selectedAlbumTripId, setSelectedAlbumTripId] = React.useState<string>("");
+  const [albumSearchQuery, setAlbumSearchQuery] = React.useState<string>("");
+  const [selectedAlbumPhotoIndex, setSelectedAlbumPhotoIndex] = React.useState<number | null>(null);
 
   // Active Trip Editing states
   const [isEditingTrip, setIsEditingTrip] = React.useState(false);
@@ -233,6 +239,45 @@ export default function DiaryTab({
   }, [trips]);
 
   const activeTrip = trips.find((t) => t.id === selectedTripId);
+
+  // All photos aggregated across all trips
+  const allPhotos = React.useMemo(() => {
+    const photosList: Array<DiaryPhoto & { tripId: string; tripTitle: string }> = [];
+    trips.forEach((trip) => {
+      if (trip.photos) {
+        trip.photos.forEach((photo) => {
+          photosList.push({
+            ...photo,
+            tripId: trip.id,
+            tripTitle: trip.title,
+          });
+        });
+      }
+    });
+    // Sort by date descending, fallback to id
+    return photosList.sort((a, b) => {
+      const dateA = a.date || "";
+      const dateB = b.date || "";
+      if (dateB !== dateA) {
+        return dateB.localeCompare(dateA);
+      }
+      return b.id.localeCompare(a.id);
+    });
+  }, [trips]);
+
+  // Filtered photos based on album search query and selected trip filter
+  const filteredPhotos = React.useMemo(() => {
+    return allPhotos.filter((photo) => {
+      const matchTrip = selectedAlbumTripId ? photo.tripId === selectedAlbumTripId : true;
+      const searchLower = albumSearchQuery.toLowerCase().trim();
+      const matchSearch = searchLower
+        ? photo.description.toLowerCase().includes(searchLower) ||
+          (photo.locationName && photo.locationName.toLowerCase().includes(searchLower)) ||
+          photo.tripTitle.toLowerCase().includes(searchLower)
+        : true;
+      return matchTrip && matchSearch;
+    });
+  }, [allPhotos, selectedAlbumTripId, albumSearchQuery]);
 
   // Refuel / expense stats memo
   const fuelStats = React.useMemo(() => {
@@ -791,96 +836,120 @@ export default function DiaryTab({
     setTrips(updated);
   };
 
-  // File upload processing and API storage
-  const processAndUploadFile = async (file: File) => {
-    if (!file) return;
+  // Multiple files upload processing and API storage
+  const processAndUploadFiles = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
     setIsUploading(true);
     setUploadError(null);
 
-    // Validate if it is an image
-    if (!file.type.startsWith("image/")) {
-      setUploadError("Il file selezionato non è un'immagine valida.");
-      setIsUploading(false);
-      return;
-    }
-
-    // Limit files to 15MB on client side
-    if (file.size > 15 * 1024 * 1024) {
-      setUploadError(
-        "L'immagine supera la dimensione massima consentita di 15 MB.",
-      );
-      setIsUploading(false);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64 = reader.result as string;
-
-        // Apply compression quality from settings
-        let finalBase64 = base64;
-        if (settings?.photoQuality) {
-          finalBase64 = await compressImage(base64, settings.photoQuality);
-        }
-
-        // Show a message if Solo Wi-Fi is active
-        if (settings?.wifiOnlySync) {
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: {
-                message: "ℹ️ Solo Wi-Fi attivo: caricamento ottimizzato per risparmio dati.",
-              },
-            }),
-          );
-        }
-
-        // POST to our backend upload API
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: file.name,
-            base64: finalBase64,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.url) {
-            setUploadedImageUrl(data.url);
-            window.dispatchEvent(
-              new CustomEvent("show-toast", {
-                detail: {
-                  message: `📸 Foto "${file.name}" caricata con successo!`,
-                },
-              }),
-            );
-          } else {
-            throw new Error(data.error || "Errore sconosciuto sul server.");
-          }
-        } else {
-          const errData = await response.json();
-          throw new Error(
-            errData.error || `Codice di errore: ${response.status}`,
-          );
-        }
-      } catch (err: any) {
-        console.error("Upload process error:", err);
-        setUploadError(`Caricamento fallito: ${err.message}`);
-      } finally {
+    const validFiles: File[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith("image/")) {
+        setUploadError("Uno o più file selezionati non sono immagini valide.");
         setIsUploading(false);
+        return;
       }
-    };
+      if (file.size > 15 * 1024 * 1024) {
+        setUploadError(
+          `L'immagine "${file.name}" supera la dimensione massima consentita di 15 MB.`
+        );
+        setIsUploading(false);
+        return;
+      }
+      validFiles.push(file);
+    }
 
-    reader.onerror = () => {
-      setUploadError("Errore durante la lettura locale del file.");
+    // Process each file in parallel
+    const uploadPromises = validFiles.map((file) => {
+      return new Promise<{ url: string; name: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64 = reader.result as string;
+
+            // Apply compression quality from settings
+            let finalBase64 = base64;
+            if (settings?.photoQuality) {
+              finalBase64 = await compressImage(base64, settings.photoQuality);
+            }
+
+            // POST to our backend upload API
+            const response = await fetch("/api/upload", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                name: file.name,
+                base64: finalBase64,
+              }),
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.url) {
+                resolve({ url: data.url, name: file.name });
+              } else {
+                reject(new Error(data.error || "Errore sconosciuto sul server."));
+              }
+            } else {
+              const errData = await response.json();
+              reject(new Error(errData.error || `Codice di errore: ${response.status}`));
+            }
+          } catch (err: any) {
+            reject(err);
+          }
+        };
+
+        reader.onerror = () => {
+          reject(new Error("Errore durante la lettura locale del file."));
+        };
+
+        reader.readAsDataURL(file);
+      });
+    });
+
+    try {
+      if (settings?.wifiOnlySync) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: "ℹ️ Solo Wi-Fi attivo: caricamento ottimizzato per risparmio dati.",
+            },
+          }),
+        );
+      }
+
+      const results = await Promise.allSettled(uploadPromises);
+      const succeeded = results
+        .filter((r): r is PromiseFulfilledResult<{ url: string; name: string }> => r.status === "fulfilled")
+        .map((r) => r.value);
+      const failedCount = results.filter((r) => r.status === "rejected").length;
+
+      if (succeeded.length > 0) {
+        setUploadedImages((prev) => [...prev, ...succeeded]);
+        setUploadedImageUrl(succeeded[succeeded.length - 1].url);
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: `📸 ${succeeded.length} foto caricate con successo!${
+                failedCount > 0 ? ` (${failedCount} fallite)` : ""
+              }`,
+            },
+          }),
+        );
+      }
+      if (failedCount > 0 && succeeded.length === 0) {
+        const firstError = (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason?.message || "Errore sconosciuto";
+        setUploadError(`Caricamento fallito: ${firstError}`);
+      }
+    } catch (err: any) {
+      console.error("Upload process error:", err);
+      setUploadError(`Caricamento fallito: ${err.message}`);
+    } finally {
       setIsUploading(false);
-    };
-
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -898,16 +967,16 @@ export default function DiaryTab({
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      await processAndUploadFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await processAndUploadFiles(e.dataTransfer.files);
     }
   };
 
   const handleFileInputChange = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    if (e.target.files && e.target.files[0]) {
-      await processAndUploadFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      await processAndUploadFiles(e.target.files);
     }
   };
 
@@ -916,39 +985,49 @@ export default function DiaryTab({
     e.preventDefault();
     if (!selectedTripId) return;
 
-    let url = "";
+    let urls: Array<{ url: string; name: string }> = [];
     if (photoType === "upload") {
-      url = uploadedImageUrl;
-      if (!url) {
+      urls = uploadedImages;
+      if (urls.length === 0 && uploadedImageUrl) {
+        urls = [{ url: uploadedImageUrl, name: "Foto caricata" }];
+      }
+      if (urls.length === 0) {
         setUploadError(
-          "Carica prima un'immagine usando il box o seleziona un'altra modalità.",
+          "Carica prima almeno un'immagine usando il box o seleziona un'altra modalità.",
         );
         return;
       }
     } else if (photoType === "preset") {
-      url = photoPresetUrl;
+      urls = [{ url: photoPresetUrl, name: "Preset" }];
     } else if (photoType === "url") {
-      url = photoCustomUrl;
+      urls = [{ url: photoCustomUrl, name: "Custom URL" }];
     }
 
-    if (!url.trim()) {
+    if (urls.length === 0) {
       setUploadError("Specifica un link valido per la foto.");
       return;
     }
 
-    const newPhoto: DiaryPhoto = {
-      id: "photo_" + Date.now(),
-      url: url,
-      description: photoDesc || "Nessuna descrizione inserita.",
-      date: new Date().toISOString().split("T")[0],
-      locationName: photoLocationName || undefined,
-    };
+    const newPhotos: DiaryPhoto[] = urls.map((img, idx) => {
+      let finalDesc = photoDesc;
+      if (!finalDesc) {
+        const nameWithoutExt = img.name.split(".")[0];
+        finalDesc = nameWithoutExt || "Nessuna descrizione inserita.";
+      }
+      return {
+        id: "photo_" + (Date.now() + idx),
+        url: img.url,
+        description: finalDesc,
+        date: new Date().toISOString().split("T")[0],
+        locationName: photoLocationName || undefined,
+      };
+    });
 
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         return {
           ...t,
-          photos: [...t.photos, newPhoto],
+          photos: [...t.photos, ...newPhotos],
         };
       }
       return t;
@@ -959,13 +1038,23 @@ export default function DiaryTab({
     setPhotoLocationName("");
     setPhotoCustomUrl("");
     setUploadedImageUrl("");
+    setUploadedImages([]);
     setUploadError(null);
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: {
+          message: `✅ ${newPhotos.length} ${newPhotos.length === 1 ? 'foto aggiunta' : 'foto aggiunte'} al diario!`,
+        },
+      }),
+    );
   };
 
   // Delete Photo handler
   const handleDeletePhoto = (photoId: string) => {
     const updated = trips.map((t) => {
-      if (t.id === selectedTripId) {
+      const containsPhoto = t.photos && t.photos.some((p) => p.id === photoId);
+      if (containsPhoto) {
         return {
           ...t,
           photos: t.photos.filter((p) => p.id !== photoId),
@@ -1053,7 +1142,7 @@ export default function DiaryTab({
   return (
     <div id="diary-container" className="space-y-6">
       {/* Top Welcome Panel */}
-      {diarySubTab === "list" && !showAddTrip && (
+      {diarySubTab !== "details" && !showAddTrip && (
         <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white p-5 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <span className="text-white/70 text-xs font-bold uppercase tracking-wider">
@@ -1070,8 +1159,11 @@ export default function DiaryTab({
             </p>
           </div>
           <button
-            onClick={() => setShowAddTrip(!showAddTrip)}
-            className="px-4 py-2.5 bg-orange-200 hover:bg-orange-300 text-[#3E4A35] dark:bg-orange-600 dark:hover:bg-orange-700 dark:text-white font-black rounded-xl text-xs transition-transform flex items-center gap-1.5 shadow-sm shrink-0 active:scale-95"
+            onClick={() => {
+              setDiarySubTab("list");
+              setShowAddTrip(true);
+            }}
+            className="px-4 py-2.5 bg-orange-200 hover:bg-orange-300 text-[#3E4A35] dark:bg-orange-600 dark:hover:bg-orange-700 dark:text-white font-black rounded-xl text-xs transition-transform flex items-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Nuovo Viaggio
@@ -1079,7 +1171,290 @@ export default function DiaryTab({
         </div>
       )}
 
-      {diarySubTab === "list" ? (
+      {/* View Switcher: Viaggi vs Album */}
+      {diarySubTab !== "details" && !showAddTrip && (
+        <div className="flex border-b border-slate-200/80 pb-px gap-6 font-sans select-none animate-fade-in">
+          <button
+            onClick={() => setDiarySubTab("list")}
+            className={`pb-3 text-xs font-black tracking-wider uppercase transition-all relative flex items-center gap-1.5 cursor-pointer ${
+              diarySubTab === "list"
+                ? "text-[#3E4A35] font-black border-b-2 border-[#3E4A35]"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            I Miei Viaggi
+          </button>
+          <button
+            onClick={() => setDiarySubTab("album")}
+            className={`pb-3 text-xs font-black tracking-wider uppercase transition-all relative flex items-center gap-1.5 cursor-pointer ${
+              diarySubTab === "album"
+                ? "text-[#3E4A35] font-black border-b-2 border-[#3E4A35]"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            Album Foto
+            {allPhotos.length > 0 && (
+              <span className="ml-1 bg-[#3E4A35]/10 text-[#3E4A35] text-[10px] px-2 py-0.5 rounded-full font-bold">
+                {allPhotos.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {diarySubTab === "album" ? (
+        <div className="space-y-6 animate-fade-in font-sans">
+          {/* Controls Bar */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex flex-col sm:flex-row gap-3 justify-between items-center">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs font-bold text-[#3E4A35] uppercase tracking-wider whitespace-nowrap">
+                Filtra per Viaggio:
+              </span>
+              <select
+                value={selectedAlbumTripId}
+                onChange={(e) => setSelectedAlbumTripId(e.target.value)}
+                className="text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white font-semibold text-slate-700 outline-none focus:border-[#3E4A35] w-full sm:w-[220px] cursor-pointer"
+              >
+                <option value="">Tutti i viaggi ({trips.length})</option>
+                {trips.map((trip) => (
+                  <option key={trip.id} value={trip.id}>
+                    {trip.title} ({trip.photos?.length || 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative w-full sm:w-[300px]">
+              <input
+                type="text"
+                value={albumSearchQuery}
+                onChange={(e) => setAlbumSearchQuery(e.target.value)}
+                placeholder="Cerca per descrizione, luogo, viaggio..."
+                className="w-full text-xs font-medium pl-3 pr-8 py-2 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] bg-white text-slate-800"
+              />
+              {albumSearchQuery && (
+                <button
+                  onClick={() => setAlbumSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Photos Grid */}
+          {filteredPhotos.length === 0 ? (
+            <div className="text-center py-16 text-slate-400 space-y-3 bg-[#F2EFE9]/10 rounded-2xl border border-dashed border-stone-200 select-none">
+              <ImageIcon className="w-12 h-12 text-stone-300 mx-auto" />
+              <p className="text-sm font-bold text-[#3E4A35]/80">
+                Nessuna foto trovata
+              </p>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                {albumSearchQuery || selectedAlbumTripId
+                  ? "Prova a modificare i filtri o la ricerca per trovare i tuoi ricordi."
+                  : "Inizia caricando delle foto all'interno dei dettagli di un viaggio per popolare questo album!"}
+              </p>
+              {(albumSearchQuery || selectedAlbumTripId) && (
+                <button
+                  onClick={() => {
+                    setAlbumSearchQuery("");
+                    setSelectedAlbumTripId("");
+                  }}
+                  className="px-3.5 py-1.5 bg-[#3E4A35] text-white rounded-lg text-xs font-bold hover:bg-[#5A6B4E] cursor-pointer"
+                >
+                  Azzera Filtri
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {filteredPhotos.map((photo, idx) => (
+                <div
+                  key={photo.id}
+                  className="group bg-white rounded-xl border border-slate-100 overflow-hidden shadow-xs hover:shadow-md transition-all duration-300 flex flex-col justify-between relative cursor-pointer font-sans"
+                  onClick={() => setSelectedAlbumPhotoIndex(idx)}
+                >
+                  {/* Photo Container */}
+                  <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
+                    <img
+                      src={photo.url}
+                      alt={photo.description}
+                      referrerPolicy={photo.url?.startsWith("http") ? "no-referrer" : undefined}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    
+                    {/* Dark gradient bottom overlay */}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent p-2 pt-6 flex flex-col justify-end text-white opacity-90 group-hover:opacity-100 transition-opacity">
+                      {photo.locationName && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-[#3E4A35]/80 text-orange-100 px-1 py-0.5 rounded backdrop-blur-xs w-max mb-1 max-w-full truncate">
+                          <MapPin className="w-2.5 h-2.5 text-orange-200 shrink-0" />
+                          <span className="truncate">{photo.locationName}</span>
+                        </span>
+                      )}
+                      {photo.date && (
+                        <span className="text-[8px] font-semibold text-stone-300 flex items-center gap-0.5">
+                          <Calendar className="w-2 h-2 text-stone-400 shrink-0" />
+                          {photo.date.split("-").reverse().join("/")}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick navigation to Trip details */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTripId(photo.tripId);
+                        setDiarySubTab("details");
+                      }}
+                      className="absolute top-2 left-2 px-2 py-1 bg-white/90 hover:bg-white text-[#3E4A35] rounded-md text-[9px] font-black shadow-sm transition-all flex items-center gap-1 opacity-0 group-hover:opacity-100 border border-slate-200 z-10"
+                      title="Vai ai dettagli del viaggio"
+                    >
+                      <Route className="w-2.5 h-2.5" />
+                      Vedi Viaggio
+                    </button>
+
+                    {/* Delete Photo */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPhotoToDelete(photo.id);
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-black/40 hover:bg-red-600 text-white rounded-lg transition-colors opacity-0 group-hover:opacity-100 z-10"
+                      title="Elimina foto"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+
+                    {/* Zoom icon on center hover */}
+                    <div className="absolute inset-0 bg-black/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                      <span className="p-2 bg-white/20 backdrop-blur-md text-white rounded-full border border-white/30">
+                        <Eye className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Photo details bottom bar */}
+                  <div className="p-2 bg-stone-50 border-t border-stone-100 space-y-1">
+                    <p className="text-[10px] font-black text-[#3E4A35] truncate" title={photo.tripTitle}>
+                      {photo.tripTitle}
+                    </p>
+                    <p className="text-[9px] text-slate-500 leading-tight line-clamp-2 min-h-[24px]">
+                      {photo.description || "Nessuna descrizione"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* PHOTO ALBUM LIGHTBOX */}
+          {selectedAlbumPhotoIndex !== null && filteredPhotos[selectedAlbumPhotoIndex] && (
+            <div
+              className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-md transition-all animate-fade-in"
+              onClick={() => setSelectedAlbumPhotoIndex(null)}
+            >
+              <div
+                className="relative max-w-4xl w-full bg-stone-900 rounded-3xl overflow-hidden shadow-2xl border border-stone-800 flex flex-col items-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header controls */}
+                <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const photo = filteredPhotos[selectedAlbumPhotoIndex];
+                      setSelectedAlbumPhotoIndex(null);
+                      setSelectedTripId(photo.tripId);
+                      setDiarySubTab("details");
+                    }}
+                    className="p-2 bg-black/60 hover:bg-[#3E4A35] text-white rounded-full transition-all cursor-pointer shadow-md select-none border border-white/10 text-[10px] font-black flex items-center gap-1 px-3"
+                    title="Vedi viaggio"
+                  >
+                    <Route className="w-3.5 h-3.5" />
+                    Apri Viaggio
+                  </button>
+                  <button
+                    onClick={() => setSelectedAlbumPhotoIndex(null)}
+                    className="p-2 bg-black/60 hover:bg-black/90 text-white rounded-full transition-all cursor-pointer shadow-md select-none border border-white/10"
+                    title="Chiudi"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Main Picture content and navigation */}
+                <div className="relative w-full aspect-video md:aspect-[4/3] bg-black flex items-center justify-center group overflow-hidden">
+                  <img
+                    src={filteredPhotos[selectedAlbumPhotoIndex].url}
+                    alt={filteredPhotos[selectedAlbumPhotoIndex].description}
+                    referrerPolicy={filteredPhotos[selectedAlbumPhotoIndex].url?.startsWith("http") ? "no-referrer" : undefined}
+                    className="max-w-full max-h-[75vh] object-contain select-none"
+                  />
+
+                  {filteredPhotos.length > 1 && (
+                    <>
+                      {/* Left button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newIdx = (selectedAlbumPhotoIndex - 1 + filteredPhotos.length) % filteredPhotos.length;
+                          setSelectedAlbumPhotoIndex(newIdx);
+                        }}
+                        className="absolute left-4 p-3 bg-black/50 hover:bg-black/85 text-white rounded-full transition-all cursor-pointer shadow-md select-none border border-white/5 active:scale-90"
+                      >
+                        ❮
+                      </button>
+
+                      {/* Right button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newIdx = (selectedAlbumPhotoIndex + 1) % filteredPhotos.length;
+                          setSelectedAlbumPhotoIndex(newIdx);
+                        }}
+                        className="absolute right-4 p-3 bg-black/50 hover:bg-black/85 text-white rounded-full transition-all cursor-pointer shadow-md select-none border border-white/5 active:scale-90"
+                      >
+                        ❯
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Bottom Caption bar */}
+                <div className="w-full bg-stone-950 p-5 border-t border-stone-855 text-stone-200 text-left space-y-1.5 font-sans">
+                  <div className="flex justify-between items-center text-[10px] text-stone-400 font-bold font-mono">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-stone-500" />
+                      Scattata il: {filteredPhotos[selectedAlbumPhotoIndex].date || "N/D"}
+                      {filteredPhotos[selectedAlbumPhotoIndex].locationName && (
+                        <>
+                          <span className="mx-1">•</span>
+                          <MapPin className="w-3 h-3 text-stone-500" />
+                          {filteredPhotos[selectedAlbumPhotoIndex].locationName}
+                        </>
+                      )}
+                    </span>
+                    <span>
+                      Foto {selectedAlbumPhotoIndex + 1} di {filteredPhotos.length}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="inline-block text-[10px] uppercase font-bold text-orange-200 font-sans">
+                      Da: {filteredPhotos[selectedAlbumPhotoIndex].tripTitle}
+                    </span>
+                    <p className="text-xs md:text-sm font-semibold tracking-wide text-white leading-relaxed">
+                      {filteredPhotos[selectedAlbumPhotoIndex].description || "Nessuna descrizione."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : diarySubTab === "list" ? (
         <div className="space-y-4 animate-fade-in">
           {/* Create Trip Form inline dropdown */}
           {showAddTrip && (
@@ -2407,7 +2782,7 @@ export default function DiaryTab({
                             className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[110px] relative ${
                               dragActive
                                 ? "border-[#3E4A35] bg-[#3E4A35]/5 scale-[0.99]"
-                                : uploadedImageUrl
+                                : (uploadedImages.length > 0 || uploadedImageUrl)
                                   ? "border-emerald-500/50 bg-emerald-50/10"
                                   : "border-slate-200 hover:border-[#3E4A35]/40 hover:bg-slate-50/50"
                             }`}
@@ -2416,6 +2791,7 @@ export default function DiaryTab({
                               id="diary-file-input"
                               type="file"
                               accept="image/*"
+                              multiple
                               onChange={handleFileInputChange}
                               className="hidden"
                             />
@@ -2425,6 +2801,53 @@ export default function DiaryTab({
                                 <Loader2 className="w-6 h-6 text-[#3E4A35] animate-spin" />
                                 <p className="text-[10px] text-slate-500 font-bold font-sans">
                                   Caricamento in corso...
+                                </p>
+                              </div>
+                            ) : uploadedImages.length > 0 ? (
+                              <div className="space-y-2 w-full">
+                                <div className="grid grid-cols-4 gap-2 max-h-[150px] overflow-y-auto p-1">
+                                  {uploadedImages.map((img, idx) => (
+                                    <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-500/50 shadow-xs group">
+                                      <img
+                                        src={img.url}
+                                        alt={img.name}
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy={
+                                          img.url?.startsWith("http")
+                                            ? "no-referrer"
+                                            : undefined
+                                        }
+                                      />
+                                      <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
+                                        <span className="text-white text-[9px] font-black bg-emerald-600/80 rounded-full w-4 h-4 flex items-center justify-center">
+                                          ✓
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={(evt) => {
+                                          evt.stopPropagation();
+                                          setUploadedImages((prev) => prev.filter((_, i) => i !== idx));
+                                          if (uploadedImages.length === 1) {
+                                            setUploadedImageUrl("");
+                                          } else if (uploadedImageUrl === img.url) {
+                                            const remaining = uploadedImages.filter((_, i) => i !== idx);
+                                            setUploadedImageUrl(remaining[remaining.length - 1].url);
+                                          }
+                                        }}
+                                        className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-red-600 text-white rounded-md transition-all z-20 flex items-center justify-center active:scale-95 cursor-pointer"
+                                        title="Rimuovi"
+                                      >
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-[10px] text-emerald-600 font-black">
+                                  {uploadedImages.length} {uploadedImages.length === 1 ? 'foto caricata' : 'foto caricate'} con successo!
+                                </p>
+                                <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
+                                  Carica altre foto
                                 </p>
                               </div>
                             ) : uploadedImageUrl ? (
@@ -2457,7 +2880,7 @@ export default function DiaryTab({
                               <div className="space-y-1">
                                 <Upload className="w-5 h-5 text-slate-400 mx-auto" />
                                 <p className="text-[10.5px] text-slate-600 font-bold">
-                                  Trascina qui la foto dallo smartphone/PC o{" "}
+                                  Trascina qui le foto dallo smartphone/PC o{" "}
                                   <span className="text-[#3E4A35] underline font-bold">
                                     sfoglia
                                   </span>

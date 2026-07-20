@@ -5,8 +5,8 @@
 
 import React, { useState } from 'react';
 import { useAppSettings } from '../useAppSettings';
-import { getTileUrl, getCurrencySymbol, parseDimToNumber } from '../unit-helpers';
-import { Place, VehicleDimensions, OSMObstacle } from '../types';
+import { getTileUrl, getCurrencySymbol, parseDimToNumber, formatMeters } from '../unit-helpers';
+import { Place, VehicleDimensions, OSMObstacle, NavigationStep } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
 import { 
@@ -786,10 +786,10 @@ out center;`;
   const hasWeightViolation = dest.hasMaxWeightLimit && dest.maxWeight && parseDimToNumber(vehicleDimensions.weight) > dest.maxWeight;
 
   // Dynamically generate turn-by-turn routing steps from geometry when not provided directly by the routing server
-  const generateStepsFromGeometry = (coords: [number, number][]): { title: string; desc: string; icon: string; distance: string; coordinateIndex?: number }[] => {
+  const generateStepsFromGeometry = (coords: [number, number][]): NavigationStep[] => {
     if (coords.length < 2) return [];
 
-    const steps: { title: string; desc: string; icon: string; distance: string; coordinateIndex?: number }[] = [];
+    const steps: NavigationStep[] = [];
     
     steps.push({
       title: "Inizia viaggio",
@@ -825,7 +825,7 @@ out center;`;
 
         const distStr = accumDistance < 1000 
           ? `${Math.round(accumDistance)} m` 
-          : `${(accumDistance / 1000).toFixed(1)} km`;
+          : `${(accumDistance / 1000).toFixed(1).replace('.', ',')} km`;
 
         if (diff < -60) {
           title = "Svolta a sinistra";
@@ -884,7 +884,7 @@ out center;`;
   };
 
   // Real OSRM Routing States
-  const [osrmSteps, setOsrmSteps] = React.useState<{ title: string; desc: string; icon: string; distance: string; coordinateIndex?: number }[]>([]);
+  const [osrmSteps, setOsrmSteps] = React.useState<NavigationStep[]>([]);
   const [loadingRoute, setLoadingRoute] = React.useState<boolean>(false);
   const [routeError, setRouteError] = React.useState<string | null>(null);
 
@@ -945,7 +945,7 @@ out center;`;
             }
           }
           
-          const steps: { title: string; desc: string; icon: string; distance: string; coordinateIndex?: number }[] = [];
+          const steps: NavigationStep[] = [];
           if (route.legs && route.legs[0] && route.legs[0].steps) {
             route.legs[0].steps.forEach((step: any, idx: number) => {
               const targetLoc: [number, number] = [step.maneuver.location[1], step.maneuver.location[0]];
@@ -1046,13 +1046,23 @@ out center;`;
                 .replace(/^\s*[a-z]/i, (match) => match.toUpperCase())
                 .trim();
 
+              // Convert any distances >= 1000 in the text from meters to kilometers
+              desc = desc.replace(/\b(\d+)\s*(?:metri|meters|m\b)/gi, (match, numStr) => {
+                const meters = parseInt(numStr, 10);
+                if (meters >= 1000) {
+                  const km = meters / 1000;
+                  return `${km.toFixed(1).replace('.', ',')} km`;
+                }
+                return match;
+              });
+
               // Specific vehicle check injection to warn user of clearance before arriving
               if (hasHeightViolation && idx === Math.max(1, Math.round(route.legs[0].steps.length / 2))) {
                 steps.push({
                   title: "⚠️ IMPEDIMENTO SAGOMA RILEVATO",
                   desc: `Attenzione: l'itinerario originale includeva un ostacolo ad altezza ridotta di ${dest.maxHeight}m, incompatibile con il tuo camper (alto ${vehicleDimensions.height}m)!`,
                   icon: "⚠️",
-                  distance: `${Math.round(step.distance)} m`,
+                  distance: formatMeters(step.distance),
                   coordinateIndex: coordIdx
                 });
               }
@@ -1061,8 +1071,11 @@ out center;`;
                 title,
                 desc,
                 icon,
-                distance: `${Math.round(step.distance)} m`,
-                coordinateIndex: coordIdx
+                distance: formatMeters(step.distance),
+                coordinateIndex: coordIdx,
+                streetName: step.name || "",
+                maneuverType: step.maneuver.type || "",
+                modifier: step.maneuver.modifier || ""
               });
             });
           }
@@ -1189,8 +1202,8 @@ out center;`;
     return routeCoordinates;
   }, [routeCoordinates, isGPSEnabled, userLocation?.lat, userLocation?.lng, isPreview]);
 
-  const fallbackSequence = React.useMemo(() => {
-    const steps: { title: string; desc: string; icon: string; distance: string }[] = [];
+  const fallbackSequence = React.useMemo((): NavigationStep[] => {
+    const steps: NavigationStep[] = [];
     
     steps.push({
       title: "Inizio Assistito",
@@ -1240,7 +1253,7 @@ out center;`;
       });
     }
 
-    const finalSteps = steps.map((step, idx) => {
+    const finalSteps: NavigationStep[] = steps.map((step, idx) => {
       const coordIdx = Math.min(
         Math.floor((idx / steps.length) * routeCoordinates.length),
         routeCoordinates.length - 1
@@ -1264,7 +1277,6 @@ out center;`;
       lastSpokenTextRef.current = "";
       if (previousIsPreviewRef.current !== isPreview) {
         previousIsPreviewRef.current = isPreview;
-        speakInstruction(`Anteprima percorso caricata per ${dest.name}.`);
       }
       return;
     }
@@ -1298,23 +1310,34 @@ out center;`;
       return;
     }
 
-    // Determine active simStep based on progress
-    const activeStepIndex = Math.min(
-      Math.floor((currentRouteIdx / routeCoordinates.length) * directionsSequence.length),
-      directionsSequence.length - 1
-    );
+    // Determine active simStep based on actual coordinateIndex of steps
+    let activeStepIndex = 0;
+    for (let i = 0; i < directionsSequence.length; i++) {
+      const stepIdx = directionsSequence[i].coordinateIndex ?? Math.min(
+        Math.floor((i / directionsSequence.length) * routeCoordinates.length),
+        routeCoordinates.length - 1
+      );
+      if (stepIdx <= currentRouteIdx) {
+        activeStepIndex = i;
+      } else {
+        break;
+      }
+    }
 
     if (activeStepIndex !== simStep) {
       setSimStep(activeStepIndex);
     }
 
     if (justStartedNavigation) {
-      const modeText = isGPSEnabled ? "navigazione con coordinate GPS reali attiva" : "simulatore di guida cockpit attivo";
       const currentStepObj = directionsSequence[activeStepIndex] || directionsSequence[0];
-      const stepText = currentStepObj ? ` ${currentStepObj.title}. ${currentStepObj.desc}` : "";
+      const cleanTitle = currentStepObj?.title && currentStepObj.title.toLowerCase() !== "navigazione" ? currentStepObj.title : "";
+      const cleanDesc = currentStepObj?.desc || "";
+      const stepText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
+        ? `${cleanTitle}. ${cleanDesc}`
+        : cleanDesc;
       
       lastSpokenStepRef.current = activeStepIndex;
-      speakInstruction(`Navigatore camper a tutto schermo avviato per ${dest.name}. ${modeText}. Limite sagoma impostato a ${vehicleDimensions.height} metri. ${stepText}`);
+      speakInstruction(stepText);
       return;
     }
 
@@ -1358,9 +1381,12 @@ out center;`;
             distanceStr = `${roundedMeters} metri`;
           }
           // Speak instruction indicating turn with precise distance
-          const titleText = stepObj.title ? `${stepObj.title}. ` : "";
-          const descText = stepObj.desc ? `${stepObj.desc}` : "";
-          const speakText = `Tra ${distanceStr}: ${titleText}${descText}`;
+          const cleanTitle = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title : "";
+          const cleanDesc = stepObj.desc || "";
+          const bodyText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
+            ? `${cleanTitle}. ${cleanDesc}`
+            : cleanDesc;
+          const speakText = `Tra ${distanceStr}: ${bodyText}`;
           speakInstruction(speakText);
           break; // alert spoken, don't cascade to avoid overwhelming SpeechSynthesis
         }
@@ -1371,9 +1397,12 @@ out center;`;
         if (!spoken50mRef.current[stepIdx]) {
           spoken50mRef.current[stepIdx] = true;
           // Re-read the exact same instruction
-          const titleText = stepObj.title ? `${stepObj.title}. ` : "";
-          const descText = stepObj.desc ? `${stepObj.desc}` : "";
-          const speakText = `Ora: ${titleText}${descText}`;
+          const cleanTitle = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title : "";
+          const cleanDesc = stepObj.desc || "";
+          const bodyText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
+            ? `${cleanTitle}. ${cleanDesc}`
+            : cleanDesc;
+          const speakText = `Ora: ${bodyText}`;
           speakInstruction(speakText);
           break; // alert spoken
         }
@@ -2143,10 +2172,18 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         const nextIdx = currentIdx + 1;
         if (nextIdx < routeCoordinates.length) {
           setSimRouteIndex(nextIdx);
-          const stepIndex = Math.min(
-            Math.floor((nextIdx / routeCoordinates.length) * directionsSequence.length),
-            directionsSequence.length - 1
-          );
+          let stepIndex = 0;
+          for (let i = 0; i < directionsSequence.length; i++) {
+            const stepIdx = directionsSequence[i].coordinateIndex ?? Math.min(
+              Math.floor((i / directionsSequence.length) * routeCoordinates.length),
+              routeCoordinates.length - 1
+            );
+            if (stepIdx <= nextIdx) {
+              stepIndex = i;
+            } else {
+              break;
+            }
+          }
           setSimStep(stepIndex);
         } else {
           setIsDriving(false);
@@ -2196,7 +2233,71 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     }
   };
 
-  const currentStepObj = directionsSequence[simStep] || directionsSequence[0];
+  const baseStepObj = directionsSequence[simStep] || directionsSequence[0];
+
+  // Calculate dynamic HUD instructions
+  const currentStepObj = (() => {
+    if (directionsSequence.length === 0) return null;
+
+    // Find current route coordinate index
+    const currentRouteIdx = (isGPSEnabled && !isPreview && userLocation) 
+      ? findClosestCoordinateIndex([userLocation.lat, userLocation.lng], routeCoordinates)
+      : Math.min(simRouteIndex, routeCoordinates.length - 1);
+
+    // Calculate active step index dynamically based on actual coordinate index to prevent any state lag!
+    let hudActiveStepIdx = 0;
+    for (let i = 0; i < directionsSequence.length; i++) {
+      const stepIdx = directionsSequence[i].coordinateIndex ?? Math.min(
+        Math.floor((i / directionsSequence.length) * routeCoordinates.length),
+        routeCoordinates.length - 1
+      );
+      if (stepIdx <= currentRouteIdx) {
+        hudActiveStepIdx = i;
+      } else {
+        break;
+      }
+    }
+
+    const hudBaseStepObj = directionsSequence[hudActiveStepIdx] || directionsSequence[0];
+    const nextStepObj = directionsSequence[hudActiveStepIdx + 1];
+
+    // Find the exact coordinate index where the next maneuver takes place
+    const targetCoordIdx = nextStepObj?.coordinateIndex ?? (routeCoordinates.length - 1);
+
+    // Calculate the remaining distance to the next maneuver
+    const distanceToTurn = getDistanceToCoordinateIndex(routeCoordinates, currentRouteIdx, targetCoordIdx);
+
+    if (!isPreview && nextStepObj && distanceToTurn > 150) {
+      // Determine the name of the current street we are traveling on
+      const currentStreet = hudBaseStepObj?.streetName || "";
+      let computedDesc = "";
+      if (currentStreet) {
+        computedDesc = `Continua su ${currentStreet}`;
+      } else if (hudBaseStepObj?.desc) {
+        // Fallback: strip any maneuver keywords from current instruction to make it sound like a continuous drive
+        computedDesc = hudBaseStepObj.desc.replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
+      } else {
+        computedDesc = "Continua su questa strada";
+      }
+
+      return {
+        ...hudBaseStepObj,
+        icon: "⬆️",
+        desc: computedDesc,
+        title: "Continua",
+        distance: formatMeters(distanceToTurn)
+      };
+    } else if (!isPreview && nextStepObj && distanceToTurn <= 150 && distanceToTurn > 0) {
+      // Near the maneuver (<= 150m): show the upcoming maneuver itself
+      return {
+        ...nextStepObj,
+        distance: formatMeters(distanceToTurn)
+      };
+    }
+
+    // Default or preview fallback
+    return hudBaseStepObj;
+  })();
 
   // Real coordinates based remaining distance in Km using the accurate Haversine helper
   const currentCoordIdx = (isGPSEnabled && !isPreview) ? 0 : Math.min(simRouteIndex, routeCoordinates.length - 1);
