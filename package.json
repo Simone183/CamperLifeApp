@@ -23,6 +23,7 @@
     "express": "^4.21.2",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.0.0",
+    "hls.js": "^1.6.16",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.546.0",

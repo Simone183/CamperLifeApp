@@ -60,6 +60,9 @@ import OfflineMapsTab from "./components/OfflineMapsTab";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
 
+// Guard to prevent multiple welcome toast/speech invocations
+let welcomeSpeechTriggered = false;
+
 // Icons
 import {
   Map,
@@ -832,25 +835,29 @@ export default function App() {
     }
 
     // Check offline maps status
-    getStats().then((stats) => {
-      if (stats.count === 0) {
-        if (
-          localStorage.getItem("camper_offline_maps_prompt_shown") !== "true"
-        ) {
-          setShowOfflinePromptModal(true);
-        } else {
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: {
-                message:
-                  "👋 Benvenuto! Per usare l'app offline, vai in 'Impostazioni > Mappe Offline' e scarica le mappe della tua zona.",
-                duration: 8000,
-              },
-            }),
-          );
+    if (!welcomeSpeechTriggered && !sessionStorage.getItem("camper_welcomed")) {
+      welcomeSpeechTriggered = true;
+      sessionStorage.setItem("camper_welcomed", "true");
+      getStats().then((stats) => {
+        if (stats.count === 0) {
+          if (
+            localStorage.getItem("camper_offline_maps_prompt_shown") !== "true"
+          ) {
+            setShowOfflinePromptModal(true);
+          } else {
+            window.dispatchEvent(
+              new CustomEvent("show-toast", {
+                detail: {
+                  message:
+                    "Benvenuto! Per usare l'app offline, vai in 'Impostazioni > Mappe Offline' e scarica le mappe della tua zona.",
+                  duration: 8000,
+                },
+              }),
+            );
+          }
         }
-      }
-    });
+      });
+    }
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
@@ -1212,15 +1219,38 @@ export default function App() {
   }, [trips]);
 
   React.useEffect(() => {
+    let lastSpokenText = "";
+    let lastSpokenTime = 0;
+
     const handleToastEvent = (e: any) => {
       if (e.detail && e.detail.message) {
         setToastMessage(e.detail.message);
         playAlertSound();
         const settings = JSON.parse(localStorage.getItem("camper_app_settings") || "{}");
         if (settings.ttsEnabled !== false && 'speechSynthesis' in window) {
-           const utterance = new SpeechSynthesisUtterance(e.detail.message);
-           utterance.lang = 'it-IT';
-           window.speechSynthesis.speak(utterance);
+           // Clean emojis, icons, and double spaces so browser TTS doesn't read emojis (like waving hand 👋)
+           const cleanText = e.detail.message
+             .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
+             .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+             .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")
+             .replace(/\p{Extended_Pictographic}/gu, "")
+             .replace(/\s+/g, ' ')
+             .trim();
+
+           if (cleanText) {
+             const now = Date.now();
+             // Prevent duplicates within 4 seconds
+             if (lastSpokenText === cleanText && (now - lastSpokenTime) < 4000) {
+               return;
+             }
+             lastSpokenText = cleanText;
+             lastSpokenTime = now;
+
+             window.speechSynthesis.cancel();
+             const utterance = new SpeechSynthesisUtterance(cleanText);
+             utterance.lang = 'it-IT';
+             window.speechSynthesis.speak(utterance);
+           }
         }
       }
     };
@@ -4990,6 +5020,9 @@ out center;`;
                             </p>
                             <p>
                               I dati relativi a campeggi e aree di sosta sono estratti da © OpenStreetMap contributors e rilasciati sotto licenza ODbL.
+                            </p>
+                            <p>
+                              I brani musicali presenti nella playlist di viaggio integrata sono forniti e ospitati da <strong>SoundHelix</strong> (soundhelix.com) e sono utilizzati per finalità dimostrative e di intrattenimento personale. I canali radiofonici in streaming rimangono di esclusiva proprietà dei rispettivi editori e sono trasmessi tramite i loro link di riproduzione pubblici.
                             </p>
                             <p>
                               In quanto licenza{" "}

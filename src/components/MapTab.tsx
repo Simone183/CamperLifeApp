@@ -2042,8 +2042,9 @@ export default function MapTab({
   React.useEffect(() => {
     if (isGPSEnabled && userLocation) {
       const activeMap = googleMapInstance || mapRef.current;
-      if (activeMap && !mapMovedByUserRef.current && !selectedPlace) {
+      if (activeMap && !centeredOnceRef.current && !selectedPlace) {
         try {
+          centeredOnceRef.current = true;
           (activeMap as any)._isProgrammatic = true;
           const currentZoom = typeof activeMap.getZoom === "function" ? activeMap.getZoom() : null;
           const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;

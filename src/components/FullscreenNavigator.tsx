@@ -34,8 +34,10 @@ import {
   X,
   Play,
   Pause,
-  Music
+  Music,
+  Settings
 } from 'lucide-react';
+import CamperMediaPlayer from './CamperMediaPlayer';
 
 interface FullscreenNavigatorProps {
   dest: Place;
@@ -119,6 +121,8 @@ export default function FullscreenNavigator({
   const [deviceHeading, setDeviceHeading] = React.useState<number | null>(null);
   const [compassPermission, setCompassPermission] = React.useState<'default' | 'granted' | 'denied'>('default');
   const [useCompass, setUseCompass] = React.useState<boolean>(false);
+  const [isMusicPlayerOpen, setIsMusicPlayerOpen] = React.useState<boolean>(false);
+  const [isAudioPlaying, setIsAudioPlaying] = React.useState<boolean>(false);
 
   // --- FUEL COST LOGS & ESTIMATES ---
   const [fuelLogs, setFuelLogs] = React.useState<any[]>(() => {
@@ -746,6 +750,8 @@ out center;`;
     
     // Clean emojis and double spaces
     const cleanText = text
+      .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
       .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")
       .replace(/\p{Extended_Pictographic}/gu, "")
       .replace(/\s+/g, ' ')
@@ -2513,186 +2519,204 @@ const newCenter = [targetCoords[1], targetCoords[0]];
             </div>
           </button>
 
-          {/* YouTube Music Button */}
+          {/* Camper Cockpit Media Player Toggle Button */}
           <button
             type="button"
-            onClick={() => window.open('https://music.youtube.com', '_blank')}
-            className="w-[52px] h-[52px] rounded-xl bg-[#0b101d]/95 text-white border border-slate-800 shadow-2xl hover:bg-slate-800 hover:border-slate-700 transition-all pointer-events-auto cursor-pointer flex items-center justify-center"
-            title="Apri YouTube Music"
+            onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
+            className={`w-[52px] h-[52px] rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
+              isAudioPlaying 
+                ? 'border-emerald-500/80 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
+                : isMusicPlayerOpen
+                  ? 'border-emerald-500/50 bg-[#0b101d]/95 text-emerald-400'
+                  : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
+            }`}
+            title="Cockpit Audio Camper (Radio & Playlist)"
           >
             <div className="w-6 h-6 flex items-center justify-center">
-              <Music className="w-6 h-6 text-red-500" />
+              <Music className={`w-5 h-5 ${isAudioPlaying ? "animate-pulse" : ""}`} />
             </div>
+            {/* Pulsing indicator dot if audio is playing in the background but panel is closed */}
+            {isAudioPlaying && !isMusicPlayerOpen && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
+            )}
+            {isAudioPlaying && !isMusicPlayerOpen && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full" />
+            )}
           </button>
         </div>
 
+        {/* Unconditionally rendered audio player so background streaming continues when minimized */}
+        <CamperMediaPlayer 
+          isOpen={isMusicPlayerOpen}
+          onClose={() => setIsMusicPlayerOpen(false)}
+          onPlayingStateChange={setIsAudioPlaying}
+        />
+
         {/* Pulsante di espansione fluttuante (spostato in basso per allineamento orizzontale a bottom-28) */}
-        {isSidebarCollapsed && (
-          <button
-            type="button"
-            onClick={() => setIsSidebarCollapsed(false)}
-            className="w-[52px] h-[52px] absolute left-4 bottom-28 z-20 rounded-xl bg-[#0b101d]/95 text-slate-100 border border-slate-800 shadow-2xl hover:bg-slate-800 hover:border-slate-700 transition-all pointer-events-auto cursor-pointer flex items-center justify-center"
-            title="Espandi pianificazione"
-          >
-            <div className="w-6 h-6 flex items-center justify-center">
-              <ChevronRight className="w-6 h-6 text-emerald-400" />
-            </div>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className={`w-[52px] h-[52px] absolute left-4 bottom-28 z-20 rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center ${
+            !isSidebarCollapsed
+              ? 'border-emerald-500/50 bg-[#070c17]/95 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+              : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
+          }`}
+          title="Impostazioni Navigatore"
+        >
+          <div className="w-6 h-6 flex items-center justify-center">
+            <Settings className={`w-5 h-5 transition-all duration-200 ${!isSidebarCollapsed ? 'text-emerald-400 animate-spin' : 'text-slate-300'}`} style={{ animationDuration: !isSidebarCollapsed ? '10s' : undefined }} />
+          </div>
+        </button>
 
         {/* Trip Planning Side Panel - 5km Proximity Camper Stops */}
         <div 
-          className={`absolute left-4 top-28 z-10 max-h-[calc(100vh-240px)] w-80 md:w-96 bg-[#0b101d]/95 backdrop-blur-md rounded-2xl border border-slate-800 shadow-2xl transition-all duration-300 flex flex-col pointer-events-auto ${
-            isSidebarCollapsed ? '-translate-x-[calc(100%+32px)]' : 'translate-x-0'
+          className={`absolute top-[45%] left-1/2 md:top-auto md:bottom-38 md:left-auto md:right-32 z-30 max-h-[calc(100vh-240px)] w-[288px] md:w-[306px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 pointer-events-auto ${
+            isSidebarCollapsed 
+              ? 'opacity-0 scale-95 pointer-events-none -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0' 
+              : 'opacity-100 scale-100 pointer-events-auto -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0'
           }`}
+          id="navigator-settings-container"
         >
           {/* Header */}
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="px-3 py-2 bg-[#0d1527] border-b border-slate-800/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400">
-                <Compass className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-100 text-xs">Impostazioni Navigatore</h3>
-                <p className="text-[10px] text-slate-400 font-sans font-medium">
-                  Gestione preferenze di navigazione
-                </p>
-              </div>
+              <Compass className="w-4 h-4 text-emerald-400" />
+              <span className="text-[11px] font-black text-slate-100 uppercase tracking-wider">
+                Impostazioni Navigatore
+              </span>
             </div>
             
             <button
               type="button"
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 transition-colors cursor-pointer"
-              title={isSidebarCollapsed ? "Espandi pianificazione" : "Riduci pianificazione"}
+              onClick={() => setIsSidebarCollapsed(true)}
+              className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer"
+              title="Chiudi impostazioni"
             >
-              {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* List Content - Only visible if not collapsed */}
-          {!isSidebarCollapsed && (
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[420px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-              {/* Switch per mostrare le soste sul percorso */}
-              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none mb-1">
-                <div className="flex flex-col text-left">
-                  <span className="text-[11px] font-bold text-slate-200">
-                    Mostra soste sul percorso
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-medium">
-                    Cerca aree camper entro 5km
-                  </span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showStopsOnRoute}
-                    onChange={(e) => setShowStopsOnRoute(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-8 h-4.5 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white"></div>
-                </label>
+          {/* List Content */}
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[220px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+            {/* Switch per mostrare le soste sul percorso */}
+            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold text-slate-200">
+                  Mostra soste sul percorso
+                </span>
+                <span className="text-[8px] text-slate-400 font-medium">
+                  Cerca aree camper entro 5km
+                </span>
               </div>
-
-              {/* Switch per mostrare ostacoli e limiti OSM */}
-              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none mb-1">
-                <div className="flex flex-col text-left">
-                  <span className="text-[11px] font-bold text-slate-200">
-                    Ostacoli e limiti OSM
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-medium">
-                    Mostra limiti altezza/larghezza/peso
-                  </span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showOsmObstacles}
-                    onChange={(e) => setShowOsmObstacles(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-8 h-4.5 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white"></div>
-                </label>
-              </div>
-
-              {loadingRoute ? (
-                <div className="py-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                  <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
-                  <span>{showStopsOnRoute ? "Ricerca strutture in prossimità..." : "Calcolo percorso..."}</span>
-                </div>
-              ) : !showStopsOnRoute ? (
-                <div className="py-8 text-center text-xs text-slate-500 px-2 space-y-1.5">
-                  <p className="font-medium text-slate-400">Ricerca soste disattivata</p>
-                  <p className="text-[10px] text-slate-500 leading-normal">
-                    Attiva "Mostra soste sul percorso" per elencare e visualizzare le aree camper vicine. Puoi anche attivare "Ostacoli e limiti OSM" per evidenziare restrizioni di transito sulla mappa.
-                  </p>
-                </div>
-              ) : nearbyPlaces.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-500">
-                  <p className="font-medium text-slate-400">Nessuna struttura entro 5km</p>
-                  <p className="text-[10px] text-slate-500 mt-1">Non abbiamo trovato aree sosta o campeggi a meno di 5km da questo percorso specifico.</p>
-                </div>
-              ) : (
-                nearbyPlaces.map(({ place, minDistance }) => {
-                  let badgeBg = "bg-orange-500/15 text-orange-400 border-orange-500/30";
-                  let categoryText = "Area Sosta";
-                  let icon = "📍";
-                  
-                  const normCat = (place.category || "").toLowerCase();
-                  if (normCat.includes('campeggio') || normCat.includes('camping')) {
-                    badgeBg = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-                    categoryText = "Campeggio";
-                    icon = "⛺";
-                  } else if (normCat.includes('parcheggio') || normCat.includes('parcheggio_camper')) {
-                    badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
-                    categoryText = "Parcheggio";
-                    icon = "🅿️";
-                  } else if (normCat.includes('service')) {
-                    badgeBg = "bg-sky-500/15 text-sky-400 border-sky-500/30";
-                    categoryText = "Camper Service";
-                    icon = "💧";
-                  } else if (normCat.includes('camper')) {
-                    badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
-                    categoryText = "Parcheggio";
-                    icon = "🅿️";
-                  }
-
-                  return (
-                    <div
-                      key={place.id}
-                      onClick={() => centerAndPopPOI(place.lat, place.lng)}
-                      className="p-3 bg-slate-900/40 hover:bg-slate-800/60 border border-slate-800/60 rounded-xl transition-all duration-150 cursor-pointer flex flex-col gap-1.5 hover:border-slate-700"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-bold text-xs text-slate-200 line-clamp-1 flex-1 flex items-center gap-1.5">
-                          <span className="shrink-0">{icon}</span>
-                          <span className="font-sans tracking-tight">{place.name}</span>
-                        </h4>
-                        <span className="text-[9px] shrink-0 font-bold font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                          a {minDistance.toFixed(1)} km
-                        </span>
-                      </div>
-                      
-                      {place.address && (
-                        <p className="text-[10px] text-slate-400 line-clamp-1 font-sans">{place.address}</p>
-                      )}
-                      
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${badgeBg} font-sans uppercase tracking-wider`}>
-                          {categoryText}
-                        </span>
-                        {place.priceInfo && (
-                          <span className="text-[9px] text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded-full font-bold font-sans">
-                            {place.priceInfo}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showStopsOnRoute}
+                  onChange={(e) => setShowStopsOnRoute(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
+              </label>
             </div>
-          )}
+
+            {/* Switch per mostrare ostacoli e limiti OSM */}
+            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold text-slate-200">
+                  Ostacoli e limiti OSM
+                </span>
+                <span className="text-[8px] text-slate-400 font-medium">
+                  Mostra limiti altezza/larghezza/peso
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOsmObstacles}
+                  onChange={(e) => setShowOsmObstacles(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
+              </label>
+            </div>
+
+            {loadingRoute ? (
+              <div className="py-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
+                <span>{showStopsOnRoute ? "Ricerca strutture in prossimità..." : "Calcolo percorso..."}</span>
+              </div>
+            ) : !showStopsOnRoute ? (
+              <div className="py-6 text-center text-xs text-slate-500 px-2 space-y-1.5">
+                <p className="font-medium text-slate-400 text-[11px]">Ricerca soste disattivata</p>
+                <p className="text-[9px] text-slate-500 leading-normal">
+                  Attiva "Mostra soste sul percorso" per elencare e visualizzare le aree camper vicine. Puoi anche attivare "Ostacoli e limiti OSM" per evidenziare restrizioni di transito sulla mappa.
+                </p>
+              </div>
+            ) : nearbyPlaces.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-500">
+                <p className="font-medium text-slate-400 text-[11px]">Nessuna struttura entro 5km</p>
+                <p className="text-[9px] text-slate-500 mt-1">Non abbiamo trovato aree sosta o campeggi a meno di 5km da questo percorso specifico.</p>
+              </div>
+            ) : (
+              nearbyPlaces.map(({ place, minDistance }) => {
+                let badgeBg = "bg-orange-500/15 text-orange-400 border-orange-500/30";
+                let categoryText = "Area Sosta";
+                let icon = "📍";
+                
+                const normCat = (place.category || "").toLowerCase();
+                if (normCat.includes('campeggio') || normCat.includes('camping')) {
+                  badgeBg = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
+                  categoryText = "Campeggio";
+                  icon = "⛺";
+                } else if (normCat.includes('parcheggio') || normCat.includes('parcheggio_camper')) {
+                  badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
+                  categoryText = "Parcheggio";
+                  icon = "🅿️";
+                } else if (normCat.includes('service')) {
+                  badgeBg = "bg-sky-500/15 text-sky-400 border-sky-500/30";
+                  categoryText = "Camper Service";
+                  icon = "💧";
+                } else if (normCat.includes('camper')) {
+                  badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
+                  categoryText = "Parcheggio";
+                  icon = "🅿️";
+                }
+
+                return (
+                  <div
+                    key={place.id}
+                    onClick={() => centerAndPopPOI(place.lat, place.lng)}
+                    className="p-2 bg-slate-900/40 hover:bg-slate-800/60 border border-slate-800/60 rounded-xl transition-all duration-150 cursor-pointer flex flex-col gap-1 hover:border-slate-700"
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <h4 className="font-bold text-[11px] text-slate-200 line-clamp-1 flex-1 flex items-center gap-1">
+                        <span className="shrink-0">{icon}</span>
+                        <span className="font-sans tracking-tight">{place.name}</span>
+                      </h4>
+                      <span className="text-[8px] shrink-0 font-bold font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
+                        a {minDistance.toFixed(1)} km
+                      </span>
+                    </div>
+                    
+                    {place.address && (
+                      <p className="text-[9px] text-slate-400 line-clamp-1 font-sans">{place.address}</p>
+                    )}
+                    
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full border ${badgeBg} font-sans uppercase tracking-wider`}>
+                        {categoryText}
+                      </span>
+                      {place.priceInfo && (
+                        <span className="text-[8px] text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-full font-bold font-sans">
+                          {place.priceInfo}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
         {/* Floating Controls Overlay */}

@@ -70,6 +70,8 @@ export default function NavTab({
     
     // Clean emojis and double spaces
     const cleanText = text
+      .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
       .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")
       .replace(/\p{Extended_Pictographic}/gu, "")
       .replace(/\s+/g, ' ')
