@@ -983,7 +983,8 @@ out center;`;
                 title = "Destinazione raggiunta";
                 icon = "🏕️";
               } else if (maneuverType === 'roundabout') {
-                title = "Rotatoria";
+                const exitNumber = step.maneuver.exit;
+                title = exitNumber ? `Rotatoria - ${exitNumber}° uscita` : "Rotatoria";
                 icon = "🔄";
               } else if (maneuverType === 'off ramp') {
                 title = "Prendi l'uscita";
@@ -991,6 +992,10 @@ out center;`;
               }
 
               let desc = step.maneuver.instruction || `Svolta ${modifier} ${name}`;
+              
+              if (maneuverType === 'roundabout' && step.maneuver.exit) {
+                desc = `Prendi la ${step.maneuver.exit}° uscita alla ${desc}`;
+              }
               
               // Clean-up and localize instructions to sound completely native and professional in Italian
               desc = desc
@@ -1331,7 +1336,7 @@ out center;`;
     if (justStartedNavigation) {
       const currentStepObj = directionsSequence[activeStepIndex] || directionsSequence[0];
       const cleanTitle = currentStepObj?.title && currentStepObj.title.toLowerCase() !== "navigazione" ? currentStepObj.title : "";
-      const cleanDesc = currentStepObj?.desc || "";
+      const cleanDesc = (currentStepObj?.desc || "").replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
       const stepText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
         ? `${cleanTitle}. ${cleanDesc}`
         : cleanDesc;
@@ -1382,7 +1387,7 @@ out center;`;
           }
           // Speak instruction indicating turn with precise distance
           const cleanTitle = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title : "";
-          const cleanDesc = stepObj.desc || "";
+          const cleanDesc = (stepObj.desc || "").replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
           const bodyText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
             ? `${cleanTitle}. ${cleanDesc}`
             : cleanDesc;
@@ -1398,7 +1403,7 @@ out center;`;
           spoken50mRef.current[stepIdx] = true;
           // Re-read the exact same instruction
           const cleanTitle = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title : "";
-          const cleanDesc = stepObj.desc || "";
+          const cleanDesc = (stepObj.desc || "").replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
           const bodyText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
             ? `${cleanTitle}. ${cleanDesc}`
             : cleanDesc;
