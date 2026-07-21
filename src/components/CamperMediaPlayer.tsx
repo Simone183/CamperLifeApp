@@ -14,7 +14,8 @@ import {
   RefreshCw,
   ListMusic,
   FolderOpen,
-  Upload
+  Upload,
+  Square
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -541,6 +542,56 @@ export default function CamperMediaPlayer({
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
 
+  // Sync state to window for external controls (e.g. Navigation Cockpit mini-player)
+  React.useEffect(() => {
+    const dispatchState = () => {
+      const event = new CustomEvent("camper-media-state", {
+        detail: {
+          isPlaying,
+          currentTrack,
+          isLoading,
+          hasError,
+          sourceMode,
+          hasTrack: !!currentTrack
+        }
+      });
+      window.dispatchEvent(event);
+    };
+
+    dispatchState();
+
+    const handleRequestState = () => {
+      dispatchState();
+    };
+
+    window.addEventListener("camper-media-request-state", handleRequestState);
+    return () => {
+      window.removeEventListener("camper-media-request-state", handleRequestState);
+    };
+  }, [isPlaying, currentTrack, isLoading, hasError, sourceMode]);
+
+  // Handle external commands
+  React.useEffect(() => {
+    const handleCommand = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { action } = customEvent.detail || {};
+      if (action === "togglePlay") {
+        togglePlay();
+      } else if (action === "stop") {
+        handleStop();
+      } else if (action === "next") {
+        handleNext();
+      } else if (action === "prev") {
+        handlePrev();
+      }
+    };
+
+    window.addEventListener("camper-media-command", handleCommand);
+    return () => {
+      window.removeEventListener("camper-media-command", handleCommand);
+    };
+  }, [isPlaying, currentTrack, tracks, currentIdx]);
+
   // Revoke blob URLs on unmount to prevent memory leaks
   React.useEffect(() => {
     return () => {
@@ -843,6 +894,22 @@ export default function CamperMediaPlayer({
         }
       });
     }
+  };
+
+  const handleStop = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      try {
+        if (audioRef.current.duration && isFinite(audioRef.current.duration)) {
+          audioRef.current.currentTime = 0;
+        }
+      } catch (e) {
+        // Safe check
+      }
+    }
+    setIsPlaying(false);
+    onPlayingStateChangeRef.current(false);
+    window.dispatchEvent(new CustomEvent("camper-media-stopped"));
   };
 
   const handleNext = () => {
@@ -1172,6 +1239,15 @@ export default function CamperMediaPlayer({
                     title={isPlaying ? "Metti in pausa" : "Riproduci"}
                   >
                     {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleStop}
+                    className="p-2 rounded-xl border border-slate-800 bg-[#0d1527]/50 text-slate-300 hover:text-white hover:border-slate-700 transition-all cursor-pointer flex items-center justify-center"
+                    title="Stop"
+                  >
+                    <Square className="w-4 h-4 fill-current" />
                   </button>
 
                   <button

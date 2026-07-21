@@ -35,7 +35,10 @@ import {
   Play,
   Pause,
   Music,
-  Settings
+  Settings,
+  SkipForward,
+  SkipBack,
+  Radio
 } from 'lucide-react';
 import CamperMediaPlayer from './CamperMediaPlayer';
 
@@ -123,6 +126,68 @@ export default function FullscreenNavigator({
   const [useCompass, setUseCompass] = React.useState<boolean>(false);
   const [isMusicPlayerOpen, setIsMusicPlayerOpen] = React.useState<boolean>(false);
   const [isAudioPlaying, setIsAudioPlaying] = React.useState<boolean>(false);
+
+  // Media state synchronized from CamperMediaPlayer
+  const [mediaState, setMediaState] = React.useState<{
+    isPlaying: boolean;
+    currentTrack: any;
+    isLoading: boolean;
+    hasError: boolean;
+    sourceMode: string;
+    hasTrack: boolean;
+  }>({
+    isPlaying: false,
+    currentTrack: null,
+    isLoading: false,
+    hasError: false,
+    sourceMode: "radio",
+    hasTrack: false
+  });
+
+  const [hasBeenPlayed, setHasBeenPlayed] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (mediaState.isPlaying) {
+      setHasBeenPlayed(true);
+    }
+  }, [mediaState.isPlaying]);
+
+  React.useEffect(() => {
+    const handleStateChange = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setMediaState(customEvent.detail);
+      }
+    };
+
+    const handleStopped = () => {
+      setHasBeenPlayed(false);
+    };
+
+    window.addEventListener("camper-media-state", handleStateChange);
+    window.addEventListener("camper-media-stopped", handleStopped);
+    
+    // Request initial state on mount
+    const reqEvent = new CustomEvent("camper-media-request-state");
+    window.dispatchEvent(reqEvent);
+
+    return () => {
+      window.removeEventListener("camper-media-state", handleStateChange);
+      window.removeEventListener("camper-media-stopped", handleStopped);
+    };
+  }, []);
+
+  const sendPrevCommand = () => {
+    window.dispatchEvent(new CustomEvent("camper-media-command", { detail: { action: "prev" } }));
+  };
+
+  const sendPlayPauseCommand = () => {
+    window.dispatchEvent(new CustomEvent("camper-media-command", { detail: { action: "togglePlay" } }));
+  };
+
+  const sendNextCommand = () => {
+    window.dispatchEvent(new CustomEvent("camper-media-command", { detail: { action: "next" } }));
+  };
 
   // --- FUEL COST LOGS & ESTIMATES ---
   const [fuelLogs, setFuelLogs] = React.useState<any[]>(() => {
@@ -2581,6 +2646,31 @@ const newCenter = [targetCoords[1], targetCoords[0]];
             </button>
           )}
 
+          {/* Camper Cockpit Media Player Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
+            className={`w-[52px] h-[52px] rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
+              isAudioPlaying 
+                ? 'border-emerald-500/80 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
+                : isMusicPlayerOpen
+                  ? 'border-emerald-500/50 bg-[#0b101d]/95 text-emerald-400'
+                  : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
+            }`}
+            title="Cockpit Audio Camper (Radio & Playlist)"
+          >
+            <div className="w-6 h-6 flex items-center justify-center">
+              <Music className={`w-5 h-5 ${isAudioPlaying ? "animate-pulse" : ""}`} />
+            </div>
+            {/* Pulsing indicator dot if audio is playing in the background but panel is closed */}
+            {isAudioPlaying && !isMusicPlayerOpen && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
+            )}
+            {isAudioPlaying && !isMusicPlayerOpen && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full" />
+            )}
+          </button>
+
           {/* Compass Control Button */}
           <button
             type="button"
@@ -2624,32 +2714,78 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               </svg>
             </div>
           </button>
-
-          {/* Camper Cockpit Media Player Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
-            className={`w-[52px] h-[52px] rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
-              isAudioPlaying 
-                ? 'border-emerald-500/80 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
-                : isMusicPlayerOpen
-                  ? 'border-emerald-500/50 bg-[#0b101d]/95 text-emerald-400'
-                  : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
-            }`}
-            title="Cockpit Audio Camper (Radio & Playlist)"
-          >
-            <div className="w-6 h-6 flex items-center justify-center">
-              <Music className={`w-5 h-5 ${isAudioPlaying ? "animate-pulse" : ""}`} />
-            </div>
-            {/* Pulsing indicator dot if audio is playing in the background but panel is closed */}
-            {isAudioPlaying && !isMusicPlayerOpen && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
-            )}
-            {isAudioPlaying && !isMusicPlayerOpen && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full" />
-            )}
-          </button>
         </div>
+
+        {/* Floating Mini Media Player Control Bar (bottom-center, aligned at bottom-28) */}
+        {mediaState.currentTrack && hasBeenPlayed && (
+          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 h-[52px] px-3 bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto w-[80%] max-w-[255px] md:w-[325px]">
+            {/* Album Cover / Radio Icon on the Left */}
+            <div className="flex items-center shrink-0">
+              <div className="w-8 h-8 rounded overflow-hidden border border-slate-800/80 flex items-center justify-center bg-slate-900 shadow-inner">
+                {mediaState.currentTrack.cover ? (
+                  <img 
+                    src={mediaState.currentTrack.cover} 
+                    className="w-full h-full object-cover" 
+                    referrerPolicy="no-referrer" 
+                    alt="album art" 
+                  />
+                ) : mediaState.currentTrack.isRadio ? (
+                  <Radio className="w-4.5 h-4.5 text-emerald-400" />
+                ) : (
+                  <Music className="w-4.5 h-4.5 text-emerald-400" />
+                )}
+              </div>
+            </div>
+
+            {/* Song Info Stack in the Middle */}
+            <div className="flex flex-col justify-center min-w-0 flex-1 px-1 select-none text-left">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase truncate block">
+                {mediaState.currentTrack.title}
+              </span>
+              <span className="text-[8px] text-slate-300 truncate leading-none mt-0.5 font-medium">
+                {mediaState.currentTrack.subtitle || (mediaState.sourceMode === "radio" ? "Radio FM" : "Media Player")}
+              </span>
+            </div>
+
+            {/* Large Controls Cluster on the Right */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={sendPrevCommand}
+                className="w-7 h-7 flex items-center justify-center hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
+                title="Brano precedente"
+              >
+                <SkipBack className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={sendPlayPauseCommand}
+                className={`w-9 h-9 flex items-center justify-center rounded-full transition-all cursor-pointer border ${
+                  mediaState.isPlaying 
+                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 hover:border-emerald-500/50" 
+                    : "bg-slate-800 border-slate-700 text-white hover:bg-slate-700 hover:border-slate-650"
+                }`}
+                title={mediaState.isPlaying ? "Pausa" : "Riproduci"}
+              >
+                {mediaState.isPlaying ? (
+                  <Pause className="w-4 h-4 fill-current" />
+                ) : (
+                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={sendNextCommand}
+                className="w-7 h-7 flex items-center justify-center hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
+                title="Brano successivo"
+              >
+                <SkipForward className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Unconditionally rendered audio player so background streaming continues when minimized */}
         <CamperMediaPlayer 
