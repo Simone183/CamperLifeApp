@@ -38,7 +38,8 @@ import {
   Settings,
   SkipForward,
   SkipBack,
-  Radio
+  Radio,
+  Gauge
 } from 'lucide-react';
 import CamperMediaPlayer from './CamperMediaPlayer';
 
@@ -90,6 +91,54 @@ export default function FullscreenNavigator({
 
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(false);
   const [speed, setSpeed] = React.useState<number>(80); // km/h
+  const [currentDetectedSpeed, setCurrentDetectedSpeed] = React.useState<number | null>(null);
+
+  // Real-time GPS speed tracking
+  React.useEffect(() => {
+    if (!isGPSEnabled || typeof window === 'undefined' || !('geolocation' in navigator)) {
+      setCurrentDetectedSpeed(null);
+      return;
+    }
+
+    let lastPos: { lat: number; lng: number; timestamp: number } | null = null;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (pos.coords.speed !== null && pos.coords.speed !== undefined && !isNaN(pos.coords.speed) && pos.coords.speed >= 0) {
+          const kmh = Math.round(pos.coords.speed * 3.6);
+          setCurrentDetectedSpeed(kmh);
+        } else {
+          const now = pos.timestamp || Date.now();
+          if (lastPos) {
+            const dtSeconds = (now - lastPos.timestamp) / 1000;
+            if (dtSeconds > 0.5) {
+              const distKm = calculateHaversineDistance(
+                [lastPos.lat, lastPos.lng],
+                [pos.coords.latitude, pos.coords.longitude]
+              );
+              const kmh = Math.round((distKm / dtSeconds) * 3600);
+              if (distKm * 1000 < 1.5) {
+                setCurrentDetectedSpeed(0);
+              } else if (kmh < 220) {
+                setCurrentDetectedSpeed(kmh);
+              }
+            }
+          } else {
+            setCurrentDetectedSpeed(0);
+          }
+          lastPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: now };
+        }
+      },
+      (err) => {
+        console.warn("GPS speed watcher warning:", err);
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [isGPSEnabled]);
 
   React.useEffect(() => {
     const style = settings?.drivingStyle || "relax";
@@ -815,6 +864,7 @@ out center;`;
     
     // Clean emojis and double spaces
     const cleanText = text
+      .replace(/navigazione/gi, "")
       .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
       .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
       .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")
@@ -825,6 +875,7 @@ out center;`;
     if (!cleanText) return;
 
     // Temporal deduplication using the module-level variables (e.g., 4 seconds)
+    console.log("Speaking text:", cleanText);
     const now = Date.now();
     if (globalLastSpokenText === cleanText && (now - globalLastSpokenTime) < 4000) {
       return;
@@ -1049,7 +1100,7 @@ out center;`;
                 icon = "🏕️";
               } else if (maneuverType === 'roundabout') {
                 const exitNumber = step.maneuver.exit;
-                title = exitNumber ? `Rotatoria - ${exitNumber}° uscita` : "Rotatoria";
+                title = exitNumber ? `Rotatoria - uscita numero ${exitNumber}` : "Rotatoria";
                 icon = "🔄";
               } else if (maneuverType === 'off ramp') {
                 title = "Prendi l'uscita";
@@ -1071,6 +1122,7 @@ out center;`;
                 .replace(/turn left/gi, "svolta a sinistra")
                 .replace(/turn right/gi, "svolta a destra")
                 .replace(/continue straight/gi, "prosegui dritto")
+                .replace(/svolta\s+dritto/gi, "prosegui dritto")
                 .replace(/continue/gi, "prosegui")
                 .replace(/merge/gi, "immettiti")
                 .replace(/at the roundabout/gi, "alla rotonda")
@@ -1103,18 +1155,9 @@ out center;`;
                 .replace(/^(?:ora\s+)?svolta\s+a\s+([a-z]+),\s+svolta\s+a\s+\1\s+/gi, "svolta a $1 ")
                 .replace(/^ora\s+/gi, "");
 
-              // Clean up 'procedi', 'prosegui', 'continua' words entirely to keep only the direct indication
-              desc = desc
-                .replace(/^(?:procedi\s+dritto\s+su|prosegui\s+dritto\s+su|continua\s+dritto\s+su)\s+/gi, "Dritto su ")
-                .replace(/^(?:procedi\s+su|prosegui\s+su|continua\s+su)\s+/gi, "Su ")
-                .replace(/^(?:procedi\s+dritto|prosegui\s+dritto|continua\s+dritto)\s+/gi, "Dritto ")
-                .replace(/^(?:procedi|prosegui|continua)\s+su\s+/gi, "Su ")
-                .replace(/^(?:procedi|prosegui|continua)\s+lungo\s+/gi, "Lungo ")
-                .replace(/^(?:procedi|prosegui|continua)\s+/gi, "Su ")
-                .replace(/^su\s+su\s+/gi, "Su ")
-                .replace(/^dritto\s+su\s+su\s+/gi, "Dritto su ")
-                .replace(/^\s*[a-z]/i, (match) => match.toUpperCase())
-                .trim();
+              // Keep instructions as they are to ensure they are read exactly as written
+              desc = desc.trim();
+
 
               // Convert any distances >= 1000 in the text from meters to kilometers
               desc = desc.replace(/\b(\d+)\s*(?:metri|meters|m\b)/gi, (match, numStr) => {
@@ -1451,13 +1494,11 @@ out center;`;
             distanceStr = `${roundedMeters} metri`;
           }
           // Speak instruction indicating turn with precise distance
-          const cleanTitle = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title : "";
-          const cleanDesc = (stepObj.desc || "").replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
-          const bodyText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
-            ? `${cleanTitle}. ${cleanDesc}`
-            : cleanDesc;
-          const speakText = `Tra ${distanceStr}: ${bodyText}`;
-          speakInstruction(speakText);
+          console.log("Step title for TTS:", stepObj.title);
+          const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
+          const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
+          const speakTextWithDist = `Tra ${distanceStr}: ${speakText}`;
+          speakInstruction(speakTextWithDist);
           break; // alert spoken, don't cascade to avoid overwhelming SpeechSynthesis
         }
       }
@@ -1467,12 +1508,8 @@ out center;`;
         if (!spoken50mRef.current[stepIdx]) {
           spoken50mRef.current[stepIdx] = true;
           // Re-read the exact same instruction
-          const cleanTitle = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title : "";
-          const cleanDesc = (stepObj.desc || "").replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
-          const bodyText = (cleanTitle && !cleanDesc.toLowerCase().includes(cleanTitle.toLowerCase()))
-            ? `${cleanTitle}. ${cleanDesc}`
-            : cleanDesc;
-          const speakText = `Ora: ${bodyText}`;
+          const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
+          const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
           speakInstruction(speakText);
           break; // alert spoken
         }
@@ -2380,6 +2417,16 @@ const newCenter = [targetCoords[1], targetCoords[0]];
   const remainingMinutes = remainingDistanceKm > 0.05 ? Math.max(1, Math.round((remainingDistanceKm / activeSpeed) * 85)) : 0;
   const etaTimeStr = getETA(remainingMinutes);
 
+  const displayDetectedSpeed = React.useMemo(() => {
+    if (currentDetectedSpeed !== null && currentDetectedSpeed >= 0) {
+      return currentDetectedSpeed;
+    }
+    if (isDriving) {
+      return Math.min(115, Math.max(25, Math.round(speed + (Math.sin(simStep * 0.4) * 5))));
+    }
+    return 0;
+  }, [currentDetectedSpeed, isDriving, speed, simStep]);
+
   const { lastPrice, consumptionKmPerL, hasRealPrice, hasRealConsumption } = getCamperFuelStats();
   const fuelCost = (remainingDistanceKm / consumptionKmPerL) * lastPrice;
 
@@ -2575,32 +2622,48 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         ) : (
           /* Bottom Route Stats HUD Bar (Active Navigation) */
           <div className="absolute bottom-0 inset-x-0 z-10 pointer-events-none">
-            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-6 py-4 pb-6 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans">
-              <div className="flex items-center gap-4 md:gap-8">
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Arrivo</span>
-                  <span className="text-xs md:text-sm font-black text-slate-200">{etaTimeStr}</span>
+            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-3 sm:px-6 py-2.5 sm:py-4 pb-4 sm:pb-5 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-1.5 sm:gap-4">
+              <div className="flex-1 min-w-0 flex items-center justify-between gap-1 sm:gap-3 md:gap-6 py-0.5">
+                <div className="flex flex-col items-start shrink-0">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight sm:tracking-wider">Arrivo</span>
+                  <span className="text-xs sm:text-sm font-black text-slate-200">{etaTimeStr}</span>
                 </div>
-                <div className="h-6 w-px bg-slate-800/60" />
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Distanza</span>
-                  <span className="text-xs md:text-sm font-black text-emerald-400 font-mono">{remainingDistanceKm.toFixed(1)} km</span>
+
+                <div className="h-5 sm:h-6 w-px bg-slate-800/60 shrink-0" />
+
+                <div className="flex flex-col items-start shrink-0">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight sm:tracking-wider">Distanza</span>
+                  <span className="text-xs sm:text-sm font-black text-emerald-400 font-mono">{remainingDistanceKm.toFixed(1)} km</span>
                 </div>
-                <div className="h-6 w-px bg-slate-800/60" />
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tempo</span>
-                  <span className="text-xs md:text-sm font-black text-slate-200">{formatDuration(remainingMinutes)}</span>
+
+                <div className="h-5 sm:h-6 w-px bg-slate-800/60 shrink-0" />
+
+                <div className="flex flex-col items-start shrink-0">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight sm:tracking-wider">Tempo</span>
+                  <span className="text-xs sm:text-sm font-black text-slate-200">{formatDuration(remainingMinutes)}</span>
+                </div>
+
+                <div className="h-5 sm:h-6 w-px bg-slate-800/60 shrink-0" />
+
+                <div className="flex flex-col items-start shrink-0 bg-slate-900/90 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-xl border border-slate-800 shadow-2xs">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-amber-400/90 uppercase tracking-tight sm:tracking-wider flex items-center gap-0.5 sm:gap-1">
+                    <Gauge className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400 shrink-0" />
+                    <span>Velocità</span>
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-amber-400 font-mono leading-none sm:leading-normal">
+                    {displayDetectedSpeed} <span className="text-[9px] sm:text-[10px] font-bold text-amber-300/80">km/h</span>
+                  </span>
                 </div>
               </div>
 
-              {/* X to close, all the way to the right */}
+              {/* X to close */}
               <button
                 type="button"
                 onClick={onClose}
-                className="p-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md"
+                className="p-2 sm:p-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md shrink-0 ml-1"
                 title="Chiudi navigazione"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
           </div>

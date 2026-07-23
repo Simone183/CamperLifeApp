@@ -4002,7 +4002,7 @@ out center;`;
                           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
                         </div>
 
-                        {/* Misure & Sagoma Camper */}
+                        {/* Il Mio Camper, misure e info */}
                         <div
                           onClick={() => setSettingsSubTab("dimensions")}
                           className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
@@ -4013,7 +4013,7 @@ out center;`;
                             </div>
                             <div className="min-w-0">
                               <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                Misure & Sagoma Camper
+                                Il Mio Camper, misure e info
                               </h4>
                               <p className="text-xs text-slate-400 mt-0.5 truncate">
                                 Altezza, larghezza, peso e lunghezza per ponti e
@@ -4195,7 +4195,7 @@ out center;`;
                     {/* Small heading telling where we are */}
                     <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 pr-2 tracking-wider hidden xs:block">
                       Strumenti &gt;{" "}
-                      {settingsSubTab === "dimensions" && "Dati Camper"}
+                      {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
                       {settingsSubTab === "checklist" &&
                         "Checklist Pre-partenza"}
                       {settingsSubTab === "deadlines" && "Scandenziere"}
@@ -4243,6 +4243,7 @@ out center;`;
                     <VehicleSettings
                       dimensions={vehicleDimensions}
                       onChange={handleVehicleDimensionsChange}
+                      onNavigateToDeadlines={() => setSettingsSubTab("deadlines")}
                     />
                   )}
                   {settingsSubTab === "checklist" && (

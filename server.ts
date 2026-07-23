@@ -2373,20 +2373,22 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     try {
       const { z, x, y } = req.params;
       const lyrs = (req.query.lyrs as string) || "m";
-      // Use Google Maps directly as CartoDB might block our datacenter IPs
-      const targetUrl = `https://mt1.google.com/vt/lyrs=${lyrs}&x=${x}&y=${y}&z=${z}`;
+      
+      // Try multiple subdomains to improve reliability
+      const subdomains = ["mt0", "mt1", "mt2", "mt3"];
+      const subdomain = subdomains[Math.floor(Math.random() * subdomains.length)];
+      const targetUrl = `https://${subdomain}.google.com/vt/lyrs=${lyrs}&x=${x}&y=${y}&z=${z}`;
       
       const response = await fetch(targetUrl, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
         },
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(5000)
       });
       
       if (!response.ok) {
-        console.warn(`[Map Tile Proxy] Failed to fetch tile ${z}/${x}/${y} from CartoDB: ${response.status}`);
-        return res.status(response.status).end();
+        throw new Error(`Failed to fetch tile: ${response.status}`);
       }
       
       const contentType = response.headers.get("content-type") || "image/png";
@@ -2397,7 +2399,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.send(buffer);
     } catch (err: any) {
       console.error("[Map Tile Proxy] Error:", err);
-      res.status(500).end();
+      // Return 404 to allow map library to handle missing tiles gracefully (e.g. placeholder/empty)
+      res.status(404).end();
     }
   });
 
