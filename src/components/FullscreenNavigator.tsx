@@ -884,11 +884,13 @@ out center;`;
     globalLastSpokenTime = now;
 
     if (typeof window !== "undefined" && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      // Remove cancel() to allow browser native queueing and prevent abrupt cut-offs
+      // window.speechSynthesis.cancel(); 
       const msg = new SpeechSynthesisUtterance(cleanText);
       msg.lang = 'it-IT';
       msg.rate = 1.0;
       msg.pitch = 1.0;
+      
       try {
         window.speechSynthesis.speak(msg);
       } catch (e) {
