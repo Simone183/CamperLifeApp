@@ -1475,11 +1475,11 @@ out center;`;
 
       // Calculate adaptive warning distances based on current speed
       const speedMs = speed / 3.6;
-      const trigger1km = Math.min(1000, Math.max(200, speedMs * 45)); // Max 1km, or 45 seconds, min 200m
-      const trigger50m = Math.min(50, Math.max(15, speedMs * 3));    // Max 50m, or 3 seconds, min 15m
+      const trigger1km = Math.min(1500, Math.max(400, speedMs * 60)); // Max 1.5km, or 1 minute, min 400m
+      const trigger50m = Math.min(60, Math.max(20, speedMs * 4));     // Max 60m, or 4 seconds, min 20m
 
-      // 1. First Warning Stage: adaptive distance (approx 1km or 45s before)
-      if (distanceToTurn <= trigger1km && distanceToTurn > (trigger50m + 20)) {
+      // 1. First Warning Stage: adaptive distance (approx 1km or 60s before)
+      if (distanceToTurn <= trigger1km && distanceToTurn > (trigger50m + 50)) {
         if (!spoken1kmRef.current[stepIdx]) {
           spoken1kmRef.current[stepIdx] = true;
           // Calculate precise distance string
@@ -1497,17 +1497,17 @@ out center;`;
           console.log("Step title for TTS:", stepObj.title);
           const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
           const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
-          const speakTextWithDist = `Tra ${distanceStr}: ${speakText}`;
+          const speakTextWithDist = `Tra ${distanceStr}, ${speakText}`;
           speakInstruction(speakTextWithDist);
           break; // alert spoken, don't cascade to avoid overwhelming SpeechSynthesis
         }
       }
 
-      // 2. Second Warning Stage / Re-reading Stage: adaptive distance (approx 50m or 3s before)
+      // 2. Second Warning Stage / Re-reading Stage: adaptive distance (approx 60m or 4s before)
       if (distanceToTurn <= trigger50m && distanceToTurn > 0) {
         if (!spoken50mRef.current[stepIdx]) {
           spoken50mRef.current[stepIdx] = true;
-          // Re-read the exact same instruction
+          // Re-read the exact same instruction, perhaps slightly more urgent
           const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
           const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
           speakInstruction(speakText);

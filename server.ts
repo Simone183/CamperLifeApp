@@ -1028,7 +1028,7 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
       res.json({ eventsText: response.text });
     } catch (err: any) {
       console.log("[AI Events Info]: Error generated during AI events search.", err.message);
-      res.status(500).json({ error: getFriendlyGeminiError(err) });
+      res.status(500).json({ error: "Errore durante la ricerca eventi: " + getFriendlyGeminiError(err) });
     }
   });
 
