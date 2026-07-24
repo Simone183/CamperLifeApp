@@ -874,18 +874,18 @@ out center;`;
 
     if (!cleanText) return;
 
-    // Temporal deduplication using the module-level variables (e.g., 4 seconds)
+    // Temporal deduplication using the module-level variables (e.g., 10 seconds)
     console.log("Speaking text:", cleanText);
     const now = Date.now();
-    if (globalLastSpokenText === cleanText && (now - globalLastSpokenTime) < 4000) {
+    if ((now - globalLastSpokenTime) < 10000) {
+      console.log("Deduplication: too soon to speak again.");
       return;
     }
     globalLastSpokenText = cleanText;
     globalLastSpokenTime = now;
 
     if (typeof window !== "undefined" && 'speechSynthesis' in window) {
-      // Remove cancel() to allow browser native queueing and prevent abrupt cut-offs
-      // window.speechSynthesis.cancel(); 
+      window.speechSynthesis.cancel(); 
       const msg = new SpeechSynthesisUtterance(cleanText);
       msg.lang = 'it-IT';
       msg.rate = 1.0;
@@ -1475,41 +1475,15 @@ out center;`;
       // Calculate accurate real-road distance (along the actual path points) from our current position to the turn point
       const distanceToTurn = getDistanceToCoordinateIndex(routeCoordinates, currentRouteIdx, targetCoordIdx);
 
-      // Calculate adaptive warning distances based on current speed
+      // Calculate adaptive warning distance based on current speed
       const speedMs = speed / 3.6;
-      const trigger1km = Math.min(1500, Math.max(400, speedMs * 60)); // Max 1.5km, or 1 minute, min 400m
-      const trigger50m = Math.min(60, Math.max(20, speedMs * 4));     // Max 60m, or 4 seconds, min 20m
+      const triggerImmediate = Math.min(60, Math.max(20, speedMs * 4)); // Max 60m, or 4 seconds, min 20m
 
-      // 1. First Warning Stage: adaptive distance (approx 1km or 60s before)
-      if (distanceToTurn <= trigger1km && distanceToTurn > (trigger50m + 50)) {
-        if (!spoken1kmRef.current[stepIdx]) {
-          spoken1kmRef.current[stepIdx] = true;
-          // Calculate precise distance string
-          let distanceStr = "";
-          if (distanceToTurn >= 1000) {
-            const km = Math.round(distanceToTurn / 100) / 10;
-            distanceStr = km === 1 ? "un chilometro" : `${km.toString().replace('.', ',')} chilometri`;
-          } else {
-            const roundedMeters = distanceToTurn > 50 
-              ? Math.round(distanceToTurn / 10) * 10 
-              : Math.round(distanceToTurn / 5) * 5;
-            distanceStr = `${roundedMeters} metri`;
-          }
-          // Speak instruction indicating turn with precise distance
-          console.log("Step title for TTS:", stepObj.title);
-          const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
-          const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
-          const speakTextWithDist = `Tra ${distanceStr}, ${speakText}`;
-          speakInstruction(speakTextWithDist);
-          break; // alert spoken, don't cascade to avoid overwhelming SpeechSynthesis
-        }
-      }
-
-      // 2. Second Warning Stage / Re-reading Stage: adaptive distance (approx 60m or 4s before)
-      if (distanceToTurn <= trigger50m && distanceToTurn > 0) {
+      // Alert Stage: adaptive distance (approx 60m or 4s before)
+      if (distanceToTurn <= triggerImmediate && distanceToTurn > 0) {
         if (!spoken50mRef.current[stepIdx]) {
           spoken50mRef.current[stepIdx] = true;
-          // Re-read the exact same instruction, perhaps slightly more urgent
+          // Read the instruction
           const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
           const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
           speakInstruction(speakText);
