@@ -192,11 +192,6 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
         return;
     }
 
-    if (trip.routePoints && trip.routePoints.length > 0) {
-        setPoints(trip.routePoints);
-        return;
-    }
-
     const hasMovements = trip.movements && trip.movements.length > 0;
     if (hasMovements) {
       let isSubscribed = true;
@@ -228,12 +223,18 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
       return () => {
         isSubscribed = false;
       };
+    } else if (trip.routePoints && trip.routePoints.length > 0) {
+      setPoints(trip.routePoints);
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setProgressIndex(0);
     } else {
-      setPoints(trip.routePoints || []);
+      setPoints([]);
       setIsPlaying(false);
       isPlayingRef.current = false;
       setProgressIndex(0);
     }
+
   }, [trip, editMode]);
 
   // Geocode photos matching their assigned locationNames

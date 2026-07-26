@@ -14,6 +14,7 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
   const [notes, setNotes] = React.useState('');
   const [date, setDate] = React.useState('');
   const [isLocating, setIsLocating] = React.useState(false);
+  const [editingMovementId, setEditingMovementId] = React.useState<string | null>(null);
 
   const handleGetGPSLocation = () => {
     if (!navigator.geolocation) {
@@ -75,41 +76,46 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
     );
   };
 
-  const addMovement = () => {
+  const handleAddMovement = (e: React.FormEvent) => {
+    e.preventDefault();
     if (!odometer || !location) return;
-    const newMovement: DiaryMovement = {
-      id: Date.now().toString(),
-      odometer: parseFloat(odometer),
-      location,
-      date: date || new Date().toISOString(),
-      notes
-    };
-    onUpdateTrip({ ...trip, movements: [...(trip.movements || []), newMovement] });
+
+    const newMovements = editingMovementId
+      ? (trip.movements || []).map((m) =>
+          m.id === editingMovementId
+            ? { ...m, odometer: parseFloat(odometer), location, date: date || new Date().toISOString(), notes }
+            : m
+        )
+      : [
+          ...(trip.movements || []),
+          {
+            id: Date.now().toString(),
+            odometer: parseFloat(odometer),
+            location,
+            date: date || new Date().toISOString(),
+            notes,
+          },
+        ];
+
+    onUpdateTrip({ ...trip, movements: newMovements });
+    setEditingMovementId(null);
     setOdometer('');
     setLocation('');
     setNotes('');
     setDate('');
   };
 
+  const startEditMovement = (movement: DiaryMovement) => {
+    setEditingMovementId(movement.id);
+    setOdometer(movement.odometer.toString());
+    setLocation(movement.location);
+    setDate(movement.date ? new Date(movement.date).toISOString().split('T')[0] : '');
+    setNotes(movement.notes || '');
+  };
+
   const deleteMovement = (movementId: string) => {
-    const movementToDelete = (trip.movements || []).find((m) => m.id === movementId);
     const updatedMovements = (trip.movements || []).filter((m) => m.id !== movementId);
-    let updatedRoutePoints = trip.routePoints || [];
-
-    if (movementToDelete) {
-      const locToDelete = movementToDelete.location.toLowerCase().trim();
-      updatedRoutePoints = (trip.routePoints || []).filter((rp) => {
-        if (!rp.name) return true;
-        const rpName = rp.name.toLowerCase().trim();
-        return !rpName.includes(locToDelete) && !locToDelete.includes(rpName);
-      });
-    }
-
-    onUpdateTrip({
-      ...trip,
-      movements: updatedMovements,
-      routePoints: updatedRoutePoints,
-    });
+    onUpdateTrip({ ...trip, movements: updatedMovements });
   };
 
   return (
@@ -121,7 +127,7 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
         <h2 className="text-lg font-black text-stone-800">Spostamenti</h2>
       </div>
       
-      <div className="space-y-4">
+      <form onSubmit={handleAddMovement} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
             <input 
                 type="number" 
@@ -165,13 +171,13 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
             className="w-full p-2 border rounded-lg bg-white"
           />
         </div>
-        <button onClick={addMovement} className="w-full bg-[#3E4A35] text-white p-2 rounded-lg font-bold">
-            Aggiungi Spostamento
+        <button type="submit" className="w-full bg-[#3E4A35] text-white p-2 rounded-lg font-bold">
+            {editingMovementId ? "Salva Modifiche" : "Aggiungi Spostamento"}
         </button>
-      </div>
+      </form>
 
       <div className="mt-6 space-y-2">
-        {(trip.movements || []).map(m => (
+        {(trip.movements || []).sort((a, b) => (a.odometer || 0) - (b.odometer || 0)).map(m => (
             <div key={m.id} className="p-3 border rounded-lg flex justify-between items-center text-sm">
                 <div>
                     <span className="font-bold">
@@ -179,9 +185,14 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
                     </span> - {m.location}
                     <div className="text-xs text-stone-500">{new Date(m.date).toLocaleDateString()}</div>
                 </div>
-                <button onClick={() => deleteMovement(m.id)} className="text-red-500">
-                    <Trash2 className="w-4 h-4"/>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => startEditMovement(m)} className="text-stone-500 hover:text-stone-700">
+                    <span className="text-xs">Modifica</span>
+                  </button>
+                  <button onClick={() => deleteMovement(m.id)} className="text-red-500">
+                      <Trash2 className="w-4 h-4"/>
+                  </button>
+                </div>
             </div>
         ))}
       </div>
