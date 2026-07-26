@@ -30,6 +30,7 @@ import {
   Navigation,
   Printer,
   FileDown,
+  Pencil,
 } from "lucide-react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -141,9 +142,10 @@ export default function DiaryTab({
   );
 
   // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details, 'album' contains global photos)
-  const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details" | "album">(
+  const [diarySubTab, setDiarySubTab] = React.useState<"list" | "album">(
     () => {
-      if (initialSubTab) return initialSubTab;
+      if (initialSubTab === "details") return "list";
+      if (initialSubTab) return initialSubTab as "list" | "album";
       return "list";
     },
   );
@@ -176,13 +178,15 @@ export default function DiaryTab({
   const [fuelCompany, setFuelCompany] = React.useState("Eni");
   const [fuelIsFullTank, setFuelIsFullTank] = React.useState(false);
   const [expenseSubMode, setExpenseSubMode] = React.useState<
-    "general" | "refuel" | "movement"
+    "general" | "refuel" | "movement" | "photo"
   >("general");
 
   // Movement-specific states
   const [movementOdometer, setMovementOdometer] = React.useState("");
   const [movementLocation, setMovementLocation] = React.useState("");
+  const [movementDate, setMovementDate] = React.useState("");
   const [movementNotes, setMovementNotes] = React.useState("");
+  const [editingMovementId, setEditingMovementId] = React.useState<string | null>(null);
   const [editingOdoId, setEditingOdoId] = React.useState<string | null>(null);
   const [tempOdoValue, setTempOdoValue] = React.useState<string>("");
 
@@ -619,35 +623,60 @@ export default function DiaryTab({
     }
   };
 
-  // Handle adding a new movement
+  // Handle adding/editing a new movement
   const handleAddMovement = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTripId || !movementLocation || !movementOdometer) return;
 
-    const newMovement = {
-      id: Date.now().toString(),
-      odometer: parseFloat(movementOdometer),
-      location: movementLocation,
-      date: expenseDate || new Date().toISOString(),
-      notes: movementNotes,
-    };
+    if (editingMovementId) {
+      // Edit mode
+      const updated = trips.map((t) => {
+        if (t.id === selectedTripId) {
+          const updatedMovements = (t.movements || []).map((m) =>
+            m.id === editingMovementId
+              ? {
+                  ...m,
+                  odometer: parseFloat(movementOdometer),
+                  location: movementLocation,
+                  date: movementDate || m.date,
+                  notes: movementNotes,
+                }
+              : m
+          );
+          return { ...t, movements: updatedMovements };
+        }
+        return t;
+      });
+      setTrips(updated);
+      setEditingMovementId(null);
+    } else {
+      // Add mode
+      const newMovement = {
+        id: Date.now().toString(),
+        odometer: parseFloat(movementOdometer),
+        location: movementLocation,
+        date: movementDate || new Date().toISOString(),
+        notes: movementNotes,
+      };
 
-    const updated = trips.map((t) => {
-      if (t.id === selectedTripId) {
-        return { ...t, movements: [...(t.movements || []), newMovement] };
-      }
-      return t;
-    });
-    setTrips(updated);
+      const updated = trips.map((t) => {
+        if (t.id === selectedTripId) {
+          return { ...t, movements: [...(t.movements || []), newMovement] };
+        }
+        return t;
+      });
+      setTrips(updated);
+    }
 
     setMovementLocation("");
     setMovementOdometer("");
     setMovementNotes("");
+    setMovementDate("");
     setExpenseDate("");
 
     window.dispatchEvent(
       new CustomEvent("show-toast", {
-        detail: { message: "📍 Spostamento registrato!" },
+        detail: { message: editingMovementId ? "✅ Spostamento aggiornato!" : "📍 Spostamento registrato!" },
       }),
     );
   };
@@ -1203,7 +1232,7 @@ export default function DiaryTab({
             }`}
           >
             <ImageIcon className="w-4 h-4" />
-            Album Foto
+            Foto e ricordi
             {allPhotos.length > 0 && (
               <span className="ml-1 bg-[#3E4A35]/10 text-[#3E4A35] text-[10px] px-2 py-0.5 rounded-full font-bold">
                 {allPhotos.length}
@@ -2026,9 +2055,287 @@ export default function DiaryTab({
                         <Route className="w-3.5 h-3.5 text-blue-400" />
                         Spostamenti ({(activeTrip.movements || []).length})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpenseSubMode("photo")}
+                        className={`flex-1 min-w-[30%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          expenseSubMode === "photo"
+                            ? "bg-purple-600 text-white shadow-xs"
+                            : "text-slate-500 hover:text-purple-600"
+                        }`}
+                      >
+                        <Camera className="w-3.5 h-3.5 text-purple-400" />
+                        Foto e ricordi ({(activeTrip.photos || []).length})
+                      </button>
                     </div>
 
-                    {expenseSubMode === "general" ? (
+                    {expenseSubMode === "photo" ? (
+                      <div className="space-y-4 animate-fade-in">
+                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                          <Camera className="w-4 h-4 text-[#3E4A35]" />
+                          Scatti & Ricordi Fotografici ({activeTrip.photos.length})
+                        </h3>
+
+                        {/* Add Photo Form - Real Uploading interface */}
+                        <form
+                          onSubmit={handleAddPhoto}
+                          className="p-4 bg-stone-50 rounded-xl border border-stone-100 space-y-3 font-sans"
+                        >
+                          {/* Intestazione Caricamento Foto */}
+                          <div className="flex gap-2.5 items-center pb-2 border-b border-stone-150 flex-wrap">
+                            <span className="text-[10.5px] font-black pb-1.5 border-b-2 text-[#3E4A35] border-[#3E4A35] flex items-center gap-1">
+                              <Upload className="w-3.5 h-3.5" />
+                              Carica foto 📷
+                            </span>
+                          </div>
+
+                          {photoType === "upload" && (
+                            <div className="space-y-2">
+                              <div
+                                onDragEnter={handleDrag}
+                                onDragOver={handleDrag}
+                                onDragLeave={handleDrag}
+                                onDrop={handleDrop}
+                                onClick={() =>
+                                  document
+                                    .getElementById("diary-file-input")
+                                    ?.click()
+                                }
+                                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[110px] relative ${
+                                  dragActive
+                                    ? "border-[#3E4A35] bg-[#3E4A35]/5 scale-[0.99]"
+                                    : (uploadedImages.length > 0 || uploadedImageUrl)
+                                      ? "border-emerald-500/50 bg-emerald-50/10"
+                                      : "border-slate-200 hover:border-[#3E4A35]/40 hover:bg-slate-50/50"
+                                }`}
+                              >
+                                <input
+                                  id="diary-file-input"
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  onChange={handleFileInputChange}
+                                  className="hidden"
+                                />
+
+                                {isUploading ? (
+                                  <div className="space-y-2 flex flex-col items-center">
+                                    <Loader2 className="w-6 h-6 text-[#3E4A35] animate-spin" />
+                                    <p className="text-[10px] text-slate-500 font-bold font-sans">
+                                      Caricamento in corso...
+                                    </p>
+                                  </div>
+                                ) : uploadedImages.length > 0 ? (
+                                  <div className="space-y-2 w-full">
+                                    <div className="grid grid-cols-4 gap-2 max-h-[150px] overflow-y-auto p-1">
+                                      {uploadedImages.map((img, idx) => (
+                                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-500/50 shadow-xs group">
+                                          <img
+                                            src={img.url}
+                                            alt={img.name}
+                                            className="w-full h-full object-cover"
+                                            referrerPolicy={
+                                              img.url?.startsWith("http")
+                                                ? "no-referrer"
+                                                : undefined
+                                            }
+                                          />
+                                          <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
+                                            <span className="text-white text-[9px] font-black bg-emerald-600/80 rounded-full w-4 h-4 flex items-center justify-center">
+                                              ✓
+                                            </span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={(evt) => {
+                                              evt.stopPropagation();
+                                              setUploadedImages((prev) => prev.filter((_, i) => i !== idx));
+                                              if (uploadedImages.length === 1) {
+                                                setUploadedImageUrl("");
+                                              } else if (uploadedImageUrl === img.url) {
+                                                const remaining = uploadedImages.filter((_, i) => i !== idx);
+                                                setUploadedImageUrl(remaining[remaining.length - 1].url);
+                                              }
+                                            }}
+                                            className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-red-600 text-white rounded-md transition-all z-20 flex items-center justify-center active:scale-95 cursor-pointer"
+                                            title="Rimuovi"
+                                          >
+                                            <X className="w-2.5 h-2.5" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <p className="text-[10px] text-emerald-600 font-black">
+                                      {uploadedImages.length} {uploadedImages.length === 1 ? 'foto caricata' : 'foto caricate'} con successo!
+                                    </p>
+                                    <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
+                                      Carica altre foto
+                                    </p>
+                                  </div>
+                                ) : uploadedImageUrl ? (
+                                  <div className="space-y-1.5 flex flex-col items-center">
+                                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-emerald-500 shadow-xs">
+                                      <img
+                                        src={uploadedImageUrl}
+                                        alt="Preview"
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy={
+                                          uploadedImageUrl?.startsWith("http")
+                                            ? "no-referrer"
+                                            : undefined
+                                        }
+                                      />
+                                      <div className="absolute inset-0 bg-emerald-500/25 flex items-center justify-center">
+                                        <span className="text-white text-[9px] font-black">
+                                          ✓
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-emerald-600 font-black">
+                                      Foto caricata con successo!
+                                    </p>
+                                    <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
+                                      Cambia foto
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <Upload className="w-5 h-5 text-slate-400 mx-auto" />
+                                    <p className="text-[10.5px] text-slate-600 font-bold">
+                                      Trascina qui le foto dallo smartphone/PC o{" "}
+                                      <span className="text-[#3E4A35] underline font-bold">
+                                        sfoglia
+                                      </span>
+                                    </p>
+                                    <p className="text-[9px] text-slate-400">
+                                      PNG, JPG, WEBP fino a 15MB
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {uploadError && (
+                            <p className="text-[9.5px] text-red-500 font-black bg-red-50 p-1.5 rounded-lg border border-red-100 flex items-center gap-1 select-none">
+                              ⚠️ {uploadError}
+                            </p>
+                          )}
+
+                          <input
+                            type="text"
+                            required
+                            placeholder="Scrivi un pensiero o descrizione..."
+                            value={photoDesc}
+                            onChange={(e) => setPhotoDesc(e.target.value)}
+                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
+                          />
+
+                          {/* Select Tappa for Photo */}
+                          {activeTrip.movements && activeTrip.movements.length > 0 && (
+                            <div className="space-y-1 animate-fade-in">
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                📍 Associa alla Tappa del Viaggio
+                              </label>
+                              <select
+                                value={photoLocationName}
+                                onChange={(e) => setPhotoLocationName(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] bg-white font-semibold text-slate-700"
+                              >
+                                <option value="">Nessuna tappa specifica (Generico)</option>
+                                {Array.from(new Set(activeTrip.movements.map((m) => m.location))).map((loc) => (
+                                  <option key={loc} value={loc}>
+                                    {loc}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isUploading}
+                            className={`w-full py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-sm flex items-center justify-center gap-1.5 select-none ${
+                              isUploading ? "opacity-60 cursor-not-allowed" : ""
+                            }`}
+                          >
+                            {isUploading ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                Caricamento...
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                Salva Foto nel Diario
+                              </>
+                            )}
+                          </button>
+                        </form>
+
+                        {/* Photo logs display */}
+                        <div className="grid grid-cols-2 gap-3 max-h-[225px] overflow-y-auto pr-1">
+                          {activeTrip.photos.length === 0 ? (
+                            <div className="col-span-2 text-xs text-slate-400 py-8 text-center bg-white border border-slate-100 rounded-lg">
+                              <ImageIcon className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                              Nessuno scatto caricato. Scatta o simula la prima foto
+                              della vacanza!
+                            </div>
+                          ) : (
+                            activeTrip.photos.map((photo, idx) => (
+                              <div
+                                key={photo.id}
+                                className="bg-stone-50 rounded-xl overflow-hidden border border-slate-150 relative group cursor-pointer"
+                                onClick={() => setSelectedLightboxPhotoIndex(idx)}
+                              >
+                                <div className="relative w-full h-24 overflow-hidden bg-stone-100">
+                                  <img
+                                    src={photo.url}
+                                    alt={photo.description}
+                                    referrerPolicy={
+                                      photo.url?.startsWith("http")
+                                        ? "no-referrer"
+                                        : undefined
+                                    }
+                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                  />
+
+                                  {/* Hover overlay with Eye zoom icon */}
+                                  <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span className="p-1.5 bg-white/10 backdrop-blur-xs text-white rounded-full border border-white/20">
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="p-1.5 space-y-1">
+                                  <p className="text-[10px] text-slate-700 leading-tight line-clamp-2">
+                                    {photo.description}
+                                  </p>
+                                  {photo.locationName && (
+                                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 text-blue-800 rounded text-[9px] font-bold">
+                                      <MapPin className="w-2.5 h-2.5" />
+                                      {photo.locationName}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPhotoToDelete(photo.id);
+                                  }}
+                                  className="absolute top-1.5 right-1.5 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-lg transition-colors z-10"
+                                  title="Rimuovi foto"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ) : expenseSubMode === "general" ? (
                       /* ---------------- GENERAL EXPENSES VIEW ---------------- */
                       <div className="space-y-4 animate-fade-in">
                         <div className="flex justify-between items-center">
@@ -2510,6 +2817,62 @@ export default function DiaryTab({
                           </h3>
                         </div>
 
+                        {/* Add/Edit Movement Form */}
+                        <form onSubmit={handleAddMovement} className="p-4 bg-stone-50 rounded-xl border border-stone-100 space-y-3 font-sans">
+                          <h3 className="text-xs font-black text-[#3E4A35] uppercase tracking-wider mb-2">
+                            {editingMovementId ? "Modifica Spostamento" : "Nuovo Spostamento"}
+                          </h3>
+                          <input
+                            type="text"
+                            placeholder="Luogo (es. Roma)"
+                            value={movementLocation}
+                            onChange={(e) => setMovementLocation(e.target.value)}
+                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Km Odometro"
+                            value={movementOdometer}
+                            onChange={(e) => setMovementOdometer(e.target.value)}
+                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
+                          />
+                          <input
+                            type="date"
+                            value={movementDate ? new Date(movementDate).toISOString().split('T')[0] : ""}
+                            onChange={(e) => setMovementDate(e.target.value)}
+                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Note (opzionale)"
+                            value={movementNotes}
+                            onChange={(e) => setMovementNotes(e.target.value)}
+                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
+                          />
+                          <button
+                            type="submit"
+                            className="w-full py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-sm"
+                          >
+                            {editingMovementId ? "Salva Modifiche" : "Aggiungi Spostamento"}
+                          </button>
+                          {editingMovementId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingMovementId(null);
+                                setMovementLocation("");
+                                setMovementOdometer("");
+                                setMovementDate("");
+                                setMovementNotes("");
+                              }}
+                              className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black transition-all cursor-pointer"
+                            >
+                              Annulla
+                            </button>
+                          )}
+                        </form>
+
+
                         {/* Automatic GPS tracking notification card */}
                         <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-100/80 text-left space-y-2 animate-fade-in">
                           <div className="flex items-center gap-2">
@@ -2535,7 +2898,10 @@ export default function DiaryTab({
                               Nessun spostamento registrato.
                             </p>
                           ) : (
-                            (activeTrip.movements || []).map((m) => (
+                            (activeTrip.movements || [])
+                                .slice()
+                                .sort((a, b) => (a.odometer || 0) - (b.odometer || 0))
+                                .map((m) => (
                               <div
                                 key={m.id}
                                 className="p-2.5 bg-white border border-slate-100 rounded-lg hover:border-slate-200 transition-all font-sans relative group"
@@ -2673,22 +3039,43 @@ export default function DiaryTab({
                                     </span>
                                   </div>
 
-                                  <button
-                                    onClick={() => handleDeleteMovement(m.id)}
-                                    className="text-slate-350 hover:text-red-500 rounded p-1 transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => {
+                                        // Edit functionality: fill state with m values
+                                        setMovementLocation(m.location);
+                                        setMovementOdometer(String(m.odometer));
+                                        setMovementNotes(m.notes || "");
+                                        setMovementDate(m.date || "");
+                                        // Keep track of which one is being edited
+                                        // For now let's reuse state or create new one if needed, 
+                                        // actually let's just trigger edit mode
+                                        setEditingMovementId(m.id);
+                                      }}
+                                      className="text-slate-350 hover:text-blue-500 rounded p-1 transition-colors cursor-pointer"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteMovement(m.id)}
+                                      className="text-slate-350 hover:text-red-500 rounded p-1 transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             ))
                           )}
                         </div>
+                        <div className="mt-4 border-t border-stone-100 pt-4">
+                          <TripRouteMap trip={activeTrip} onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} />
+                        </div>
                       </div>
                     ) : null}
 
                     {/* Comprehensive overall Category budget breakdown progress bars */}
-                    {activeTrip.expenses.length > 0 && (
+                    {expenseSubMode === "general" && activeTrip.expenses.length > 0 && (
                       <div className="p-3 bg-[#F2EFE9]/40 border border-slate-200/60 rounded-xl space-y-2 text-sans select-none mt-3 animate-fade-in">
                         <div className="flex justify-between items-center">
                           <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
@@ -2757,280 +3144,12 @@ export default function DiaryTab({
                   </div>
 
                   {/* 2. PHOTOS SECTION WITH PRESENTS & DESC */}
-                  <div className="space-y-4">
-                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                      <Camera className="w-4 h-4 text-[#3E4A35]" />
-                      Scatti & Ricordi Fotografici ({activeTrip.photos.length})
-                    </h3>
-
-                    {/* Add Photo Form - Real Uploading interface */}
-                    <form
-                      onSubmit={handleAddPhoto}
-                      className="p-4 bg-stone-50 rounded-xl border border-stone-100 space-y-3 font-sans"
-                    >
-                      {/* Intestazione Caricamento Foto */}
-                      <div className="flex gap-2.5 items-center pb-2 border-b border-stone-150 flex-wrap">
-                        <span className="text-[10.5px] font-black pb-1.5 border-b-2 text-[#3E4A35] border-[#3E4A35] flex items-center gap-1">
-                          <Upload className="w-3.5 h-3.5" />
-                          Carica foto 📷
-                        </span>
-                      </div>
-
-                      {photoType === "upload" && (
-                        <div className="space-y-2">
-                          <div
-                            onDragEnter={handleDrag}
-                            onDragOver={handleDrag}
-                            onDragLeave={handleDrag}
-                            onDrop={handleDrop}
-                            onClick={() =>
-                              document
-                                .getElementById("diary-file-input")
-                                ?.click()
-                            }
-                            className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[110px] relative ${
-                              dragActive
-                                ? "border-[#3E4A35] bg-[#3E4A35]/5 scale-[0.99]"
-                                : (uploadedImages.length > 0 || uploadedImageUrl)
-                                  ? "border-emerald-500/50 bg-emerald-50/10"
-                                  : "border-slate-200 hover:border-[#3E4A35]/40 hover:bg-slate-50/50"
-                            }`}
-                          >
-                            <input
-                              id="diary-file-input"
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              onChange={handleFileInputChange}
-                              className="hidden"
-                            />
-
-                            {isUploading ? (
-                              <div className="space-y-2 flex flex-col items-center">
-                                <Loader2 className="w-6 h-6 text-[#3E4A35] animate-spin" />
-                                <p className="text-[10px] text-slate-500 font-bold font-sans">
-                                  Caricamento in corso...
-                                </p>
-                              </div>
-                            ) : uploadedImages.length > 0 ? (
-                              <div className="space-y-2 w-full">
-                                <div className="grid grid-cols-4 gap-2 max-h-[150px] overflow-y-auto p-1">
-                                  {uploadedImages.map((img, idx) => (
-                                    <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-500/50 shadow-xs group">
-                                      <img
-                                        src={img.url}
-                                        alt={img.name}
-                                        className="w-full h-full object-cover"
-                                        referrerPolicy={
-                                          img.url?.startsWith("http")
-                                            ? "no-referrer"
-                                            : undefined
-                                        }
-                                      />
-                                      <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
-                                        <span className="text-white text-[9px] font-black bg-emerald-600/80 rounded-full w-4 h-4 flex items-center justify-center">
-                                          ✓
-                                        </span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={(evt) => {
-                                          evt.stopPropagation();
-                                          setUploadedImages((prev) => prev.filter((_, i) => i !== idx));
-                                          if (uploadedImages.length === 1) {
-                                            setUploadedImageUrl("");
-                                          } else if (uploadedImageUrl === img.url) {
-                                            const remaining = uploadedImages.filter((_, i) => i !== idx);
-                                            setUploadedImageUrl(remaining[remaining.length - 1].url);
-                                          }
-                                        }}
-                                        className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-red-600 text-white rounded-md transition-all z-20 flex items-center justify-center active:scale-95 cursor-pointer"
-                                        title="Rimuovi"
-                                      >
-                                        <X className="w-2.5 h-2.5" />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                                <p className="text-[10px] text-emerald-600 font-black">
-                                  {uploadedImages.length} {uploadedImages.length === 1 ? 'foto caricata' : 'foto caricate'} con successo!
-                                </p>
-                                <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
-                                  Carica altre foto
-                                </p>
-                              </div>
-                            ) : uploadedImageUrl ? (
-                              <div className="space-y-1.5 flex flex-col items-center">
-                                <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-emerald-500 shadow-xs">
-                                  <img
-                                    src={uploadedImageUrl}
-                                    alt="Preview"
-                                    className="w-full h-full object-cover"
-                                    referrerPolicy={
-                                      uploadedImageUrl?.startsWith("http")
-                                        ? "no-referrer"
-                                        : undefined
-                                    }
-                                  />
-                                  <div className="absolute inset-0 bg-emerald-500/25 flex items-center justify-center">
-                                    <span className="text-white text-[9px] font-black">
-                                      ✓
-                                    </span>
-                                  </div>
-                                </div>
-                                <p className="text-[10px] text-emerald-600 font-black">
-                                  Foto caricata con successo!
-                                </p>
-                                <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
-                                  Cambia foto
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="space-y-1">
-                                <Upload className="w-5 h-5 text-slate-400 mx-auto" />
-                                <p className="text-[10.5px] text-slate-600 font-bold">
-                                  Trascina qui le foto dallo smartphone/PC o{" "}
-                                  <span className="text-[#3E4A35] underline font-bold">
-                                    sfoglia
-                                  </span>
-                                </p>
-                                <p className="text-[9px] text-slate-400">
-                                  PNG, JPG, WEBP fino a 15MB
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {uploadError && (
-                        <p className="text-[9.5px] text-red-500 font-black bg-red-50 p-1.5 rounded-lg border border-red-100 flex items-center gap-1 select-none">
-                          ⚠️ {uploadError}
-                        </p>
-                      )}
-
-                      <input
-                        type="text"
-                        required
-                        placeholder="Scrivi un pensiero o descrizione..."
-                        value={photoDesc}
-                        onChange={(e) => setPhotoDesc(e.target.value)}
-                        className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
-                      />
-
-                      {/* Select Tappa for Photo */}
-                      {activeTrip.movements && activeTrip.movements.length > 0 && (
-                        <div className="space-y-1 animate-fade-in">
-                          <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                            📍 Associa alla Tappa del Viaggio
-                          </label>
-                          <select
-                            value={photoLocationName}
-                            onChange={(e) => setPhotoLocationName(e.target.value)}
-                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] bg-white font-semibold text-slate-700"
-                          >
-                            <option value="">Nessuna tappa specifica (Generico)</option>
-                            {Array.from(new Set(activeTrip.movements.map((m) => m.location))).map((loc) => (
-                              <option key={loc} value={loc}>
-                                {loc}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        disabled={isUploading}
-                        className={`w-full py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-sm flex items-center justify-center gap-1.5 select-none ${
-                          isUploading ? "opacity-60 cursor-not-allowed" : ""
-                        }`}
-                      >
-                        {isUploading ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            Caricamento...
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3.5 h-3.5" />
-                            Salva Foto nel Diario
-                          </>
-                        )}
-                      </button>
-                    </form>
-
-                    {/* Photo logs display */}
-                    <div className="grid grid-cols-2 gap-3 max-h-[225px] overflow-y-auto pr-1">
-                      {activeTrip.photos.length === 0 ? (
-                        <div className="col-span-2 text-xs text-slate-400 py-8 text-center bg-white border border-slate-100 rounded-lg">
-                          <ImageIcon className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-                          Nessuno scatto caricato. Scatta o simula la prima foto
-                          della vacanza!
-                        </div>
-                      ) : (
-                        activeTrip.photos.map((photo, idx) => (
-                          <div
-                            key={photo.id}
-                            className="bg-stone-50 rounded-xl overflow-hidden border border-slate-150 relative group cursor-pointer"
-                            onClick={() => setSelectedLightboxPhotoIndex(idx)}
-                          >
-                            <div className="relative w-full h-24 overflow-hidden bg-stone-100">
-                              <img
-                                src={photo.url}
-                                alt={photo.description}
-                                referrerPolicy={
-                                  photo.url?.startsWith("http")
-                                    ? "no-referrer"
-                                    : undefined
-                                }
-                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              />
-
-                              {/* Hover overlay with Eye zoom icon */}
-                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="p-1.5 bg-white/10 backdrop-blur-xs text-white rounded-full border border-white/20">
-                                  <Eye className="w-3.5 h-3.5" />
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="p-1.5 space-y-1">
-                              <p className="text-[10px] text-slate-700 leading-tight line-clamp-2">
-                                {photo.description}
-                              </p>
-                              {photo.locationName && (
-                                <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 text-blue-800 rounded text-[9px] font-bold">
-                                  <MapPin className="w-2.5 h-2.5" />
-                                  {photo.locationName}
-                                </span>
-                              )}
-                            </div>
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPhotoToDelete(photo.id);
-                              }}
-                              className="absolute top-1.5 right-1.5 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-lg transition-colors z-10"
-                              title="Rimuovi foto"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                  {/* PHOTOS MOVED TO FOTO E RICORDI TAB */}
                 </div>
 
-                {/* Visual Trip Route Tracker & Interactive Camper */}
-                <div className="mt-6 border-t border-stone-100 pt-6">
-                  <TripRouteMap trip={activeTrip} onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} />
-                </div>
 
-                {/* Racconto Section */}
-                <div className="mt-6 p-4 bg-[#F5F2ED]/40 rounded-xl border border-[#3E4A35]/10">
+                {expenseSubMode === "photo" && (
+                <div className="mt-6 p-4 bg-[#F5F2ED]/40 rounded-xl border border-[#3E4A35]/10 animate-fade-in">
                   <h3 className="text-xs font-black text-[#3E4A35] uppercase tracking-wider mb-2">
                     Racconto
                   </h3>
@@ -3045,6 +3164,7 @@ export default function DiaryTab({
                     Modifica racconto
                   </button>
                 </div>
+              )}
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center text-slate-400 space-y-2">

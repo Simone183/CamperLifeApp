@@ -829,7 +829,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
           </div>
           <div>
             <h3 className="font-black text-slate-800 text-xs uppercase tracking-wider">
-              Mappa del Percorso & Tappe 🗺️
+              Pianificazione percorso 🗺️
             </h3>
             <p className="text-[10px] text-stone-500 font-sans flex items-center gap-1">
               {points.length === 0 
