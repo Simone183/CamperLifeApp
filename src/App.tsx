@@ -2275,10 +2275,13 @@ out center;`;
             dimensions: vehicleDimensions,
           };
           
+          // Sanitize to remove undefined fields that Firestore doesn't support
+          const sanitizedBackupData = JSON.parse(JSON.stringify(backupData));
+
           await firestore
             .collection("users/" + currentUser.email + "/backups")
             .doc("latest")
-            .set(backupData);
+            .set(sanitizedBackupData);
 
           console.log("[Auto Backup] Sincronizzazione diari, spese e scadenze completata con successo nel Cloud!");
         } catch (err) {

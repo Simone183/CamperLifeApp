@@ -69,6 +69,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
   const [editMode, setEditMode] = React.useState(false);
   const [points, setPoints] = React.useState<Array<{ lat: number; lng: number; name?: string }>>([]);
   const [isSatellite, setIsSatellite] = React.useState(false);
+  const justSavedRef = React.useRef(false);
   
   // Search state
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -184,6 +185,11 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
       isPlayingRef.current = false;
       setProgressIndex(0);
       return;
+    }
+
+    if (justSavedRef.current) {
+        justSavedRef.current = false;
+        return;
     }
 
     const hasMovements = trip.movements && trip.movements.length > 0;
@@ -798,6 +804,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
 
   // Save changes
   const handleSave = () => {
+    justSavedRef.current = true;
     onSaveRoute(points);
     setEditMode(false);
     window.dispatchEvent(
