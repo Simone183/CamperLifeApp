@@ -192,6 +192,11 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace }: TripRoute
         return;
     }
 
+    if (trip.routePoints && trip.routePoints.length > 0) {
+        setPoints(trip.routePoints);
+        return;
+    }
+
     const hasMovements = trip.movements && trip.movements.length > 0;
     if (hasMovements) {
       let isSubscribed = true;

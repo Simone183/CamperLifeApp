@@ -375,6 +375,14 @@ export default function DiaryTab({
     e.preventDefault();
     if (!newTitle.trim()) return;
 
+    const initialMovements = newStartOdo ? [{
+      id: "mov_" + Date.now(),
+      odometer: Number(newStartOdo),
+      location: "Partenza", 
+      date: newStart || new Date().toISOString().split("T")[0],
+      notes: "Partenza viaggio",
+    }] : [];
+
     const created: Trip = {
       id: "trip_" + Date.now(),
       title: newTitle,
@@ -386,7 +394,7 @@ export default function DiaryTab({
       endOdometer: newEndOdo ? Number(newEndOdo) : undefined,
       expenses: [],
       photos: [],
-      movements: [],
+      movements: initialMovements,
     };
 
     const updated = [created, ...trips];
@@ -794,6 +802,7 @@ export default function DiaryTab({
 
   // Save custom route points handler
   const handleSaveRoute = (routePoints: Array<{ lat: number; lng: number; name?: string }>) => {
+    console.log("DiaryTab: Saving routePoints:", routePoints);
     if (!selectedTripId) return;
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
