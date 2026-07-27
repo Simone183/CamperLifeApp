@@ -870,19 +870,72 @@ out center;`;
     return interpolated;
   }, [startLoc[0], startLoc[1], endLoc[0], endLoc[1]]);
 
-  // Sound and vocal guidance helper with robust try-catch for mobile constraints
+  // Sound and vocal guidance helper with robust speech queue and dual-stage alerts (Preavviso + Prossimità)
   const lastSpokenTextRef = React.useRef<string>("");
   const lastSpokenStepRef = React.useRef<number>(-1);
   const previousIsPreviewRef = React.useRef<boolean>(true);
   const prevDestIdRef = React.useRef<string>(dest.id);
-  const spoken1kmRef = React.useRef<Record<number, boolean>>({});
-  const spoken50mRef = React.useRef<Record<number, boolean>>({});
+  const spokenPreavvisoRef = React.useRef<Record<number, boolean>>({});
+  const spokenProssimitaRef = React.useRef<Record<number, boolean>>({});
   const hasShownOffRoadToastRef = React.useRef<boolean>(false);
 
-  const speakInstruction = (text: string) => {
-    if (!text) return;
+  // Speech Queue & State Management for smooth uninterrupted playback
+  const speechQueueRef = React.useRef<{ text: string; priority: 'immediate' | 'advance' | 'info'; timestamp: number }[]>([]);
+  const isSpeakingRef = React.useRef<boolean>(false);
+  const spokenHistoryRef = React.useRef<Record<string, number>>({});
+
+  const processSpeechQueue = React.useCallback(() => {
+    if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
+    if (isSpeakingRef.current) return;
+    if (speechQueueRef.current.length === 0) return;
+
+    // Priority order: 'immediate' (3) > 'advance' (2) > 'info' (1)
+    speechQueueRef.current.sort((a, b) => {
+      const pMap = { immediate: 3, advance: 2, info: 1 };
+      return pMap[b.priority] - pMap[a.priority];
+    });
+
+    const nextItem = speechQueueRef.current.shift();
+    if (!nextItem) return;
+
+    // Drop stale items older than 12 seconds
+    if (Date.now() - nextItem.timestamp > 12000) {
+      processSpeechQueue();
+      return;
+    }
+
+    const msg = new SpeechSynthesisUtterance(nextItem.text);
+    msg.lang = 'it-IT';
+    msg.rate = 1.0;
+    msg.pitch = 1.0;
+
+    msg.onstart = () => {
+      isSpeakingRef.current = true;
+    };
+
+    msg.onend = () => {
+      isSpeakingRef.current = false;
+      setTimeout(() => processSpeechQueue(), 150);
+    };
+
+    msg.onerror = (e) => {
+      console.warn("SpeechSynthesis utterance error:", e);
+      isSpeakingRef.current = false;
+      setTimeout(() => processSpeechQueue(), 150);
+    };
+
+    try {
+      window.speechSynthesis.speak(msg);
+    } catch (e) {
+      console.warn("SpeechSynthesis speak error:", e);
+      isSpeakingRef.current = false;
+    }
+  }, []);
+
+  const speakInstruction = React.useCallback((text: string, priority: 'immediate' | 'advance' | 'info' = 'info') => {
+    if (!text || typeof window === "undefined" || !('speechSynthesis' in window)) return;
     
-    // Clean emojis and double spaces
+    // Clean emojis, extraneous characters, and formatting for natural Italian speech
     const cleanText = text
       .replace(/navigazione/gi, "")
       .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
@@ -894,30 +947,39 @@ out center;`;
 
     if (!cleanText) return;
 
-    // Temporal deduplication using the module-level variables (e.g., 10 seconds)
-    console.log("Speaking text:", cleanText);
     const now = Date.now();
-    if ((now - globalLastSpokenTime) < 10000) {
-      console.log("Deduplication: too soon to speak again.");
+
+    // Check recent spoken history to avoid repeating identical sentence within 10 seconds
+    const lastTime = spokenHistoryRef.current[cleanText] || 0;
+    if (now - lastTime < 10000) {
       return;
     }
-    globalLastSpokenText = cleanText;
-    globalLastSpokenTime = now;
 
-    if (typeof window !== "undefined" && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); 
-      const msg = new SpeechSynthesisUtterance(cleanText);
-      msg.lang = 'it-IT';
-      msg.rate = 1.0;
-      msg.pitch = 1.0;
-      
-      try {
-        window.speechSynthesis.speak(msg);
-      } catch (e) {
-        console.warn("SpeechSynthesis error:", e);
+    spokenHistoryRef.current[cleanText] = now;
+
+    // Clean up old history items
+    for (const key of Object.keys(spokenHistoryRef.current)) {
+      if (now - spokenHistoryRef.current[key] > 30000) {
+        delete spokenHistoryRef.current[key];
       }
     }
-  };
+
+    if (priority === 'immediate') {
+      // For immediate turn warnings ("Ora, svolta a destra"), clear any low-priority background speech and speak immediately
+      try {
+        window.speechSynthesis.cancel();
+      } catch (_) {}
+      isSpeakingRef.current = false;
+      speechQueueRef.current = [{ text: cleanText, priority, timestamp: now }];
+      processSpeechQueue();
+    } else {
+      // For advance warnings, queue cleanly without interrupting active speech abruptly
+      if (!speechQueueRef.current.some(item => item.text === cleanText)) {
+        speechQueueRef.current.push({ text: cleanText, priority, timestamp: now });
+        processSpeechQueue();
+      }
+    }
+  }, [processSpeechQueue]);
 
   // Safe checks for sagoma dimensions
   const hasHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && parseDimToNumber(vehicleDimensions.height) > dest.maxHeight;
@@ -1427,8 +1489,8 @@ out center;`;
 
     // Reset spoken refs when starting navigation, changing destination, or resetting simulation
     if (justStartedNavigation || destChanged || simReset) {
-      spoken1kmRef.current = {};
-      spoken50mRef.current = {};
+      spokenPreavvisoRef.current = {};
+      spokenProssimitaRef.current = {};
       hasShownOffRoadToastRef.current = false;
     }
 
@@ -1472,12 +1534,11 @@ out center;`;
         : cleanDesc;
       
       lastSpokenStepRef.current = activeStepIndex;
-      speakInstruction(stepText);
+      speakInstruction(`Avvio navigazione verso ${dest.name}. ${stepText}`, 'info');
       return;
     }
 
-    // Now track distances to subsequent maneuver points for the 1km and 50m turn alerts
-    // Search forward from the current step to find the next meaningful turn maneuver
+    // Now track distances to subsequent maneuver points for Preavviso (~500m/1km) and In Prossimità (~50m) alerts
     for (let stepIdx = activeStepIndex; stepIdx < directionsSequence.length; stepIdx++) {
       const stepObj = directionsSequence[stepIdx];
       if (!stepObj) continue;
@@ -1492,22 +1553,42 @@ out center;`;
         continue;
       }
 
-      // Calculate accurate real-road distance (along the actual path points) from our current position to the turn point
+      // Calculate accurate real-road distance in meters along the actual path points
       const distanceToTurn = getDistanceToCoordinateIndex(routeCoordinates, currentRouteIdx, targetCoordIdx);
 
-      // Calculate adaptive warning distance based on current speed
-      const speedMs = speed / 3.6;
-      const triggerImmediate = Math.min(60, Math.max(20, speedMs * 4)); // Max 60m, or 4 seconds, min 20m
+      const rawAction = (stepObj.desc || stepObj.title || "").trim();
+      if (!rawAction) continue;
 
-      // Alert Stage: adaptive distance (approx 60m or 4s before)
-      if (distanceToTurn <= triggerImmediate && distanceToTurn > 0) {
-        if (!spoken50mRef.current[stepIdx]) {
-          spoken50mRef.current[stepIdx] = true;
-          // Read the instruction
-          const titleToSpeak = stepObj.title && stepObj.title.toLowerCase() !== "navigazione" ? stepObj.title + ". " : "";
-          const speakText = `${titleToSpeak}${stepObj.desc || ""}`;
-          speakInstruction(speakText);
-          break; // alert spoken
+      // Adaptive proximity trigger threshold based on current speed (~4 seconds before turn or min 30m / max 80m)
+      const speedMs = speed / 3.6;
+      const triggerProssimita = Math.min(80, Math.max(30, speedMs * 4));
+
+      // STAGE 1: Preavviso (~300m to 800m before maneuver)
+      if (distanceToTurn <= 800 && distanceToTurn >= 180) {
+        if (!spokenPreavvisoRef.current[stepIdx]) {
+          spokenPreavvisoRef.current[stepIdx] = true;
+          
+          let distText = "Tra 500 metri, ";
+          if (distanceToTurn >= 750) {
+            distText = "Tra un chilometro, ";
+          } else if (distanceToTurn < 400) {
+            distText = "Tra 300 metri, ";
+          }
+
+          const advanceMessage = `${distText}${rawAction}`;
+          speakInstruction(advanceMessage, 'advance');
+          break; // Alert processed for this turn
+        }
+      }
+
+      // STAGE 2: In prossimità della svolta (~30m to 80m before turn)
+      if (distanceToTurn <= triggerProssimita && distanceToTurn > 0) {
+        if (!spokenProssimitaRef.current[stepIdx]) {
+          spokenProssimitaRef.current[stepIdx] = true;
+
+          const immediateMessage = `Ora, ${rawAction}`;
+          speakInstruction(immediateMessage, 'immediate');
+          break; // Alert processed
         }
       }
     }

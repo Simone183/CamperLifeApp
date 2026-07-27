@@ -626,21 +626,27 @@ out center;`;
     "https://lz4.overpass-api.de/api/interpreter",
     "https://z.overpass-api.de/api/interpreter",
     "https://overpass.openstreetmap.fr/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter"
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
   ];
 
   const shuffledUrls = [...overpassUrls].sort(() => Math.random() - 0.5);
   for (const targetUrl of shuffledUrls) {
     try {
       console.log(`[OSM Fallback] Querying Overpass API for real places near ${province} (${coords.lat}, ${coords.lng}): ${targetUrl}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
       const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "CamperCompanion/1.0"
+          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; sambucci.simone@gmail.com)"
         },
-        body: "data=" + encodeURIComponent(query)
+        body: "data=" + encodeURIComponent(query),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (response.ok) {
         const result = (await response.json()) as any;
         if (result && Array.isArray(result.elements) && result.elements.length > 0) {
@@ -2241,11 +2247,54 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
-  // Overpass database caching helper to avoid 429 rate limit issues
+  // Overpass database caching helper with 24h TTL and stale fallback to avoid 429 rate limits
   const overpassCache = new globalThis.Map<string, { data: any; timestamp: number }>();
-  const OVERPASS_CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
+  const OVERPASS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours cache for map POI data
 
-  // Proxy for OpenStreetMap Overpass Interpreter with support for multiple public instances (fallback)
+  const OVERPASS_SERVERS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://z.overpass-api.de/api/interpreter",
+    "https://overpass.openstreetmap.fr/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
+  ];
+
+  async function fetchSingleOverpass(url: string, bodyStr: string, timeoutMs = 6000): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; sambucci.simone@gmail.com)"
+        },
+        body: `data=${encodeURIComponent(bodyStr)}`,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const text = await response.text();
+      const trimmedText = text.trim();
+      if (trimmedText.startsWith("<?xml") || trimmedText.startsWith("<!DOCTYPE") || trimmedText.startsWith("<html")) {
+        throw new Error("Returned HTML/XML instead of JSON");
+      }
+      const data = JSON.parse(text);
+      if (data && Array.isArray(data.elements)) {
+        return data;
+      }
+      throw new Error("Invalid elements structure");
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      throw e;
+    }
+  }
+
+  // Proxy for OpenStreetMap Overpass Interpreter with support for multiple public instances (parallel race fallback)
   app.post("/api/map-data-proxy", async (req, res) => {
     try {
       const bodyStr = req.body.data || "";
@@ -2257,7 +2306,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       const now = Date.now();
 
-      // Clean expired entries from memory cache
+      // Clean expired entries older than 24h
       for (const [key, val] of overpassCache.entries()) {
         if (now - val.timestamp > OVERPASS_CACHE_TTL) {
           overpassCache.delete(key);
@@ -2268,101 +2317,46 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (overpassCache.has(bodyStr)) {
         const cached = overpassCache.get(bodyStr)!;
         if (now - cached.timestamp < OVERPASS_CACHE_TTL) {
-          console.log(`[Overpass Proxy] Serving matching query from cache. Saves a live API call! 🎉`);
+          console.log(`[Overpass Proxy] Serving matching query from 24h cache 🎉`);
           return res.json(cached.data);
-        } else {
-          overpassCache.delete(bodyStr);
         }
       }
 
-      // Prepare fallback mock data based on bounding box
-      const bboxMatch = bodyStr.match(/([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)/);
-      const fallbackData: { elements: any[]; notice?: string } = { elements: [] };
-      
-      const overpassUrls = [
-        "https://overpass-api.de/api/interpreter",
-        "https://lz4.overpass-api.de/api/interpreter",
-        "https://z.overpass-api.de/api/interpreter",
-        "https://overpass.openstreetmap.fr/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter"
+      // Shuffle server list deterministically per request
+      const shuffled = [...OVERPASS_SERVERS].sort(() => Math.random() - 0.5);
+
+      let responseData: any = null;
+
+      // Group 6 servers into 3 parallel racing pairs (6s timeout per batch)
+      const batches = [
+        [shuffled[0], shuffled[1]],
+        [shuffled[2], shuffled[3]],
+        [shuffled[4], shuffled[5]]
       ];
 
-      // Shuffle the array of Overpass URLs deterministically/randomly on each call 
-      // so we don't always overload overpass-api.de or trigger 504 gateway timeouts.
-      const shuffledUrls = [...overpassUrls].sort(() => Math.random() - 0.5);
-
-      let lastError: any = null;
-      let responseData: any = null;
-      let success = false;
-      let attempts = 0;
-
-      for (const targetUrl of shuffledUrls) {
-        if (attempts >= 2) {
-          console.log(`[Overpass Proxy] Limit of 2 attempts reached. Stopping fallback lookups to avoid gateway timeout.`);
-          break;
-        }
-        attempts++;
+      for (const batch of batches) {
         try {
-          console.log(`[Overpass Proxy] Trying API interpreter: ${targetUrl}`);
-          
-          // Small jitter delay to stagger requests if retries happen
-          await new Promise(r => setTimeout(r, Math.random() * 200));
-
-          // Safe custom timeout implementation using AbortController (fully backward-compatible)
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => {
-            controller.abort();
-          }, 10000); // 10s timeout to allow real Overpass servers to complete under load
-
-          const response = await fetch(targetUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-              "User-Agent": "CamperCompanion/2.1 (github.com/google/ai-studio; sambucci.simone@gmail.com)"
-            },
-            body: `data=${encodeURIComponent(bodyStr)}`,
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-
-          const text = await response.text();
-          if (!response.ok) {
-            console.log(`[Overpass Proxy] ${targetUrl} returned status ${response.status} (retrying with fallback...)`);
-            lastError = new Error(`Status ${response.status}: ${text.substring(0, 100)}`);
-            continue;
-          }
-
-          const trimmedText = text.trim();
-          if (trimmedText.startsWith("<?xml") || trimmedText.startsWith("<!DOCTYPE html") || trimmedText.startsWith("<html")) {
-            // don't log the full xml error to avoid clutter
-            lastError = new Error(`Server returned XML/HTML error body: ${trimmedText.substring(0, 100)}`);
-            continue;
-          }
-
-          try {
-            responseData = JSON.parse(text);
-            success = true;
-            
-            // Core cache save
-            overpassCache.set(bodyStr, { data: responseData, timestamp: Date.now() });
-            break;
-          } catch (parseErr) {
-            lastError = parseErr;
-          }
-        } catch (fetchErr: any) {
-          lastError = fetchErr;
-          console.log(`[Overpass Proxy] ${targetUrl} was slow or reached timeout (retrying with fallback...)`);
+          responseData = await Promise.any(batch.map(url => fetchSingleOverpass(url, bodyStr, 7000)));
+          if (responseData) break;
+        } catch (_) {
+          // Batch completed without fast response, moving to next mirror pool
         }
       }
 
-      if (success && responseData) {
+      if (responseData) {
+        overpassCache.set(bodyStr, { data: responseData, timestamp: Date.now() });
         return res.json(responseData);
-      } else {
-        const errorDetail = lastError?.message || "All fallback instances were non-responsive.";
-        console.log(`[Overpass Proxy] OSM servers were busy (${errorDetail}).`);
-        fallbackData.notice = `Server OSM temporaneamente sovraccarichi, riprova tra poco. (${errorDetail})`;
-        return res.json(fallbackData);
       }
+
+      // Stale-While-Revalidate Fallback: If live fetch failed on all mirrors, serve previous cached result if available
+      if (overpassCache.has(bodyStr)) {
+        console.log(`[Overpass Proxy] All mirrors busy, serving stale cache gracefully!`);
+        return res.json(overpassCache.get(bodyStr)!.data);
+      }
+
+      // Silent empty fallback without disruptive error notices
+      console.log(`[Overpass Proxy] All Overpass mirrors busy and no cache available.`);
+      return res.json({ elements: [] });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Unknown proxy error" });
     }
