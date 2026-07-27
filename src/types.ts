@@ -253,6 +253,29 @@ export interface DiaryPhoto {
   locationName?: string; // Tappa in cui è stata scattata la foto
 }
 
+export interface AIDayStop {
+  dayNumber: number;
+  title: string;
+  description: string;
+  stopPlaceName: string;
+  drivingSegment: string;
+  activities: string[];
+  camperTips: string;
+  stopCoordinate: {
+    lat: number;
+    lng: number;
+    label: string;
+  };
+}
+
+export interface AIItineraryResult {
+  title: string;
+  description: string;
+  totalKm: string;
+  totalDrivingTime: string;
+  days: AIDayStop[];
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -272,6 +295,7 @@ export interface Trip {
     name?: string;
     timestamp?: string;
   }>;
+  aiItinerary?: AIItineraryResult;
 }
 
 export interface NavigationStep {

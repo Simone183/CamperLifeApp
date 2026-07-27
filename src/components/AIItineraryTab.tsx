@@ -11,9 +11,13 @@ import {
   AlertCircle, 
   Compass, 
   PlusCircle, 
-  BookOpen
+  BookOpen,
+  Share2,
+  X,
+  CheckCircle2,
+  Map as MapIcon,
 } from 'lucide-react';
-import { Place, VehicleDimensions, PlaceCategory } from '../types';
+import { Place, VehicleDimensions, PlaceCategory, Trip } from '../types';
 import { parseDimToNumber } from '../unit-helpers';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -24,6 +28,9 @@ interface AIItineraryTabProps {
   onShowOnMap: (lat: number, lng: number, label: string) => void;
   savedPlaces: Place[];
   currentUser?: { nickname: string; email: string; name: string; isModerator?: boolean; } | null;
+  trips?: Trip[];
+  setTrips?: (trips: Trip[]) => void;
+  onNavigateToTripPlanner?: (tripId: string) => void;
 }
 
 interface AIDayStop {
@@ -54,7 +61,10 @@ export default function AIItineraryTab({
   onAddPlace, 
   onShowOnMap,
   savedPlaces,
-  currentUser
+  currentUser,
+  trips,
+  setTrips,
+  onNavigateToTripPlanner,
 }: AIItineraryTabProps) {
   // Input Form States
   const [startLocation, setStartLocation] = React.useState('');
@@ -68,6 +78,95 @@ export default function AIItineraryTab({
   const [loadingMsgIdx, setLoadingMsgIdx] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<AIItineraryResult | null>(null);
+
+  // Export states
+  const [showExportModal, setShowExportModal] = React.useState(false);
+  const [selectedTripTargetId, setSelectedTripTargetId] = React.useState<string>("new");
+  const [exportSuccessTripId, setExportSuccessTripId] = React.useState<string | null>(null);
+  const [exportMode, setExportMode] = React.useState<"replace" | "append">("replace");
+
+  const handleConfirmExport = () => {
+    if (!result) return;
+
+    const routePoints = result.days.map((day) => ({
+      lat: Number(day.stopCoordinate.lat),
+      lng: Number(day.stopCoordinate.lng),
+      name: `Giorno ${day.dayNumber}: ${day.stopPlaceName || day.title}`,
+      timestamp: new Date().toISOString()
+    }));
+
+    let targetId = selectedTripTargetId;
+    const currentTrips: Trip[] = trips || (() => {
+      try {
+        const saved = localStorage.getItem("camper_trips");
+        return saved ? JSON.parse(saved) : [];
+      } catch {
+        return [];
+      }
+    })();
+
+    let updatedTrips: Trip[] = [];
+
+    if (selectedTripTargetId === "new") {
+      targetId = `trip_ai_${Date.now()}`;
+      const newTrip: Trip = {
+        id: targetId,
+        title: result.title || "Itinerario AI",
+        startDate: new Date().toISOString().split("T")[0],
+        endDate: new Date(Date.now() + result.days.length * 86400000).toISOString().split("T")[0],
+        description: result.description || "Itinerario generato con CamperLifeApp AI",
+        status: "Pianificato",
+        expenses: [],
+        photos: [],
+        movements: [],
+        routePoints: routePoints,
+        aiItinerary: result,
+      };
+      updatedTrips = [newTrip, ...currentTrips];
+    } else {
+      updatedTrips = currentTrips.map((t) => {
+        if (t.id === selectedTripTargetId) {
+          const existingPoints = t.routePoints || [];
+          const newRoutePoints = exportMode === "append" ? [...existingPoints, ...routePoints] : routePoints;
+          
+          let updatedAiItinerary = result;
+          if (exportMode === "append" && t.aiItinerary) {
+            updatedAiItinerary = {
+              title: t.aiItinerary.title,
+              description: t.aiItinerary.description,
+              totalKm: `${t.aiItinerary.totalKm || ''} / ${result.totalKm}`,
+              totalDrivingTime: `${t.aiItinerary.totalDrivingTime || ''} + ${result.totalDrivingTime}`,
+              days: [...t.aiItinerary.days, ...result.days.map((d, idx) => ({ ...d, dayNumber: t.aiItinerary!.days.length + idx + 1 }))],
+            };
+          }
+
+          return {
+            ...t,
+            routePoints: newRoutePoints,
+            aiItinerary: updatedAiItinerary,
+          };
+        }
+        return t;
+      });
+    }
+
+    if (setTrips) {
+      setTrips(updatedTrips);
+    }
+    localStorage.setItem("camper_trips", JSON.stringify(updatedTrips));
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: updatedTrips },
+      })
+    );
+
+    setExportSuccessTripId(targetId);
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: `✅ ${routePoints.length} tappe esportate con successo nella Pianificazione Percorso!` },
+      })
+    );
+  };
 
   // Load itinerary from Firestore on mount/user change
   React.useEffect(() => {
@@ -289,12 +388,26 @@ export default function AIItineraryTab({
                 <h3 className="text-xl font-extrabold text-slate-900 leading-tight">{result.title}</h3>
                 <p className="text-xs text-slate-500">{result.description}</p>
               </div>
-              <button
-                onClick={clearCurrentItinerary}
-                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl transition-all self-start sm:self-auto cursor-pointer"
-              >
-                Nuovo Itinerario
-              </button>
+              <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExportModal(true);
+                    setExportSuccessTripId(null);
+                  }}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <Share2 className="w-4 h-4 text-amber-300" />
+                  <span>Esporta in Pianificazione Percorso</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={clearCurrentItinerary}
+                  className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Nuovo Itinerario
+                </button>
+              </div>
             </div>
 
             {/* General Trip Stats */}
@@ -605,6 +718,170 @@ export default function AIItineraryTab({
           </p>
         </div>
       </div>
+
+      {/* EXPORT TO PLANNED ROUTE MODAL */}
+      {showExportModal && result && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 space-y-5 relative max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => setShowExportModal(false)}
+              className="absolute top-4 right-4 p-2 text-stone-400 hover:text-slate-700 rounded-full hover:bg-stone-100 transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1 pr-6">
+              <div className="flex items-center gap-2 text-emerald-800">
+                <MapIcon className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Esporta in Pianificazione Percorso
+                </h3>
+              </div>
+              <p className="text-xs text-stone-500">
+                Trasferisci le <strong>{result.days.length} tappe</strong> dell&apos;itinerario AI nella mappa di pianificazione percorso per la navigazione.
+              </p>
+            </div>
+
+            {exportSuccessTripId ? (
+              <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-4 text-center">
+                <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto animate-bounce" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-extrabold text-emerald-900">
+                    Tappe Esportate con Successo!
+                  </h4>
+                  <p className="text-xs text-emerald-700">
+                    L&apos;itinerario &quot;{result.title}&quot; è stato inserito nella pianificazione percorso del viaggio.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-2 justify-center">
+                  {onNavigateToTripPlanner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExportModal(false);
+                        onNavigateToTripPlanner(exportSuccessTripId);
+                      }}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all hover:scale-[1.02]"
+                    >
+                      <MapIcon className="w-4 h-4" />
+                      <span>Vai alla Pianificazione Percorso 🗺️</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowExportModal(false)}
+                    className="px-4 py-2.5 bg-white border border-stone-200 hover:bg-stone-50 text-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-all"
+                  >
+                    Chiudi
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Select Trip Target */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                    Seleziona Destinazione:
+                  </label>
+                  <select
+                    value={selectedTripTargetId}
+                    onChange={(e) => setSelectedTripTargetId(e.target.value)}
+                    className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="new">➕ Crea Nuovo Viaggio: &quot;{result.title}&quot;</option>
+                    {(trips || []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        🚐 {t.title} ({t.status}) {t.routePoints && t.routePoints.length > 0 ? `[${t.routePoints.length} tappe presenti]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Mode Option if existing trip is selected */}
+                {selectedTripTargetId !== "new" && (
+                  <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl space-y-2">
+                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-wide block">
+                      Gestione Tappe Esistenti:
+                    </span>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="exportMode"
+                          value="replace"
+                          checked={exportMode === "replace"}
+                          onChange={() => setExportMode("replace")}
+                          className="accent-emerald-600"
+                        />
+                        Sostituisci tappe
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="exportMode"
+                          value="append"
+                          checked={exportMode === "append"}
+                          onChange={() => setExportMode("append")}
+                          className="accent-emerald-600"
+                        />
+                        Aggiungi in coda
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview of stages */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wide block">
+                    Anteprima Tappe ({result.days.length}):
+                  </span>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {result.days.map((day) => (
+                      <div
+                        key={day.dayNumber}
+                        className="p-2.5 bg-stone-50 border border-stone-150 rounded-xl flex items-center gap-2 text-xs"
+                      >
+                        <span className="w-5 h-5 rounded-full bg-[#3E4A35] text-white font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {day.dayNumber}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-slate-800 block truncate">
+                            {day.stopPlaceName || day.title}
+                          </span>
+                          <span className="text-[10px] text-stone-500 font-mono block">
+                            {day.stopCoordinate.lat.toFixed(4)}, {day.stopCoordinate.lng.toFixed(4)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Submit Actions */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowExportModal(false)}
+                    className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmExport}
+                    className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span>Conferma Esportazione</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

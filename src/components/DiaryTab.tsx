@@ -31,6 +31,8 @@ import {
   Printer,
   FileDown,
   Pencil,
+  Map as MapIcon,
+  Sparkles,
 } from "lucide-react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -112,6 +114,7 @@ interface DiaryTabProps {
   initialTripId?: string | null;
   initialSubTab?: "list" | "details" | "album";
   onNavigateToPlace: (place: Place) => void;
+  onNavigateToAIItinerary?: () => void;
   trips?: Trip[];
   setTrips?: (trips: Trip[]) => void;
 }
@@ -121,6 +124,7 @@ export default function DiaryTab({
   initialTripId,
   initialSubTab,
   onNavigateToPlace,
+  onNavigateToAIItinerary,
   trips: propsTrips,
   setTrips: propsSetTrips,
 }: DiaryTabProps) {
@@ -142,10 +146,9 @@ export default function DiaryTab({
   );
 
   // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details, 'album' contains global photos)
-  const [diarySubTab, setDiarySubTab] = React.useState<"list" | "album">(
+  const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details" | "album">(
     () => {
-      if (initialSubTab === "details") return "list";
-      if (initialSubTab) return initialSubTab as "list" | "album";
+      if (initialSubTab) return initialSubTab as "list" | "details" | "album";
       return "list";
     },
   );
@@ -178,7 +181,7 @@ export default function DiaryTab({
   const [fuelCompany, setFuelCompany] = React.useState("Eni");
   const [fuelIsFullTank, setFuelIsFullTank] = React.useState(false);
   const [expenseSubMode, setExpenseSubMode] = React.useState<
-    "general" | "refuel" | "movement" | "photo"
+    "general" | "refuel" | "movement" | "planned" | "photo"
   >("general");
 
   // Movement-specific states
@@ -241,6 +244,17 @@ export default function DiaryTab({
   React.useEffect(() => {
     localStorage.setItem("camper_trips", JSON.stringify(trips));
   }, [trips]);
+
+  React.useEffect(() => {
+    const handleOpenPlanned = (e: any) => {
+      if (e.detail?.tripId) {
+        setSelectedTripId(e.detail.tripId);
+      }
+      setExpenseSubMode("planned");
+    };
+    window.addEventListener("open-diary-planned", handleOpenPlanned);
+    return () => window.removeEventListener("open-diary-planned", handleOpenPlanned);
+  }, []);
 
   const activeTrip = trips.find((t) => t.id === selectedTripId);
 
@@ -684,23 +698,10 @@ export default function DiaryTab({
   const handleDeleteMovement = (movementId: string) => {
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
-        const movementToDelete = (t.movements || []).find((m) => m.id === movementId);
         const updatedMovements = (t.movements || []).filter((m) => m.id !== movementId);
-        let updatedRoutePoints = t.routePoints || [];
-        
-        if (movementToDelete) {
-          const locToDelete = movementToDelete.location.toLowerCase().trim();
-          updatedRoutePoints = (t.routePoints || []).filter((rp) => {
-            if (!rp.name) return true;
-            const rpName = rp.name.toLowerCase().trim();
-            return !rpName.includes(locToDelete) && !locToDelete.includes(rpName);
-          });
-        }
-
         return {
           ...t,
           movements: updatedMovements,
-          routePoints: updatedRoutePoints,
         };
       }
       return t;
@@ -829,44 +830,15 @@ export default function DiaryTab({
     );
   };
 
-  // Save custom route points handler
+  // Save custom route points handler (Pianificazione percorso)
   const handleSaveRoute = (routePoints: Array<{ lat: number; lng: number; name?: string }>) => {
     console.log("DiaryTab: Saving routePoints:", routePoints);
     if (!selectedTripId) return;
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
-        const oldRoutePoints = t.routePoints || [];
-        const oldMovements = t.movements || [];
-        
-        // Find which location names were removed
-        const removedPoints = [
-          ...oldRoutePoints.map(rp => rp.name || ""),
-          ...oldMovements.map(m => m.location)
-        ].filter(name => {
-          if (!name) return false;
-          const cleanName = name.toLowerCase().trim();
-          // Check if it exists in the new routePoints
-          return !routePoints.some((newRp) => {
-            const newRpName = (newRp.name || "").toLowerCase().trim();
-            return newRpName && (newRpName.includes(cleanName) || cleanName.includes(newRpName));
-          });
-        });
-
-        let updatedMovements = oldMovements;
-        if (removedPoints.length > 0) {
-          updatedMovements = oldMovements.filter((m) => {
-            const mLocation = m.location.toLowerCase().trim();
-            return !removedPoints.some((removedName) => {
-              const cleanRemoved = removedName.toLowerCase().trim();
-              return cleanRemoved && (cleanRemoved.includes(mLocation) || mLocation.includes(cleanRemoved));
-            });
-          });
-        }
-
         return {
           ...t,
           routePoints,
-          movements: updatedMovements,
         };
       }
       return t;
@@ -2046,7 +2018,7 @@ export default function DiaryTab({
                       <button
                         type="button"
                         onClick={() => setExpenseSubMode("movement")}
-                        className={`flex-1 min-w-[30%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        className={`flex-1 min-w-[20%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                           expenseSubMode === "movement"
                             ? "bg-blue-600 text-white shadow-xs"
                             : "text-slate-500 hover:text-blue-600"
@@ -2057,8 +2029,20 @@ export default function DiaryTab({
                       </button>
                       <button
                         type="button"
+                        onClick={() => setExpenseSubMode("planned")}
+                        className={`flex-1 min-w-[20%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          expenseSubMode === "planned"
+                            ? "bg-amber-600 text-white shadow-xs"
+                            : "text-slate-500 hover:text-amber-600"
+                        }`}
+                      >
+                        <MapIcon className="w-3.5 h-3.5 text-amber-400" />
+                        Pianificazione ({(activeTrip.routePoints || []).length})
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setExpenseSubMode("photo")}
-                        className={`flex-1 min-w-[30%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        className={`flex-1 min-w-[20%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                           expenseSubMode === "photo"
                             ? "bg-purple-600 text-white shadow-xs"
                             : "text-slate-500 hover:text-purple-600"
@@ -2892,7 +2876,7 @@ export default function DiaryTab({
                           </div>
                         </div>
 
-                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                        <div className="space-y-2">
                           {(activeTrip.movements || []).length === 0 ? (
                             <p className="text-xs text-slate-400 py-4 text-center">
                               Nessun spostamento registrato.
@@ -3069,10 +3053,38 @@ export default function DiaryTab({
                           )}
                         </div>
                         <div className="mt-4 border-t border-stone-100 pt-4">
-                          <TripRouteMap trip={activeTrip} onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} />
+                          <TripRouteMap trip={activeTrip} mode="movements" onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} />
                         </div>
                       </div>
                     ) : null}
+
+                    {/* Pianificazione Percorso Section */}
+                    {expenseSubMode === "planned" && (
+                      <div className="space-y-4 animate-fade-in mt-3">
+                        <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <h3 className="font-bold text-amber-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                              <MapIcon className="w-4 h-4 text-amber-600" />
+                              Pianificazione Percorso (Progetto / Bozza)
+                            </h3>
+                            <p className="text-xs text-slate-600">
+                              Progetta il tuo tragitto futuro definendo le tappe previste. Questa pianificazione è separata dagli spostamenti reali che effettuerai e registrerai durante il viaggio.
+                            </p>
+                          </div>
+                          {onNavigateToAIItinerary && (
+                            <button
+                              type="button"
+                              onClick={onNavigateToAIItinerary}
+                              className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 self-start sm:self-center border border-emerald-500/30"
+                            >
+                              <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300 animate-pulse" />
+                              <span>Generatore Itinerari AI</span>
+                            </button>
+                          )}
+                        </div>
+                        <TripRouteMap trip={activeTrip} mode="planned" onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} onNavigateToAIItinerary={onNavigateToAIItinerary} />
+                      </div>
+                    )}
 
                     {/* Comprehensive overall Category budget breakdown progress bars */}
                     {expenseSubMode === "general" && activeTrip.expenses.length > 0 && (

@@ -775,7 +775,6 @@ export default function App() {
         return {
           ...t,
           movements: [...(t.movements || []), finalMovement],
-          routePoints: [...(t.routePoints || []), newRoutePoint],
         };
       }
       return t;
@@ -911,6 +910,7 @@ export default function App() {
 
   // Immersive Fullscreen Navigation Active
   const [isFullscreenNav, setIsFullscreenNav] = React.useState<boolean>(false);
+  const [isNavMinimized, setIsNavMinimized] = React.useState<boolean>(false);
   const [toolsCategory, setToolsCategory] = React.useState<
     | "all"
     | "safety"
@@ -2613,19 +2613,13 @@ out center;`;
 
     const { lat, lng } = userLocation;
 
-    // Determine the last recorded point in this active trip
-    const routePoints = activeTrip.routePoints || [];
-    
-    // La prima tappa deve essere inserita manualmente. Non tracciamo in tempo reale se non è presente almeno una tappa di partenza.
-    if (routePoints.length === 0) {
-      lastTrackedLocationRef.current = null;
+    if (!lastTrackedLocationRef.current) {
+      lastTrackedLocationRef.current = { lat, lng };
       return;
     }
 
-    const lastPoint = routePoints[routePoints.length - 1];
-
-    // Calculate distance from last point
-    const distance = calculateDistance(lat, lng, lastPoint.lat, lastPoint.lng);
+    // Calculate distance from last tracked location
+    const distance = calculateDistance(lat, lng, lastTrackedLocationRef.current.lat, lastTrackedLocationRef.current.lng);
 
     // Threshold for adding a new stage: 150 meters
     if (distance > 150 && !isGeocodingRef.current) {
@@ -2744,12 +2738,14 @@ out center;`;
     setActiveTab("map_nav"); // Swap to Mappa & Guida main tab
     setMapNavSubTab("nav"); // Swap internally to Navigatore HUD
     setIsFullscreenNav(true);
+    setIsNavMinimized(false);
   };
 
   const handleSelectPlaceDirectly = (place: Place) => {
     setTimeout(() => {
       setNavDestination(place);
       setIsFullscreenNav(true);
+      setIsNavMinimized(false);
     }, 0);
   };
 
@@ -3160,14 +3156,14 @@ out center;`;
                   }}
                   onBack={() => setMapNavSubTab("map")}
                 />
-              ) : isFullscreenNav ? (
+              ) : (isFullscreenNav && !isNavMinimized) ? (
                 <div className="flex-1 bg-[#0b101d] flex flex-col items-center justify-center text-slate-400 text-xs p-6 rounded-3xl border border-slate-800/40">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="font-bold text-slate-200">Navigatore a tutto schermo attivo</span>
                   </div>
                   <p className="text-[10px] text-slate-500 max-w-xs text-center leading-normal">
-                    La mappa principale è temporaneamente in pausa per ottimizzare le risorse del dispositivo.
+                    La mappa principale è in pausa mentre il navigatore è a tutto schermo. Riduci a finestra il navigatore per sbloccare la mappa.
                   </p>
                 </div>
               ) : (
@@ -3182,6 +3178,7 @@ out center;`;
                     setNavDestination(place);
                     setNavigationMode(mode);
                     setIsFullscreenNav(true);
+                    setIsNavMinimized(false);
                     handleGPSEnabledChange(true);
                   }}
                   userLocation={userLocation}
@@ -3281,6 +3278,10 @@ out center;`;
               initialTripId={selectedDiaryTripId}
               initialSubTab={diarySubTab}
               onNavigateToPlace={handleSelectPlaceDirectly}
+              onNavigateToAIItinerary={() => {
+                setActiveTab("settings_tools");
+                setSettingsSubTab("ai_itinerary");
+              }}
               trips={trips}
               setTrips={setTrips}
             />
@@ -5143,6 +5144,18 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                     <AIItineraryTab
                       vehicleDimensions={vehicleDimensions}
                       currentUser={currentUser}
+                      trips={trips}
+                      setTrips={setTrips}
+                      onNavigateToTripPlanner={(tripId) => {
+                        setSelectedDiaryTripId(tripId);
+                        setDiarySubTab("details");
+                        setActiveTab("diary");
+                        window.dispatchEvent(
+                          new CustomEvent("open-diary-planned", {
+                            detail: { tripId },
+                          }),
+                        );
+                      }}
                       onAddPlace={(newPlace) => {
                         const updatedPlaces = [...places, newPlace];
                         setPlaces(updatedPlaces);
@@ -5230,6 +5243,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                       onNavigateFullscreen={(place) => {
                         setNavDestination(place);
                         setIsFullscreenNav(true);
+                        setIsNavMinimized(false);
                       }}
                     />
                   )}
@@ -5354,9 +5368,11 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
           navigationMode={navigationMode}
           vehicleDimensions={vehicleDimensions}
           currentUser={currentUser}
+          onMinimizeChange={setIsNavMinimized}
           onClose={() => {
             setTimeout(() => {
               setIsFullscreenNav(false);
+              setIsNavMinimized(false);
             }, 0);
           }}
           userLocation={userLocation}

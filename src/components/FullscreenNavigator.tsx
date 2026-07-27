@@ -55,6 +55,7 @@ interface FullscreenNavigatorProps {
   places: Place[];
   onSelectPlaceDirectly: (place: Place) => void;
   currentUser?: { email: string; nickname?: string; name?: string; isModerator?: boolean } | null;
+  onMinimizeChange?: (isMinimized: boolean) => void;
 }
 
 let globalLastSpokenText = "";
@@ -72,6 +73,7 @@ export default function FullscreenNavigator({
   places,
   onSelectPlaceDirectly,
   currentUser = null,
+  onMinimizeChange,
 }: FullscreenNavigatorProps) {
   const settings = useAppSettings();
   const mapContainerRef = React.useRef<HTMLDivElement>(null);
@@ -154,7 +156,25 @@ export default function FullscreenNavigator({
     setSpeed(targetSpeed);
   }, [settings?.drivingStyle, vehicleDimensions?.weight]);
   const [isPreview, setIsPreview] = React.useState<boolean>(true);
+  const [isMinimized, setIsMinimized] = React.useState<boolean>(false);
+  const handleSetMinimized = (val: boolean) => {
+    setIsMinimized(val);
+    if (onMinimizeChange) {
+      onMinimizeChange(val);
+    }
+  };
   const [simStep, setSimStep] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    if (!isMinimized) {
+      const timer = setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.resize();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isMinimized]);
   const [simRouteIndex, setSimRouteIndex] = React.useState<number>(0);
   const [isDriving, setIsDriving] = React.useState<boolean>(false);
   const [customError, setCustomError] = React.useState<string | null>(null);
@@ -2477,6 +2497,69 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     return `${hrs} h ${m} min`;
   };
 
+  // Minimized Mode Floating Active Widget Overlay (Compact Pill Button)
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-20 right-3 sm:bottom-6 sm:right-6 z-[99999] pointer-events-auto font-sans animate-fade-in">
+        {/* Hidden map container keeps map instance alive in background */}
+        <div ref={mapContainerRef} className="hidden"></div>
+
+        {/* Small Floating Navigation Pill */}
+        <div className="flex items-center gap-1.5 p-1.5 pl-3 bg-[#0b101d]/95 hover:bg-[#0f172a] border border-emerald-500/60 shadow-[0_8px_30px_rgba(0,0,0,0.6)] rounded-full text-slate-100 transition-all hover:scale-[1.03] active:scale-95 group">
+          {/* Restore / Expand trigger button */}
+          <button
+            type="button"
+            onClick={() => handleSetMinimized(false)}
+            className="flex items-center gap-2 cursor-pointer text-left focus:outline-hidden"
+            title="Clicca per ripristinare il navigatore a schermo intero"
+          >
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <Navigation className="w-3.5 h-3.5 fill-emerald-400/20" />
+              </div>
+              <div className="flex flex-col min-w-0 max-w-[130px] sm:max-w-[200px]">
+                <span className="text-[11px] font-black text-slate-100 truncate leading-tight">
+                  {dest.name}
+                </span>
+                <span className="text-[9px] font-extrabold text-emerald-400 font-mono truncate leading-tight">
+                  {remainingDistanceKm > 0 ? `${remainingDistanceKm.toFixed(1)} km` : "In corso"} • {etaTimeStr}
+                </span>
+              </div>
+            </div>
+
+            <div className="w-7 h-7 rounded-full bg-slate-800 group-hover:bg-emerald-600 text-slate-300 group-hover:text-white flex items-center justify-center shrink-0 transition-colors ml-1">
+              <Maximize className="w-3.5 h-3.5" />
+            </div>
+          </button>
+
+          <div className="h-5 w-px bg-slate-800/80 mx-0.5"></div>
+
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-full bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+            title="Chiudi e termina navigazione"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Unconditionally rendered audio player so background streaming continues when minimized */}
+        <CamperMediaPlayer 
+          isOpen={isMusicPlayerOpen}
+          onClose={() => setIsMusicPlayerOpen(false)}
+          onPlayingStateChange={setIsAudioPlaying}
+        />
+      </div>
+    );
+  }
+
   return (
     <div 
       id="fullscreen-nav-hud" 
@@ -2548,7 +2631,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         ) : (
           /* Top Directions HUD Overlay (Active Navigation) */
           <div className="absolute top-4 inset-x-0 mx-auto max-w-lg z-10 px-4 pointer-events-none">
-            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex items-center gap-4 pointer-events-auto">
+            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex items-center gap-3 sm:gap-4 pointer-events-auto">
               <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-2xl shrink-0">
                 {currentStepObj?.icon || "🛣️"}
               </div>
@@ -2562,6 +2645,15 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   {currentStepObj.distance}
                 </div>
               )}
+              {/* Button to minimize navigation */}
+              <button
+                type="button"
+                onClick={() => handleSetMinimized(true)}
+                className="p-2 sm:p-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 hover:text-amber-300 rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
+                title="Riduci a finestra fluttuante (abbassa navigazione)"
+              >
+                <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
             </div>
           </div>
         )}
@@ -2570,16 +2662,28 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         {isPreview ? (
           <div className="absolute bottom-0 inset-x-0 z-10">
             <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-6 py-5 pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between gap-4 pointer-events-auto font-sans">
-              {/* X button for closing/returning back */}
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-5 py-3.5 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-200 font-bold rounded-2xl border border-slate-700 transition-all flex items-center gap-2 cursor-pointer shadow-md text-sm shrink-0"
-                title="Torna alla mappa"
-              >
-                <X className="w-5 h-5 text-rose-400" />
-                <span>Indietro</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Minimize button */}
+                <button
+                  type="button"
+                  onClick={() => handleSetMinimized(true)}
+                  className="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 font-bold rounded-2xl border border-slate-700 transition-all flex items-center justify-center cursor-pointer shadow-md shrink-0"
+                  title="Abbassa anteprima navigazione"
+                >
+                  <Minimize className="w-5 h-5" />
+                </button>
+
+                {/* X button for closing/returning back */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 sm:px-5 py-3.5 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-200 font-bold rounded-2xl border border-slate-700 transition-all flex items-center gap-2 cursor-pointer shadow-md text-sm shrink-0"
+                  title="Torna alla mappa"
+                >
+                  <X className="w-5 h-5 text-rose-400" />
+                  <span className="hidden sm:inline">Indietro</span>
+                </button>
+              </div>
 
               {/* Large Naviga button to start navigation */}
               <button
@@ -2632,15 +2736,27 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 </div>
               </div>
 
-              {/* X to close */}
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 sm:p-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md shrink-0 ml-1"
-                title="Chiudi navigazione"
-              >
-                <X className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1">
+                {/* Minimize button */}
+                <button
+                  type="button"
+                  onClick={() => handleSetMinimized(true)}
+                  className="p-2 sm:p-3 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-amber-400 hover:text-amber-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md shrink-0"
+                  title="Abbassa navigazione e naviga nell'app"
+                >
+                  <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
+                {/* X to close */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-2 sm:p-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md shrink-0"
+                  title="Chiudi e termina navigazione"
+                >
+                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              </div>
             </div>
           </div>
         )}
