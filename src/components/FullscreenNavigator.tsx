@@ -40,9 +40,11 @@ import {
   SkipBack,
   Radio,
   Gauge,
-  Locate
+  Locate,
+  Sun
 } from 'lucide-react';
 import CamperMediaPlayer from './CamperMediaPlayer';
+import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLockHelper';
 
 interface FullscreenNavigatorProps {
   dest: Place;
@@ -95,6 +97,25 @@ export default function FullscreenNavigator({
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(false);
   const [speed, setSpeed] = React.useState<number>(80); // km/h
   const [currentDetectedSpeed, setCurrentDetectedSpeed] = React.useState<number | null>(null);
+
+  // Mantiene lo schermo attivo per tutta la durata della navigazione per evitare lo standby del telefono
+  React.useEffect(() => {
+    requestScreenWakeLock();
+
+    // Re-acquire wake lock on click/touch anywhere on screen if released by system
+    const handleUserInteraction = () => {
+      requestScreenWakeLock();
+    };
+
+    window.addEventListener('click', handleUserInteraction);
+    window.addEventListener('touchstart', handleUserInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
+      releaseScreenWakeLock();
+    };
+  }, []);
 
   // Real-time GPS speed tracking
   React.useEffect(() => {
@@ -3158,6 +3179,21 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[220px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+            {/* Anti-Standby indicator */}
+            <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between shadow-sm select-none">
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold text-emerald-300 flex items-center gap-1">
+                  <Sun className="w-3 h-3 text-amber-400 animate-pulse" />
+                  Schermo Sempre Attivo
+                </span>
+                <span className="text-[8px] text-emerald-400/80 font-medium">
+                  Anti-Standby attivo durante la guida
+                </span>
+              </div>
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full text-[9px] font-extrabold uppercase tracking-wide">
+                ON
+              </span>
+            </div>
             {/* Switch per mostrare le soste sul percorso */}
             <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
               <div className="flex flex-col text-left">
@@ -3509,6 +3545,21 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[220px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+            {/* Anti-Standby indicator */}
+            <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between shadow-sm select-none">
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold text-emerald-300 flex items-center gap-1">
+                  <Sun className="w-3 h-3 text-amber-400 animate-pulse" />
+                  Schermo Sempre Attivo
+                </span>
+                <span className="text-[8px] text-emerald-400/80 font-medium">
+                  Anti-Standby attivo durante la guida
+                </span>
+              </div>
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full text-[9px] font-extrabold uppercase tracking-wide">
+                ON
+              </span>
+            </div>
             {/* Switch per mostrare le soste sul percorso */}
             <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
               <div className="flex flex-col text-left">
