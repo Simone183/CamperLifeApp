@@ -16,11 +16,14 @@ import {
   X,
   CheckCircle2,
   Map as MapIcon,
+  FileDown,
+  FileText,
 } from 'lucide-react';
 import { Place, VehicleDimensions, PlaceCategory, Trip } from '../types';
 import { parseDimToNumber } from '../unit-helpers';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { exportAIItineraryToPDF } from '../utils/pdfGenerator';
 
 interface AIItineraryTabProps {
   vehicleDimensions: VehicleDimensions;
@@ -320,6 +323,21 @@ export default function AIItineraryTab({
     }));
   };
 
+  const handleExportPDF = async () => {
+    if (!result) return;
+    try {
+      await exportAIItineraryToPDF(result, vehicleDimensions);
+      window.dispatchEvent(new CustomEvent('show-toast', { 
+        detail: { message: "📄 PDF dell'itinerario scaricato con successo!" } 
+      }));
+    } catch (err) {
+      console.error("Errore esportazione PDF:", err);
+      window.dispatchEvent(new CustomEvent('show-toast', { 
+        detail: { message: "❌ Impossibile generare il PDF dell'itinerario." } 
+      }));
+    }
+  };
+
   const clearCurrentItinerary = async () => {
     if (confirm("Vuoi rimuovere l'itinerario corrente e crearne uno nuovo?")) {
       setResult(null);
@@ -389,6 +407,15 @@ export default function AIItineraryTab({
                 <p className="text-xs text-slate-500">{result.description}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={handleExportPDF}
+                  className="px-3.5 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                  title="Scarica itinerario in formato PDF"
+                >
+                  <FileDown className="w-4 h-4 text-orange-200" />
+                  <span>Esporta PDF</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -550,6 +577,32 @@ export default function AIItineraryTab({
                 </div>
               );
             })}
+          </div>
+
+          {/* Export to PDF Card at bottom of itinerary */}
+          <div className="p-5 bg-white rounded-3xl border border-stone-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 bg-[#3E4A35]/10 text-[#3E4A35] rounded-2xl shrink-0">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-900">
+                  Esporta Itinerario Completo in PDF
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Scarica una copia stampabile del viaggio con tappe, consigli camper e coordinate GPS.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              className="w-full sm:w-auto px-5 py-3 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+            >
+              <FileDown className="w-4 h-4 text-orange-200" />
+              <span>Scarica PDF Itinerario 📄</span>
+            </button>
           </div>
         </div>
       ) : (

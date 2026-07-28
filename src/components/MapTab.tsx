@@ -7962,10 +7962,20 @@ export function LeafletOfflineMap({
   const movedRef = mapMovedByUserRef || fallbackMapMovedRef;
   const isProgrammaticRef = React.useRef(false);
 
-  // Auto-center on user location whenever it updates, unless the user moved/panned the map
+  // Centra sulla posizione dell'utente SOLO UNA VOLTA all'avvio/collegamento GPS.
+  // Successivi aggiornamenti del GPS non sposteranno la vista per permettere l'esplorazione libera della mappa.
+  const hasCenteredOnGPSOnceRef = React.useRef(false);
+
   React.useEffect(() => {
-    if (userLocation && leafletMapInstance && !movedRef.current && !selectedPlace) {
+    if (!userLocation) {
+      hasCenteredOnGPSOnceRef.current = false;
+    }
+  }, [userLocation]);
+
+  React.useEffect(() => {
+    if (userLocation && leafletMapInstance && !hasCenteredOnGPSOnceRef.current && !selectedPlace) {
       try {
+        hasCenteredOnGPSOnceRef.current = true;
         (leafletMapInstance as any)._isProgrammatic = true;
         const currentZoom = leafletMapInstance.getZoom();
         const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;

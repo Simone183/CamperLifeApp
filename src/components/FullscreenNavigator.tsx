@@ -39,7 +39,8 @@ import {
   SkipForward,
   SkipBack,
   Radio,
-  Gauge
+  Gauge,
+  Locate
 } from 'lucide-react';
 import CamperMediaPlayer from './CamperMediaPlayer';
 
@@ -165,16 +166,229 @@ export default function FullscreenNavigator({
   };
   const [simStep, setSimStep] = React.useState<number>(0);
 
+  // Function to initialize or recreate MapLibre map instance cleanly without triggering React re-renders
+  const initMapInstance = React.useCallback(() => {
+    if (!mapContainerRef.current) return;
+
+    if (mapRef.current) {
+      try {
+        mapRef.current.remove();
+      } catch (e) {}
+      mapRef.current = null;
+    }
+
+    const mapStyle: any = {
+      version: 8,
+      sources: {
+        'raster-tiles': {
+          type: 'raster',
+          tiles: ["/api/map-tile/{z}/{x}/{y}?lyrs=m"],
+          tileSize: 256,
+          attribution: 'Dati cartografici © contributori di OpenStreetMap © CARTO',
+          maxzoom: 18
+        }
+      },
+      layers: [
+        {
+          id: 'simple-tiles',
+          type: 'raster',
+          source: 'raster-tiles',
+          minzoom: 0,
+          maxzoom: 22
+        }
+      ]
+    };
+
+    const initialCenter: [number, number] = displayedRouteCoordinates[0] 
+      ? [displayedRouteCoordinates[0][1], displayedRouteCoordinates[0][0]] 
+      : [startLoc[1], startLoc[0]];
+
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: mapStyle,
+      center: initialCenter,
+      zoom: 14,
+      pitch: 0,
+      bearing: 0,
+      attributionControl: false
+    });
+
+    mapRef.current = map;
+
+    map.on('load', () => {
+      addRouteLayer(map, displayedRouteCoordinates);
+    });
+
+    map.on('contextmenu', (e: maplibregl.MapMouseEvent) => {
+      const pLat = e.lngLat.lat;
+      const pLng = e.lngLat.lng;
+      
+      const customPlace: Place = {
+        id: `custom-point-${Date.now()}`,
+        name: "Punto Sulla Mappa",
+        category: "area_sosta",
+        lat: pLat,
+        lng: pLng,
+        address: `Coordinate: ${Number(pLat).toFixed(5)}, ${Number(pLng).toFixed(5)}`,
+        priceInfo: "Gratuito",
+        priceEuro: 0,
+        rating: 5,
+        facilities: ["Carico acqua", "Scarico reflui"],
+        reviews: [],
+        imageUrl: "https://images.unsplash.com/photo-1523987355523-c29fbf7cf313?auto=format&fit=crop&q=80&w=400",
+        source: 'inserito_a_mano',
+        maxHeight: 4.0,
+        maxWeight: 5.0,
+        isNarrowAccess: false
+      };
+      
+      speakInstruction("Ricalcolo rotta verso il punto selezionato sulla mappa. Avvio navigatore.");
+      
+      window.dispatchEvent(new CustomEvent('show-toast', {
+        detail: { message: `📍 Navigazione avviata per: ${Number(pLat).toFixed(4)}, ${Number(pLng).toFixed(4)}` }
+      }));
+      
+      onSelectPlaceRef.current(customPlace);
+      setSimStep(0);
+      setSimRouteIndex(0);
+      setIsDriving(true);
+      setAutoCenter(true);
+    });
+
+    map.on('dragstart', (e: any) => {
+      if (e && e.originalEvent) {
+        setAutoCenter(false);
+      }
+    });
+
+    map.on('zoomstart', (e: any) => {
+      if (e && e.originalEvent) {
+        setAutoCenter(false);
+      }
+    });
+
+    const canvas = map.getCanvas();
+    const handleContextLost = (e: Event) => {
+      console.warn("[FullscreenNavigator] WebGL context lost - preventing default");
+      e.preventDefault();
+    };
+    const handleContextRestored = () => {
+      console.log("[FullscreenNavigator] WebGL context restored");
+      if (mapRef.current) {
+        try {
+          mapRef.current.resize();
+          mapRef.current.triggerRepaint();
+          addRouteLayer(mapRef.current, displayedRouteCoordinates);
+        } catch (e) {}
+      }
+    };
+
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+  }, []);
+
+  // Initialize MapLibre GL map on mount
+  React.useEffect(() => {
+    initMapInstance();
+
+    return () => {
+      if (mapRef.current) {
+        try { mapRef.current.remove(); } catch (e) {}
+        mapRef.current = null;
+      }
+    };
+  }, [initMapInstance]);
+
+  // Handle restoring map canvas when leaving minimized mode
   React.useEffect(() => {
     if (!isMinimized) {
-      const timer = setTimeout(() => {
-        if (mapRef.current) {
-          mapRef.current.resize();
+      if (!mapRef.current) {
+        initMapInstance();
+      } else {
+        const map = mapRef.current;
+        const canvas = map.getCanvas();
+        const gl = canvas?.getContext('webgl') || canvas?.getContext('webgl2');
+
+        if (!gl || gl.isContextLost()) {
+          console.warn("[FullscreenNavigator] WebGL context lost or missing on restore, recreating map instance...");
+          initMapInstance();
+        } else {
+          const doResize = () => {
+            try {
+              map.resize();
+              map.triggerRepaint();
+              addRouteLayer(map, displayedRouteCoordinates);
+              if (autoCenter && userLocation) {
+                map.jumpTo({
+                  center: [userLocation.lng, userLocation.lat]
+                });
+              }
+            } catch (e) {
+              console.warn("[FullscreenNavigator] Map restore resize error:", e);
+            }
+          };
+
+          doResize();
+
+          const raf1 = requestAnimationFrame(doResize);
+          const raf2 = requestAnimationFrame(() => requestAnimationFrame(doResize));
+          const timer1 = setTimeout(doResize, 50);
+          const timer2 = setTimeout(doResize, 150);
+          const timer3 = setTimeout(doResize, 300);
+          const timer4 = setTimeout(doResize, 600);
+
+          return () => {
+            cancelAnimationFrame(raf1);
+            cancelAnimationFrame(raf2);
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+            clearTimeout(timer3);
+            clearTimeout(timer4);
+          };
         }
-      }, 100);
-      return () => clearTimeout(timer);
+      }
     }
-  }, [isMinimized]);
+  }, [isMinimized, initMapInstance]);
+
+  // Observer & event listeners to recover map canvas on container resize, tab switch or window focus
+  React.useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const handleResizeOrRepaint = () => {
+      if (mapRef.current) {
+        try {
+          const map = mapRef.current;
+          map.resize();
+          map.triggerRepaint();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+
+    const observer = new ResizeObserver(() => {
+      handleResizeOrRepaint();
+    });
+    observer.observe(container);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResizeOrRepaint();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleResizeOrRepaint);
+    window.addEventListener('resize', handleResizeOrRepaint);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleResizeOrRepaint);
+      window.removeEventListener('resize', handleResizeOrRepaint);
+    };
+  }, []);
   const [simRouteIndex, setSimRouteIndex] = React.useState<number>(0);
   const [isDriving, setIsDriving] = React.useState<boolean>(false);
   const [customError, setCustomError] = React.useState<string | null>(null);
@@ -1647,117 +1861,6 @@ out center;`;
     }
   };
 
-  // Initialize and synchronize MapLibre GL map inside dashboard HUD
-  React.useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
-
-    const isDark = document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
-    
-    // Robust public raster styles to avoid unstable vector tile CORS / fetch errors (MVT)
-    const mapStyle: any = {
-      version: 8,
-      sources: {
-        'raster-tiles': {
-          type: 'raster',
-          tiles: [
-            "/api/map-tile/{z}/{x}/{y}?lyrs=m"
-          ],
-          tileSize: 256,
-          attribution: 'Dati cartografici © contributori di OpenStreetMap © CARTO',
-          maxzoom: 18
-        }
-      },
-      layers: [
-        {
-          id: 'simple-tiles',
-          type: 'raster',
-          source: 'raster-tiles',
-          minzoom: 0,
-          maxzoom: 22
-        }
-      ]
-    };
-
-    const initialCenter: [number, number] = displayedRouteCoordinates[0] 
-      ? [displayedRouteCoordinates[0][1], displayedRouteCoordinates[0][0]] 
-      : [startLoc[1], startLoc[0]];
-
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: mapStyle,
-      center: initialCenter,
-      zoom: 14,
-      pitch: 0, // Starts at 0 for preview overhead vista dall'alto
-      bearing: 0,
-      attributionControl: false
-    });
-    
-    // Increase cache size for better performance on low bandwidth
-    // map.setTileCacheSize(1000); // Removed as maplibre doesn't support this method directly on the map instance
-    
-    mapRef.current = map;
-
-    map.on('load', () => {
-      addRouteLayer(map, displayedRouteCoordinates);
-    });
-
-    // Configura la navigazione al volo tenendo premuto (o tasto destro) su un punto qualsiasi della mappa
-    map.on('contextmenu', (e: maplibregl.MapMouseEvent) => {
-      const pLat = e.lngLat.lat;
-      const pLng = e.lngLat.lng;
-      
-      const customPlace: Place = {
-        id: `custom-point-${Date.now()}`,
-        name: "Punto Sulla Mappa",
-        category: "area_sosta",
-        lat: pLat,
-        lng: pLng,
-        address: `Coordinate: ${Number(pLat).toFixed(5)}, ${Number(pLng).toFixed(5)}`,
-        priceInfo: "Gratuito",
-        priceEuro: 0,
-        rating: 5,
-        facilities: ["Carico acqua", "Scarico reflui"],
-        reviews: [],
-        imageUrl: "https://images.unsplash.com/photo-1523987355523-c29fbf7cf313?auto=format&fit=crop&q=80&w=400",
-        source: 'inserito_a_mano',
-        maxHeight: 4.0,
-        maxWeight: 5.0,
-        isNarrowAccess: false
-      };
-      
-      speakInstruction("Ricalcolo rotta verso il punto selezionato sulla mappa. Avvio navigatore.");
-      
-      window.dispatchEvent(new CustomEvent('show-toast', {
-        detail: { message: `📍 Navigazione avviata per: ${Number(pLat).toFixed(4)}, ${Number(pLng).toFixed(4)}` }
-      }));
-      
-      onSelectPlaceRef.current(customPlace);
-      setSimStep(0);
-      setSimRouteIndex(0);
-      setIsDriving(true);
-      setAutoCenter(true);
-    });
-
-    map.on('dragstart', (e: any) => {
-      if (e && e.originalEvent) {
-        setAutoCenter(false);
-      }
-    });
-
-    map.on('zoomstart', (e: any) => {
-      if (e && e.originalEvent) {
-        setAutoCenter(false);
-      }
-    });
-
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-    };
-  }, []); // Run ONCE on mount
-
   // Update markers and paths when dest.id changes
   React.useEffect(() => {
     const map = mapRef.current;
@@ -2579,138 +2682,134 @@ const newCenter = [targetCoords[1], targetCoords[0]];
   };
 
   // Minimized Mode Floating Active Widget Overlay (Compact Pill Button)
-  if (isMinimized) {
-    return (
-      <div className="fixed bottom-20 right-3 sm:bottom-6 sm:right-6 z-[99999] pointer-events-auto font-sans animate-fade-in">
-        {/* Hidden map container keeps map instance alive in background */}
-        <div ref={mapContainerRef} className="hidden"></div>
-
-        {/* Small Floating Navigation Pill */}
-        <div className="flex items-center gap-1.5 p-1.5 pl-3 bg-[#0b101d]/95 hover:bg-[#0f172a] border border-emerald-500/60 shadow-[0_8px_30px_rgba(0,0,0,0.6)] rounded-full text-slate-100 transition-all hover:scale-[1.03] active:scale-95 group">
-          {/* Restore / Expand trigger button */}
-          <button
-            type="button"
-            onClick={() => handleSetMinimized(false)}
-            className="flex items-center gap-2 cursor-pointer text-left focus:outline-hidden"
-            title="Clicca per ripristinare il navigatore a schermo intero"
-          >
-            <span className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                <Navigation className="w-3.5 h-3.5 fill-emerald-400/20" />
-              </div>
-              <div className="flex flex-col min-w-0 max-w-[130px] sm:max-w-[200px]">
-                <span className="text-[11px] font-black text-slate-100 truncate leading-tight">
-                  {dest.name}
-                </span>
-                <span className="text-[9px] font-extrabold text-emerald-400 font-mono truncate leading-tight">
-                  {remainingDistanceKm > 0 ? `${remainingDistanceKm.toFixed(1)} km` : "In corso"} • {etaTimeStr}
-                </span>
-              </div>
-            </div>
-
-            <div className="w-7 h-7 rounded-full bg-slate-800 group-hover:bg-emerald-600 text-slate-300 group-hover:text-white flex items-center justify-center shrink-0 transition-colors ml-1">
-              <Maximize className="w-3.5 h-3.5" />
-            </div>
-          </button>
-
-          <div className="h-5 w-px bg-slate-800/80 mx-0.5"></div>
-
-          {/* Close button */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 rounded-full bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 flex items-center justify-center shrink-0 transition-all cursor-pointer"
-            title="Chiudi e termina navigazione"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Unconditionally rendered audio player so background streaming continues when minimized */}
-        <CamperMediaPlayer 
-          isOpen={isMusicPlayerOpen}
-          onClose={() => setIsMusicPlayerOpen(false)}
-          onPlayingStateChange={setIsAudioPlaying}
-        />
-      </div>
-    );
-  }
-
+  
   return (
     <div 
-      id="fullscreen-nav-hud" 
-      className="fixed inset-0 bg-[#070A13] text-slate-100 z-[9999] flex flex-col font-sans transition-all"
+      id="fullscreen-nav-hud"
+      className={isMinimized 
+        ? "fixed inset-0 pointer-events-none z-[99999] font-sans" 
+        : "fixed inset-0 bg-[#070A13] text-slate-100 z-[9999] flex flex-col font-sans transition-all"
+      }
     >
-      <div className="flex-1 relative bg-slate-950">
-        {/* Live Map Canvas container */}
-        <div ref={mapContainerRef} className="w-full h-full z-0"></div>
+      {/* Unified map container to keep map instance alive without collapsing to 0x0 */}
+      <div 
+        ref={mapContainerRef} 
+        className={isMinimized 
+          ? "fixed inset-0 w-full h-full opacity-0 pointer-events-none -z-50" 
+          : "absolute inset-0 w-full h-full z-0"
+        } 
+      />
 
-        {/* Top Preview Stats Bar or Active Directions HUD Overlay */}
-        {isPreview ? (
-          <div className="absolute top-4 inset-x-0 mx-auto max-w-3xl z-10 px-4">
-            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4 pointer-events-auto">
-              <div className="flex items-center gap-3 w-full lg:w-auto">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
-                  🗺️
+      {isMinimized ? (
+        <div className="fixed bottom-20 right-3 sm:bottom-6 sm:right-6 pointer-events-auto font-sans animate-fade-in">
+          {/* Small Floating Navigation Pill */}
+          <div className="flex items-center gap-1.5 p-1.5 pl-3 bg-[#0b101d]/95 hover:bg-[#0f172a] border border-emerald-500/60 shadow-[0_8px_30px_rgba(0,0,0,0.6)] rounded-full text-slate-100 transition-all hover:scale-[1.03] active:scale-95 group">
+            {/* Restore / Expand trigger button */}
+            <button
+              type="button"
+              onClick={() => handleSetMinimized(false)}
+              className="flex items-center gap-2 cursor-pointer text-left focus:outline-hidden"
+              title="Clicca per ripristinare il navigatore a schermo intero"
+            >
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Navigation className="w-3.5 h-3.5 fill-emerald-400/20" />
                 </div>
-                <div className="text-left min-w-0">
-                  <h4 className="text-slate-100 font-black text-sm tracking-tight">
-                    Anteprima Percorso Interno
-                  </h4>
-                  <p className="text-[11px] text-slate-400 font-sans truncate max-w-[200px] sm:max-w-xs md:max-w-md">
-                    Destinazione: <span className="text-amber-400 font-bold">{dest.name}</span>
-                  </p>
+                <div className="flex flex-col min-w-0 max-w-[130px] sm:max-w-[200px]">
+                  <span className="text-[11px] font-black text-slate-100 truncate leading-tight">
+                    {dest.name}
+                  </span>
+                  <span className="text-[9px] font-extrabold text-emerald-400 font-mono truncate leading-tight">
+                    {remainingDistanceKm > 0 ? `${remainingDistanceKm.toFixed(1)} km` : "In corso"} • {etaTimeStr}
+                  </span>
                 </div>
               </div>
-              
-              <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-slate-900/60 py-2 rounded-xl border border-slate-800/80 w-full lg:w-[580px] text-center">
-                <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
-                    <span className="inline sm:hidden">Distanza</span>
-                    <span className="hidden sm:inline">Totale Distanza</span>
-                  </span>
-                  <span className="text-[11px] sm:text-sm font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
+
+              <div className="w-7 h-7 rounded-full bg-slate-800 group-hover:bg-emerald-600 text-slate-300 group-hover:text-white flex items-center justify-center shrink-0 transition-colors ml-1">
+                <Maximize className="w-3.5 h-3.5" />
+              </div>
+            </button>
+
+            <div className="h-5 w-px bg-slate-800/80 mx-0.5"></div>
+
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-7 h-7 rounded-full bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+              title="Chiudi e termina navigazione"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 relative bg-transparent pointer-events-none">
+          {/* Top Preview Stats Bar or Active Directions HUD Overlay */}
+          {isPreview ? (
+            <div className="absolute top-4 inset-x-0 mx-auto max-w-3xl z-10 px-4">
+              <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4 pointer-events-auto">
+                <div className="flex items-center gap-3 w-full lg:w-auto">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
+                    🗺️
+                  </div>
+                  <div className="text-left min-w-0">
+                    <h4 className="text-slate-100 font-black text-sm tracking-tight">
+                      Anteprima Percorso Interno
+                    </h4>
+                    <p className="text-[11px] text-slate-400 font-sans truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+                      Destinazione: <span className="text-amber-400 font-bold">{dest.name}</span>
+                    </p>
+                  </div>
                 </div>
-                <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
-                    <span className="inline sm:hidden">Tempo</span>
-                    <span className="hidden sm:inline">Tempo Percorrenza</span>
-                  </span>
-                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
-                </div>
-                <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
-                    <span className="inline sm:hidden">Arrivo</span>
-                    <span className="hidden sm:inline">Orario di Arrivo</span>
-                  </span>
-                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
-                </div>
-                <div className="flex flex-col items-center justify-center px-1" title={hasRealPrice ? `Spesa stimata basata sul tuo ultimo rifornimento (${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L) e consumo (${consumptionKmPerL.toFixed(1)} km/L)` : `Spesa stimata basata su prezzo carburante di default (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)`}>
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
-                    <span className="inline sm:hidden">Spesa Carb.</span>
-                    <span className="hidden sm:inline">Spesa Carburante</span>
-                  </span>
-                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
-                </div>
-                <div className="flex flex-col items-center justify-center px-1" title={`Spesa pedaggio stimata basata sulle tratte autostradali rilevate (${tollStats.autostradaKm.toFixed(1)} km a 0.095 ${getCurrencySymbol(settings)}/km)`}>
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
-                    <span className="inline sm:hidden">Spesa Ped.</span>
-                    <span className="hidden sm:inline">Spesa Pedaggio</span>
-                  </span>
-                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">
-                    {tollStats.tollCost > 0 ? `${tollStats.tollCost.toFixed(2)} ${getCurrencySymbol(settings)}` : "0.00 " + getCurrencySymbol(settings)}
-                  </span>
+                
+                <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-slate-900/60 py-2 rounded-xl border border-slate-800/80 w-full lg:w-[580px] text-center">
+                  <div className="flex flex-col items-center justify-center px-1">
+                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                      <span className="inline sm:hidden">Distanza</span>
+                      <span className="hidden sm:inline">Totale Distanza</span>
+                    </span>
+                    <span className="text-[11px] sm:text-sm font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center px-1">
+                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                      <span className="inline sm:hidden">Tempo</span>
+                      <span className="hidden sm:inline">Tempo Percorrenza</span>
+                    </span>
+                    <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center px-1">
+                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                      <span className="inline sm:hidden">Arrivo</span>
+                      <span className="hidden sm:inline">Orario di Arrivo</span>
+                    </span>
+                    <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center px-1" title={hasRealPrice ? `Spesa stimata basata sul tuo ultimo rifornimento (${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L) e consumo (${consumptionKmPerL.toFixed(1)} km/L)` : `Spesa stimata basata su prezzo carburante di default (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)`}>
+                    <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                      <span className="inline sm:hidden">Spesa Carb.</span>
+                      <span className="hidden sm:inline">Spesa Carburante</span>
+                    </span>
+                    <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center px-1" title={`Spesa pedaggio stimata basata sulle tratte autostradali rilevate (${tollStats.autostradaKm.toFixed(1)} km a 0.095 ${getCurrencySymbol(settings)}/km)`}>
+                    <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                      <span className="inline sm:hidden">Spesa Ped.</span>
+                      <span className="hidden sm:inline">Spesa Pedaggio</span>
+                    </span>
+                    <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">
+                      {tollStats.tollCost > 0 ? `${tollStats.tollCost.toFixed(2)} ${getCurrencySymbol(settings)}` : "0.00 " + getCurrencySymbol(settings)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ) : (
-          /* Top Directions HUD Overlay (Active Navigation) */
+          ) : (
           <div className="absolute top-4 inset-x-0 mx-auto max-w-lg z-10 px-4 pointer-events-none">
             <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex items-center gap-3 sm:gap-4 pointer-events-auto">
               <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-2xl shrink-0">
@@ -2881,6 +2980,340 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               </div>
             </button>
           )}
+
+          {/* Camper Cockpit Media Player Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
+            className={`w-[52px] h-[52px] rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
+              isAudioPlaying 
+                ? 'border-emerald-500/80 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
+                : isMusicPlayerOpen
+                  ? 'border-emerald-500/50 bg-[#0b101d]/95 text-emerald-400'
+                  : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
+            }`}
+            title="Cockpit Audio Camper (Radio & Playlist)"
+          >
+            <div className="w-6 h-6 flex items-center justify-center">
+              <Music className={`w-5 h-5 ${isAudioPlaying ? "animate-pulse" : ""}`} />
+            </div>
+            {isAudioPlaying && !isMusicPlayerOpen && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
+            )}
+            {isAudioPlaying && !isMusicPlayerOpen && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full" />
+            )}
+          </button>
+
+          {/* Compass Control Button */}
+          <button
+            type="button"
+            onClick={async () => {
+              if (compassPermission !== 'granted') {
+                const granted = await requestCompassPermission();
+                if (granted) {
+                  window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: "🧭 Bussola reale attivata con successo! Ruota il telefono per allineare la mappa." }
+                  }));
+                } else {
+                  window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: "⚠️ Per attivare la bussola reale, abilita l'accesso ai sensori di orientamento nelle impostazioni del browser o clicca nuovamente." }
+                  }));
+                }
+              } else {
+                const newVal = !useCompass;
+                setUseCompass(newVal);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                  detail: { message: newVal ? "🧭 Allineamento bussola reale attivo" : "🧭 Bussola reale disattivata (orientamento fisso)" }
+                }));
+              }
+            }}
+            className={`w-[52px] h-[52px] rounded-xl border ${useCompass ? 'border-emerald-500 bg-slate-900/95' : 'border-slate-800 bg-[#0b101d]/95'} shadow-2xl hover:bg-slate-800 hover:border-slate-700 transition-all pointer-events-auto cursor-pointer flex items-center justify-center`}
+            title="Allinea mappa con la bussola reale del telefono"
+          >
+            <div 
+              className="relative w-6 h-6 flex items-center justify-center transition-transform duration-200 ease-out"
+              style={{ transform: `rotate(${deviceHeading !== null ? -deviceHeading : 0}deg)` }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={1} strokeDasharray="2 2" className="text-slate-500" />
+                <path d="M12 2L15 12H9L12 2Z" fill="#EF4444" />
+                <path d="M12 22L15 12H9L12 22Z" fill="#94A3B8" />
+                <circle cx="12" cy="12" r="1.5" fill="#FFFFFF" />
+              </svg>
+            </div>
+          </button>
+        </div>
+
+        {/* Floating Mini Media Player Control Bar */}
+        {mediaState.currentTrack && hasBeenPlayed && (
+          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 h-[52px] px-3 bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto w-[80%] max-w-[255px] md:w-[325px]">
+            <div className="flex items-center shrink-0">
+              <div className="w-8 h-8 rounded overflow-hidden border border-slate-800/80 flex items-center justify-center bg-slate-900 shadow-inner">
+                {mediaState.currentTrack.cover ? (
+                  <img src={mediaState.currentTrack.cover} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="album art" />
+                ) : mediaState.currentTrack.isRadio ? (
+                  <Radio className="w-4.5 h-4.5 text-emerald-400" />
+                ) : (
+                  <Music className="w-4.5 h-4.5 text-emerald-400" />
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-center min-w-0 flex-1 px-1 select-none text-left">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase truncate block">
+                {mediaState.currentTrack.title}
+              </span>
+              <span className="text-[8px] text-slate-300 truncate leading-none mt-0.5 font-medium">
+                {mediaState.currentTrack.subtitle || (mediaState.sourceMode === "radio" ? "Radio FM" : "Media Player")}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={sendPrevCommand}
+                className="w-7 h-7 flex items-center justify-center hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
+                title="Brano precedente"
+              >
+                <SkipBack className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={sendPlayPauseCommand}
+                className={`w-9 h-9 flex items-center justify-center rounded-full transition-all cursor-pointer border ${
+                  mediaState.isPlaying 
+                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 hover:border-emerald-500/50" 
+                    : "bg-slate-800 border-slate-700 text-white hover:bg-slate-700 hover:border-slate-650"
+                }`}
+                title={mediaState.isPlaying ? "Pausa" : "Riproduci"}
+              >
+                {mediaState.isPlaying ? (
+                  <Pause className="w-4 h-4 fill-current" />
+                ) : (
+                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={sendNextCommand}
+                className="w-7 h-7 flex items-center justify-center hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
+                title="Brano successivo"
+              >
+                <SkipForward className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <CamperMediaPlayer 
+          isOpen={isMusicPlayerOpen}
+          onClose={() => setIsMusicPlayerOpen(false)}
+          onPlayingStateChange={setIsAudioPlaying}
+        />
+
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className={`w-[52px] h-[52px] absolute left-4 bottom-28 z-20 rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center ${
+            !isSidebarCollapsed
+              ? 'border-emerald-500/50 bg-[#070c17]/95 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+              : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
+          }`}
+          title="Impostazioni Navigatore"
+        >
+          <div className="w-6 h-6 flex items-center justify-center">
+            <Settings className={`w-5 h-5 transition-all duration-200 ${!isSidebarCollapsed ? 'text-emerald-400 animate-spin' : 'text-slate-300'}`} style={{ animationDuration: !isSidebarCollapsed ? '10s' : undefined }} />
+          </div>
+        </button>
+
+        <div 
+          className={`absolute top-[45%] left-1/2 md:top-auto md:bottom-38 md:left-auto md:right-32 z-30 max-h-[calc(100vh-240px)] w-[288px] md:w-[306px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 pointer-events-auto ${
+            isSidebarCollapsed 
+              ? 'opacity-0 scale-95 pointer-events-none -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0' 
+              : 'opacity-100 scale-100 pointer-events-auto -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0'
+          }`}
+          id="navigator-settings-container"
+        >
+          {/* Header */}
+          <div className="px-3 py-2 bg-[#0d1527] border-b border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Compass className="w-4 h-4 text-emerald-400" />
+              <span className="text-[11px] font-black text-slate-100 uppercase tracking-wider">
+                Impostazioni Navigatore
+              </span>
+            </div>
+            
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(true)}
+              className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer"
+              title="Chiudi impostazioni"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* List Content */}
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[220px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+            {/* Switch per mostrare le soste sul percorso */}
+            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold text-slate-200">
+                  Mostra soste sul percorso
+                </span>
+                <span className="text-[8px] text-slate-400 font-medium">
+                  Cerca aree camper entro 5km
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showStopsOnRoute}
+                  onChange={(e) => setShowStopsOnRoute(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
+              </label>
+            </div>
+
+            {/* Switch per mostrare ostacoli e limiti OSM */}
+            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold text-slate-200">
+                  Ostacoli e limiti OSM
+                </span>
+                <span className="text-[8px] text-slate-400 font-medium">
+                  Mostra limiti altezza/larghezza/peso
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOsmObstacles}
+                  onChange={(e) => setShowOsmObstacles(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
+              </label>
+            </div>
+
+            {loadingRoute ? (
+              <div className="py-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
+                <span>{showStopsOnRoute ? "Ricerca strutture in prossimità..." : "Calcolo percorso..."}</span>
+              </div>
+            ) : !showStopsOnRoute ? (
+              <div className="py-6 text-center text-xs text-slate-500 px-2 space-y-1.5">
+                <p className="font-medium text-slate-400 text-[11px]">Ricerca soste disattivata</p>
+                <p className="text-[9px] text-slate-500 leading-normal">
+                  Attiva "Mostra soste sul percorso" per elencare e visualizzare le aree camper vicine. Puoi anche attivare "Ostacoli e limiti OSM" per evidenziare restrizioni di transito sulla mappa.
+                </p>
+              </div>
+            ) : nearbyPlaces.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-500">
+                <p className="font-medium text-slate-400 text-[11px]">Nessuna struttura entro 5km</p>
+                <p className="text-[9px] text-slate-500 mt-1">Non abbiamo trovato aree sosta o campeggi a meno di 5km da questo percorso specifico.</p>
+              </div>
+            ) : (
+              nearbyPlaces.map(({ place, minDistance }) => {
+                let badgeBg = "bg-orange-500/15 text-orange-400 border-orange-500/30";
+                let categoryText = "Area Sosta";
+                let icon = "📍";
+                
+                const normCat = (place.category || "").toLowerCase();
+                if (normCat.includes('campeggio') || normCat.includes('camping')) {
+                  badgeBg = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
+                  categoryText = "Campeggio";
+                  icon = "⛺";
+                } else if (normCat.includes('parcheggio') || normCat.includes('parcheggio_camper')) {
+                  badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
+                  categoryText = "Parcheggio";
+                  icon = "🅿️";
+                } else if (normCat.includes('service')) {
+                  badgeBg = "bg-sky-500/15 text-sky-400 border-sky-500/30";
+                  categoryText = "Camper Service";
+                  icon = "💧";
+                } else if (normCat.includes('camper')) {
+                  badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
+                  categoryText = "Parcheggio";
+                  icon = "🅿️";
+                }
+
+                return (
+                  <div
+                    key={place.id}
+                    onClick={() => centerAndPopPOI(place.lat, place.lng)}
+                    className="p-2 bg-slate-900/40 hover:bg-slate-800/60 border border-slate-800/60 rounded-xl transition-all duration-150 cursor-pointer flex flex-col gap-1 hover:border-slate-700"
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <h4 className="font-bold text-[11px] text-slate-200 line-clamp-1 flex-1 flex items-center gap-1">
+                        <span className="shrink-0">{icon}</span>
+                        <span className="font-sans tracking-tight">{place.name}</span>
+                      </h4>
+                      <span className="text-[8px] shrink-0 font-bold font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
+                        a {minDistance.toFixed(1)} km
+                      </span>
+                    </div>
+                    
+                    {place.address && (
+                      <p className="text-[9px] text-slate-400 line-clamp-1 font-sans">{place.address}</p>
+                    )}
+                    
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full border ${badgeBg} font-sans uppercase tracking-wider`}>
+                        {categoryText}
+                      </span>
+                      {place.priceInfo && (
+                        <span className="text-[8px] text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-full font-bold font-sans">
+                          {place.priceInfo}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+
+        {/* Floating Right Map Controls (Music, Compass & Recenter) */}
+        <div className="absolute bottom-28 right-4 z-20 flex flex-col-reverse gap-3 pointer-events-none items-end">
+          {/* Recenter Button (bottom-most in the right stack if shown) */}
+          {!autoCenter && (
+            <button
+              type="button"
+              onClick={() => {
+                setAutoCenter(true);
+                const map = mapRef.current;
+                if (map) {
+                  let target: [number, number] = startLoc;
+                  if (isGPSEnabled && userLocation) {
+                    target = [userLocation.lat, userLocation.lng];
+                  } else {
+                    const curIdx = Math.min(simRouteIndex, routeCoordinates.length - 1);
+                    target = routeCoordinates[curIdx] || startLoc;
+                  }
+                  const targetBearing = (useCompass && deviceHeading !== null)
+                    ? deviceHeading
+                    : bearing;
+
+                  map.flyTo({
+                    center: [target[1], target[0]],
+                    zoom: 17,
+                    bearing: targetBearing,
+                    pitch: 60,
+                    essential: true
+                  });
+                }
+              }}
+              className="p-3 bg-slate-900/90 border border-slate-700 rounded-2xl shadow-xl pointer-events-auto hover:bg-slate-800 transition-all text-emerald-400"
+              title="Centra mappa"
+            >
+              <Locate className="w-6 h-6" />
+            </button>
+          )}
+        </div>
 
           {/* Camper Cockpit Media Player Toggle Button */}
           <button
@@ -3260,5 +3693,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         )}
       </div>
     </div>
-  );
+  )}
+</div>
+);
 }

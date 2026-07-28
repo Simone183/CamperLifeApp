@@ -25,8 +25,11 @@ import {
   Building2,
   Car,
   Lightbulb,
+  FileDown,
+  FileText,
 } from "lucide-react";
 import TripVideoShareModal from "./TripVideoShareModal";
+import { exportAIItineraryToPDF } from "../utils/pdfGenerator";
 
 interface TripRouteMapProps {
   trip: Trip;
@@ -91,6 +94,51 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
   const [animationSpeed, setAnimationSpeed] = React.useState(15); // Default to 15x for very snappy movement
   const [showShareModal, setShowShareModal] = React.useState(false);
   const [isLocating, setIsLocating] = React.useState(false);
+
+  const handleExportItineraryPDF = async () => {
+    try {
+      let itineraryToExport = trip.aiItinerary;
+      if (!itineraryToExport) {
+        if (!trip.routePoints || trip.routePoints.length === 0) {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: "⚠️ Nessuna tappa o itinerario salvato da esportare in PDF." }
+            })
+          );
+          return;
+        }
+        itineraryToExport = {
+          title: trip.title,
+          description: trip.description || `Pianificazione del viaggio: ${trip.title}`,
+          totalKm: "",
+          totalDrivingTime: "",
+          days: trip.routePoints.map((pt, idx) => ({
+            dayNumber: idx + 1,
+            title: pt.name || `Tappa ${idx + 1}`,
+            description: `Coordinate GPS: ${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`,
+            stopPlaceName: pt.name || `Tappa ${idx + 1}`,
+            drivingSegment: "",
+            camperTips: "",
+            stopCoordinate: { lat: pt.lat, lng: pt.lng, label: pt.name || `Tappa ${idx + 1}` },
+            activities: [],
+          }))
+        };
+      }
+      await exportAIItineraryToPDF(itineraryToExport);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "📄 PDF dell'itinerario scaricato con successo!" }
+        })
+      );
+    } catch (err) {
+      console.error("Errore esportazione PDF itinerario:", err);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "❌ Impossibile generare il PDF dell'itinerario." }
+        })
+      );
+    }
+  };
 
   const handleAddCurrentGPS = () => {
     if (!navigator.geolocation) {
@@ -1176,16 +1224,27 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
                     )}
                   </div>
 
-                  {onNavigateToAIItinerary && (
+                  <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-center">
                     <button
                       type="button"
-                      onClick={onNavigateToAIItinerary}
-                      className="px-3 py-1.5 bg-white border border-stone-200 hover:bg-stone-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1.5 shrink-0 self-start sm:self-center cursor-pointer transition-all hover:scale-[1.02]"
+                      onClick={handleExportItineraryPDF}
+                      className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
+                      title="Scarica itinerario in formato PDF"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Apri Generatore IA</span>
+                      <FileDown className="w-4 h-4 text-amber-200" />
+                      <span>Esporta PDF</span>
                     </button>
-                  )}
+                    {onNavigateToAIItinerary && (
+                      <button
+                        type="button"
+                        onClick={onNavigateToAIItinerary}
+                        className="px-3 py-2 bg-white border border-stone-200 hover:bg-stone-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Apri Generatore IA</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Key Metrics Grid */}
@@ -1359,6 +1418,33 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
                       </div>
                     ))}
                   </div>
+
+                  {/* Export PDF Banner at bottom of days */}
+                  <div className="pt-2">
+                    <div className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-[#3E4A35]/10 text-[#3E4A35] rounded-xl shrink-0">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h5 className="text-xs font-extrabold text-slate-900">
+                            Scarica PDF Itinerario Completo
+                          </h5>
+                          <p className="text-[11px] text-stone-500">
+                            Genera una copia stampabile con tappe, consigli camper e coordinate GPS.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExportItineraryPDF}
+                        className="w-full sm:w-auto px-4 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white text-xs font-bold rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        <FileDown className="w-4 h-4 text-amber-200" />
+                        <span>Scarica PDF 📄</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -1372,16 +1458,28 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
                     Puoi generare un itinerario completo con tutte le informazioni su cosa visitare, tappe, tempo al volante e consigli camper dal Generatore IA.
                   </p>
                 </div>
-                {onNavigateToAIItinerary && (
-                  <button
-                    type="button"
-                    onClick={onNavigateToAIItinerary}
-                    className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer hover:scale-[1.02] shrink-0"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Genera con IA 🤖</span>
-                  </button>
-                )}
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  {points.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleExportItineraryPDF}
+                      className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
+                    >
+                      <FileDown className="w-3.5 h-3.5 text-amber-200" />
+                      <span>Esporta Tappe in PDF</span>
+                    </button>
+                  )}
+                  {onNavigateToAIItinerary && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToAIItinerary}
+                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer hover:scale-[1.02] shrink-0"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Genera con IA 🤖</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

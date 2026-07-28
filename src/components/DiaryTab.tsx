@@ -4,7 +4,7 @@ import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUn
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
 import { compressImage } from "../utils/photoCompressor";
 import { TripRouteMap } from "./TripRouteMap";
-import { generateTripPDF } from "../utils/pdfGenerator";
+import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import {
   BookOpen,
   Plus,
@@ -844,6 +844,52 @@ export default function DiaryTab({
       return t;
     });
     setTrips(updated);
+  };
+
+  const handleExportItineraryPDFFromDiary = async () => {
+    if (!activeTrip) return;
+    try {
+      let itineraryToExport = activeTrip.aiItinerary;
+      if (!itineraryToExport) {
+        if (!activeTrip.routePoints || activeTrip.routePoints.length === 0) {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: "⚠️ Nessuna tappa o itinerario salvato da esportare in PDF." }
+            })
+          );
+          return;
+        }
+        itineraryToExport = {
+          title: activeTrip.title,
+          description: activeTrip.description || `Pianificazione del viaggio: ${activeTrip.title}`,
+          totalKm: "",
+          totalDrivingTime: "",
+          days: activeTrip.routePoints.map((pt, idx) => ({
+            dayNumber: idx + 1,
+            title: pt.name || `Tappa ${idx + 1}`,
+            description: `Coordinate GPS: ${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`,
+            stopPlaceName: pt.name || `Tappa ${idx + 1}`,
+            drivingSegment: "",
+            camperTips: "",
+            stopCoordinate: { lat: pt.lat, lng: pt.lng, label: pt.name || `Tappa ${idx + 1}` },
+            activities: [],
+          }))
+        };
+      }
+      await exportAIItineraryToPDF(itineraryToExport);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "📄 PDF dell'itinerario scaricato con successo!" }
+        })
+      );
+    } catch (err) {
+      console.error("Errore esportazione PDF itinerario:", err);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "❌ Impossibile generare il PDF dell'itinerario." }
+        })
+      );
+    }
   };
 
   // Multiple files upload processing and API storage
@@ -3071,16 +3117,29 @@ export default function DiaryTab({
                               Progetta il tuo tragitto futuro definendo le tappe previste. Questa pianificazione è separata dagli spostamenti reali che effettuerai e registrerai durante il viaggio.
                             </p>
                           </div>
-                          {onNavigateToAIItinerary && (
-                            <button
-                              type="button"
-                              onClick={onNavigateToAIItinerary}
-                              className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] shrink-0 self-start sm:self-center border border-emerald-500/30"
-                            >
-                              <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300 animate-pulse" />
-                              <span>Generatore Itinerari AI</span>
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-center">
+                            {(activeTrip.aiItinerary || (activeTrip.routePoints && activeTrip.routePoints.length > 0)) && (
+                              <button
+                                type="button"
+                                onClick={handleExportItineraryPDFFromDiary}
+                                className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white rounded-xl text-xs font-black shadow-xs flex items-center gap-2 transition-all cursor-pointer hover:scale-[1.02]"
+                                title="Scarica itinerario o pianificazione in PDF"
+                              >
+                                <FileDown className="w-4 h-4 text-amber-200" />
+                                <span>Esporta PDF Itinerario</span>
+                              </button>
+                            )}
+                            {onNavigateToAIItinerary && (
+                              <button
+                                type="button"
+                                onClick={onNavigateToAIItinerary}
+                                className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] border border-emerald-500/30"
+                              >
+                                <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300 animate-pulse" />
+                                <span>Generatore Itinerari AI</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <TripRouteMap trip={activeTrip} mode="planned" onSaveRoute={handleSaveRoute} onNavigateToPlace={onNavigateToPlace} onNavigateToAIItinerary={onNavigateToAIItinerary} />
                       </div>

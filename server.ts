@@ -1535,6 +1535,40 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         // Safe to ignore
       }
 
+      // Send email notification to admin if Resend is configured
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+      if (process.env.RESEND_API_KEY && targetAdminEmail && entry.status === "pending") {
+        try {
+          const { Resend } = await import('resend');
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: 'CamperLifeApp <onboarding@resend.dev>',
+            to: targetAdminEmail,
+            subject: `📍 Nuova proposta di sosta da approvare: ${entry.name}`,
+            html: `
+              <h2>📍 Nuova Proposta di Sosta Inviata dagli Utenti</h2>
+              <p>Un utente ha proposto una nuova struttura su CamperLifeApp ed è in attesa di approvazione:</p>
+              <ul>
+                <li><strong>Nome Sosta:</strong> ${entry.name}</li>
+                <li><strong>Categoria:</strong> ${entry.category}</li>
+                <li><strong>Indirizzo:</strong> ${entry.address || 'N/D'}</li>
+                <li><strong>Coordinate:</strong> ${entry.lat}, ${entry.lng}</li>
+                <li><strong>Prezzo:</strong> ${entry.priceInfo || 'Gratuito'} (${entry.priceEuro}€)</li>
+                <li><strong>Telefono:</strong> ${entry.phone || 'N/D'}</li>
+                <li><strong>Servizi:</strong> ${entry.facilities.length > 0 ? entry.facilities.join(', ') : 'Nessuno'}</li>
+                <li><strong>Inviata da (Email/Utente):</strong> ${entry.createdBy || 'Anonimo / Non specificato'}</li>
+                <li><strong>Data Invio:</strong> ${entry.createdAt}</li>
+              </ul>
+              <br/>
+              <p>Puoi esaminare e approvare direttamente questa proposta accedendo al pannello amministratore dell'app (sezione <strong>Impostazioni > Amministrazione > Proposte Sosta</strong> o nella tab Mappa).</p>
+            `
+          });
+          console.log(`[Email] Admin proposal notification sent to: ${targetAdminEmail}`);
+        } catch (emailErr) {
+          console.error("Error sending admin proposal email notification:", emailErr);
+        }
+      }
+
       res.json({ success: true, place: { id: placeId, ...entry } });
     } catch (err: any) {
       console.error("Error proposing place to Firestore:", err);
