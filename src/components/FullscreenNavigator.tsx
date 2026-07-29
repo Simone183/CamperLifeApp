@@ -1118,9 +1118,17 @@ out center;`;
   const speechQueueRef = React.useRef<{ text: string; priority: 'immediate' | 'advance' | 'info'; timestamp: number }[]>([]);
   const isSpeakingRef = React.useRef<boolean>(false);
   const spokenHistoryRef = React.useRef<Record<string, number>>({});
+  const activeUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
+  const speechTimeoutRef = React.useRef<any>(null);
 
   const processSpeechQueue = React.useCallback(() => {
     if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
+    
+    // Resume speechSynthesis if browser paused it
+    if (window.speechSynthesis.paused) {
+      try { window.speechSynthesis.resume(); } catch (_) {}
+    }
+
     if (isSpeakingRef.current) return;
     if (speechQueueRef.current.length === 0) return;
 
@@ -1144,18 +1152,40 @@ out center;`;
     msg.rate = 1.0;
     msg.pitch = 1.0;
 
+    // Retain strong reference to prevent V8 garbage collection mid-speech
+    activeUtteranceRef.current = msg;
+    isSpeakingRef.current = true;
+
+    if (speechTimeoutRef.current) {
+      clearTimeout(speechTimeoutRef.current);
+    }
+
+    // Safety watchdog timer: force reset if onend/onerror fails to fire within expected duration
+    const maxSpeechDuration = Math.min(12000, Math.max(6000, nextItem.text.length * 180));
+    speechTimeoutRef.current = setTimeout(() => {
+      console.warn("[TTS] Speech timeout safety triggered. Resetting lock.");
+      isSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+      setTimeout(() => processSpeechQueue(), 100);
+    }, maxSpeechDuration);
+
     msg.onstart = () => {
       isSpeakingRef.current = true;
     };
 
     msg.onend = () => {
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       isSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
       setTimeout(() => processSpeechQueue(), 150);
     };
 
     msg.onerror = (e) => {
       console.warn("SpeechSynthesis utterance error:", e);
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       isSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
       setTimeout(() => processSpeechQueue(), 150);
     };
 
@@ -1163,9 +1193,38 @@ out center;`;
       window.speechSynthesis.speak(msg);
     } catch (e) {
       console.warn("SpeechSynthesis speak error:", e);
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       isSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
+      setTimeout(() => processSpeechQueue(), 150);
     }
   }, []);
+
+  // Continuous keep-alive monitor to prevent browser TTS engine freeze / standby drop during long driving sessions
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
+
+    const keepAliveInterval = setInterval(() => {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+
+      // 1. Resume synth if paused by browser background/power policy
+      if (synth.paused) {
+        try { synth.resume(); } catch (_) {}
+      }
+
+      // 2. Unstick lock if engine is not actually speaking/pending
+      if (isSpeakingRef.current && !synth.speaking && !synth.pending) {
+        console.warn("[TTS Watchdog] Speech engine stuck/idle while lock held. Clearing lock.");
+        isSpeakingRef.current = false;
+        activeUtteranceRef.current = null;
+        if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+        processSpeechQueue();
+      }
+    }, 2500);
+
+    return () => clearInterval(keepAliveInterval);
+  }, [processSpeechQueue]);
 
   const speakInstruction = React.useCallback((text: string, priority: 'immediate' | 'advance' | 'info' = 'info') => {
     if (!text || typeof window === "undefined" || !('speechSynthesis' in window)) return;
@@ -1201,6 +1260,8 @@ out center;`;
 
     if (priority === 'immediate') {
       // For immediate turn warnings ("Ora, svolta a destra"), clear any low-priority background speech and speak immediately
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+      activeUtteranceRef.current = null;
       try {
         window.speechSynthesis.cancel();
       } catch (_) {}
@@ -1798,21 +1859,33 @@ out center;`;
       const speedMs = speed / 3.6;
       const triggerProssimita = Math.min(80, Math.max(30, speedMs * 4));
 
-      // STAGE 1: Preavviso (~300m to 800m before maneuver)
+      // STAGE 1: Preavviso (~300m to 800m before maneuver) - Esclusa la prelettura per "prosegui dritto" / "continua dritto"
       if (distanceToTurn <= 800 && distanceToTurn >= 180) {
         if (!spokenPreavvisoRef.current[stepIdx]) {
           spokenPreavvisoRef.current[stepIdx] = true;
-          
-          let distText = "Tra 500 metri, ";
-          if (distanceToTurn >= 750) {
-            distText = "Tra un chilometro, ";
-          } else if (distanceToTurn < 400) {
-            distText = "Tra 300 metri, ";
-          }
 
-          const advanceMessage = `${distText}${rawAction}`;
-          speakInstruction(advanceMessage, 'advance');
-          break; // Alert processed for this turn
+          // Escludi la prelettura se l'indicazione richiede solo di proseguire dritto
+          const isStraightInstruction = (
+            stepObj.maneuverType === 'straight' ||
+            stepObj.maneuverType === 'continue' ||
+            stepObj.maneuverType === 'new name' ||
+            stepObj.maneuverType === 'notification' ||
+            /prosegui\s+dritto|proseguire\s+dritto|continua\s+dritto|procedi\s+dritto|vada\s+dritto|vai\s+dritto|continua\s+su|prosegui\s+su|procedi\s+su|prosegui\s+per|continua\s+per|\bdritto\b/i.test(rawAction) ||
+            /prosegui\s+dritto|proseguire\s+dritto|continua\s+dritto|procedi\s+dritto|\bdritto\b/i.test(stepObj.title || "")
+          );
+
+          if (!isStraightInstruction) {
+            let distText = "Tra 500 metri, ";
+            if (distanceToTurn >= 750) {
+              distText = "Tra un chilometro, ";
+            } else if (distanceToTurn < 400) {
+              distText = "Tra 300 metri, ";
+            }
+
+            const advanceMessage = `${distText}${rawAction}`;
+            speakInstruction(advanceMessage, 'advance');
+            break; // Alert processed for this turn
+          }
         }
       }
 

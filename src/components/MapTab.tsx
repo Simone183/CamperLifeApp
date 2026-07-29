@@ -252,6 +252,14 @@ function MapEventsHelper({
       },
     );
 
+    const dragstartListener = map.addListener("dragstart", () => {
+      mapMovedByUserRef.current = true;
+    });
+
+    const dragListener = map.addListener("drag", () => {
+      mapMovedByUserRef.current = true;
+    });
+
     const dragendListener = map.addListener("dragend", () => {
       mapMovedByUserRef.current = true;
     });
@@ -259,6 +267,14 @@ function MapEventsHelper({
     const zoomchangedListener = map.addListener("zoom_changed", () => {
       if ((map as any)._isProgrammatic) {
         (map as any)._isProgrammatic = false;
+      } else {
+        mapMovedByUserRef.current = true;
+      }
+    });
+
+    const centerchangedListener = map.addListener("center_changed", () => {
+      if ((map as any)._isProgrammatic) {
+        // Programmatic move - leave flag untouched
       } else {
         mapMovedByUserRef.current = true;
       }
@@ -274,8 +290,11 @@ function MapEventsHelper({
     return () => {
       clickListener.remove();
       contextmenuListener.remove();
+      dragstartListener.remove();
+      dragListener.remove();
       dragendListener.remove();
       zoomchangedListener.remove();
+      centerchangedListener.remove();
       idleListener.remove();
       mapRef.current = null;
       onMapInstance?.(null);
@@ -2022,10 +2041,7 @@ export default function MapTab({
     }
   }, [mobileView]);
 
-  // Centra automaticamente sul camper appena il GPS aggancia la posizione
-  const hasAutoCenteredOnGPSRef = React.useRef(false);
-  const centeredOnceRef = React.useRef(false);
-
+  // Centra automaticamente sul camper appena il GPS aggancia la posizione (se l'utente non ha spostato la mappa)
   React.useEffect(() => {
     if (googleMapInstance) {
       mapRef.current = googleMapInstance;
@@ -2034,17 +2050,15 @@ export default function MapTab({
 
   React.useEffect(() => {
     if (!isGPSEnabled) {
-      hasAutoCenteredOnGPSRef.current = false;
-      centeredOnceRef.current = false;
+      mapMovedByUserRef.current = false;
     }
   }, [isGPSEnabled]);
 
   React.useEffect(() => {
     if (isGPSEnabled && userLocation) {
       const activeMap = googleMapInstance || mapRef.current;
-      if (activeMap && !centeredOnceRef.current && !selectedPlace) {
+      if (activeMap && !selectedPlace && !mapMovedByUserRef.current) {
         try {
-          centeredOnceRef.current = true;
           (activeMap as any)._isProgrammatic = true;
           const currentZoom = typeof activeMap.getZoom === "function" ? activeMap.getZoom() : null;
           const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;
@@ -7967,15 +7981,8 @@ export function LeafletOfflineMap({
   const hasCenteredOnGPSOnceRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!userLocation) {
-      hasCenteredOnGPSOnceRef.current = false;
-    }
-  }, [userLocation]);
-
-  React.useEffect(() => {
-    if (userLocation && leafletMapInstance && !hasCenteredOnGPSOnceRef.current && !selectedPlace) {
+    if (userLocation && leafletMapInstance && !selectedPlace && !movedRef.current) {
       try {
-        hasCenteredOnGPSOnceRef.current = true;
         (leafletMapInstance as any)._isProgrammatic = true;
         const currentZoom = leafletMapInstance.getZoom();
         const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;
@@ -8027,6 +8034,20 @@ export function LeafletOfflineMap({
       if ((map as any)._isProgrammatic) {
         (map as any)._isProgrammatic = false;
       } else {
+        movedRef.current = true;
+      }
+    });
+
+    map.on("dragstart", () => {
+      movedRef.current = true;
+    });
+
+    map.on("drag", () => {
+      movedRef.current = true;
+    });
+
+    map.on("zoomstart", () => {
+      if (!(map as any)._isProgrammatic) {
         movedRef.current = true;
       }
     });
