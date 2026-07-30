@@ -307,5 +307,6 @@ export interface NavigationStep {
   streetName?: string;
   maneuverType?: string;
   modifier?: string;
+  hasTrafficLight?: boolean;
 }
 

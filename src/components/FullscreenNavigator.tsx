@@ -64,6 +64,28 @@ interface FullscreenNavigatorProps {
 let globalLastSpokenText = "";
 let globalLastSpokenTime = 0;
 
+function getItalianOrdinalExit(exitNum: number | string | undefined): { word: string; abbreviation: string } {
+  const num = typeof exitNum === 'number' ? exitNum : parseInt(String(exitNum || ''), 10);
+  if (isNaN(num) || num <= 0) return { word: "uscita", abbreviation: "uscita" };
+  const ordinals: Record<number, string> = {
+    1: "prima",
+    2: "seconda",
+    3: "terza",
+    4: "quarta",
+    5: "quinta",
+    6: "sesta",
+    7: "settima",
+    8: "ottava",
+    9: "nona",
+    10: "decima"
+  };
+  const word = ordinals[num] || `${num}ª`;
+  return {
+    word: `${word} uscita`,
+    abbreviation: `${num}ª uscita`
+  };
+}
+
 export default function FullscreenNavigator({
   dest,
   navigationMode,
@@ -1114,20 +1136,23 @@ out center;`;
   const spokenProssimitaRef = React.useRef<Record<number, boolean>>({});
   const hasShownOffRoadToastRef = React.useRef<boolean>(false);
 
-  // Speech Queue & State Management for smooth uninterrupted playback
+  // Speech Queue & State Management for smooth uninterrupted playback across long navigation sessions
   const speechQueueRef = React.useRef<{ text: string; priority: 'immediate' | 'advance' | 'info'; timestamp: number }[]>([]);
   const isSpeakingRef = React.useRef<boolean>(false);
   const spokenHistoryRef = React.useRef<Record<string, number>>({});
   const activeUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
   const speechTimeoutRef = React.useRef<any>(null);
+  const lastSpeechTimeRef = React.useRef<number>(0);
 
   const processSpeechQueue = React.useCallback(() => {
     if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
     
-    // Resume speechSynthesis if browser paused it
-    if (window.speechSynthesis.paused) {
-      try { window.speechSynthesis.resume(); } catch (_) {}
-    }
+    // Resume speechSynthesis if browser paused or suspended audio context
+    try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch (_) {}
 
     if (isSpeakingRef.current) return;
     if (speechQueueRef.current.length === 0) return;
@@ -1141,8 +1166,8 @@ out center;`;
     const nextItem = speechQueueRef.current.shift();
     if (!nextItem) return;
 
-    // Drop stale items older than 12 seconds
-    if (Date.now() - nextItem.timestamp > 12000) {
+    // Drop stale items older than 14 seconds
+    if (Date.now() - nextItem.timestamp > 14000) {
       processSpeechQueue();
       return;
     }
@@ -1154,31 +1179,36 @@ out center;`;
 
     // Retain strong reference to prevent V8 garbage collection mid-speech
     activeUtteranceRef.current = msg;
+    (window as any)._activeUtterance = msg;
     isSpeakingRef.current = true;
+    lastSpeechTimeRef.current = Date.now();
 
     if (speechTimeoutRef.current) {
       clearTimeout(speechTimeoutRef.current);
     }
 
     // Safety watchdog timer: force reset if onend/onerror fails to fire within expected duration
-    const maxSpeechDuration = Math.min(12000, Math.max(6000, nextItem.text.length * 180));
+    const maxSpeechDuration = Math.min(10000, Math.max(4000, nextItem.text.length * 150));
     speechTimeoutRef.current = setTimeout(() => {
-      console.warn("[TTS] Speech timeout safety triggered. Resetting lock.");
+      console.warn("[TTS Watchdog] Utterance timeout reached. Forcibly releasing lock.");
       isSpeakingRef.current = false;
       activeUtteranceRef.current = null;
+      (window as any)._activeUtterance = null;
       try { window.speechSynthesis.cancel(); } catch (_) {}
       setTimeout(() => processSpeechQueue(), 100);
     }, maxSpeechDuration);
 
     msg.onstart = () => {
       isSpeakingRef.current = true;
+      lastSpeechTimeRef.current = Date.now();
     };
 
     msg.onend = () => {
       if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       isSpeakingRef.current = false;
       activeUtteranceRef.current = null;
-      setTimeout(() => processSpeechQueue(), 150);
+      (window as any)._activeUtterance = null;
+      setTimeout(() => processSpeechQueue(), 100);
     };
 
     msg.onerror = (e) => {
@@ -1186,21 +1216,25 @@ out center;`;
       if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       isSpeakingRef.current = false;
       activeUtteranceRef.current = null;
-      setTimeout(() => processSpeechQueue(), 150);
+      (window as any)._activeUtterance = null;
+      setTimeout(() => processSpeechQueue(), 100);
     };
 
     try {
+      // Unfreeze browser TTS engine right before speaking
+      window.speechSynthesis.resume();
       window.speechSynthesis.speak(msg);
     } catch (e) {
       console.warn("SpeechSynthesis speak error:", e);
       if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
       isSpeakingRef.current = false;
       activeUtteranceRef.current = null;
-      setTimeout(() => processSpeechQueue(), 150);
+      (window as any)._activeUtterance = null;
+      setTimeout(() => processSpeechQueue(), 100);
     }
   }, []);
 
-  // Continuous keep-alive monitor to prevent browser TTS engine freeze / standby drop during long driving sessions
+  // Continuous watchdog & keep-alive monitor to prevent browser TTS engine freeze / standby drop during long driving sessions
   React.useEffect(() => {
     if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
 
@@ -1208,20 +1242,34 @@ out center;`;
       const synth = window.speechSynthesis;
       if (!synth) return;
 
-      // 1. Resume synth if paused by browser background/power policy
-      if (synth.paused) {
-        try { synth.resume(); } catch (_) {}
-      }
+      const now = Date.now();
+      const timeSinceSpeech = now - lastSpeechTimeRef.current;
 
-      // 2. Unstick lock if engine is not actually speaking/pending
-      if (isSpeakingRef.current && !synth.speaking && !synth.pending) {
-        console.warn("[TTS Watchdog] Speech engine stuck/idle while lock held. Clearing lock.");
+      // 1. Always keep audio context / synth active
+      try {
+        if (synth.paused) {
+          synth.resume();
+        }
+      } catch (_) {}
+
+      // 2. Detect stuck lock (e.g. Chrome speaking === true bug or lost onend event after >8s)
+      if (isSpeakingRef.current && timeSinceSpeech > 8000) {
+        console.warn("[TTS Keep-Alive Watchdog] Releasing stuck speech lock after 8s inactivity.");
         isSpeakingRef.current = false;
         activeUtteranceRef.current = null;
+        (window as any)._activeUtterance = null;
         if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+        try { synth.cancel(); } catch (_) {}
         processSpeechQueue();
       }
-    }, 2500);
+
+      // 3. Periodic engine keep-alive pulse during long silent driving periods (>25s of silence)
+      if (!isSpeakingRef.current && timeSinceSpeech > 25000 && speechQueueRef.current.length === 0) {
+        try {
+          synth.resume();
+        } catch (_) {}
+      }
+    }, 2000);
 
     return () => clearInterval(keepAliveInterval);
   }, [processSpeechQueue]);
@@ -1230,12 +1278,43 @@ out center;`;
     if (!text || typeof window === "undefined" || !('speechSynthesis' in window)) return;
     
     // Clean emojis, extraneous characters, and formatting for natural Italian speech
-    const cleanText = text
+    let cleanText = text
       .replace(/navigazione/gi, "")
-      .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
+      .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨🔄🚦]/g, "")
       .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
       .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")
-      .replace(/\p{Extended_Pictographic}/gu, "")
+      .replace(/\p{Extended_Pictographic}/gu, "");
+
+    // Convert degree symbols & ordinal numbers to spoken Italian words so SpeechSynthesis never pronounces "gradi"
+    cleanText = cleanText
+      .replace(/\b1°\s*uscita\b/gi, "prima uscita")
+      .replace(/\b2°\s*uscita\b/gi, "seconda uscita")
+      .replace(/\b3°\s*uscita\b/gi, "terza uscita")
+      .replace(/\b4°\s*uscita\b/gi, "quarta uscita")
+      .replace(/\b5°\s*uscita\b/gi, "quinta uscita")
+      .replace(/\b6°\s*uscita\b/gi, "sesta uscita")
+      .replace(/\b7°\s*uscita\b/gi, "settima uscita")
+      .replace(/\b8°\s*uscita\b/gi, "ottava uscita")
+      .replace(/\b1ª\s*uscita\b/gi, "prima uscita")
+      .replace(/\b2ª\s*uscita\b/gi, "seconda uscita")
+      .replace(/\b3ª\s*uscita\b/gi, "terza uscita")
+      .replace(/\b4ª\s*uscita\b/gi, "quarta uscita")
+      .replace(/\b5ª\s*uscita\b/gi, "quinta uscita")
+      .replace(/\b6ª\s*uscita\b/gi, "sesta uscita")
+      .replace(/\b1°\b/g, "prima")
+      .replace(/\b2°\b/g, "seconda")
+      .replace(/\b3°\b/g, "terza")
+      .replace(/\b4°\b/g, "quarta")
+      .replace(/\b5°\b/g, "quinta")
+      .replace(/\b1ª\b/g, "prima")
+      .replace(/\b2ª\b/g, "seconda")
+      .replace(/\b3ª\b/g, "terza")
+      .replace(/\b4ª\b/g, "quarta")
+      .replace(/\b5ª\b/g, "quinta")
+      .replace(/alla rotonda,?\s+alla rotonda/gi, "alla rotonda")
+      .replace(/prendi la,?\s+prendi la/gi, "prendi la")
+      .replace(/uscita,?\s+uscita/gi, "uscita")
+      .replace(/,\s+([A-Z])/g, (m, p1) => `, ${p1.toLowerCase()}`)
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -1467,8 +1546,55 @@ out center;`;
               let title = "Navigazione";
               let icon = "🛣️";
               
-              // Map directions beautifully
-              if (maneuverType === 'turn') {
+              const stepHasTrafficLight = Boolean(
+                (step.intersections && step.intersections.some((inter: any) => 
+                  (inter.classes && inter.classes.includes('traffic_signals'))
+                )) ||
+                step.maneuver?.type === 'traffic light' ||
+                step.mode === 'traffic_signals' ||
+                /semaforo|traffic_light|traffic_signals/i.test(step.name || "") ||
+                /semaforo|traffic_light|traffic_signals/i.test(step.maneuver?.instruction || "")
+              );
+
+              const isRoundabout = Boolean(
+                maneuverType === 'roundabout' ||
+                maneuverType === 'rotary' ||
+                maneuverType === 'roundabout turn' ||
+                maneuverType === 'exit roundabout' ||
+                rawModifier === 'roundabout' ||
+                /roundabout|rotatoria|rotonda/i.test(step.maneuver?.type || "") ||
+                /roundabout|rotatoria|rotonda/i.test(step.maneuver?.instruction || "")
+              );
+
+              let exitNumber = step.maneuver?.exit;
+              if (!exitNumber) {
+                const matchExit = (step.maneuver?.instruction || "").match(/(?:exit|uscita|\b)(\d+)(?:st|nd|rd|th|°|ª)?/i);
+                if (matchExit) {
+                  exitNumber = parseInt(matchExit[1], 10);
+                }
+              }
+
+              let desc = step.maneuver.instruction || `Svolta ${modifier} ${name}`;
+
+              if (isRoundabout) {
+                icon = stepHasTrafficLight ? "🚦" : "🔄";
+                const exitOrdinal = exitNumber ? getItalianOrdinalExit(exitNumber) : null;
+                
+                if (exitOrdinal) {
+                  const exitTitleCap = exitOrdinal.word.charAt(0).toUpperCase() + exitOrdinal.word.slice(1);
+                  title = stepHasTrafficLight 
+                    ? `🚦 Semaforo e Rotatoria - ${exitTitleCap}`
+                    : `Rotatoria - ${exitTitleCap}`;
+                  desc = stepHasTrafficLight
+                    ? `Al semaforo della rotonda, prendi la ${exitOrdinal.word} ${name}`.trim()
+                    : `Alla rotonda, prendi la ${exitOrdinal.word} ${name}`.trim();
+                } else {
+                  title = stepHasTrafficLight ? "🚦 Semaforo e Rotatoria" : "Rotatoria";
+                  desc = stepHasTrafficLight
+                    ? `Al semaforo della rotonda, prosegui ${name || 'dritto'}`.trim()
+                    : `Alla rotonda, prosegui ${name || 'dritto'}`.trim();
+                }
+              } else if (maneuverType === 'turn') {
                 const isLeft = step.maneuver.modifier?.includes('left');
                 title = isLeft ? "Svolta a sinistra" : "Svolta a destra";
                 icon = isLeft ? "↩️" : "↪️";
@@ -1478,19 +1604,26 @@ out center;`;
               } else if (maneuverType === 'arrive') {
                 title = "Destinazione raggiunta";
                 icon = "🏕️";
-              } else if (maneuverType === 'roundabout') {
-                const exitNumber = step.maneuver.exit;
-                title = exitNumber ? `Rotatoria - uscita numero ${exitNumber}` : "Rotatoria";
-                icon = "🔄";
               } else if (maneuverType === 'off ramp') {
                 title = "Prendi l'uscita";
                 icon = "🛣️";
               }
 
-              let desc = step.maneuver.instruction || `Svolta ${modifier} ${name}`;
-              
-              if (maneuverType === 'roundabout' && step.maneuver.exit) {
-                desc = `Prendi la ${step.maneuver.exit}° uscita alla ${desc}`;
+              if (stepHasTrafficLight && !isRoundabout) {
+                icon = "🚦";
+                if (!/semaforo/i.test(desc) && !/semaforo/i.test(title)) {
+                  if (maneuverType === 'turn') {
+                    const isLeft = step.maneuver?.modifier?.includes('left');
+                    title = isLeft ? "🚦 Semaforo - Svolta a sinistra" : "🚦 Semaforo - Svolta a destra";
+                    desc = `Al semaforo, svolta${modifier} ${name}`.trim();
+                  } else if (maneuverType === 'straight' || maneuverType === 'continue' || /prosegui\s+dritto/i.test(desc)) {
+                    title = "🚦 Semaforo - Prosegui dritto";
+                    desc = `Al semaforo, prosegui dritto ${name}`.trim();
+                  } else {
+                    title = `🚦 Semaforo - ${title}`;
+                    desc = `Al semaforo, ${desc.charAt(0).toLowerCase() + desc.slice(1)}`;
+                  }
+                }
               }
               
               // Clean-up and localize instructions to sound completely native and professional in Italian
@@ -1512,6 +1645,13 @@ out center;`;
                 .replace(/take the fourth/gi, "prendi la quarta")
                 .replace(/take the/gi, "prendi la")
                 .replace(/exit/gi, "uscita")
+                .replace(/\b1°\s*uscita\b/gi, "prima uscita")
+                .replace(/\b2°\s*uscita\b/gi, "seconda uscita")
+                .replace(/\b3°\s*uscita\b/gi, "terza uscita")
+                .replace(/\b4°\s*uscita\b/gi, "quarta uscita")
+                .replace(/\b5°\s*uscita\b/gi, "quinta uscita")
+                .replace(/alla rotonda,?\s+alla rotonda/gi, "alla rotonda")
+                .replace(/prendi la,?\s+prendi la/gi, "prendi la")
                 .replace(/destination/gi, "destinazione")
                 .replace(/on your/gi, "sulla tua")
                 .replace(/keep left/gi, "mantieni la sinistra")
@@ -1568,7 +1708,8 @@ out center;`;
                 coordinateIndex: coordIdx,
                 streetName: step.name || "",
                 maneuverType: step.maneuver.type || "",
-                modifier: step.maneuver.modifier || ""
+                modifier: step.maneuver.modifier || "",
+                hasTrafficLight: stepHasTrafficLight
               });
             });
           }
@@ -1864,8 +2005,14 @@ out center;`;
         if (!spokenPreavvisoRef.current[stepIdx]) {
           spokenPreavvisoRef.current[stepIdx] = true;
 
-          // Escludi la prelettura se l'indicazione richiede solo di proseguire dritto
-          const isStraightInstruction = (
+          const isTrafficLightStep = Boolean(
+            stepObj.hasTrafficLight ||
+            /semaforo|traffic_light|traffic_signals/i.test(stepObj.desc || "") ||
+            /semaforo|traffic_light|traffic_signals/i.test(stepObj.title || "")
+          );
+
+          // Escludi la prelettura se l'indicazione richiede solo di proseguire dritto SENZA semaforo
+          const isStraightInstruction = !isTrafficLightStep && (
             stepObj.maneuverType === 'straight' ||
             stepObj.maneuverType === 'continue' ||
             stepObj.maneuverType === 'new name' ||
