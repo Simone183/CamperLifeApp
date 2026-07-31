@@ -34,7 +34,8 @@ export function useAppSettings(): AppSettings {
       photoQuality: "medium",
       pinEnabled: false,
       mapEngine: "google",
-      ttsEnabled: true
+      ttsEnabled: true,
+      ttsGender: "auto"
     } as AppSettings;
   });
 

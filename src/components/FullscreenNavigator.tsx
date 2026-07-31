@@ -9,6 +9,7 @@ import { getTileUrl, getCurrencySymbol, parseDimToNumber, formatMeters } from '.
 import { Place, VehicleDimensions, OSMObstacle, NavigationStep } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
+import { applyTtsVoiceAndPitch, speakSampleTts, TtsGender } from '../utils/ttsHelper';
 import { 
   ArrowLeft, 
   Compass, 
@@ -1173,9 +1174,8 @@ out center;`;
     }
 
     const msg = new SpeechSynthesisUtterance(nextItem.text);
-    msg.lang = 'it-IT';
     msg.rate = 1.0;
-    msg.pitch = 1.0;
+    applyTtsVoiceAndPitch(msg, settings?.ttsGender || 'auto');
 
     // Retain strong reference to prevent V8 garbage collection mid-speech
     activeUtteranceRef.current = msg;
@@ -1263,10 +1263,18 @@ out center;`;
         processSpeechQueue();
       }
 
-      // 3. Periodic engine keep-alive pulse during long silent driving periods (>25s of silence)
-      if (!isSpeakingRef.current && timeSinceSpeech > 25000 && speechQueueRef.current.length === 0) {
+      // 3. Periodic engine keep-alive pulse during long silent driving periods (>12s of silence)
+      // Dispatches a micro silent pulse so mobile Chrome/Safari Web Speech IPC background worker never goes idle
+      if (!isSpeakingRef.current && timeSinceSpeech > 12000 && speechQueueRef.current.length === 0) {
         try {
+          synth.cancel();
           synth.resume();
+          const silentMsg = new SpeechSynthesisUtterance(" ");
+          silentMsg.volume = 0.01;
+          silentMsg.lang = 'it-IT';
+          (window as any)._silentKeepAlive = silentMsg;
+          synth.speak(silentMsg);
+          lastSpeechTimeRef.current = now;
         } catch (_) {}
       }
     }, 2000);
@@ -1580,7 +1588,7 @@ out center;`;
                 icon = stepHasTrafficLight ? "🚦" : "🔄";
                 const exitOrdinal = exitNumber ? getItalianOrdinalExit(exitNumber) : null;
                 
-                if (exitOrdinal) {
+                if (exitOrdinal && exitOrdinal.word !== "uscita") {
                   const exitTitleCap = exitOrdinal.word.charAt(0).toUpperCase() + exitOrdinal.word.slice(1);
                   title = stepHasTrafficLight 
                     ? `🚦 Semaforo e Rotatoria - ${exitTitleCap}`
@@ -1589,10 +1597,13 @@ out center;`;
                     ? `Al semaforo della rotonda, prendi la ${exitOrdinal.word} ${name}`.trim()
                     : `Alla rotonda, prendi la ${exitOrdinal.word} ${name}`.trim();
                 } else {
+                  let dirText = "prosegui dritto";
+                  if (rawModifier?.includes('left')) dirText = "svolta a sinistra";
+                  else if (rawModifier?.includes('right')) dirText = "svolta a destra";
                   title = stepHasTrafficLight ? "🚦 Semaforo e Rotatoria" : "Rotatoria";
                   desc = stepHasTrafficLight
-                    ? `Al semaforo della rotonda, prosegui ${name || 'dritto'}`.trim()
-                    : `Alla rotonda, prosegui ${name || 'dritto'}`.trim();
+                    ? `Al semaforo della rotonda, ${dirText} ${name}`.trim()
+                    : `Alla rotonda, ${dirText} ${name}`.trim();
                 }
               } else if (maneuverType === 'turn') {
                 const isLeft = step.maneuver.modifier?.includes('left');
@@ -1612,16 +1623,13 @@ out center;`;
               if (stepHasTrafficLight && !isRoundabout) {
                 icon = "🚦";
                 if (!/semaforo/i.test(desc) && !/semaforo/i.test(title)) {
-                  if (maneuverType === 'turn') {
-                    const isLeft = step.maneuver?.modifier?.includes('left');
+                  if (maneuverType === 'turn' || rawModifier?.includes('left') || rawModifier?.includes('right')) {
+                    const isLeft = rawModifier?.includes('left');
                     title = isLeft ? "🚦 Semaforo - Svolta a sinistra" : "🚦 Semaforo - Svolta a destra";
                     desc = `Al semaforo, svolta${modifier} ${name}`.trim();
-                  } else if (maneuverType === 'straight' || maneuverType === 'continue' || /prosegui\s+dritto/i.test(desc)) {
+                  } else {
                     title = "🚦 Semaforo - Prosegui dritto";
                     desc = `Al semaforo, prosegui dritto ${name}`.trim();
-                  } else {
-                    title = `🚦 Semaforo - ${title}`;
-                    desc = `Al semaforo, ${desc.charAt(0).toLowerCase() + desc.slice(1)}`;
                   }
                 }
               }
@@ -2435,6 +2443,11 @@ out center;`;
           </div>
         `;
 
+        poiEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setAutoCenter(false);
+        });
+
         const popup = new maplibregl.Popup({ closeButton: false, offset: 15 })
           .setHTML(popupContent);
 
@@ -2747,6 +2760,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
   const centerAndPopPOI = (lat: number, lng: number) => {
     const map = mapRef.current;
     if (!map) return;
+    setAutoCenter(false);
     map.flyTo({ center: [lng, lat], zoom: 15, duration: 1200 });
     
     // Find matching marker and open popup
@@ -3205,357 +3219,6 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
                   map.flyTo({
                     center: [target[1], target[0]],
-                    zoom: 17.5,
-                    pitch: 55,
-                    bearing: Math.round(targetBearing),
-                    padding: { top: window.innerHeight * 0.4, bottom: 50, left: 0, right: 0 },
-                    duration: 1000
-                  });
-                }
-              }}
-              className="w-[52px] h-[52px] rounded-xl bg-[#0b101d]/95 text-white border border-slate-800 shadow-2xl hover:bg-slate-800 hover:border-slate-700 transition-all pointer-events-auto cursor-pointer flex items-center justify-center"
-              title="Ricentra mappa"
-            >
-              <div className="w-6 h-6 flex items-center justify-center">
-                <Compass className="w-6 h-6 text-emerald-400" />
-              </div>
-            </button>
-          )}
-
-          {/* Camper Cockpit Media Player Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
-            className={`w-[52px] h-[52px] rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
-              isAudioPlaying 
-                ? 'border-emerald-500/80 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
-                : isMusicPlayerOpen
-                  ? 'border-emerald-500/50 bg-[#0b101d]/95 text-emerald-400'
-                  : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
-            }`}
-            title="Cockpit Audio Camper (Radio & Playlist)"
-          >
-            <div className="w-6 h-6 flex items-center justify-center">
-              <Music className={`w-5 h-5 ${isAudioPlaying ? "animate-pulse" : ""}`} />
-            </div>
-            {isAudioPlaying && !isMusicPlayerOpen && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
-            )}
-            {isAudioPlaying && !isMusicPlayerOpen && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-400 rounded-full" />
-            )}
-          </button>
-
-          {/* Compass Control Button */}
-          <button
-            type="button"
-            onClick={async () => {
-              if (compassPermission !== 'granted') {
-                const granted = await requestCompassPermission();
-                if (granted) {
-                  window.dispatchEvent(new CustomEvent('show-toast', {
-                    detail: { message: "🧭 Bussola reale attivata con successo! Ruota il telefono per allineare la mappa." }
-                  }));
-                } else {
-                  window.dispatchEvent(new CustomEvent('show-toast', {
-                    detail: { message: "⚠️ Per attivare la bussola reale, abilita l'accesso ai sensori di orientamento nelle impostazioni del browser o clicca nuovamente." }
-                  }));
-                }
-              } else {
-                const newVal = !useCompass;
-                setUseCompass(newVal);
-                window.dispatchEvent(new CustomEvent('show-toast', {
-                  detail: { message: newVal ? "🧭 Allineamento bussola reale attivo" : "🧭 Bussola reale disattivata (orientamento fisso)" }
-                }));
-              }
-            }}
-            className={`w-[52px] h-[52px] rounded-xl border ${useCompass ? 'border-emerald-500 bg-slate-900/95' : 'border-slate-800 bg-[#0b101d]/95'} shadow-2xl hover:bg-slate-800 hover:border-slate-700 transition-all pointer-events-auto cursor-pointer flex items-center justify-center`}
-            title="Allinea mappa con la bussola reale del telefono"
-          >
-            <div 
-              className="relative w-6 h-6 flex items-center justify-center transition-transform duration-200 ease-out"
-              style={{ transform: `rotate(${deviceHeading !== null ? -deviceHeading : 0}deg)` }}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={1} strokeDasharray="2 2" className="text-slate-500" />
-                <path d="M12 2L15 12H9L12 2Z" fill="#EF4444" />
-                <path d="M12 22L15 12H9L12 22Z" fill="#94A3B8" />
-                <circle cx="12" cy="12" r="1.5" fill="#FFFFFF" />
-              </svg>
-            </div>
-          </button>
-        </div>
-
-        {/* Floating Mini Media Player Control Bar */}
-        {mediaState.currentTrack && hasBeenPlayed && (
-          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 h-[52px] px-3 bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto w-[80%] max-w-[255px] md:w-[325px]">
-            <div className="flex items-center shrink-0">
-              <div className="w-8 h-8 rounded overflow-hidden border border-slate-800/80 flex items-center justify-center bg-slate-900 shadow-inner">
-                {mediaState.currentTrack.cover ? (
-                  <img src={mediaState.currentTrack.cover} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="album art" />
-                ) : mediaState.currentTrack.isRadio ? (
-                  <Radio className="w-4.5 h-4.5 text-emerald-400" />
-                ) : (
-                  <Music className="w-4.5 h-4.5 text-emerald-400" />
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-center min-w-0 flex-1 px-1 select-none text-left">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase truncate block">
-                {mediaState.currentTrack.title}
-              </span>
-              <span className="text-[8px] text-slate-300 truncate leading-none mt-0.5 font-medium">
-                {mediaState.currentTrack.subtitle || (mediaState.sourceMode === "radio" ? "Radio FM" : "Media Player")}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={sendPrevCommand}
-                className="w-7 h-7 flex items-center justify-center hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
-                title="Brano precedente"
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={sendPlayPauseCommand}
-                className={`w-9 h-9 flex items-center justify-center rounded-full transition-all cursor-pointer border ${
-                  mediaState.isPlaying 
-                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 hover:border-emerald-500/50" 
-                    : "bg-slate-800 border-slate-700 text-white hover:bg-slate-700 hover:border-slate-650"
-                }`}
-                title={mediaState.isPlaying ? "Pausa" : "Riproduci"}
-              >
-                {mediaState.isPlaying ? (
-                  <Pause className="w-4 h-4 fill-current" />
-                ) : (
-                  <Play className="w-4 h-4 fill-current ml-0.5" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={sendNextCommand}
-                className="w-7 h-7 flex items-center justify-center hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
-                title="Brano successivo"
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <CamperMediaPlayer 
-          isOpen={isMusicPlayerOpen}
-          onClose={() => setIsMusicPlayerOpen(false)}
-          onPlayingStateChange={setIsAudioPlaying}
-        />
-
-        <button
-          type="button"
-          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          className={`w-[52px] h-[52px] absolute left-4 bottom-28 z-20 rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center ${
-            !isSidebarCollapsed
-              ? 'border-emerald-500/50 bg-[#070c17]/95 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
-              : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
-          }`}
-          title="Impostazioni Navigatore"
-        >
-          <div className="w-6 h-6 flex items-center justify-center">
-            <Settings className={`w-5 h-5 transition-all duration-200 ${!isSidebarCollapsed ? 'text-emerald-400 animate-spin' : 'text-slate-300'}`} style={{ animationDuration: !isSidebarCollapsed ? '10s' : undefined }} />
-          </div>
-        </button>
-
-        <div 
-          className={`absolute top-[45%] left-1/2 md:top-auto md:bottom-38 md:left-auto md:right-32 z-30 max-h-[calc(100vh-240px)] w-[288px] md:w-[306px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 pointer-events-auto ${
-            isSidebarCollapsed 
-              ? 'opacity-0 scale-95 pointer-events-none -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0' 
-              : 'opacity-100 scale-100 pointer-events-auto -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0'
-          }`}
-          id="navigator-settings-container"
-        >
-          {/* Header */}
-          <div className="px-3 py-2 bg-[#0d1527] border-b border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Compass className="w-4 h-4 text-emerald-400" />
-              <span className="text-[11px] font-black text-slate-100 uppercase tracking-wider">
-                Impostazioni Navigatore
-              </span>
-            </div>
-            
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(true)}
-              className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer"
-              title="Chiudi impostazioni"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* List Content */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[220px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-            {/* Anti-Standby indicator */}
-            <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between shadow-sm select-none">
-              <div className="flex flex-col text-left">
-                <span className="text-[10px] font-bold text-emerald-300 flex items-center gap-1">
-                  <Sun className="w-3 h-3 text-amber-400 animate-pulse" />
-                  Schermo Sempre Attivo
-                </span>
-                <span className="text-[8px] text-emerald-400/80 font-medium">
-                  Anti-Standby attivo durante la guida
-                </span>
-              </div>
-              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full text-[9px] font-extrabold uppercase tracking-wide">
-                ON
-              </span>
-            </div>
-            {/* Switch per mostrare le soste sul percorso */}
-            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
-              <div className="flex flex-col text-left">
-                <span className="text-[10px] font-bold text-slate-200">
-                  Mostra soste sul percorso
-                </span>
-                <span className="text-[8px] text-slate-400 font-medium">
-                  Cerca aree camper entro 5km
-                </span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showStopsOnRoute}
-                  onChange={(e) => setShowStopsOnRoute(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
-              </label>
-            </div>
-
-            {/* Switch per mostrare ostacoli e limiti OSM */}
-            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
-              <div className="flex flex-col text-left">
-                <span className="text-[10px] font-bold text-slate-200">
-                  Ostacoli e limiti OSM
-                </span>
-                <span className="text-[8px] text-slate-400 font-medium">
-                  Mostra limiti altezza/larghezza/peso
-                </span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showOsmObstacles}
-                  onChange={(e) => setShowOsmObstacles(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
-              </label>
-            </div>
-
-            {loadingRoute ? (
-              <div className="py-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
-                <span>{showStopsOnRoute ? "Ricerca strutture in prossimità..." : "Calcolo percorso..."}</span>
-              </div>
-            ) : !showStopsOnRoute ? (
-              <div className="py-6 text-center text-xs text-slate-500 px-2 space-y-1.5">
-                <p className="font-medium text-slate-400 text-[11px]">Ricerca soste disattivata</p>
-                <p className="text-[9px] text-slate-500 leading-normal">
-                  Attiva "Mostra soste sul percorso" per elencare e visualizzare le aree camper vicine. Puoi anche attivare "Ostacoli e limiti OSM" per evidenziare restrizioni di transito sulla mappa.
-                </p>
-              </div>
-            ) : nearbyPlaces.length === 0 ? (
-              <div className="py-6 text-center text-xs text-slate-500">
-                <p className="font-medium text-slate-400 text-[11px]">Nessuna struttura entro 5km</p>
-                <p className="text-[9px] text-slate-500 mt-1">Non abbiamo trovato aree sosta o campeggi a meno di 5km da questo percorso specifico.</p>
-              </div>
-            ) : (
-              nearbyPlaces.map(({ place, minDistance }) => {
-                let badgeBg = "bg-orange-500/15 text-orange-400 border-orange-500/30";
-                let categoryText = "Area Sosta";
-                let icon = "📍";
-                
-                const normCat = (place.category || "").toLowerCase();
-                if (normCat.includes('campeggio') || normCat.includes('camping')) {
-                  badgeBg = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-                  categoryText = "Campeggio";
-                  icon = "⛺";
-                } else if (normCat.includes('parcheggio') || normCat.includes('parcheggio_camper')) {
-                  badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
-                  categoryText = "Parcheggio";
-                  icon = "🅿️";
-                } else if (normCat.includes('service')) {
-                  badgeBg = "bg-sky-500/15 text-sky-400 border-sky-500/30";
-                  categoryText = "Camper Service";
-                  icon = "💧";
-                } else if (normCat.includes('camper')) {
-                  badgeBg = "bg-blue-500/15 text-blue-400 border-blue-500/30";
-                  categoryText = "Parcheggio";
-                  icon = "🅿️";
-                }
-
-                return (
-                  <div
-                    key={place.id}
-                    onClick={() => centerAndPopPOI(place.lat, place.lng)}
-                    className="p-2 bg-slate-900/40 hover:bg-slate-800/60 border border-slate-800/60 rounded-xl transition-all duration-150 cursor-pointer flex flex-col gap-1 hover:border-slate-700"
-                  >
-                    <div className="flex items-start justify-between gap-1.5">
-                      <h4 className="font-bold text-[11px] text-slate-200 line-clamp-1 flex-1 flex items-center gap-1">
-                        <span className="shrink-0">{icon}</span>
-                        <span className="font-sans tracking-tight">{place.name}</span>
-                      </h4>
-                      <span className="text-[8px] shrink-0 font-bold font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
-                        a {minDistance.toFixed(1)} km
-                      </span>
-                    </div>
-                    
-                    {place.address && (
-                      <p className="text-[9px] text-slate-400 line-clamp-1 font-sans">{place.address}</p>
-                    )}
-                    
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full border ${badgeBg} font-sans uppercase tracking-wider`}>
-                        {categoryText}
-                      </span>
-                      {place.priceInfo && (
-                        <span className="text-[8px] text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-full font-bold font-sans">
-                          {place.priceInfo}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-
-        {/* Floating Right Map Controls (Music, Compass & Recenter) */}
-        <div className="absolute bottom-28 right-4 z-20 flex flex-col-reverse gap-3 pointer-events-none items-end">
-          {/* Recenter Button (bottom-most in the right stack if shown) */}
-          {!autoCenter && (
-            <button
-              type="button"
-              onClick={() => {
-                setAutoCenter(true);
-                const map = mapRef.current;
-                if (map) {
-                  let target: [number, number] = startLoc;
-                  if (isGPSEnabled && userLocation) {
-                    target = [userLocation.lat, userLocation.lng];
-                  } else {
-                    const curIdx = Math.min(simRouteIndex, routeCoordinates.length - 1);
-                    target = routeCoordinates[curIdx] || startLoc;
-                  }
-                  const targetBearing = (useCompass && deviceHeading !== null)
-                    ? deviceHeading
-                    : bearing;
-
-                  map.flyTo({
-                    center: [target[1], target[0]],
                     zoom: 17,
                     bearing: targetBearing,
                     pitch: 60,
@@ -3569,7 +3232,6 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               <Locate className="w-6 h-6" />
             </button>
           )}
-        </div>
 
           {/* Camper Cockpit Media Player Toggle Button */}
           <button
@@ -3737,15 +3399,15 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
         {/* Trip Planning Side Panel - 5km Proximity Camper Stops */}
         <div 
-          className={`absolute top-[45%] left-1/2 md:top-auto md:bottom-38 md:left-auto md:right-32 z-30 max-h-[calc(100vh-240px)] w-[288px] md:w-[306px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 pointer-events-auto ${
+          className={`absolute bottom-[170px] left-4 md:bottom-38 md:left-auto md:right-32 z-30 max-h-[calc(100vh-200px)] w-[300px] md:w-[320px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 pointer-events-auto ${
             isSidebarCollapsed 
-              ? 'opacity-0 scale-95 pointer-events-none -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0' 
-              : 'opacity-100 scale-100 pointer-events-auto -translate-x-1/2 -translate-y-1/2 md:translate-x-0 md:translate-y-0'
+              ? 'opacity-0 scale-95 pointer-events-none translate-y-3' 
+              : 'opacity-100 scale-100 pointer-events-auto translate-y-0'
           }`}
           id="navigator-settings-container"
         >
           {/* Header */}
-          <div className="px-3 py-2 bg-[#0d1527] border-b border-slate-800/80 flex items-center justify-between">
+          <div className="px-3 py-2.5 bg-[#0d1527] border-b border-slate-800/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Compass className="w-4 h-4 text-emerald-400" />
               <span className="text-[11px] font-black text-slate-100 uppercase tracking-wider">
@@ -3764,7 +3426,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           </div>
 
           {/* List Content */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[220px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 max-h-[340px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
             {/* Anti-Standby indicator */}
             <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between shadow-sm select-none">
               <div className="flex flex-col text-left">
@@ -3820,6 +3482,53 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 />
                 <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
               </label>
+            </div>
+
+            {/* Voce Navigatore: Auto / Femminile / Maschile */}
+            <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col gap-1.5 shadow-sm select-none">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-200 flex items-center gap-1">
+                  <Volume2 className="w-3 h-3 text-emerald-400" />
+                  Voce Guida GPS
+                </span>
+                <button
+                  type="button"
+                  onClick={() => speakSampleTts(settings?.ttsGender || 'auto')}
+                  className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                >
+                  Prova
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {(['auto', 'female', 'male'] as const).map((g) => {
+                  const currentG = settings?.ttsGender || 'auto';
+                  const isSel = currentG === g;
+                  const label = g === 'auto' ? '⚙️ Auto' : g === 'female' ? '♀️ Donna' : '♂️ Uomo';
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => {
+                        try {
+                          const saved = localStorage.getItem("camper_app_settings");
+                          const parsed = saved ? JSON.parse(saved) : {};
+                          parsed.ttsGender = g;
+                          localStorage.setItem("camper_app_settings", JSON.stringify(parsed));
+                          window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { ttsGender: g } }));
+                          speakSampleTts(g);
+                        } catch (_) {}
+                      }}
+                      className={`py-1 text-[9px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
+                        isSel
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                          : 'bg-slate-800/80 border-slate-700/80 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {loadingRoute ? (
@@ -3963,8 +3672,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           </div>
         )}
       </div>
-    </div>
-  )}
-</div>
+    )}
+  </div>
 );
 }

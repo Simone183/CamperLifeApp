@@ -49,6 +49,7 @@ import { CamperSecurityTab } from "./components/CamperSecurityTab";
 import { PantryShoppingTab } from "./components/PantryShoppingTab";
 import { MaintenanceLogTab } from "./components/MaintenanceLogTab";
 import { playAlertSound, playTapSound } from "./utils/soundHelper";
+import { applyTtsVoiceAndPitch } from "./utils/ttsHelper";
 import WorkLogTab from "./components/WorkLogTab";
 import SharedTripsTab from "./components/SharedTripsTab";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
@@ -1248,7 +1249,7 @@ export default function App() {
 
              window.speechSynthesis.cancel();
              const utterance = new SpeechSynthesisUtterance(cleanText);
-             utterance.lang = 'it-IT';
+             applyTtsVoiceAndPitch(utterance, settings.ttsGender || 'auto');
              window.speechSynthesis.speak(utterance);
            }
         }

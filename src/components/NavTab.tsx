@@ -7,6 +7,7 @@ import React from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { formatSpeed, parseDimToNumber, formatMeters } from '../unit-helpers';
 import { Place, VehicleDimensions } from '../types';
+import { applyTtsVoiceAndPitch } from '../utils/ttsHelper';
 import { Compass, Volume2, VolumeX, Play, Pause, AlertTriangle, ArrowUpRight, ArrowLeftRight, Navigation, RefreshCw, Eye, EyeOff, Search, Map, ShieldAlert, Check } from 'lucide-react';
 
 interface NavTabProps {
@@ -90,8 +91,8 @@ export default function NavTab({
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'it-IT';
       utterance.rate = 1.0;
+      applyTtsVoiceAndPitch(utterance, settings.ttsGender || 'auto');
       window.speechSynthesis.speak(utterance);
     }
   };

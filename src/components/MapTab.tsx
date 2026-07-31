@@ -1605,7 +1605,7 @@ export default function MapTab({
     setAddressSearchQuery(customPlace.name);
 
     // Imposta automaticamente il filtro prossimità e carica le strutture camper entro i 15km
-    mapMovedByUserRef.current = false;
+    mapMovedByUserRef.current = true;
     setActiveDistanceFilter("place");
     setFilterCenter({ lat, lng });
     autoLoadOSMForProximity(lat, lng);
@@ -1649,7 +1649,7 @@ export default function MapTab({
   const handleMapClick = (lat: number, lng: number) => {
     setClickedCoords({ lat, lng });
     setShowClickedPopup(true);
-    mapMovedByUserRef.current = false;
+    mapMovedByUserRef.current = true;
     setClickedPlaceName("Puntina Sulla Mappa");
     setClickedAddress(
       `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
@@ -2012,10 +2012,11 @@ export default function MapTab({
   const handleSelectAndFocus = (place: Place) => {
     setSelectedPlace(place);
     setMobileView("map");
+    mapMovedByUserRef.current = true;
     const map = mapRef.current;
     if (map) {
+      (map as any)._isProgrammatic = true;
       map.setView([place.lat, place.lng], 14);
-      mapMovedByUserRef.current = false;
     }
   };
 
@@ -2057,7 +2058,13 @@ export default function MapTab({
   React.useEffect(() => {
     if (isGPSEnabled && userLocation) {
       const activeMap = googleMapInstance || mapRef.current;
-      if (activeMap && !selectedPlace && !mapMovedByUserRef.current) {
+      if (
+        activeMap &&
+        !selectedPlace &&
+        !isMobileDetailsOpen &&
+        !showClickedPopup &&
+        !mapMovedByUserRef.current
+      ) {
         try {
           (activeMap as any)._isProgrammatic = true;
           const currentZoom = typeof activeMap.getZoom === "function" ? activeMap.getZoom() : null;
@@ -2068,7 +2075,7 @@ export default function MapTab({
         }
       }
     }
-  }, [userLocation, googleMapInstance, isGPSEnabled, selectedPlace]);
+  }, [userLocation, googleMapInstance, isGPSEnabled, selectedPlace, isMobileDetailsOpen, showClickedPopup]);
 
   const loadOsmObstaclesOnMap = async (lat: number, lng: number) => {
     if (!showOsmObstacles) return;
@@ -4114,10 +4121,13 @@ out center;`;
                         onClick={() => {
                           setSelectedPlace(place);
                           setIsMobileDetailsOpen(true);
-                          mapRef.current?.setView([Number(place.lat), Number(place.lng)], 13);
+                          mapMovedByUserRef.current = true;
+                          if (mapRef.current) {
+                            (mapRef.current as any)._isProgrammatic = true;
+                            mapRef.current.setView([Number(place.lat), Number(place.lng)], 13);
+                          }
                           setClickedCoords(null);
                           setShowClickedPopup(false);
-                          mapMovedByUserRef.current = false;
                         }}
                       >
                         <div className="flex flex-col items-center justify-center w-9 h-12">
@@ -4591,7 +4601,7 @@ out center;`;
                     onClick={async () => {
                       const lat = clickedCoords.lat;
                       const lng = clickedCoords.lng;
-                      mapMovedByUserRef.current = false;
+                      mapMovedByUserRef.current = true;
                       setActiveDistanceFilter("place");
                       setFilterCenter({ lat, lng });
                       setShowClickedPopup(false);
@@ -7981,7 +7991,7 @@ export function LeafletOfflineMap({
   const hasCenteredOnGPSOnceRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (userLocation && leafletMapInstance && !selectedPlace && !movedRef.current) {
+    if (userLocation && leafletMapInstance && !selectedPlace && !clickedCoords && !movedRef.current) {
       try {
         (leafletMapInstance as any)._isProgrammatic = true;
         const currentZoom = leafletMapInstance.getZoom();
@@ -7991,7 +8001,7 @@ export function LeafletOfflineMap({
         console.warn("[Leaflet GPS Centering] Failed to set center:", e);
       }
     }
-  }, [userLocation, leafletMapInstance, selectedPlace]);
+  }, [userLocation, leafletMapInstance, selectedPlace, clickedCoords]);
 
   const markersRef = React.useRef<L.Marker[]>([]);
 
@@ -8283,6 +8293,11 @@ export function LeafletOfflineMap({
       marker.on("click", () => {
         setSelectedPlace(place);
         setIsMobileDetailsOpen(true);
+        if (movedRef) movedRef.current = true;
+        if (leafletMapInstance) {
+          (leafletMapInstance as any)._isProgrammatic = true;
+          leafletMapInstance.setView([place.lat, place.lng], 13);
+        }
       });
 
       markersRef.current.push(marker);

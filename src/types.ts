@@ -71,6 +71,7 @@ export interface AppSettings {
   appPin?: string;
   mapEngine?: string; // "google" | "leaflet"
   ttsEnabled: boolean;
+  ttsGender?: 'auto' | 'female' | 'male';
 }
 
 export interface Place {
