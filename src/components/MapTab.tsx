@@ -3707,64 +3707,62 @@ out center;`;
             </button>
           </div>
 
-          <div className="grid grid-cols-5 gap-0.5 min-[370px]:gap-1 py-1 w-full flex-shrink-0">
+          <div className="flex items-center gap-1.5 py-1.5 overflow-x-auto no-scrollbar w-full flex-shrink-0 px-0.5">
             <button
               onClick={() => setSelectedCategory("all")}
-              className={`py-1.5 rounded-md text-[9px] min-[370px]:text-[10px] font-black transition-all cursor-pointer text-center px-0.5 select-none flex flex-col items-center justify-center leading-none ${
+              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
                 selectedCategory === "all"
-                  ? "bg-[#3E4A35] text-white shadow-xs"
-                  : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300"
+                  ? "bg-[#1C3D2B] text-white shadow-xs"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
               }`}
               title={`Tutti (${places.length})`}
             >
-              <span className="truncate w-full block">Tutti</span>
-              <span className="text-[7.5px] min-[370px]:text-[8px] opacity-80 mt-0.5 font-normal">
-                ({places.length})
-              </span>
-            </button>
-            <button
-              onClick={() => setSelectedCategory("area_sosta")}
-              className={`py-1.5 rounded-md text-[9px] min-[370px]:text-[10px] font-black transition-all cursor-pointer text-center px-0.5 select-none flex items-center justify-center leading-none ${
-                selectedCategory === "area_sosta"
-                  ? "bg-[#5A6B4E] text-white shadow-xs"
-                  : "bg-white text-[#3E4A35] border border-[#5A6B4E]/30 hover:bg-[#5A6B4E]/10"
-              }`}
-              title="Aree Sosta"
-            >
-              <span className="truncate w-full block">Soste</span>
+              <span>🔍 Tutti</span>
+              <span className="text-[9px] opacity-80">({places.length})</span>
             </button>
             <button
               onClick={() => setSelectedCategory("campeggio")}
-              className={`py-1.5 rounded-md text-[9px] min-[370px]:text-[10px] font-black transition-all cursor-pointer text-center px-0.5 select-none flex items-center justify-center leading-none ${
+              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
                 selectedCategory === "campeggio"
-                  ? "bg-[#3E4A35] text-white shadow-xs"
-                  : "bg-white text-[#3E4A35] border border-[#3E4A35]/30 hover:bg-[#3E4A35]/10"
+                  ? "bg-[#1C3D2B] text-white shadow-xs"
+                  : "bg-white text-[#1C3D2B] border border-[#1C3D2B]/30 hover:bg-[#1C3D2B]/10"
               }`}
               title="Campeggi"
             >
-              <span className="truncate w-full block">Camping</span>
+              <span>⛺ Camping</span>
+            </button>
+            <button
+              onClick={() => setSelectedCategory("area_sosta")}
+              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
+                selectedCategory === "area_sosta"
+                  ? "bg-[#1D5E85] text-white shadow-xs"
+                  : "bg-white text-[#1D5E85] border border-[#1D5E85]/30 hover:bg-[#1D5E85]/10"
+              }`}
+              title="Aree Sosta"
+            >
+              <span>🚐 Area sosta</span>
             </button>
             <button
               onClick={() => setSelectedCategory("camper_service")}
-              className={`py-1.5 rounded-md text-[9px] min-[370px]:text-[10px] font-black transition-all cursor-pointer text-center px-0.5 select-none flex items-center justify-center leading-none ${
+              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
                 selectedCategory === "camper_service"
-                  ? "bg-[#A45C40] text-white shadow-xs"
-                  : "bg-white text-[#A45C40] border border-[#A45C40]/30 hover:bg-[#A45C40]/10"
+                  ? "bg-[#C85E28] text-white shadow-xs"
+                  : "bg-white text-[#C85E28] border border-[#C85E28]/30 hover:bg-[#C85E28]/10"
               }`}
               title="Service"
             >
-              <span className="truncate w-full block">Service</span>
+              <span>🚰 Service</span>
             </button>
             <button
               onClick={() => setSelectedCategory("parcheggio_camper")}
-              className={`py-1.5 rounded-md text-[9px] min-[370px]:text-[10px] font-black transition-all cursor-pointer text-center px-0.5 select-none flex items-center justify-center leading-none ${
+              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
                 selectedCategory === "parcheggio_camper"
-                  ? "bg-sky-600 text-white shadow-xs"
-                  : "bg-white text-sky-700 border border-sky-300/60 hover:bg-sky-50"
+                  ? "bg-[#1E738B] text-white shadow-xs"
+                  : "bg-white text-[#1E738B] border border-[#1E738B]/30 hover:bg-[#1E738B]/10"
               }`}
               title="Parcheggi"
             >
-              <span className="truncate w-full block">Parcheggi</span>
+              <span>🅿️ Parcheggi</span>
             </button>
           </div>
         </div>

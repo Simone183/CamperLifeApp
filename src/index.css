@@ -10,30 +10,32 @@
 }
 
 :root {
-  --bg-app: #D1CDBF;
-  --bg-header: rgba(255, 255, 255, 0.85);
+  --bg-app: #FAF8F3;
+  --bg-header: rgba(250, 248, 243, 0.95);
   --bg-card: #ffffff;
-  --text-main: #2D2926;
-  --text-muted: #5A6B4E;
-  --border-main: rgba(62, 74, 53, 0.15);
-  --btn-secondary-bg: #E7EBDC;
-  --bg-widget: #F4F6F0;
-  --bg-glass: rgba(255, 255, 255, 0.85);
+  --text-main: #1C241D;
+  --text-muted: #4A5B47;
+  --border-main: rgba(28, 61, 43, 0.12);
+  --btn-secondary-bg: #EAECE4;
+  --bg-widget: #F2F4ED;
+  --bg-glass: rgba(255, 255, 255, 0.92);
+  --color-primary: #1C3D2B;
 }
 
 .dark {
   --bg-app: #0D110C; /* Deep Forest Night black */
-  --bg-header: rgba(19, 25, 18, 0.85);
+  --bg-header: rgba(19, 25, 18, 0.92);
   --bg-card: #161E14; /* Cozy dark moss card */
   --text-main: #ECF1EB; /* Warm green-white glow text */
   --text-muted: #86997F; /* Soft sage text shadow */
   --border-main: rgba(134, 153, 127, 0.2);
   --btn-secondary-bg: #222E1F;
   --bg-widget: #1B2419;
-  --bg-glass: rgba(22, 30, 20, 0.85);
+  --bg-glass: rgba(22, 30, 20, 0.88);
+  --color-primary: #2B573D;
 }
 
-/* Layer utility custom components if needed, or let's specify custom glassmorphism */
+/* Layer utility custom components */
 @utility glass-card {
   background: var(--bg-glass);
   backdrop-filter: blur(8px);
@@ -41,15 +43,15 @@
 }
 
 @utility accent-green {
-  background-color: #5A6B4E;
+  background-color: #4A5B47;
 }
 
 @utility accent-forest {
-  background-color: #3E4A35;
+  background-color: #1C3D2B;
 }
 
 @utility accent-terracotta {
-  background-color: #A45C40;
+  background-color: #E56B38;
 }
 
 body {

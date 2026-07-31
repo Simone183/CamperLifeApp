@@ -1136,6 +1136,7 @@ out center;`;
   const spokenPreavvisoRef = React.useRef<Record<number, boolean>>({});
   const spokenProssimitaRef = React.useRef<Record<number, boolean>>({});
   const hasShownOffRoadToastRef = React.useRef<boolean>(false);
+  const lastPeriodicStraightSpeechTimeRef = React.useRef<number>(0);
 
   // Speech Queue & State Management for smooth uninterrupted playback across long navigation sessions
   const speechQueueRef = React.useRef<{ text: string; priority: 'immediate' | 'advance' | 'info'; timestamp: number }[]>([]);
@@ -1937,6 +1938,7 @@ out center;`;
       spokenPreavvisoRef.current = {};
       spokenProssimitaRef.current = {};
       hasShownOffRoadToastRef.current = false;
+      lastPeriodicStraightSpeechTimeRef.current = Date.now();
     }
 
     // Determine the current user index on the route
@@ -2051,8 +2053,45 @@ out center;`;
 
           const immediateMessage = `Ora, ${rawAction}`;
           speakInstruction(immediateMessage, 'immediate');
+          lastPeriodicStraightSpeechTimeRef.current = Date.now();
           break; // Alert processed
         }
+      }
+    }
+
+    // STAGE 3: Reminder periodico ogni 4 minuti (240.000 ms) su rettilineo senza svolte imminenti (escluse le autostrade)
+    const now = Date.now();
+    if (now - lastPeriodicStraightSpeechTimeRef.current >= 240000) {
+      lastPeriodicStraightSpeechTimeRef.current = now;
+
+      const currentStepObj = directionsSequence[activeStepIndex] || directionsSequence[0];
+      const descText = (currentStepObj?.desc || "").toLowerCase();
+      const titleText = (currentStepObj?.title || "").toLowerCase();
+      const streetName = currentStepObj?.streetName || "";
+
+      // Controlla se ci troviamo su autostrada (esclusione esplicita come richiesto)
+      const isAutostrada = /autostrada|pedaggio|toll/i.test(descText) ||
+                           /autostrada|pedaggio|toll/i.test(titleText) ||
+                           /\bA[1-9][0-9]?\b/i.test(descText) ||
+                           /\bA[1-9][0-9]?\b/i.test(titleText) ||
+                           /\bA[1-9][0-9]?\b/i.test(streetName);
+
+      if (!isAutostrada) {
+        let roadLabel = "";
+        if (streetName) {
+          roadLabel = streetName;
+        } else if (currentStepObj?.desc) {
+          // Pulisci indicazioni di svolta o prefissi per estrarre il nome pulito della strada
+          roadLabel = currentStepObj.desc
+            .replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita|Continua su|Prosegui su)\s+/i, "")
+            .trim();
+        }
+
+        const speechMsg = roadLabel 
+          ? `Prosegui dritto su ${roadLabel}`
+          : "Prosegui dritto";
+
+        speakInstruction(speechMsg, 'info');
       }
     }
   }, [
@@ -3004,10 +3043,10 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           </div>
         </div>
       ) : (
-        <div className="flex-1 relative bg-transparent pointer-events-none">
+        <div className="flex-1 relative bg-transparent pointer-events-none z-30">
           {/* Top Preview Stats Bar or Active Directions HUD Overlay */}
           {isPreview ? (
-            <div className="absolute top-4 inset-x-0 mx-auto max-w-3xl z-10 px-4">
+            <div className="absolute top-4 inset-x-0 mx-auto max-w-3xl z-30 px-4">
               <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4 pointer-events-auto">
                 <div className="flex items-center gap-3 w-full lg:w-auto">
                   <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
@@ -3065,7 +3104,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               </div>
             </div>
           ) : (
-          <div className="absolute top-4 inset-x-0 mx-auto max-w-lg z-10 px-4 pointer-events-none">
+          <div className="absolute top-4 inset-x-0 mx-auto max-w-lg z-30 px-4 pointer-events-none">
             <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex items-center gap-3 sm:gap-4 pointer-events-auto">
               <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-2xl shrink-0">
                 {currentStepObj?.icon || "🛣️"}

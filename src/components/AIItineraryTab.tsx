@@ -28,6 +28,7 @@ import { Place, VehicleDimensions, PlaceCategory, Trip, AIItineraryResult, AIDay
 import { parseDimToNumber } from '../unit-helpers';
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import { exportAIItineraryToPDF } from '../utils/pdfGenerator';
 
 interface AIItineraryTabProps {
@@ -481,23 +482,39 @@ export default function AIItineraryTab({
 
   return (
     <div className="space-y-5 font-sans">
-      {/* Intro section */}
-      <div className="bg-[#222E1F] text-[#ECF1EB] p-5 rounded-2xl border border-[#3E4A35]/15 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-1.5 text-orange-200">
-            <Sparkles className="w-5 h-5 animate-pulse" />
-            <span className="text-[10px] uppercase font-black tracking-wider">Algoritmo di Navigazione Sagomata AI</span>
+      {/* Rolly Companion Top Header */}
+      <div className="bg-[#FAF8F3] dark:bg-[#131912] p-4.5 rounded-3xl border border-stone-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <CartoonCamperAvatar className="w-12 h-12 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-lg font-extrabold text-[#1C241D] dark:text-white tracking-tight leading-tight">
+                Rolly
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-tight">
+                Il tuo compagno di viaggio in camper ed intelligenza artificiale
+              </p>
+            </div>
           </div>
-          <h2 className="text-lg font-black mt-1">Generatore di Itinerari Personalizzato</h2>
-          <p className="text-xs text-[#86997F] mt-1 leading-relaxed max-w-xl">
-            Sfrutta l'intelligenza artificiale per tracciare itinerari su misura in base all'altezza ("{vehicleDimensions.height}m"), larghezza, peso del tuo camper e ai tuoi interessi.
-          </p>
+
+          <div className="flex items-center gap-2 bg-[#1C3D2B]/10 dark:bg-emerald-950/40 py-1.5 px-3 rounded-xl border border-[#1C3D2B]/20 text-xs max-w-full">
+            <Truck className="w-4 h-4 text-[#1C3D2B] dark:text-emerald-400 shrink-0" />
+            <span className="font-bold text-[#1C3D2B] dark:text-emerald-300 text-[11px] truncate max-w-[220px] sm:max-w-xs">
+              {vehicleDimensions.modelName || 'Camper'} ({vehicleDimensions.height}m h)
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 bg-[#1B2419] py-1.5 px-3 rounded-lg border border-[#86997F]/15 shrink-0 text-xs">
-          <Truck className="w-4 h-4 text-emerald-400" />
-          <div className="leading-tight">
-            <span className="block text-[10px] text-slate-400 font-medium">Veicolo Attivo:</span>
-            <span className="font-bold text-[#ECF1EB]">{vehicleDimensions.modelName || 'Configurato'} ({vehicleDimensions.height}m h)</span>
+
+        {/* Speech Bubble Greeting Card matching reference photo */}
+        <div className="bg-[#F5F2EA] dark:bg-[#1B2419] p-4 rounded-2xl border border-[#E5DFD3] dark:border-slate-800 flex gap-3.5 items-start">
+          <CartoonCamperAvatar className="w-11 h-11 shrink-0 mt-0.5" />
+          <div className="space-y-1 text-xs text-slate-800 dark:text-slate-200">
+            <p className="leading-relaxed font-medium">
+              Ehi, Camperista! Ti aiuto a tracciare percorsi perfetti, verificare sottopassi e scoprire soste mozzafiato escludendo barriere superiori a <strong>{vehicleDimensions.height}m</strong>. Dove ti piacerebbe andare?
+            </p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
+              Assistente attivo gratuitamente per itinerari illimitati · <span className="text-emerald-700 dark:text-emerald-400 font-bold">CamperLife App AI</span>
+            </p>
           </div>
         </div>
       </div>

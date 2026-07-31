@@ -267,7 +267,7 @@ export default function NearbyPlacesWidget({
         </div>
       </div>
 
-      {/* 3. "Chiedi a Tripper" / "Assistente AI Camper" Card (Exact match for uploaded screenshot) */}
+      {/* 3. "Chiedi a Rolly" / "Assistente AI Camper" Card */}
       <div
         onClick={() => {
           const promptText = `Cosa c'è di interessante da fare e dove mangiare specialità tipiche nei dintorni di ${placeName}? Consigli per camperisti.`;

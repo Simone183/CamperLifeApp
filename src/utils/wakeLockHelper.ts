@@ -5,6 +5,7 @@
 let wakeLockSentinel: any = null;
 let fallbackVideoElement: HTMLVideoElement | null = null;
 let isRequested = false;
+let heartbeatInterval: any = null;
 
 // Tiny 1x1 blank silent MP4 video data URI to keep screen awake on iOS Safari / WebViews where Screen Wake Lock API might fail or be restricted
 const SILENT_VIDEO_DATA_URI =
@@ -13,16 +14,17 @@ const SILENT_VIDEO_DATA_URI =
 async function requestWakeLockNative(): Promise<boolean> {
   if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (navigator as any).wakeLock) {
     try {
-      if (wakeLockSentinel) {
-        try { await wakeLockSentinel.release(); } catch (e) {}
+      if (wakeLockSentinel && !wakeLockSentinel.released) {
+        return true;
       }
       wakeLockSentinel = await (navigator as any).wakeLock.request('screen');
       wakeLockSentinel.addEventListener('release', () => {
         wakeLockSentinel = null;
         if (isRequested) {
+          // Immediately schedule re-acquisition
           setTimeout(() => {
             if (isRequested) requestWakeLockNative();
-          }, 1000);
+          }, 500);
         }
       });
       return true;
@@ -53,6 +55,25 @@ function startFallbackVideo() {
       video.style.zIndex = '-9999';
       video.src = SILENT_VIDEO_DATA_URI;
       video.muted = true;
+      video.loop = true;
+
+      // Event listeners to force replay if OS pauses video after long standby
+      video.addEventListener('pause', () => {
+        if (isRequested && fallbackVideoElement) {
+          fallbackVideoElement.play().catch(() => {});
+        }
+      });
+      video.addEventListener('ended', () => {
+        if (isRequested && fallbackVideoElement) {
+          fallbackVideoElement.currentTime = 0;
+          fallbackVideoElement.play().catch(() => {});
+        }
+      });
+      video.addEventListener('stalled', () => {
+        if (isRequested && fallbackVideoElement) {
+          fallbackVideoElement.play().catch(() => {});
+        }
+      });
 
       document.body.appendChild(video);
       fallbackVideoElement = video;
@@ -84,6 +105,26 @@ function stopFallbackVideo() {
 }
 
 let handleVisibilityChange: (() => void) | null = null;
+let handleFocus: (() => void) | null = null;
+
+function runHeartbeat() {
+  if (!isRequested) return;
+  
+  // Re-acquire native wake lock if lost or released
+  if (!wakeLockSentinel || wakeLockSentinel.released) {
+    requestWakeLockNative();
+  }
+
+  // Ensure fallback video continues playing continuously
+  if (fallbackVideoElement) {
+    if (fallbackVideoElement.paused || fallbackVideoElement.ended) {
+      fallbackVideoElement.currentTime = 0;
+      fallbackVideoElement.play().catch(() => {});
+    }
+  } else {
+    startFallbackVideo();
+  }
+}
 
 export async function requestScreenWakeLock(): Promise<boolean> {
   isRequested = true;
@@ -92,12 +133,26 @@ export async function requestScreenWakeLock(): Promise<boolean> {
     handleVisibilityChange = async () => {
       if (isRequested && document.visibilityState === 'visible') {
         const success = await requestWakeLockNative();
+        startFallbackVideo();
         if (!success) {
           startFallbackVideo();
         }
       }
     };
+    handleFocus = async () => {
+      if (isRequested) {
+        await requestWakeLockNative();
+        startFallbackVideo();
+      }
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handleFocus);
+  }
+
+  // Start continuous 5-second keep-alive heartbeat while navigation is active
+  if (!heartbeatInterval) {
+    heartbeatInterval = setInterval(runHeartbeat, 5000);
   }
 
   const nativeSuccess = await requestWakeLockNative();
@@ -109,9 +164,21 @@ export async function requestScreenWakeLock(): Promise<boolean> {
 export async function releaseScreenWakeLock() {
   isRequested = false;
 
-  if (handleVisibilityChange && typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    handleVisibilityChange = null;
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
+  if (typeof document !== 'undefined') {
+    if (handleVisibilityChange) {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      handleVisibilityChange = null;
+    }
+    if (handleFocus) {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handleFocus);
+      handleFocus = null;
+    }
   }
 
   if (wakeLockSentinel) {

@@ -68,6 +68,7 @@ let welcomeSpeechTriggered = false;
 import {
   Map,
   Compass,
+  Route,
   CheckSquare,
   ClipboardList,
   Calendar,
@@ -2828,7 +2829,7 @@ out center;`;
   return (
     <div
       id="root-container"
-      className="h-[100dvh] overflow-hidden bg-[#D1CDBF] flex flex-col font-sans text-[#2D2926] selection:bg-[#5A6B4E]/30 selection:text-[#2D2926] pb-[50px] md:pb-[52px]"
+      className="h-[100dvh] overflow-hidden bg-[#D1CDBF] flex flex-col font-sans text-[#2D2926] selection:bg-[#5A6B4E]/30 selection:text-[#2D2926] pb-[58px] md:pb-0"
     >
       {showTermsModal && (
         <div className="fixed inset-0 bg-[#D1CDBF] z-[10000] p-6 flex flex-col items-center justify-center space-y-6">
@@ -3125,7 +3126,7 @@ out center;`;
         className={`flex-1 flex flex-col max-w-7xl w-full mx-auto md:px-8 ${
           activeTab === "map_nav"
             ? "p-0 md:pt-4 md:pb-4 overflow-hidden"
-            : "px-4 sm:px-6 lg:px-8 pt-4 pb-2 md:pb-4 overflow-y-auto overflow-x-hidden"
+            : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
         }`}
       >
         {/* Render Category 1: Mappa & Navigatore with sub segmentation */}
@@ -5268,10 +5269,10 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
         )}
       </main>
 
-      {/* Persistent Sticky Bottom Navigation Bar with EXACTLY THREE icons/tabs optimized for mobile hand fingers */}
+      {/* Persistent Sticky Bottom Navigation Bar styled like the reference app design */}
       {hasAcceptedTerms && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 h-[50px] px-0.5 flex justify-around items-center md:hidden z-50 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-          {/* Tab 1: Mappa & Navigatore */}
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FAF8F3]/95 dark:bg-[#131912]/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 h-[58px] px-1 flex justify-around items-center md:hidden z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          {/* Tab 1: MAPPA */}
           <button
             onClick={() => {
               playTapSound();
@@ -5280,19 +5281,19 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
             }}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all ${
               activeTab === "map_nav"
-                ? "text-[#3E4A35] font-black"
-                : "text-[#2D2926]/50 font-semibold"
+                ? "text-[#1C3D2B] dark:text-emerald-400 font-black"
+                : "text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-700"
             }`}
           >
             <Compass
-              className={`w-5 h-5 mb-0.5 ${activeTab === "map_nav" ? "text-[#3E4A35]" : "text-slate-400"}`}
+              className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "map_nav" ? "text-[#1C3D2B] dark:text-emerald-400 scale-110" : "text-slate-400"}`}
             />
-            <span className="text-[9px] tracking-tight leading-none">
-              {appLang === 'en' ? 'Map & Nav' : appLang === 'fr' ? 'Carte & Nav' : 'Mappa & Nav'}
+            <span className="text-[10px] tracking-tight leading-none uppercase font-bold">
+              {appLang === 'en' ? 'Map' : appLang === 'fr' ? 'Carte' : 'MAPPA'}
             </span>
           </button>
 
-          {/* Tab 2: Diario (Creare viaggi, spese, foto, ecc) */}
+          {/* Tab 2: DIARIO */}
           <button
             onClick={() => {
               playTapSound();
@@ -5300,22 +5301,22 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
             }}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
               activeTab === "diary"
-                ? "text-[#3E4A35] font-black"
-                : "text-[#2D2926]/50 font-semibold"
+                ? "text-[#1C3D2B] dark:text-emerald-400 font-black"
+                : "text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-700"
             }`}
           >
             <BookOpen
-              className={`w-5 h-5 mb-0.5 ${activeTab === "diary" ? "text-[#3E4A35]" : "text-slate-400"}`}
+              className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "diary" ? "text-[#1C3D2B] dark:text-emerald-400 scale-110" : "text-slate-400"}`}
             />
-            <span className="text-[9px] tracking-tight leading-none">
-              {appLang === 'en' ? 'Trip Diary' : appLang === 'fr' ? 'Journal' : 'Diario Viaggio'}
+            <span className="text-[10px] tracking-tight leading-none uppercase font-bold">
+              {appLang === 'en' ? 'Diary' : appLang === 'fr' ? 'Journal' : 'DIARIO'}
             </span>
             {hasActiveTrip && (
-              <span className="absolute top-1.5 right-6 w-1.5 h-1.5 bg-[#5A6B4E] rounded-full animate-ping" />
+              <span className="absolute top-1.5 right-4 w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
             )}
           </button>
 
-          {/* Tab 3: Impostazioni al cui interno c'è sagoma, chat, checklist, ecc */}
+          {/* Tab 3: STRUMENTI */}
           <button
             onClick={() => {
               playTapSound();
@@ -5323,19 +5324,19 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
               setSettingsSubTab("hub");
             }}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
-              activeTab === "settings_tools"
-                ? "text-[#3E4A35] font-black"
-                : "text-[#2D2926]/50 font-semibold"
+              activeTab === "settings_tools" && settingsSubTab !== "ai_itinerary"
+                ? "text-[#1C3D2B] dark:text-emerald-400 font-black"
+                : "text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-700"
             }`}
           >
             <Sliders
-              className={`w-5 h-5 mb-0.5 ${activeTab === "settings_tools" ? "text-[#3E4A35]" : "text-slate-400"}`}
+              className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "settings_tools" && settingsSubTab !== "ai_itinerary" ? "text-[#1C3D2B] dark:text-emerald-400 scale-110" : "text-slate-400"}`}
             />
-            <span className="text-[9px] tracking-tight leading-none">
-              {appLang === 'en' ? 'Tools & Settings' : appLang === 'fr' ? 'Outils & Paramètres' : 'Strumenti & Imp'}
+            <span className="text-[10px] tracking-tight leading-none uppercase font-bold">
+              {appLang === 'en' ? 'Tools' : appLang === 'fr' ? 'Outils' : 'STRUMENTI'}
             </span>
             {totalWarnings > 0 && (
-              <span className="absolute top-1 right-6 bg-[#A45C40] text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white">
+              <span className="absolute top-1 right-3.5 bg-[#E56B38] text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
                 {totalWarnings}
               </span>
             )}
