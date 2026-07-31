@@ -990,7 +990,7 @@ export default function CamperMediaPlayer({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ duration: 0.2 }}
-            className="absolute top-[45%] left-1/2 -translate-x-1/2 -translate-y-1/2 md:top-auto md:bottom-38 md:left-auto md:right-32 md:translate-x-0 md:translate-y-0 z-30 w-[288px] md:w-[306px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
+            className="absolute bottom-[170px] right-4 md:bottom-38 md:left-auto md:right-32 z-30 w-[300px] md:w-[320px] bg-[#070c17]/95 backdrop-blur-md border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
             id="camper-media-player-container"
           >
             {/* Header */}

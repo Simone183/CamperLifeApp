@@ -886,7 +886,7 @@ async function startServer() {
   // AI Itinerary Generator endpoint
   app.post("/api/generate-itinerary", async (req, res) => {
     try {
-      const { startLocation, endLocation, duration, interests, travelStyle, vehicleType, vehicleDims } = req.body;
+      const { startLocation, endLocation, waypoints, duration, interests, travelStyle, vehicleType, vehicleDims } = req.body;
 
       if (!startLocation) {
         return res.status(400).json({ error: "Località di partenza obbligatoria." });
@@ -896,21 +896,25 @@ async function startServer() {
       const activeInterests = Array.isArray(interests) && interests.length > 0 ? interests.join(", ") : "Natura, Cultura, Enogastronomia";
       const style = travelStyle || "Bilanciato (ritmo medio)";
       const endDestStr = endLocation && endLocation.trim() !== "" ? ` e con destinazione finale a "${endLocation}"` : "";
-      
+      const validWaypoints = Array.isArray(waypoints) 
+        ? waypoints.map((w: any) => typeof w === 'string' ? w.trim() : '').filter((w: string) => w.length > 0)
+        : [];
+      const waypointsStr = validWaypoints.length > 0 ? ` passando obbligatoriamente per le seguenti tappe intermedie: ${validWaypoints.map(w => `"${w}"`).join(", ")}` : "";
+
       const vProps = vehicleDims ? `Lunghezza: ${vehicleDims.length}m, Larghezza: ${vehicleDims.width}m, Altezza: ${vehicleDims.height}m` : "Dimensioni standard camper";
       const vType = vehicleType || "Mansardato";
 
       const systemInstruction = 
         "Sei 'CamperLifeApp AI', una guida turistica esperta specializzata in viaggi itineranti in camper. " +
-        "Il tuo compito è generare un itinerario in camper realistico, entusiasmante e sicuro, partendo dalla località richiesta e terminando nella località specificata (se presente, altrimenti proponi un itinerario circolare o aperto). " +
+        "Il tuo compito è generare un itinerario in camper realistico, entusiasmante e sicuro, partendo dalla località richiesta, toccando tutte le tappe intermedie inserite dall'utente (se presenti) e terminando nella località specificata (se presente, altrimenti proponi un itinerario circolare o aperto). " +
         "Fornisci consigli specifici per i camperisti (ad esempio strade strette da evitare se il mezzo è alto, aree sosta consigliate, camper service, facilità di manovra). " +
         "Qualsiasi stima del tempo di guida/al volante complessivo (campo 'totalDrivingTime') o dei singoli segmenti (campo 'drivingSegment') deve essere calcolata applicando una maggiorazione fissa del 15% rispetto ai tempi standard di un'autovettura (per tenere conto del ritmo ridotto del camper e delle andature più prudenti). " +
         "Cerca di stimare delle coordinate lat/lng realistiche in Italia o in Europa per i punti di sosta di ciascun giorno, in modo che possano essere disegnate su una mappa di sosta Leaflet. " +
         "Compila interamente tutti i campi richiesti in lingua italiana.";
 
-      const prompt = `Genera un itinerario di viaggio in camper di ${numDays} giorni con partenza da "${startLocation}"${endDestStr}.
+      const prompt = `Genera un itinerario di viaggio in camper di ${numDays} giorni con partenza da "${startLocation}"${waypointsStr}${endDestStr}.
 Dettagli di viaggio richiesti:
-- Interessi principali: ${activeInterests}
+${validWaypoints.length > 0 ? `- Tappe intermedie richieste dall'utente: ${validWaypoints.join(" -> ")}\n` : ""}- Interessi principali: ${activeInterests}
 - Stile di viaggio: ${style}
 - Tipologia Mezzo: ${vType}
 - Dimensioni veicolo: ${vProps}

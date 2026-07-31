@@ -270,11 +270,19 @@ export interface AIDayStop {
 }
 
 export interface AIItineraryResult {
+  id?: string;
   title: string;
   description: string;
   totalKm: string;
   totalDrivingTime: string;
   days: AIDayStop[];
+  createdAt?: string;
+  startLocation?: string;
+  endLocation?: string;
+  waypoints?: string[];
+  duration?: number;
+  travelStyle?: string;
+  interests?: string[];
 }
 
 export interface Trip {

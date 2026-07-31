@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import TripVideoShareModal from "./TripVideoShareModal";
 import { exportAIItineraryToPDF } from "../utils/pdfGenerator";
+import NearbyPlacesWidget from "./NearbyPlacesWidget";
 
 interface TripRouteMapProps {
   trip: Trip;
@@ -1413,6 +1414,37 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
                                 {day.camperTips}
                               </p>
                             </div>
+                          </div>
+                        )}
+
+                        {/* Google Places / Nearby Ristoranti & Attività */}
+                        {day.stopCoordinate && (
+                          <div className="pt-2 border-t border-slate-100">
+                            <NearbyPlacesWidget
+                              lat={day.stopCoordinate.lat}
+                              lng={day.stopCoordinate.lng}
+                              placeName={day.stopPlaceName || day.title || 'questa tappa'}
+                              onNavigateToPlace={(p) => {
+                                if (onNavigateToPlace) {
+                                  onNavigateToPlace({
+                                    id: `poi_${Date.now()}`,
+                                    name: p.name,
+                                    category: 'hidden_gem',
+                                    lat: p.lat,
+                                    lng: p.lng,
+                                    address: '',
+                                    priceInfo: 'Punto di interesse',
+                                    priceEuro: 0,
+                                    rating: 4.8,
+                                    imageUrl: p.photoUrl || '',
+                                    source: 'user',
+                                    facilities: [],
+                                    reviews: [],
+                                  });
+                                }
+                              }}
+                              onNavigateToAIItinerary={onNavigateToAIItinerary}
+                            />
                           </div>
                         )}
                       </div>

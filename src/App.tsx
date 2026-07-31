@@ -3670,7 +3670,8 @@ out center;`;
                   {/* Category Itinerari */}
                   {(toolsCategory === "all" || toolsCategory === "itinerary") &&
                     (dashboardSettings.showAIItinerary ||
-                      dashboardSettings.showFavorites) && (
+                      dashboardSettings.showFavorites ||
+                      dashboardSettings.showEvents) && (
                       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/50 dark:border-slate-700 shadow-xs overflow-hidden">
                         <div className="bg-slate-50/70 dark:bg-slate-700/50 border-b border-indigo-50 dark:border-slate-700 px-4.5 py-2.5 flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 dark:text-slate-300 tracking-widest flex items-center gap-1.5">
@@ -3736,6 +3737,30 @@ out center;`;
                                 </span>
                                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
                               </div>
+                            </div>
+                          )}
+
+                          {/* Eventi Camper */}
+                          {dashboardSettings.showEvents && (
+                            <div
+                              onClick={() => setSettingsSubTab("events")}
+                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
+                            >
+                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
+                                <div className="p-2.5 rounded-xl shrink-0 bg-yellow-50 text-yellow-700 border border-yellow-100 group-hover:scale-105 transition-transform">
+                                  <CloudSun className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
+                                    Eventi Camper
+                                  </h4>
+                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                    Fiere, raduni ed eventi dedicati al mondo
+                                    del plein air.
+                                  </p>
+                                </div>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
                             </div>
                           )}
                         </div>
@@ -3887,8 +3912,7 @@ out center;`;
                   {/* Category 4: Community */}
                   {(toolsCategory === "all" || toolsCategory === "community") &&
                     (dashboardSettings.showCommunity ||
-                      dashboardSettings.showSharedTrips ||
-                      dashboardSettings.showEvents) && (
+                      dashboardSettings.showSharedTrips) && (
                       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/50 dark:border-slate-700 shadow-xs overflow-hidden mb-6">
                         <div className="bg-slate-50/70 dark:bg-slate-700/50 border-b border-stone-100 dark:border-slate-700 px-4.5 py-2.5 flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 dark:text-slate-300 tracking-widest flex items-center gap-1.5">
@@ -3942,30 +3966,6 @@ out center;`;
                                   <p className="text-xs text-slate-400 mt-0.5 truncate">
                                     Esplora gli itinerari condivisi dalla
                                     community.
-                                  </p>
-                                </div>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                            </div>
-                          )}
-
-                          {/* Eventi (added to community) */}
-                          {dashboardSettings.showEvents && (
-                            <div
-                              onClick={() => setSettingsSubTab("events")}
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-yellow-50 text-yellow-700 border border-yellow-100 group-hover:scale-105 transition-transform">
-                                  <CloudSun className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Eventi Camper
-                                  </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
-                                    Fiere, raduni ed eventi dedicati al mondo
-                                    del plein air.
                                   </p>
                                 </div>
                               </div>

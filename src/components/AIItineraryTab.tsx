@@ -18,10 +18,15 @@ import {
   Map as MapIcon,
   FileDown,
   FileText,
+  Trash2,
+  FolderHeart,
+  Eye,
+  Calendar,
+  XCircle,
 } from 'lucide-react';
-import { Place, VehicleDimensions, PlaceCategory, Trip } from '../types';
+import { Place, VehicleDimensions, PlaceCategory, Trip, AIItineraryResult, AIDayStop } from '../types';
 import { parseDimToNumber } from '../unit-helpers';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { exportAIItineraryToPDF } from '../utils/pdfGenerator';
 
@@ -34,29 +39,6 @@ interface AIItineraryTabProps {
   trips?: Trip[];
   setTrips?: (trips: Trip[]) => void;
   onNavigateToTripPlanner?: (tripId: string) => void;
-}
-
-interface AIDayStop {
-  dayNumber: number;
-  title: string;
-  description: string;
-  stopPlaceName: string;
-  drivingSegment: string;
-  activities: string[];
-  camperTips: string;
-  stopCoordinate: {
-    lat: number;
-    lng: number;
-    label: string;
-  };
-}
-
-interface AIItineraryResult {
-  title: string;
-  description: string;
-  totalKm: string;
-  totalDrivingTime: string;
-  days: AIDayStop[];
 }
 
 export default function AIItineraryTab({ 
@@ -72,15 +54,34 @@ export default function AIItineraryTab({
   // Input Form States
   const [startLocation, setStartLocation] = React.useState('');
   const [endLocation, setEndLocation] = React.useState('');
+  const [waypoints, setWaypoints] = React.useState<string[]>([]);
+  const [newWaypoint, setNewWaypoint] = React.useState('');
   const [duration, setDuration] = React.useState(3);
-  const [interests, setInterests] = React.useState<string[]>(['nature', 'food']);
+  const [interests, setInterests] = React.useState<string[]>(['Natura e Montagna', 'Enogastronomia']);
   const [travelStyle, setTravelStyle] = React.useState('Scenico (ritmo rilassato)');
+
+  const handleAddWaypoint = () => {
+    const trimmed = newWaypoint.trim();
+    if (!trimmed) return;
+    if (waypoints.some(w => w.toLowerCase() === trimmed.toLowerCase())) {
+      setNewWaypoint('');
+      return;
+    }
+    setWaypoints(prev => [...prev, trimmed]);
+    setNewWaypoint('');
+  };
+
+  const handleRemoveWaypoint = (index: number) => {
+    setWaypoints(prev => prev.filter((_, idx) => idx !== index));
+  };
   
   // App States
   const [loading, setLoading] = React.useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<AIItineraryResult | null>(null);
+  const [savedItineraries, setSavedItineraries] = React.useState<AIItineraryResult[]>([]);
+  const [showSavedModal, setShowSavedModal] = React.useState(false);
 
   // Export states
   const [showExportModal, setShowExportModal] = React.useState(false);
@@ -171,26 +172,100 @@ export default function AIItineraryTab({
     );
   };
 
-  // Load itinerary from Firestore on mount/user change
-  React.useEffect(() => {
-    if (currentUser?.email) {
-      const fetchItinerary = async () => {
-        const docRef = doc(db, 'users', currentUser.email!.toLowerCase(), 'itineraries', 'current');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setResult(docSnap.data() as AIItineraryResult);
+  // Load itineraries from Firestore and LocalStorage
+  const loadAllItineraries = React.useCallback(async () => {
+    let list: AIItineraryResult[] = [];
+
+    // 1. Try local storage saved itineraries
+    try {
+      const localSaved = localStorage.getItem('camper_ai_saved_itineraries');
+      if (localSaved) {
+        const parsed = JSON.parse(localSaved);
+        if (Array.isArray(parsed)) {
+          list = parsed;
         }
-      };
-      fetchItinerary();
-    } else {
-        const saved = localStorage.getItem('camper_ai_itinerary_result');
-        if (saved) {
-            setResult(JSON.parse(saved));
-        }
+      }
+    } catch (e) {
+      console.error("Errore lettura local itineraries", e);
     }
+
+    // 2. Try single legacy itinerary if not present in list
+    try {
+      const singleLegacy = localStorage.getItem('camper_ai_itinerary_result');
+      if (singleLegacy) {
+        const parsedLegacy = JSON.parse(singleLegacy) as AIItineraryResult;
+        if (parsedLegacy && parsedLegacy.title) {
+          const legacyId = parsedLegacy.id || `itinerary_legacy_${parsedLegacy.title.replace(/\s+/g, '_')}`;
+          const exists = list.some(item => item.id === legacyId || item.title === parsedLegacy.title);
+          if (!exists) {
+            list.unshift({ 
+              ...parsedLegacy, 
+              id: legacyId, 
+              createdAt: parsedLegacy.createdAt || new Date().toISOString() 
+            });
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. Try Firestore if user logged in
+    if (currentUser?.email) {
+      try {
+        const email = currentUser.email.toLowerCase();
+        const docRefCurrent = doc(db, 'users', email, 'itineraries', 'current');
+        const docSnapCurrent = await getDoc(docRefCurrent);
+        if (docSnapCurrent.exists()) {
+          const currentData = docSnapCurrent.data() as AIItineraryResult;
+          const currentId = currentData.id || 'itinerary_legacy_current';
+          const exists = list.some(i => i.id === currentId || i.title === currentData.title);
+          if (!exists) {
+            list.unshift({
+              ...currentData,
+              id: currentId,
+              createdAt: currentData.createdAt || new Date().toISOString()
+            });
+          }
+        }
+
+        // Fetch user itineraries collection
+        const itinerariesColl = collection(db, 'users', email, 'itineraries');
+        const querySnap = await getDocs(itinerariesColl);
+        querySnap.forEach((docSnap) => {
+          if (docSnap.id === 'current') return;
+          const data = docSnap.data() as AIItineraryResult;
+          const docId = docSnap.id;
+          const item: AIItineraryResult = {
+            ...data,
+            id: data.id || docId,
+            createdAt: data.createdAt || new Date().toISOString()
+          };
+          const idx = list.findIndex(i => i.id === item.id || (i.title === item.title && i.days?.length === item.days?.length));
+          if (idx >= 0) {
+            list[idx] = item;
+          } else {
+            list.push(item);
+          }
+        });
+      } catch (err) {
+        console.error("Errore caricamento itinerari da Firestore:", err);
+      }
+    }
+
+    // Ensure unique IDs
+    list = list.map((item, idx) => ({
+      ...item,
+      id: item.id || `itinerary_${Date.now()}_${idx}`
+    }));
+
+    setSavedItineraries(list);
+    localStorage.setItem('camper_ai_saved_itineraries', JSON.stringify(list));
   }, [currentUser]);
 
-  // Cycle through loading messages to provide the ultimate contextual wait experience
+  React.useEffect(() => {
+    loadAllItineraries();
+  }, [loadAllItineraries]);
+
+  // Cycle through loading messages
   React.useEffect(() => {
     let interval: NodeJS.Timeout;
     if (loading) {
@@ -237,6 +312,7 @@ export default function AIItineraryTab({
         body: JSON.stringify({
           startLocation,
           endLocation,
+          waypoints,
           duration,
           interests,
           travelStyle,
@@ -256,19 +332,42 @@ export default function AIItineraryTab({
 
       const data = await response.json();
       if (data.success && data.itinerary) {
-        setResult(data.itinerary);
-        
+        const newId = `itinerary_ai_${Date.now()}`;
+        const newItinerary: AIItineraryResult = {
+          ...data.itinerary,
+          id: newId,
+          createdAt: new Date().toISOString(),
+          startLocation,
+          endLocation,
+          waypoints: [...waypoints],
+          duration,
+          travelStyle,
+          interests
+        };
+
+        setResult(newItinerary);
+
+        const updatedSaved = [newItinerary, ...savedItineraries.filter(i => i.id !== newId)];
+        setSavedItineraries(updatedSaved);
+        localStorage.setItem('camper_ai_saved_itineraries', JSON.stringify(updatedSaved));
+        localStorage.setItem('camper_ai_itinerary_result', JSON.stringify(newItinerary));
+
         // Save to Firestore if user is logged in
         if (currentUser?.email) {
-            const docRef = doc(db, 'users', currentUser.email.toLowerCase(), 'itineraries', 'current');
-            await setDoc(docRef, data.itinerary);
+          try {
+            const email = currentUser.email.toLowerCase();
+            const docRef = doc(db, 'users', email, 'itineraries', newId);
+            await setDoc(docRef, newItinerary);
+
+            const docRefCurrent = doc(db, 'users', email, 'itineraries', 'current');
+            await setDoc(docRefCurrent, newItinerary);
+          } catch (e) {
+            console.error("Errore salvataggio Firestore:", e);
+          }
         }
         
-        localStorage.setItem('camper_ai_itinerary_result', JSON.stringify(data.itinerary));
-        
-        // Fire custom event to show a beautiful toast
         window.dispatchEvent(new CustomEvent('show-toast', { 
-          detail: { message: "✨ Itinerario '" + data.itinerary.title + "' generato con successo!" } 
+          detail: { message: "✨ Itinerario '" + newItinerary.title + "' generato e salvato nei tuoi Itinerari!" } 
         }));
       } else {
         throw new Error("Formato risposta itinerario non valido.");
@@ -282,7 +381,6 @@ export default function AIItineraryTab({
   };
 
   const handleAddStopToMap = (stop: AIDayStop) => {
-    // Check if place is already added to avoid duplicates
     const isAdded = savedPlaces.some(p => 
       Number(p.lat).toFixed(4) === Number(stop.stopCoordinate.lat).toFixed(4) && 
       Number(p.lng).toFixed(4) === Number(stop.stopCoordinate.lng).toFixed(4)
@@ -338,22 +436,51 @@ export default function AIItineraryTab({
     }
   };
 
-  const clearCurrentItinerary = async () => {
-    if (confirm("Vuoi rimuovere l'itinerario corrente e crearne uno nuovo?")) {
-      setResult(null);
-      
-      // Delete from Firestore if user is logged in
-      if (currentUser?.email) {
-        const docRef = doc(db, 'users', currentUser.email.toLowerCase(), 'itineraries', 'current');
+  const handleDeleteItinerary = async (itinerary: AIItineraryResult, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!itinerary.id) return;
+    if (!confirm(`Sei sicuro di voler eliminare l'itinerario "${itinerary.title}"?`)) return;
+
+    const targetId = itinerary.id;
+    const updated = savedItineraries.filter(i => i.id !== targetId);
+    setSavedItineraries(updated);
+    localStorage.setItem('camper_ai_saved_itineraries', JSON.stringify(updated));
+
+    if (currentUser?.email) {
+      try {
+        const docRef = doc(db, 'users', currentUser.email.toLowerCase(), 'itineraries', targetId);
         await deleteDoc(docRef);
+      } catch (err) {
+        console.error("Errore eliminazione Firestore:", err);
       }
-      
-      localStorage.removeItem('camper_ai_itinerary_result');
     }
+
+    if (result?.id === targetId || result?.title === itinerary.title) {
+      if (updated.length > 0) {
+        setResult(updated[0]);
+        localStorage.setItem('camper_ai_itinerary_result', JSON.stringify(updated[0]));
+      } else {
+        setResult(null);
+        localStorage.removeItem('camper_ai_itinerary_result');
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('show-toast', {
+      detail: { message: `🗑️ Itinerario "${itinerary.title}" eliminato.` }
+    }));
+  };
+
+  const handleSelectItinerary = (itinerary: AIItineraryResult) => {
+    setResult(itinerary);
+    setShowSavedModal(false);
+    localStorage.setItem('camper_ai_itinerary_result', JSON.stringify(itinerary));
+    window.dispatchEvent(new CustomEvent('show-toast', {
+      detail: { message: `📍 Caricato itinerario: "${itinerary.title}"` }
+    }));
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 font-sans">
       {/* Intro section */}
       <div className="bg-[#222E1F] text-[#ECF1EB] p-5 rounded-2xl border border-[#3E4A35]/15 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -363,7 +490,7 @@ export default function AIItineraryTab({
           </div>
           <h2 className="text-lg font-black mt-1">Generatore di Itinerari Personalizzato</h2>
           <p className="text-xs text-[#86997F] mt-1 leading-relaxed max-w-xl">
-            Sfrutta l'intelligenza artificiale per tracciare un itinerario ottimizzato in base all'altezza ("{vehicleDimensions.height}m"), larghezza, peso del tuo camper, e ai tuoi interessi.
+            Sfrutta l'intelligenza artificiale per tracciare itinerari su misura in base all'altezza ("{vehicleDimensions.height}m"), larghezza, peso del tuo camper e ai tuoi interessi.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-[#1B2419] py-1.5 px-3 rounded-lg border border-[#86997F]/15 shrink-0 text-xs">
@@ -373,6 +500,42 @@ export default function AIItineraryTab({
             <span className="font-bold text-[#ECF1EB]">{vehicleDimensions.modelName || 'Configurato'} ({vehicleDimensions.height}m h)</span>
           </div>
         </div>
+      </div>
+
+      {/* Quick Itineraries Toolbar */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowSavedModal(true)}
+            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-black rounded-xl transition-all shadow-2xs flex items-center gap-2 cursor-pointer active:scale-95"
+          >
+            <FolderHeart className="w-4 h-4 text-amber-600" />
+            <span>I Miei Itinerari Salvati ({savedItineraries.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setResult(null)}
+            className={`px-3.5 py-2 border text-xs font-black rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+              !result
+                ? 'bg-[#3E4A35] text-white border-[#3E4A35]'
+                : 'bg-stone-50 hover:bg-stone-100 text-slate-700 border-slate-200'
+            }`}
+          >
+            <PlusCircle className="w-4 h-4 text-emerald-400" />
+            <span>➕ Crea Nuovo Itinerario</span>
+          </button>
+        </div>
+
+        {result && (
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-emerald-50/90 border border-emerald-200/80 px-3 py-1.5 rounded-xl">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] text-emerald-950 truncate max-w-[200px] sm:max-w-xs">
+              Attivo: <strong>{result.title}</strong>
+            </span>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -400,12 +563,24 @@ export default function AIItineraryTab({
           <div className="bg-[#F4F6F0] p-6 rounded-3xl border border-stone-250/25 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <span className="text-[10px] uppercase font-black bg-[#3E4A35]/10 text-[#3E4A35] px-2.5 py-0.5 rounded-full inline-block">
-                  Itinerario Camper Selezionato
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-black bg-[#3E4A35]/10 text-[#3E4A35] px-2.5 py-0.5 rounded-full inline-block">
+                    Itinerario Salvato ✓
+                  </span>
+                  {savedItineraries.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSavedModal(true)}
+                      className="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded-full transition-all cursor-pointer"
+                    >
+                      Cambia Itinerario ({savedItineraries.length})
+                    </button>
+                  )}
+                </div>
                 <h3 className="text-xl font-extrabold text-slate-900 leading-tight">{result.title}</h3>
                 <p className="text-xs text-slate-500">{result.description}</p>
               </div>
+
               <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
                 <button
                   type="button"
@@ -416,6 +591,23 @@ export default function AIItineraryTab({
                   <FileDown className="w-4 h-4 text-orange-200" />
                   <span>Esporta PDF</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResult(null);
+                    localStorage.removeItem('camper_ai_itinerary_result');
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                      detail: { message: "⚪ Itinerario disattivato." }
+                    }));
+                  }}
+                  className="px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                  title="Disattiva questo itinerario"
+                >
+                  <XCircle className="w-4 h-4 text-amber-700" />
+                  <span>Disattiva Itinerario</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -425,14 +617,26 @@ export default function AIItineraryTab({
                   className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <Share2 className="w-4 h-4 text-amber-300" />
-                  <span>Esporta in Pianificazione Percorso</span>
+                  <span>Esporta in Percorso</span>
                 </button>
+
                 <button
                   type="button"
-                  onClick={clearCurrentItinerary}
-                  className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  onClick={() => setResult(null)}
+                  className="px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1"
+                  title="Crea un altro itinerario mantenendo salvato questo"
                 >
-                  Nuovo Itinerario
+                  <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Crea Altro</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteItinerary(result, e)}
+                  className="p-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  title="Elimina questo itinerario salvato"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -608,6 +812,23 @@ export default function AIItineraryTab({
       ) : (
         /* Form configuration view */
         <form onSubmit={handleGenerate} className="bg-white rounded-3xl border border-stone-250/20 p-5 sm:p-6 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">Nuovo Itinerario AI</h3>
+              <p className="text-xs text-slate-500">Crea un nuovo percorso camper personalizzato</p>
+            </div>
+            {savedItineraries.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSavedModal(true)}
+                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1"
+              >
+                <FolderHeart className="w-3.5 h-3.5 text-amber-600" />
+                <span>Vedi Salvaspazio ({savedItineraries.length})</span>
+              </button>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Start point */}
             <div className="space-y-2">
@@ -645,6 +866,79 @@ export default function AIItineraryTab({
                 />
               </div>
               <span className="text-[10px] text-slate-500 block leading-tight">L'ultima tappa del viaggio. Se vuoto, genererà un itinerario circolare o libero.</span>
+            </div>
+
+            {/* Intermediate Waypoints (Tappe Intermedie) */}
+            <div className="md:col-span-2 space-y-2.5 bg-[#F4F6F0]/80 p-4 rounded-2xl border border-[#3E4A35]/15">
+              <div className="flex items-center justify-between">
+                <label htmlFor="waypoint_input" className="block text-xs font-black text-[#3E4A35] uppercase tracking-wide">
+                  📍 Tappe Intermedie <span className="text-slate-400 font-normal lowercase">(Opzionale - località in cui vuoi passare)</span>
+                </label>
+                {waypoints.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setWaypoints([])}
+                    className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Svuota tappe
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Inserisci i luoghi o le città intermedie in cui desideri passare lungo il percorso. L'AI genererà il tragitto facendoti toccare queste tappe.
+              </p>
+              
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Navigation className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    id="waypoint_input"
+                    type="text"
+                    value={newWaypoint}
+                    onChange={(e) => setNewWaypoint(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddWaypoint();
+                      }
+                    }}
+                    placeholder="Es: Firenze, Assisi, Orvieto, Matera..."
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-[#3E4A35]/20 focus:border-[#3E4A35] focus:ring-1 focus:ring-[#3E4A35] rounded-xl text-sm transition-all text-slate-900 outline-hidden font-medium"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddWaypoint}
+                  className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Aggiungi Tappa</span>
+                </button>
+              </div>
+
+              {/* Displayed waypoints list */}
+              {waypoints.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mr-1">Tappe programmate ({waypoints.length}):</span>
+                  {waypoints.map((wp, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-amber-300 rounded-lg text-xs font-extrabold text-slate-800 shadow-2xs"
+                    >
+                      <span className="text-[10px] font-black text-amber-600 font-mono">#{idx + 1}</span>
+                      <span>{wp}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveWaypoint(idx)}
+                        className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer ml-1"
+                        title="Rimuovi tappa"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Duration */}
@@ -695,7 +989,7 @@ export default function AIItineraryTab({
               <span className="text-[10px] text-slate-500 block leading-tight">Determina quanti chilometri di guida al giorno verranno pianificati.</span>
             </div>
 
-            {/* Active Camper dimensions visualization block (Read-Only validation info!) */}
+            {/* Active Camper dimensions visualization block */}
             <div className="p-4 rounded-xl bg-[#5A6B4E]/5 border border-[#5A6B4E]/15 space-y-1.5 flex flex-col justify-center">
               <span className="text-[10px] font-black uppercase text-[#3E4A35] tracking-tight block">Ingombro verificato per il viaggio:</span>
               <div className="text-xs font-bold text-slate-800 space-y-0.5">
@@ -771,6 +1065,183 @@ export default function AIItineraryTab({
           </p>
         </div>
       </div>
+
+      {/* SAVED ITINERARIES MODAL / DRAWER */}
+      {showSavedModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[1200] flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-stone-200 space-y-5 relative max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FolderHeart className="w-5 h-5 text-amber-600" />
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Itinerari AI Salvati ({savedItineraries.length})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSavedModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {savedItineraries.length === 0 ? (
+              <div className="p-8 text-center space-y-3 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                <Sparkles className="w-10 h-10 text-stone-300 mx-auto" />
+                <p className="text-xs text-slate-600 font-bold">Nessun itinerario salvato al momento.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResult(null);
+                    setShowSavedModal(false);
+                  }}
+                  className="px-4 py-2 bg-[#3E4A35] text-white text-xs font-extrabold rounded-xl shadow-xs cursor-pointer"
+                >
+                  ➕ Genera il tuo primo itinerario
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {savedItineraries.map((it) => {
+                  const isActive = result?.id === it.id || (result?.title === it.title && result?.days?.length === it.days?.length);
+                  return (
+                    <div
+                      key={it.id || it.title}
+                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                        isActive
+                          ? 'bg-emerald-50/90 border-emerald-400 ring-2 ring-emerald-500/20 shadow-sm'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-extrabold text-sm text-slate-900">{it.title}</h4>
+                            {isActive ? (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-600 text-white flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Attivo in uso</span>
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                                Inattivo
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 line-clamp-1">{it.description}</p>
+                          {it.waypoints && it.waypoints.length > 0 && (
+                            <div className="flex items-center gap-1.5 text-[11px] text-amber-900 font-semibold pt-0.5">
+                              <Navigation className="w-3 h-3 text-amber-600" />
+                              <span>Tappe intermedie:</span>
+                              <span className="font-extrabold">{it.waypoints.join(" → ")}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] font-bold text-slate-400 block font-mono">
+                            {it.createdAt ? new Date(it.createdAt).toLocaleDateString('it-IT') : 'Salvato'}
+                          </span>
+                          <span className="text-xs font-black text-[#3E4A35]">
+                            {it.days?.length || 0} Giorni · {it.totalKm}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Actions Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isActive ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setResult(null);
+                                localStorage.removeItem('camper_ai_itinerary_result');
+                                window.dispatchEvent(new CustomEvent('show-toast', {
+                                  detail: { message: "⚪ Itinerario disattivato. Ora sei sulla schermata di creazione." }
+                                }));
+                              }}
+                              className="px-3.5 py-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Disattiva Itinerario</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectItinerary(it)}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                              <span>Attiva e Visualizza</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResult(it);
+                              setShowSavedModal(false);
+                              setShowExportModal(true);
+                            }}
+                            className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <Share2 className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Esporta in Percorso</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await exportAIItineraryToPDF(it, vehicleDimensions);
+                              window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `📄 PDF "${it.title}" scaricato!` } }));
+                            }}
+                            className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <FileDown className="w-3.5 h-3.5" />
+                            <span>PDF</span>
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteItinerary(it, e)}
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl transition-all cursor-pointer"
+                          title="Elimina questo itinerario salvato"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setResult(null);
+                  setShowSavedModal(false);
+                }}
+                className="px-4 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4 text-emerald-300" />
+                <span>➕ Crea un Altro Itinerario AI</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSavedModal(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EXPORT TO PLANNED ROUTE MODAL */}
       {showExportModal && result && (

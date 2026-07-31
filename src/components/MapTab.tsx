@@ -50,6 +50,7 @@ import {
 import L from "leaflet";
 import { CategoryIllustration } from "./CategoryIllustration";
 import { WeatherWidget } from "./WeatherWidget";
+import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import {
   getTile,
   getBestTile,
@@ -4483,181 +4484,216 @@ out center;`;
 
           {/* Scheda informativa per la puntina temporanea personalizzata */}
           {clickedCoords && showClickedPopup && (
-            <div className="absolute bottom-24 left-3 right-3 md:left-auto md:right-3 md:bottom-24 md:w-64 bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 p-3 z-[1100] animate-in fade-in slide-in-from-bottom-4 duration-200 font-sans">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-7 h-7 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
-                    <MapPin className="w-3.5 h-3.5 fill-amber-500/20" />
+            <div className="absolute top-11 bottom-2 left-2 right-2 md:top-13 md:bottom-4 md:left-auto md:right-4 md:w-[380px] max-h-[calc(100%-3rem)] flex flex-col bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/90 z-[1100] animate-in fade-in slide-in-from-bottom-4 duration-200 font-sans overflow-hidden">
+              {/* Header Fisso con Bottoni d'Azione */}
+              <div className="p-3.5 pb-3 bg-white border-b border-slate-100 shrink-0 space-y-2 shadow-2xs">
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                      <MapPin className="w-3.5 h-3.5 fill-amber-500/20" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-extrabold text-[#2D2926] text-xs text-left truncate">
+                        {isResolvingClick
+                          ? "Rilevamento in corso..."
+                          : clickedPlaceName}
+                      </h4>
+                      <p className="text-[9px] text-slate-500 font-bold font-mono text-left">
+                        {Number(clickedCoords.lat).toFixed(5)},{" "}
+                        {Number(clickedCoords.lng).toFixed(5)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-extrabold text-[#2D2926] text-xs text-left">
-                      {isResolvingClick
-                        ? "Rilevamento in corso..."
-                        : clickedPlaceName}
-                    </h4>
-                    <p className="text-[9px] text-slate-500 font-bold font-mono text-left">
-                      {Number(clickedCoords.lat).toFixed(5)},{" "}
-                      {Number(clickedCoords.lng).toFixed(5)}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowClickedPopup(false);
-                    setClickedCoords(null);
-                  }}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <p className="text-[10px] text-slate-600 mb-2.5 text-left leading-tight font-medium">
-                {isResolvingClick
-                  ? "Risoluzione indirizzo da coordinate..."
-                  : clickedAddress || "Coordinate geografiche sulla mappa."}
-              </p>
-
-              {/* Bottoni d'azione */}
-              <div className="flex flex-col gap-1.5 mt-2 font-sans">
-                <button
-                  onClick={() => {
-                    const tempPlace: Place = {
-                      id: `temp-${clickedCoords.lat}-${clickedCoords.lng}`,
-                      name:
-                        clickedPlaceName !== "Puntina Sulla Mappa"
-                          ? clickedPlaceName
-                          : "Destinazione Manuale",
-                      category: "area_sosta",
-                      lat: clickedCoords.lat,
-                      lng: clickedCoords.lng,
-                      address: clickedAddress || "Coordinate GPS",
-                      priceInfo: "N/A",
-                      priceEuro: 0,
-                      rating: 0,
-                      facilities: [],
-                      imageUrl:
-                        "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
-                      source: "inserito_a_mano",
-                      reviews: [],
-                    };
-                    handleOpenNavigatorSelector(tempPlace);
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 text-center w-full"
-                >
-                  <Compass className="w-4 h-4 animate-pulse" />
-                  <span>Naviga</span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-1.5">
-                  {/* 2. Inserisci nuova sosta */}
                   <button
                     onClick={() => {
-                      setNewPlaceForm({
+                      setShowClickedPopup(false);
+                      setClickedCoords(null);
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all cursor-pointer shrink-0 ml-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-slate-600 text-left leading-tight font-medium line-clamp-2">
+                  {isResolvingClick
+                    ? "Risoluzione indirizzo da coordinate..."
+                    : clickedAddress || "Coordinate geografiche sulla mappa."}
+                </p>
+
+                {/* Bottoni d'azione Principali */}
+                <div className="flex flex-col gap-1.5 font-sans pt-1">
+                  <button
+                    onClick={() => {
+                      const tempPlace: Place = {
+                        id: `temp-${clickedCoords.lat}-${clickedCoords.lng}`,
                         name:
                           clickedPlaceName !== "Puntina Sulla Mappa"
                             ? clickedPlaceName
-                            : "",
+                            : "Destinazione Manuale",
                         category: "area_sosta",
                         lat: clickedCoords.lat,
                         lng: clickedCoords.lng,
-                        address:
-                          clickedAddress ||
-                          `Coordinate: ${Number(clickedCoords.lat).toFixed(5)}, ${Number(clickedCoords.lng).toFixed(5)}`,
-                        priceInfo: "Gratuito",
+                        address: clickedAddress || "Coordinate GPS",
+                        priceInfo: "N/A",
                         priceEuro: 0,
-                        phone: "",
-                        selectedFacilities: [],
+                        rating: 0,
+                        facilities: [],
                         imageUrl:
                           "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
-                        hasMaxHeightLimit: false,
-                        maxHeight: 3.5,
-                        hasMaxWeightLimit: false,
-                        maxWeight: 3.5,
-                        isNarrowAccess: false,
-                        noiseLevel: 3,
-                        maneuverability: 3,
-                        cellularSignal: 3,
-                        groundLevelness: 3,
-                        shade: 3,
-                        cleanliness: 3,
-                      });
-
-                      setNewPlaceQuery(
-                        clickedAddress ||
-                          `${Number(clickedCoords.lat).toFixed(5)}, ${Number(clickedCoords.lng).toFixed(5)}`,
-                      );
-                      setShowAddPlaceModal(true);
-                      setShowClickedPopup(false);
+                        source: "inserito_a_mano",
+                        reviews: [],
+                      };
+                      handleOpenNavigatorSelector(tempPlace);
                     }}
-                    className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold rounded-lg text-[10px] transition-all shadow-sm active:scale-95 cursor-pointer text-center"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 text-center w-full"
                   >
-                    <Plus className="w-3 h-3" />
-                    <span>Nuova Sosta</span>
+                    <Compass className="w-4 h-4 animate-pulse" />
+                    <span>Naviga</span>
                   </button>
 
-                  {/* 3. Carica punti OSM intorno (15km) */}
-                  <button
-                    onClick={async () => {
-                      const lat = clickedCoords.lat;
-                      const lng = clickedCoords.lng;
-                      mapMovedByUserRef.current = true;
-                      setActiveDistanceFilter("place");
-                      setFilterCenter({ lat, lng });
-                      setShowClickedPopup(false);
-                      mapRef.current?.setView([lat, lng], 10);
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {/* 2. Inserisci nuova sosta */}
+                    <button
+                      onClick={() => {
+                        setNewPlaceForm({
+                          name:
+                            clickedPlaceName !== "Puntina Sulla Mappa"
+                              ? clickedPlaceName
+                              : "",
+                          category: "area_sosta",
+                          lat: clickedCoords.lat,
+                          lng: clickedCoords.lng,
+                          address:
+                            clickedAddress ||
+                            `Coordinate: ${Number(clickedCoords.lat).toFixed(5)}, ${Number(clickedCoords.lng).toFixed(5)}`,
+                          priceInfo: "Gratuito",
+                          priceEuro: 0,
+                          phone: "",
+                          selectedFacilities: [],
+                          imageUrl:
+                            "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
+                          hasMaxHeightLimit: false,
+                          maxHeight: 3.5,
+                          hasMaxWeightLimit: false,
+                          maxWeight: 3.5,
+                          isNarrowAccess: false,
+                          noiseLevel: 3,
+                          maneuverability: 3,
+                          cellularSignal: 3,
+                          groundLevelness: 3,
+                          shade: 3,
+                          cleanliness: 3,
+                        });
 
-                      window.dispatchEvent(
-                        new CustomEvent("show-toast", {
-                          detail: {
-                            message: `🔍 Carico ed evidenzio i punti camper entro 15km da questa puntina!`,
-                          },
-                        }),
-                      );
+                        setNewPlaceQuery(
+                          clickedAddress ||
+                            `${Number(clickedCoords.lat).toFixed(5)}, ${Number(clickedCoords.lng).toFixed(5)}`,
+                        );
+                        setShowAddPlaceModal(true);
+                        setShowClickedPopup(false);
+                      }}
+                      className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold rounded-lg text-[10px] transition-all shadow-sm active:scale-95 cursor-pointer text-center"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Nuova Sosta</span>
+                    </button>
 
-                      await autoLoadOSMForProximity(lat, lng);
-                    }}
-                    disabled={isAutoLoadingOSM}
-                    className="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-bold rounded-lg text-[10px] transition-all shadow-sm active:scale-95 cursor-pointer text-center"
-                  >
-                    {isAutoLoadingOSM ? (
-                      <>
-                        <div className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>Caricamento...</span>
-                      </>
-                    ) : (
-                      <>
-                        <MapPin className="w-3 h-3" />
-                        <span>Soste vicine</span>
-                      </>
-                    )}
-                  </button>
+                    {/* 3. Carica punti OSM intorno (15km) */}
+                    <button
+                      onClick={async () => {
+                        const lat = clickedCoords.lat;
+                        const lng = clickedCoords.lng;
+                        mapMovedByUserRef.current = true;
+                        setActiveDistanceFilter("place");
+                        setFilterCenter({ lat, lng });
+                        setShowClickedPopup(false);
+                        mapRef.current?.setView([lat, lng], 10);
+
+                        window.dispatchEvent(
+                          new CustomEvent("show-toast", {
+                            detail: {
+                              message: `🔍 Carico ed evidenzio i punti camper entro 15km da questa puntina!`,
+                            },
+                          }),
+                        );
+
+                        await autoLoadOSMForProximity(lat, lng);
+                      }}
+                      disabled={isAutoLoadingOSM}
+                      className="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-bold rounded-lg text-[10px] transition-all shadow-sm active:scale-95 cursor-pointer text-center"
+                    >
+                      {isAutoLoadingOSM ? (
+                        <>
+                          <div className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Caricamento...</span>
+                        </>
+                      ) : (
+                        <>
+                          <MapPin className="w-3 h-3" />
+                          <span>Soste vicine</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 4. Aggiungi tappa al viaggio attivo */}
+                  {activeTrip && (
+                    <button
+                      onClick={() => {
+                        setNewMovementPlaceName(
+                          clickedPlaceName !== "Puntina Sulla Mappa"
+                            ? clickedPlaceName
+                            : clickedAddress || "Tappa Mappa"
+                        );
+                        setNewMovementOdometer("");
+                        setNewMovementNotes("");
+                        const d = new Date();
+                        const tzOffset = d.getTimezoneOffset() * 60000;
+                        const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
+                        setNewMovementDate(localISOTime);
+                        setShowAddMovementModal(true);
+                        setShowClickedPopup(false);
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 text-center w-full"
+                    >
+                      <Route className="w-4 h-4" />
+                      <span>Aggiungi Tappa</span>
+                    </button>
+                  )}
                 </div>
+              </div>
 
-                {/* 4. Aggiungi tappa al viaggio attivo - Only visible if there is an active trip */}
-                {activeTrip && (
-                  <button
-                    onClick={() => {
-                      setNewMovementPlaceName(
-                        clickedPlaceName !== "Puntina Sulla Mappa"
-                          ? clickedPlaceName
-                          : clickedAddress || "Tappa Mappa"
-                      );
-                      setNewMovementOdometer("");
-                      setNewMovementNotes("");
-                      const d = new Date();
-                      const tzOffset = d.getTimezoneOffset() * 60000;
-                      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-                      setNewMovementDate(localISOTime);
-                      setShowAddMovementModal(true);
-                      setShowClickedPopup(false);
-                    }}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 text-center w-full"
-                  >
-                    <Route className="w-4 h-4" />
-                    <span>Aggiungi Tappa</span>
-                  </button>
-                )}
+              {/* Corpo Scrollabile con Ristoranti & Attività Vicini */}
+              <div className="flex-1 overflow-y-auto p-3.5 pt-2 scrollbar-thin">
+                <NearbyPlacesWidget
+                  lat={clickedCoords.lat}
+                  lng={clickedCoords.lng}
+                  placeName={clickedPlaceName !== "Puntina Sulla Mappa" ? clickedPlaceName : "questa posizione"}
+                  onNavigateToPlace={(p) => {
+                    const tempPlace: Place = {
+                      id: `poi_${Date.now()}`,
+                      name: p.name,
+                      category: 'hidden_gem',
+                      lat: p.lat,
+                      lng: p.lng,
+                      address: '',
+                      priceInfo: 'Punto di interesse',
+                      priceEuro: 0,
+                      rating: 4.8,
+                      imageUrl: p.photoUrl || '',
+                      source: 'user',
+                      facilities: [],
+                      reviews: [],
+                    };
+                    setShowClickedPopup(false);
+                    handleOpenNavigatorSelector(tempPlace);
+                  }}
+                  onNavigateToAIItinerary={(promptText) => {
+                    setShowClickedPopup(false);
+                    if (onNavigateToAI) onNavigateToAI();
+                  }}
+                />
               </div>
             </div>
           )}
@@ -5324,6 +5360,36 @@ out center;`;
                 </div>
               </div>
             )}
+
+            {/* Nearby Places & Restaurants (Google Places) */}
+            <div className="border-t border-slate-100 pt-4">
+              <NearbyPlacesWidget
+                lat={selectedPlace.lat}
+                lng={selectedPlace.lng}
+                placeName={selectedPlace.name}
+                onNavigateToPlace={(p) => {
+                  const tempPlace: Place = {
+                    id: `poi_${Date.now()}`,
+                    name: p.name,
+                    category: 'hidden_gem',
+                    lat: p.lat,
+                    lng: p.lng,
+                    address: '',
+                    priceInfo: 'Punto di interesse',
+                    priceEuro: 0,
+                    rating: 4.8,
+                    imageUrl: p.photoUrl || '',
+                    source: 'user',
+                    facilities: [],
+                    reviews: [],
+                  };
+                  handleOpenNavigatorSelector(tempPlace);
+                }}
+                onNavigateToAIItinerary={(promptText) => {
+                  if (onNavigateToAI) onNavigateToAI();
+                }}
+              />
+            </div>
 
             {/* Photos and Reviews */}
             {selectedPlace.id !== "current_location" && (
@@ -6137,6 +6203,38 @@ out center;`;
                 </div>
               </div>
             )}
+
+            {/* Nearby Places & Restaurants (Google Places) */}
+            <div className="border-t border-slate-100 pt-5">
+              <NearbyPlacesWidget
+                lat={selectedPlace.lat}
+                lng={selectedPlace.lng}
+                placeName={selectedPlace.name}
+                onNavigateToPlace={(p) => {
+                  const tempPlace: Place = {
+                    id: `poi_${Date.now()}`,
+                    name: p.name,
+                    category: 'hidden_gem',
+                    lat: p.lat,
+                    lng: p.lng,
+                    address: '',
+                    priceInfo: 'Punto di interesse',
+                    priceEuro: 0,
+                    rating: 4.8,
+                    imageUrl: p.photoUrl || '',
+                    source: 'user',
+                    facilities: [],
+                    reviews: [],
+                  };
+                  setIsMobileDetailsOpen(false);
+                  handleOpenNavigatorSelector(tempPlace);
+                }}
+                onNavigateToAIItinerary={(promptText) => {
+                  setIsMobileDetailsOpen(false);
+                  if (onNavigateToAI) onNavigateToAI();
+                }}
+              />
+            </div>
 
             {/* Reviews Section */}
             {selectedPlace.id !== "current_location" && (
