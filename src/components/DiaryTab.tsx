@@ -4,6 +4,7 @@ import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUn
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
 import { compressImage } from "../utils/photoCompressor";
 import { TripRouteMap } from "./TripRouteMap";
+import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import {
   BookOpen,
@@ -1214,16 +1215,19 @@ export default function DiaryTab({
               budget delle spese di viaggio.
             </p>
           </div>
-          <button
-            onClick={() => {
-              setDiarySubTab("list");
-              setShowAddTrip(true);
-            }}
-            className="px-4 py-2.5 bg-orange-200 hover:bg-orange-300 text-[#3E4A35] dark:bg-orange-600 dark:hover:bg-orange-700 dark:text-white font-black rounded-xl text-xs transition-transform flex items-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Nuovo Viaggio
-          </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <RollyOnboardingGuide sectionKey="diary" />
+            <button
+              onClick={() => {
+                setDiarySubTab("list");
+                setShowAddTrip(true);
+              }}
+              className="px-4 py-2.5 bg-orange-200 hover:bg-orange-300 text-[#3E4A35] dark:bg-orange-600 dark:hover:bg-orange-700 dark:text-white font-black rounded-xl text-xs transition-transform flex items-center justify-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Nuovo Viaggio
+            </button>
+          </div>
         </div>
       )}
 

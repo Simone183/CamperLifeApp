@@ -61,6 +61,34 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Move Leaflet top-left zoom controls down so they are not covered by top search & Rolly bar */
+.leaflet-top.leaflet-left {
+  top: 52px !important;
+  left: 8px !important;
+}
+
+@media (min-width: 640px) {
+  .leaflet-top.leaflet-left {
+    top: 60px !important;
+    left: 12px !important;
+  }
+}
+
+.leaflet-bar {
+  border-radius: 12px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-bar a {
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  font-size: 16px !important;
+  font-weight: bold !important;
+}
+
 /* Invert map tiles automatically for beautiful night view routing map and stops map! */
 .dark .leaflet-tile-container {
   filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(100%);

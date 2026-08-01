@@ -58,6 +58,7 @@ import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
 import EventsTab from "./components/EventsTab";
 import OfflineMapsTab from "./components/OfflineMapsTab";
+import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
 
@@ -4198,48 +4199,51 @@ out center;`;
                       <span>Torna a Strumenti</span>
                     </button>
 
-                    {/* Small heading telling where we are */}
-                    <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 pr-2 tracking-wider hidden xs:block">
-                      Strumenti &gt;{" "}
-                      {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
-                      {settingsSubTab === "checklist" &&
-                        "Checklist Pre-partenza"}
-                      {settingsSubTab === "deadlines" && "Scandenziere"}
-                      {settingsSubTab === "community" && "Bacheca & Chat"}
-                      {settingsSubTab === "registration" && "Registrazione"}
-                      {settingsSubTab === "login" && "Login"}
-                      {settingsSubTab === "install" && "Installazione"}
-                      {settingsSubTab === "feedback" &&
-                        "Segnalazione & Opinione"}
-                      {settingsSubTab === "ai_itinerary" &&
-                        "Generatore Itinerari AI"}
-                      {settingsSubTab === "bubble_level" &&
-                        "Livella Digitale Camper"}
-                      {settingsSubTab === "weight_calculator" &&
-                        "Bilanciamento & Carico"}
-                      {settingsSubTab === "offgrid_estimator" &&
-                        "Autonomia Off-Grid"}
-                      {settingsSubTab === "pantry_shopping" &&
-                        "Cambusa & Spesa Intelligente"}
-                      {settingsSubTab === "maintenance_log" &&
-                        "Registro Manutenzione Cellula"}
-                      {settingsSubTab === "work_log" && "Registro Lavori"}
-                      {settingsSubTab === "favorites" && "Soste Preferite"}
-                      {settingsSubTab === "copyright" &&
-                        "Tutela & Licenza D’Autore"}
-                      {settingsSubTab === "sosta_libera_tools" &&
-                        "Pannello Sosta Libera"}
-                      {settingsSubTab === "camper_security" &&
-                        "Sicurezza Attiva & Sosta Notturna"}
-                      {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
-                      {settingsSubTab === "offline_maps" &&
-                        "Mappe Cartografiche Offline"}
-                      {settingsSubTab === "shared_trips" && "Viaggi Condivisi"}
-                      {settingsSubTab === "dashboard_settings" &&
-                        "Personalizzazione Dashboard"}
-                      {settingsSubTab === "general" &&
-                        "Impostazioni Generali"}
-                    </span>
+                    {/* Small heading telling where we are & Rolly Guide button */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 pr-2 tracking-wider hidden xs:block">
+                        Strumenti &gt;{" "}
+                        {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
+                        {settingsSubTab === "checklist" &&
+                          "Checklist Pre-partenza"}
+                        {settingsSubTab === "deadlines" && "Scandenziere"}
+                        {settingsSubTab === "community" && "Bacheca & Chat"}
+                        {settingsSubTab === "registration" && "Registrazione"}
+                        {settingsSubTab === "login" && "Login"}
+                        {settingsSubTab === "install" && "Installazione"}
+                        {settingsSubTab === "feedback" &&
+                          "Segnalazione & Opinione"}
+                        {settingsSubTab === "ai_itinerary" &&
+                          "Generatore Itinerari AI"}
+                        {settingsSubTab === "bubble_level" &&
+                          "Livella Digitale Camper"}
+                        {settingsSubTab === "weight_calculator" &&
+                          "Bilanciamento & Carico"}
+                        {settingsSubTab === "offgrid_estimator" &&
+                          "Autonomia Off-Grid"}
+                        {settingsSubTab === "pantry_shopping" &&
+                          "Cambusa & Spesa Intelligente"}
+                        {settingsSubTab === "maintenance_log" &&
+                          "Registro Manutenzione Cellula"}
+                        {settingsSubTab === "work_log" && "Registro Lavori"}
+                        {settingsSubTab === "favorites" && "Soste Preferite"}
+                        {settingsSubTab === "copyright" &&
+                          "Tutela & Licenza D’Autore"}
+                        {settingsSubTab === "sosta_libera_tools" &&
+                          "Pannello Sosta Libera"}
+                        {settingsSubTab === "camper_security" &&
+                          "Sicurezza Attiva & Sosta Notturna"}
+                        {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
+                        {settingsSubTab === "offline_maps" &&
+                          "Mappe Cartografiche Offline"}
+                        {settingsSubTab === "shared_trips" && "Viaggi Condivisi"}
+                        {settingsSubTab === "dashboard_settings" &&
+                          "Personalizzazione Dashboard"}
+                        {settingsSubTab === "general" &&
+                          "Impostazioni Generali"}
+                      </span>
+                      <RollyOnboardingGuide sectionKey={settingsSubTab} key={settingsSubTab} />
+                    </div>
                   </div>
                 )}
 

@@ -51,6 +51,7 @@ import L from "leaflet";
 import { CategoryIllustration } from "./CategoryIllustration";
 import { WeatherWidget } from "./WeatherWidget";
 import NearbyPlacesWidget from "./NearbyPlacesWidget";
+import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import {
   getTile,
   getBestTile,
@@ -4268,11 +4269,10 @@ out center;`;
             </div>
           )}
 
-          {/* Top Control Bar containing Search (with flex-1) and GPS buttons */}
-          <div
-            className="absolute top-2 left-2 right-2 md:top-3 md:left-3 md:right-3 z-[1000] flex gap-1.5 items-center"
-            style={{ transform: "translateY(-10%)" }}
-          >
+          {/* Top Control Bar containing Search (with flex-1), Rolly Guide and GPS buttons */}
+          <div className="absolute top-2 left-2 right-2 md:top-3 md:left-3 md:right-3 z-[1000] flex gap-1.5 items-center">
+            {/* Rolly Onboarding Guide for Map */}
+            <RollyOnboardingGuide sectionKey="map_nav" />
             {/* Search Container */}
             <div className="flex-1 flex flex-col gap-1 min-w-0">
               <form

@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { DashboardSettings } from '../types';
 import { speakSampleTts, TtsGender } from '../utils/ttsHelper';
+import { resetAllRollyGuides } from './RollyOnboardingGuide';
+import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 
 interface Props {
   isDarkMode: boolean;
@@ -383,6 +385,21 @@ export default function GeneralSettingsTab({
             <option value="km_l">km / Litro</option>
             <option value="l_100km">Litri / 100km</option>
           </select>
+        </div>
+        <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-[#2D2926] dark:text-white">Guide Assistente AI Rolly</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Riattiva le spiegazioni automatiche di Rolly per la prima visita in ogni sezione</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => resetAllRollyGuides()}
+            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:hover:bg-amber-900 dark:text-amber-200 dark:border-amber-700 font-extrabold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+          >
+            <CartoonCamperAvatar className="w-4 h-4 shrink-0" />
+            <span>Ripristina Guide Rolly</span>
+          </button>
         </div>
       </div>
     </section>
