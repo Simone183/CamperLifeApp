@@ -4668,6 +4668,7 @@ out center;`;
                   lat={clickedCoords.lat}
                   lng={clickedCoords.lng}
                   placeName={clickedPlaceName !== "Puntina Sulla Mappa" ? clickedPlaceName : "questa posizione"}
+                  userLocation={userLocation}
                   onNavigateToPlace={(p) => {
                     const tempPlace: Place = {
                       id: `poi_${Date.now()}`,
@@ -5365,6 +5366,7 @@ out center;`;
                 lat={selectedPlace.lat}
                 lng={selectedPlace.lng}
                 placeName={selectedPlace.name}
+                userLocation={userLocation}
                 onNavigateToPlace={(p) => {
                   const tempPlace: Place = {
                     id: `poi_${Date.now()}`,
@@ -6208,6 +6210,7 @@ out center;`;
                 lat={selectedPlace.lat}
                 lng={selectedPlace.lng}
                 placeName={selectedPlace.name}
+                userLocation={userLocation}
                 onNavigateToPlace={(p) => {
                   const tempPlace: Place = {
                     id: `poi_${Date.now()}`,

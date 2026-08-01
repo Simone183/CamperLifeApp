@@ -25,13 +25,16 @@ import {
 import {
   fetchNearbyPlaces,
   NearbyPlace,
-  formatDistance
+  formatDistance,
+  calculateDistanceKm
 } from '../services/googlePlacesService';
+import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 
 interface NearbyPlacesWidgetProps {
   lat: number;
   lng: number;
   placeName?: string;
+  userLocation?: { lat: number; lng: number } | null;
   onNavigateToPlace?: (place: { lat: number; lng: number; name: string; photoUrl?: string }) => void;
   onNavigateToAIItinerary?: (prompt?: string) => void;
   className?: string;
@@ -41,6 +44,7 @@ export default function NearbyPlacesWidget({
   lat,
   lng,
   placeName = 'questa posizione',
+  userLocation,
   onNavigateToPlace,
   onNavigateToAIItinerary,
   className = ''
@@ -278,17 +282,15 @@ export default function NearbyPlacesWidget({
         className="bg-[#1a382b] hover:bg-[#142d22] text-white p-4 rounded-2xl border border-emerald-800/40 shadow-lg cursor-pointer transition-all flex items-center justify-between gap-3 group"
       >
         <div className="flex items-center gap-3.5 min-w-0">
-          <div className="w-11 h-11 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shrink-0 text-emerald-300">
-            <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
-          </div>
+          <CartoonCamperAvatar className="w-11 h-11 shrink-0" />
           <div className="min-w-0">
-            <h4 className="font-black text-sm text-white tracking-tight flex items-center gap-2">
-              Chiedi all'Assistente AI
-              <span className="text-[9px] font-bold uppercase bg-amber-400 text-slate-900 px-1.5 py-0.5 rounded-full">
+            <h4 className="font-black text-sm text-white tracking-tight flex items-center gap-2 flex-wrap">
+              <span>Chiedi all'Assistente AI Rolly</span>
+              <span className="text-[9px] font-bold uppercase bg-amber-400 text-slate-900 px-1.5 py-0.5 rounded-full shrink-0">
                 Guida Camper
               </span>
             </h4>
-            <p className="text-xs text-white/80 line-clamp-1 mt-0.5 font-medium">
+            <p className="text-xs text-white/80 mt-1 font-medium leading-snug">
               Vale la pena? Cosa fare nei dintorni? Dove mangiare prodotti tipici?
             </p>
           </div>
@@ -475,9 +477,35 @@ export default function NearbyPlacesWidget({
                   {selectedPlace.name}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  {selectedPlace.address || 'Posizione nelle vicinanze'} · Distanza: {formatDistance(selectedPlace.distanceKm)}
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{selectedPlace.address || 'Posizione nelle vicinanze'}</span>
                 </p>
+
+                {/* Distance Information Box */}
+                <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/60 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+                    <span className="font-medium text-slate-500 dark:text-slate-400">📍 Dalla sosta selezionata:</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatDistance(selectedPlace.distanceKm)}</span>
+                  </div>
+                  {userLocation && (
+                    <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <span className="font-medium text-slate-500 dark:text-slate-400">🚐 Dal tuo Camper (GPS):</span>
+                      <span className="font-bold text-blue-600 dark:text-blue-400">
+                        {formatDistance(calculateDistanceKm(userLocation.lat, userLocation.lng, selectedPlace.lat, selectedPlace.lng))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Navigation Distance Notice */}
+                {userLocation && calculateDistanceKm(userLocation.lat, userLocation.lng, selectedPlace.lat, selectedPlace.lng) > 3 && (
+                  <div className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                    <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Nota percorso:</strong> Il tuo camper si trova a <strong>{formatDistance(calculateDistanceKm(userLocation.lat, userLocation.lng, selectedPlace.lat, selectedPlace.lng))}</strong>. Il navigatore calcolerà l'itinerario a partire dalla posizione del camper.
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Complete Camper Action Buttons */}

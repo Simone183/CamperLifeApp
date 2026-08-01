@@ -162,6 +162,27 @@ export async function fetchNearbyPlaces(
   return { ...fallbackResults, source: 'fallback' };
 }
 
+function extractCoords(item: any, fallbackLat: number, fallbackLng: number): { lat: number; lng: number } {
+  const loc = item?.geometry?.location;
+  if (!loc) return { lat: fallbackLat, lng: fallbackLng };
+  let lat = fallbackLat;
+  let lng = fallbackLng;
+  
+  if (typeof loc.lat === 'function') {
+    try { lat = loc.lat(); } catch (e) { lat = typeof loc.lat === 'number' ? loc.lat : fallbackLat; }
+  } else if (typeof loc.lat === 'number') {
+    lat = loc.lat;
+  }
+
+  if (typeof loc.lng === 'function') {
+    try { lng = loc.lng(); } catch (e) { lng = typeof loc.lng === 'number' ? loc.lng : fallbackLng; }
+  } else if (typeof loc.lng === 'number') {
+    lng = loc.lng;
+  }
+
+  return { lat, lng };
+}
+
 /**
  * Fetch from Google Places PlacesService
  */
@@ -197,8 +218,7 @@ function fetchFromGooglePlacesJS(
       (results, status) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
           results.slice(0, 10).forEach((item, i) => {
-            const pLat = item.geometry?.location?.lat() || lat;
-            const pLng = item.geometry?.location?.lng() || lng;
+            const { lat: pLat, lng: pLng } = extractCoords(item, lat, lng);
             const dist = calculateDistanceKm(lat, lng, pLat, pLng);
             const photoUrl =
               item.photos && item.photos.length > 0
@@ -222,7 +242,7 @@ function fetchFromGooglePlacesJS(
               priceLevel: item.price_level || 2,
               address: item.vicinity || 'Nelle vicinanze',
               photoUrl,
-              openNow: item.opening_hours?.isOpen ? item.opening_hours.isOpen() : true,
+              openNow: item.opening_hours?.isOpen ? (typeof item.opening_hours.isOpen === 'function' ? item.opening_hours.isOpen() : true) : true,
               placeId: item.place_id,
               source: 'google'
             });
@@ -242,8 +262,7 @@ function fetchFromGooglePlacesJS(
       (results, status) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
           results.slice(0, 10).forEach((item, i) => {
-            const pLat = item.geometry?.location?.lat() || lat;
-            const pLng = item.geometry?.location?.lng() || lng;
+            const { lat: pLat, lng: pLng } = extractCoords(item, lat, lng);
             const dist = calculateDistanceKm(lat, lng, pLat, pLng);
             const photoUrl =
               item.photos && item.photos.length > 0
