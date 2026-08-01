@@ -434,7 +434,7 @@ export default function FullscreenNavigator({
     };
   }, []);
   const [simRouteIndex, setSimRouteIndex] = React.useState<number>(0);
-  const [isDriving, setIsDriving] = React.useState<boolean>(false);
+  const [isDriving, setIsDriving] = React.useState<boolean>(true);
   const [customError, setCustomError] = React.useState<string | null>(null);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = React.useState<boolean>(false);
   const [isMapFullscreenMode, setIsMapFullscreenMode] = React.useState<boolean>(true);
@@ -2818,14 +2818,21 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
   // Calculate dynamic HUD instructions
   const currentStepObj = (() => {
-    if (directionsSequence.length === 0) return null;
+    if (directionsSequence.length === 0) {
+      return {
+        title: "Calcolo rotta",
+        desc: `Calcolo percorso camper per ${dest.name}...`,
+        icon: "🧭",
+        distance: "In corso"
+      };
+    }
 
     // Find current route coordinate index
     const currentRouteIdx = (isGPSEnabled && !isPreview && userLocation) 
       ? findClosestCoordinateIndex([userLocation.lat, userLocation.lng], routeCoordinates)
       : Math.min(simRouteIndex, routeCoordinates.length - 1);
 
-    // Calculate active step index dynamically based on actual coordinate index to prevent any state lag!
+    // Calculate active step index dynamically based on actual coordinate index
     let hudActiveStepIdx = 0;
     for (let i = 0; i < directionsSequence.length; i++) {
       const stepIdx = directionsSequence[i].coordinateIndex ?? Math.min(
@@ -2848,28 +2855,25 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     // Calculate the remaining distance to the next maneuver
     const distanceToTurn = getDistanceToCoordinateIndex(routeCoordinates, currentRouteIdx, targetCoordIdx);
 
-    if (!isPreview && nextStepObj && distanceToTurn > 150) {
-      // Determine the name of the current street we are traveling on
+    if (nextStepObj && distanceToTurn > 150) {
       const currentStreet = hudBaseStepObj?.streetName || "";
       let computedDesc = "";
       if (currentStreet) {
         computedDesc = `Continua su ${currentStreet}`;
       } else if (hudBaseStepObj?.desc) {
-        // Fallback: strip any maneuver keywords from current instruction to make it sound like a continuous drive
         computedDesc = hudBaseStepObj.desc.replace(/^(?:Svolta a sinistra su|Svolta a destra su|Svolta leggermente a sinistra su|Svolta leggermente a destra su|Svolta bruscamente a sinistra su|Svolta bruscamente a destra su|Svolta|Prendi l'uscita)\s+/i, "Continua su ");
       } else {
-        computedDesc = "Continua su questa strada";
+        computedDesc = `Prosegui verso ${dest.name}`;
       }
 
       return {
         ...hudBaseStepObj,
-        icon: "⬆️",
+        icon: hudBaseStepObj?.icon || "⬆️",
         desc: computedDesc,
         title: "Continua",
         distance: formatMeters(distanceToTurn)
       };
-    } else if (!isPreview && nextStepObj && distanceToTurn <= 150 && distanceToTurn > 0) {
-      // Near the maneuver (<= 150m): show the upcoming maneuver itself
+    } else if (nextStepObj && distanceToTurn <= 150 && distanceToTurn > 0) {
       return {
         ...nextStepObj,
         distance: formatMeters(distanceToTurn)
@@ -2877,7 +2881,12 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     }
 
     // Default or preview fallback
-    return hudBaseStepObj;
+    return hudBaseStepObj || {
+      title: "Inizio Percorso",
+      desc: `Procedi in direzione di ${dest.name}`,
+      icon: "🛣️",
+      distance: "Ora"
+    };
   })();
 
   // Real coordinates based remaining distance in Km using the accurate Haversine helper
@@ -2982,7 +2991,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
       id="fullscreen-nav-hud"
       className={isMinimized 
         ? "fixed inset-0 pointer-events-none z-[99999] font-sans" 
-        : "fixed inset-0 bg-[#070A13] text-slate-100 z-[9999] flex flex-col font-sans transition-all"
+        : "fixed inset-0 bg-[#070A13] text-slate-100 z-[99999] font-sans transition-all overflow-hidden"
       }
     >
       {/* Unified map container to keep map instance alive without collapsing to 0x0 */}
@@ -3043,79 +3052,29 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           </div>
         </div>
       ) : (
-        <div className="flex-1 relative bg-transparent pointer-events-none z-30">
-          {/* Top Preview Stats Bar or Active Directions HUD Overlay */}
-          {isPreview ? (
-            <div className="absolute top-4 inset-x-0 mx-auto max-w-3xl z-30 px-4">
-              <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4 pointer-events-auto">
-                <div className="flex items-center gap-3 w-full lg:w-auto">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
-                    🗺️
-                  </div>
-                  <div className="text-left min-w-0">
-                    <h4 className="text-slate-100 font-black text-sm tracking-tight">
-                      Anteprima Percorso Interno
-                    </h4>
-                    <p className="text-[11px] text-slate-400 font-sans truncate max-w-[200px] sm:max-w-xs md:max-w-md">
-                      Destinazione: <span className="text-amber-400 font-bold">{dest.name}</span>
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-slate-900/60 py-2 rounded-xl border border-slate-800/80 w-full lg:w-[580px] text-center">
-                  <div className="flex flex-col items-center justify-center px-1">
-                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
-                      <span className="inline sm:hidden">Distanza</span>
-                      <span className="hidden sm:inline">Totale Distanza</span>
-                    </span>
-                    <span className="text-[11px] sm:text-sm font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center px-1">
-                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
-                      <span className="inline sm:hidden">Tempo</span>
-                      <span className="hidden sm:inline">Tempo Percorrenza</span>
-                    </span>
-                    <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center px-1">
-                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
-                      <span className="inline sm:hidden">Arrivo</span>
-                      <span className="hidden sm:inline">Orario di Arrivo</span>
-                    </span>
-                    <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center px-1" title={hasRealPrice ? `Spesa stimata basata sul tuo ultimo rifornimento (${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L) e consumo (${consumptionKmPerL.toFixed(1)} km/L)` : `Spesa stimata basata su prezzo carburante di default (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)`}>
-                    <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
-                      <span className="inline sm:hidden">Spesa Carb.</span>
-                      <span className="hidden sm:inline">Spesa Carburante</span>
-                    </span>
-                    <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
-                  </div>
-                  <div className="flex flex-col items-center justify-center px-1" title={`Spesa pedaggio stimata basata sulle tratte autostradali rilevate (${tollStats.autostradaKm.toFixed(1)} km a 0.095 ${getCurrencySymbol(settings)}/km)`}>
-                    <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
-                      <span className="inline sm:hidden">Spesa Ped.</span>
-                      <span className="hidden sm:inline">Spesa Pedaggio</span>
-                    </span>
-                    <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">
-                      {tollStats.tollCost > 0 ? `${tollStats.tollCost.toFixed(2)} ${getCurrencySymbol(settings)}` : "0.00 " + getCurrencySymbol(settings)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-          <div className="absolute top-4 inset-x-0 mx-auto max-w-lg z-30 px-4 pointer-events-none">
-            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl flex items-center gap-3 sm:gap-4 pointer-events-auto">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-2xl shrink-0">
+        <div className="absolute inset-0 pointer-events-none z-30">
+          {/* Top Active Directions HUD Overlay & Optional Preview Stats */}
+          <div className="absolute top-4 inset-x-0 mx-auto max-w-2xl z-40 px-4 pointer-events-none flex flex-col gap-2">
+            {/* Primary Directions HUD Box */}
+            <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-center gap-3 sm:gap-4 pointer-events-auto">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-xl sm:text-2xl shrink-0">
                 {currentStepObj?.icon || "🛣️"}
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-slate-100 font-bold text-sm sm:text-base font-sans leading-snug line-clamp-2">
-                  {currentStepObj?.desc || currentStepObj?.title || "Segui la rotta sulla mappa"}
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-extrabold text-[9.5px] uppercase tracking-wider shrink-0">
+                    {isPreview ? "Anteprima Percorso" : "Indicazione"}
+                  </span>
+                  <h4 className="text-slate-300 font-bold text-xs truncate">
+                    {dest.name}
+                  </h4>
+                </div>
+                <p className="text-slate-100 font-extrabold text-sm sm:text-base font-sans leading-snug line-clamp-2">
+                  {currentStepObj?.desc || currentStepObj?.title || `Procedi verso ${dest.name}`}
                 </p>
               </div>
               {currentStepObj?.distance && (
-                <div className="shrink-0 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-xs font-bold text-emerald-400">
+                <div className="shrink-0 bg-slate-900 border border-slate-800 px-2.5 sm:px-3 py-1.5 rounded-xl font-mono text-xs sm:text-sm font-black text-emerald-400 shadow-inner">
                   {currentStepObj.distance}
                 </div>
               )}
@@ -3129,8 +3088,50 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
+
+            {/* Preview Route Cost & Distance Stats Bar */}
+            {isPreview && (
+              <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-[#0b101d]/95 backdrop-blur-md py-2 px-1 rounded-2xl border border-slate-800 shadow-xl text-center pointer-events-auto">
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Distanza</span>
+                    <span className="hidden sm:inline">Totale Distanza</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
+                </div>
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Tempo</span>
+                    <span className="hidden sm:inline">Tempo Percorrenza</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Arrivo</span>
+                    <span className="hidden sm:inline">Orario di Arrivo</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center px-1" title={hasRealPrice ? `Spesa stimata basata sul tuo ultimo rifornimento (${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L) e consumo (${consumptionKmPerL.toFixed(1)} km/L)` : `Spesa stimata basata su prezzo carburante di default (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)`}>
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Spesa Carb.</span>
+                    <span className="hidden sm:inline">Spesa Carburante</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center px-1" title={`Spesa pedaggio stimata basata sulle tratte autostradali rilevate (${tollStats.autostradaKm.toFixed(1)} km a 0.095 ${getCurrencySymbol(settings)}/km)`}>
+                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                    <span className="inline sm:hidden">Spesa Ped.</span>
+                    <span className="hidden sm:inline">Spesa Pedaggio</span>
+                  </span>
+                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">
+                    {tollStats.tollCost > 0 ? `${tollStats.tollCost.toFixed(2)} ${getCurrencySymbol(settings)}` : "0.00 " + getCurrencySymbol(settings)}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
-        )}
 
         {/* Bottom Actions or Route Stats HUD Bar */}
         {isPreview ? (
