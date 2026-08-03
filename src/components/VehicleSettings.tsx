@@ -1631,34 +1631,35 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
       {/* --- CAMPER PASSPORT MODAL (Carta d'Identità Camper Stampabile) --- */}
       {showPassportModal && (
         <div
-          className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fade-in"
           onClick={() => setShowPassportModal(false)}
         >
           <div
-            className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 relative my-8"
+            className="bg-white rounded-3xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 relative my-auto max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               onClick={() => setShowPassportModal(false)}
-              className="absolute top-4 right-4 p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition-all cursor-pointer"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition-all cursor-pointer z-10"
+              title="Chiudi"
             >
               <X className="w-5 h-5" />
             </button>
 
             {/* Passport Header */}
-            <div className="flex items-center gap-4 border-b border-slate-200 pb-4">
-              <div className="p-3 bg-[#3E4A35] text-white rounded-2xl shadow-md">
-                <Truck className="w-8 h-8" />
+            <div className="flex items-center gap-3 sm:gap-4 border-b border-slate-200 pb-3 sm:pb-4 pr-10 shrink-0">
+              <div className="p-2.5 sm:p-3 bg-[#3E4A35] text-white rounded-2xl shadow-md shrink-0">
+                <Truck className="w-6 h-6 sm:w-8 sm:h-8" />
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#3E4A35]">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#3E4A35] block truncate">
                   CAMPER LIFE APP · CARTA D'IDENTITÀ VEICOLO
                 </span>
-                <h2 className="text-xl font-black text-slate-800">
+                <h2 className="text-lg sm:text-xl font-black text-slate-800 truncate">
                   {localDims.modelName || 'Scheda Tecnico Informativa Camper'}
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 truncate">
                   {localDims.brand ? `${localDims.brand} · ` : ''}
                   {localDims.vehicleType || 'Camper'}
                   {localDims.licensePlate ? ` · Targa: ${localDims.licensePlate}` : ''}
@@ -1666,86 +1667,89 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
               </div>
             </div>
 
-            {/* Main Image if exists */}
-            {localDims.mainPhotoUrl && (
-              <div className="h-48 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-inner">
-                <img src={localDims.mainPhotoUrl} alt="Camper" className="w-full h-full object-cover" />
-              </div>
-            )}
+            {/* Scrollable Body */}
+            <div className="overflow-y-auto pr-1 space-y-4 sm:space-y-6 flex-1 py-3 my-1">
+              {/* Main Image if exists */}
+              {localDims.mainPhotoUrl && (
+                <div className="h-40 sm:h-52 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-inner">
+                  <img src={localDims.mainPhotoUrl} alt="Camper" className="w-full h-full object-cover" />
+                </div>
+              )}
 
-            {/* Data Grid Summary */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Dimensioni (A x L x P)</span>
-                <span className="font-extrabold text-slate-800 font-mono">
-                  {localDims.height || '-'}m x {localDims.width || '-'}m x {localDims.length || '-'}m
-                </span>
-              </div>
+              {/* Data Grid Summary */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 text-xs">
+                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Dimensioni (A x L x P)</span>
+                  <span className="font-extrabold text-slate-800 font-mono">
+                    {localDims.height || '-'}m x {localDims.width || '-'}m x {localDims.length || '-'}m
+                  </span>
+                </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Massa / PTT</span>
-                <span className="font-extrabold text-slate-800 font-mono">
-                  {localDims.weight || '-'}t / PTT: {localDims.grossWeightRating || '3.5'}t
-                </span>
-              </div>
+                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Massa / PTT</span>
+                  <span className="font-extrabold text-slate-800 font-mono">
+                    {localDims.weight || '-'}t / PTT: {localDims.grossWeightRating || '3.5'}t
+                  </span>
+                </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Motore & Classe</span>
-                <span className="font-extrabold text-slate-800">
-                  {localDims.engineType || 'Diesel'} ({localDims.euroCategory || 'Euro 6'})
-                </span>
-              </div>
+                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Motore & Classe</span>
+                  <span className="font-extrabold text-slate-800">
+                    {localDims.engineType || 'Diesel'} ({localDims.euroCategory || 'Euro 6'})
+                  </span>
+                </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Telaio / VIN</span>
-                <span className="font-mono text-[11px] font-extrabold text-slate-800 truncate block">
-                  {localDims.vinNumber || 'N.D.'}
-                </span>
-              </div>
+                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Telaio / VIN</span>
+                  <span className="font-mono text-[11px] font-extrabold text-slate-800 truncate block">
+                    {localDims.vinNumber || 'N.D.'}
+                  </span>
+                </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Posti Omologati / Letto</span>
-                <span className="font-extrabold text-slate-800">
-                  {localDims.seatsHomologated || '-'} / {localDims.bedsCount || '-'}
-                </span>
-              </div>
+                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Posti Omologati / Letto</span>
+                  <span className="font-extrabold text-slate-800">
+                    {localDims.seatsHomologated || '-'} / {localDims.bedsCount || '-'}
+                  </span>
+                </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Acqua Chiara / Grigia</span>
-                <span className="font-extrabold text-slate-800">
-                  {localDims.freshWaterTank || '-'}L / {localDims.greyWaterTank || '-'}L
-                </span>
-              </div>
-            </div>
-
-            {/* Accessories list */}
-            {localDims.accessories && localDims.accessories.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase">Dotazioni & Accessori Principal</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {localDims.accessories.map((acc) => (
-                    <span key={acc} className="px-2.5 py-1 bg-[#3E4A35]/10 text-[#3E4A35] font-extrabold text-[11px] rounded-lg">
-                      {acc}
-                    </span>
-                  ))}
+                <div className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Acqua Chiara / Grigia</span>
+                  <span className="font-extrabold text-slate-800">
+                    {localDims.freshWaterTank || '-'}L / {localDims.greyWaterTank || '-'}L
+                  </span>
                 </div>
               </div>
-            )}
 
-            {/* Notes */}
-            {localDims.notes && (
-              <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs space-y-1">
-                <span className="font-bold text-amber-900 block text-[10px] uppercase">Note di Servizio</span>
-                <p className="text-amber-800 font-medium whitespace-pre-wrap">{localDims.notes}</p>
-              </div>
-            )}
+              {/* Accessories list */}
+              {localDims.accessories && localDims.accessories.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase">Dotazioni & Accessori Principali</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {localDims.accessories.map((acc) => (
+                      <span key={acc} className="px-2.5 py-1 bg-[#3E4A35]/10 text-[#3E4A35] font-extrabold text-[11px] rounded-lg">
+                        {acc}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {localDims.notes && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs space-y-1">
+                  <span className="font-bold text-amber-900 block text-[10px] uppercase">Note di Servizio</span>
+                  <p className="text-amber-800 font-medium whitespace-pre-wrap">{localDims.notes}</p>
+                </div>
+              )}
+            </div>
 
             {/* Print action */}
-            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+            <div className="pt-3 flex justify-end gap-3 border-t border-slate-100 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowPassportModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
               >
                 Chiudi
               </button>
@@ -1765,11 +1769,11 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
       {/* --- ADD / EDIT CARD MODAL --- */}
       {showCardModal && (
         <div
-          className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fade-in"
           onClick={() => setShowCardModal(false)}
         >
           <div
-            className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200 relative my-8"
+            className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-200 relative my-auto max-h-[92vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <button

@@ -1,9 +1,10 @@
 import React from 'react';
-import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Key } from 'lucide-react';
+import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Key, Camera, X } from 'lucide-react';
+import { compressImage } from '../utils/photoCompressor';
 
 interface RegistrationFormProps {
   onBack: () => void;
-  onSuccess: (user: { nickname: string; email: string; name: string; approved?: boolean }) => void;
+  onSuccess: (user: { nickname: string; email: string; name: string; profilePhoto?: string; approved?: boolean }) => void;
   onSwitchToLogin?: () => void;
   hideBack?: boolean;
 }
@@ -17,8 +18,36 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
   const [dob, setDob] = React.useState('');
   const [nickname, setNickname] = React.useState('');
   const [inviteCode, setInviteCode] = React.useState('');
+  const [profilePhoto, setProfilePhoto] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Seleziona un file immagine valido (JPG, PNG, WebP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      if (event.target?.result) {
+        const rawBase64 = event.target.result as string;
+        try {
+          const compressed = await compressImage(rawBase64, 'low');
+          setProfilePhoto(compressed);
+        } catch {
+          setProfilePhoto(rawBase64);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +58,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, surname, dob, nickname, inviteCode })
+        body: JSON.stringify({ email, password, name, surname, dob, nickname, inviteCode, profilePhoto })
       });
 
       const data = await res.json();
@@ -65,6 +94,59 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
             ⚠️ {error}
           </div>
         )}
+
+        {/* Profile Photo Uploader */}
+        <div className="flex flex-col items-center justify-center mb-5">
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoSelect}
+          />
+          <div className="relative group">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-24 h-24 rounded-full bg-slate-100 hover:bg-slate-200 border-2 border-dashed border-slate-300 hover:border-[#3E4A35] flex flex-col items-center justify-center overflow-hidden transition-all cursor-pointer shadow-xs"
+              title="Carica Foto Profilo"
+            >
+              {profilePhoto ? (
+                <img src={profilePhoto} alt="Anteprima Foto Profilo" className="w-full h-full object-cover" />
+              ) : (
+                <div className="flex flex-col items-center text-slate-400 group-hover:text-[#3E4A35] transition-colors p-2 text-center">
+                  <Camera className="w-7 h-7 mb-1" />
+                  <span className="text-[10px] font-bold leading-tight">Carica Foto</span>
+                </div>
+              )}
+            </button>
+            {profilePhoto ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setProfilePhoto(null);
+                }}
+                className="absolute -top-1 -right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-md cursor-pointer transition-transform hover:scale-110"
+                title="Rimuovi foto"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-0 right-0 p-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-full shadow-md cursor-pointer"
+                title="Aggiungi Foto"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-2 text-center">
+            Foto Profilo <span className="text-slate-400">(opzionale, usata in chat, forum e social)</span>
+          </p>
+        </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex gap-4">

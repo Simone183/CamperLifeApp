@@ -582,6 +582,104 @@ export const INITIAL_PLACES: Place[] = HANDCRAFTED_PLACES;
 
 export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   {
+    id: 'social_post_1',
+    user: 'Elena_Camper91',
+    avatar: '🏔️',
+    avatarColor: 'bg-[#5A6B4E]',
+    text: "Tramonto magico sul Lago di Braies dopo un'escursione indimenticabile 🏔️✨ Mansarda calda, tazza di tè bollente e la pace della montagna. Questo è il vero spirito del camperismo libero! ❤️ #vanlife #dolomiti #camperlife #lagodibraies",
+    timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    likes: 42,
+    likedByCurrentUser: true,
+    tag: 'Sosta',
+    type: 'social',
+    locationName: 'Lago di Braies, Alto Adige',
+    mediaUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
+    mediaType: 'image',
+    replies: [
+      {
+        id: 'r_soc1_1',
+        user: 'Marco_Van78',
+        text: 'Spettacolo puro! Ci siamo stati anche noi l\'anno scorso, un posto da favola 😍',
+        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString()
+      },
+      {
+        id: 'r_soc1_2',
+        user: 'Simo_FamilyOnRoad',
+        text: 'Che foto fantastica! C\'è ancora molta neve attorno al lago?',
+        timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'social_post_2',
+    user: 'BeppeVan',
+    avatar: '🚐',
+    avatarColor: 'bg-amber-600',
+    text: "Collaudo del nuovo pannello solare flessibile da 200W ed espresso caldissimo prima di ripartire! ☕⚡ Nessun rumore, solitudine totale nella natura selvaggia della Maremma. Buon weekend a tutti i compagni di strada! 🛣️ #offgrid #solar #camperlifestyle",
+    timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    likes: 29,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'social',
+    locationName: 'Parco della Maremma, Toscana',
+    mediaUrl: 'https://images.unsplash.com/photo-1526772662000-3f88f10405ff?auto=format&fit=crop&w=1200&q=80',
+    mediaType: 'image',
+    replies: [
+      {
+        id: 'r_soc2_1',
+        user: 'TechCamper_Luca',
+        text: 'Ottimo lavoro! Come l\'hai incollato sul tetto?',
+        timestamp: new Date(Date.now() - 1000 * 60 * 90).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'social_post_3',
+    user: 'Valeria_Coast',
+    avatar: '🌊',
+    avatarColor: 'bg-sky-600',
+    text: "Risveglio fronte mare in Costiera 🌊🐚 Svegliarsi con il suono delle onde e il profumo del mare d'inverno non ha prezzo. Chi altro ama la sosta vista mare nelle mezze stagioni? #seaview #camperinverno #salerno",
+    timestamp: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+    likes: 56,
+    likedByCurrentUser: false,
+    tag: 'Sosta',
+    type: 'social',
+    locationName: 'Marina di Camerota, Campania',
+    mediaUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+    mediaType: 'image',
+    replies: [
+      {
+        id: 'r_soc3_1',
+        user: 'Elena_Camper91',
+        text: 'Meraviglioso! L\'area sosta è aperta anche a febbraio?',
+        timestamp: new Date(Date.now() - 1000 * 60 * 180).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'social_post_4',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    text: "📸 Scatto del giorno dalla Community! Vi ricordiamo di verificare la pressione degli pneumatici prima di affrontare passi montani in inverno. Buon viaggio e felice chilometraggio a tutti! 🚐💨 #campertip #rolly #sicurezza",
+    timestamp: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
+    likes: 38,
+    likedByCurrentUser: false,
+    tag: 'Meteo',
+    type: 'social',
+    locationName: 'Passo Pordoi, Trentino',
+    mediaUrl: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80',
+    mediaType: 'image',
+    replies: [
+      {
+        id: 'r_soc4_1',
+        user: 'Pietro_Anto',
+        text: 'Grazie Rolly! Sempre utilissimi i tuoi consigli!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 300).toISOString()
+      }
+    ]
+  },
+  {
     id: 'rolly_topic_1',
     user: 'Rolly - Assistente CamperLife',
     avatar: '🤖',
@@ -777,7 +875,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(),
     likes: 21,
     likedByCurrentUser: false,
-    tag: 'SOS',
+    tag: 'Generale',
     type: 'forum',
     replies: [
       {

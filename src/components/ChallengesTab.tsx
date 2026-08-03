@@ -20,41 +20,44 @@ import {
   X,
   Compass,
   MessageSquare,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Lock
 } from 'lucide-react';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import { RollyOnboardingGuide } from './RollyOnboardingGuide';
 import { compressImage } from '../utils/photoCompressor';
+import { ChallengeSubmission, ChallengeItem, CommunityMessage } from '../types';
 
-export interface ChallengeSubmission {
-  id: string;
-  challengeId: string;
-  userName: string;
-  userAvatar: string;
-  userBadge: string;
-  placeName: string;
-  location: string;
-  imageUrl: string;
-  caption: string;
-  likes: number;
-  likedByMe?: boolean;
-  date: string;
-  isExample?: boolean;
-}
+export type { ChallengeSubmission, ChallengeItem };
 
-export interface ChallengeItem {
-  id: string;
-  title: string;
-  badgeTag: string;
-  icon: string;
-  description: string;
-  reward: string;
-  xpPoints: number;
-  progress: number;
-  maxProgress: number;
-  unit: string;
-  endDate: string;
-  isCompleted?: boolean;
+export function isChallengeExpired(challenge?: ChallengeItem): boolean {
+  if (!challenge) return false;
+  if (challenge.isExpired === true) return true;
+  if (challenge.isExpired === false) return false;
+
+  try {
+    const monthsMap: Record<string, number> = {
+      gennaio: 0, febbraio: 1, marzo: 2, aprile: 3, maggio: 4, giugno: 5,
+      luglio: 6, agosto: 7, settembre: 8, ottobre: 9, novembre: 10, dicembre: 11
+    };
+    const parts = challenge.endDate.toLowerCase().split(' ');
+    if (parts.length >= 3) {
+      const day = parseInt(parts[0], 10);
+      const monthStr = parts[1];
+      const year = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(year) && monthsMap[monthStr] !== undefined) {
+        const endDate = new Date(year, monthsMap[monthStr], day, 23, 59, 59);
+        return endDate.getTime() < Date.now();
+      }
+    }
+    const d = new Date(challenge.endDate);
+    if (!isNaN(d.getTime())) {
+      return d.getTime() < Date.now();
+    }
+  } catch {
+    // fallback
+  }
+  return false;
 }
 
 const INITIAL_CHALLENGES: ChallengeItem[] = [
@@ -69,7 +72,8 @@ const INITIAL_CHALLENGES: ChallengeItem[] = [
     progress: 0,
     maxProgress: 1,
     unit: 'foto',
-    endDate: '31 Agosto 2026'
+    endDate: '31 Agosto 2026',
+    isExpired: false
   },
   {
     id: 'ch_new_stop',
@@ -82,7 +86,8 @@ const INITIAL_CHALLENGES: ChallengeItem[] = [
     progress: 1,
     maxProgress: 3,
     unit: 'soste',
-    endDate: '15 Settembre 2026'
+    endDate: '15 Settembre 2026',
+    isExpired: false
   },
   {
     id: 'ch_top_review',
@@ -95,7 +100,23 @@ const INITIAL_CHALLENGES: ChallengeItem[] = [
     progress: 1,
     maxProgress: 2,
     unit: 'recensioni',
-    endDate: '20 Settembre 2026'
+    endDate: '20 Settembre 2026',
+    isExpired: false
+  },
+  {
+    id: 'ch_expired_sunset',
+    title: 'Sfida Passata: Tramonti d\'Autunno in Camper 🍂',
+    badgeTag: 'Tramonto',
+    icon: '🌅',
+    description: 'Concorso fotografico autunnale oramai concluso. Le votazioni del concorso sono chiuse.',
+    reward: 'Badge "Autunno Master" + 120 Punti XP',
+    xpPoints: 120,
+    progress: 1,
+    maxProgress: 1,
+    unit: 'foto',
+    endDate: '15 Ottobre 2025',
+    isCompleted: true,
+    isExpired: true
   }
 ];
 
@@ -144,6 +165,21 @@ const INITIAL_SUBMISSIONS: ChallengeSubmission[] = [
     likedByMe: false,
     date: '2 giorni fa',
     isExample: true
+  },
+  {
+    id: 'sub_4',
+    challengeId: 'ch_expired_sunset',
+    userName: 'Marco & Giulia (VanLife)',
+    userAvatar: 'MG',
+    userBadge: 'FotoReporter',
+    placeName: 'Tramonto a Porto Venere (Concorso Scaduto)',
+    location: 'Porto Venere (SP), Liguria',
+    imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+    caption: 'Scatto partecipante al concorso autunnale ora scaduto.',
+    likes: 58,
+    likedByMe: false,
+    date: '12 Ottobre 2025',
+    isExample: true
   }
 ];
 
@@ -155,17 +191,50 @@ const LEADERBOARD_USERS = [
   { rank: 5, name: 'Pietro&Anto Camper', points: 340, badges: '⭐ Recensore DOC', avatar: 'PA', stopsAdded: 4, isExample: true }
 ];
 
-export function ChallengesTab({
-  onOpenAddPlace,
-  currentUser
-}: {
+export interface ChallengesTabProps {
   onOpenAddPlace?: () => void;
   currentUser?: { name?: string; surname?: string; nickname?: string; email?: string } | null;
-}) {
-  const [challenges, setChallenges] = useState<ChallengeItem[]>(INITIAL_CHALLENGES);
-  const [submissions, setSubmissions] = useState<ChallengeSubmission[]>(INITIAL_SUBMISSIONS);
+  submissions?: ChallengeSubmission[];
+  onSubmissionsChange?: (subs: ChallengeSubmission[]) => void;
+  communityMessages?: CommunityMessage[];
+  onCommunityMessagesChange?: (msgs: CommunityMessage[]) => void;
+  challenges?: ChallengeItem[];
+  onChallengesChange?: (challenges: ChallengeItem[]) => void;
+}
+
+export function ChallengesTab({
+  onOpenAddPlace,
+  currentUser,
+  submissions: propSubmissions,
+  onSubmissionsChange,
+  communityMessages,
+  onCommunityMessagesChange,
+  challenges: propChallenges,
+  onChallengesChange
+}: ChallengesTabProps) {
+  const [internalChallenges, setInternalChallenges] = useState<ChallengeItem[]>(INITIAL_CHALLENGES);
+  const [internalSubmissions, setInternalSubmissions] = useState<ChallengeSubmission[]>(INITIAL_SUBMISSIONS);
   const [userXp, setUserXp] = useState<number>(380);
   const [activeTab, setActiveTab] = useState<'sfide' | 'gallery' | 'leaderboard'>('sfide');
+
+  const challenges = propChallenges || internalChallenges;
+  const submissions = propSubmissions || internalSubmissions;
+
+  const setChallengesState = (newChallenges: ChallengeItem[]) => {
+    if (onChallengesChange) {
+      onChallengesChange(newChallenges);
+    } else {
+      setInternalChallenges(newChallenges);
+    }
+  };
+
+  const setSubmissionsState = (newSubmissions: ChallengeSubmission[]) => {
+    if (onSubmissionsChange) {
+      onSubmissionsChange(newSubmissions);
+    } else {
+      setInternalSubmissions(newSubmissions);
+    }
+  };
 
   // Modal for participating in a challenge
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeItem | null>(null);
@@ -197,19 +266,54 @@ export function ChallengesTab({
   };
 
   const handleToggleLike = (subId: string) => {
-    setSubmissions(prev =>
-      prev.map(sub => {
-        if (sub.id === subId) {
-          const isLiked = sub.likedByMe;
+    const sub = submissions.find(s => s.id === subId);
+    if (!sub) return;
+
+    const challenge = challenges.find(ch => ch.id === sub.challengeId);
+    const expired = isChallengeExpired(challenge);
+
+    if (expired) {
+      window.dispatchEvent(
+        new CustomEvent('show-toast', {
+          detail: { 
+            message: '🔒 Votazione chiusa: questo concorso è scaduto! Puoi comunque mettere "Mi piace" sulla foto nella sezione Social.',
+            duration: 5000 
+          }
+        })
+      );
+      return;
+    }
+
+    const isLiked = !sub.likedByMe;
+    const newLikesCount = isLiked ? sub.likes + 1 : Math.max(0, sub.likes - 1);
+
+    const updatedSubmissions = submissions.map(s => {
+      if (s.id === subId) {
+        return {
+          ...s,
+          likedByMe: isLiked,
+          likes: newLikesCount
+        };
+      }
+      return s;
+    });
+
+    setSubmissionsState(updatedSubmissions);
+
+    // Sync likes with CommunityMessages (Social section)
+    if (communityMessages && onCommunityMessagesChange) {
+      const updatedMessages = communityMessages.map(msg => {
+        if (msg.challengeSubmissionId === subId) {
           return {
-            ...sub,
-            likedByMe: !isLiked,
-            likes: isLiked ? sub.likes - 1 : sub.likes + 1
+            ...msg,
+            likedByCurrentUser: isLiked,
+            likes: newLikesCount
           };
         }
-        return sub;
-      })
-    );
+        return msg;
+      });
+      onCommunityMessagesChange(updatedMessages);
+    }
   };
 
   const handleSubmitChallenge = (e: React.FormEvent) => {
@@ -235,7 +339,33 @@ export function ChallengesTab({
       date: 'Appena adesso'
     };
 
-    setSubmissions([newSub, ...submissions]);
+    const updatedSubmissions = [newSub, ...submissions];
+    setSubmissionsState(updatedSubmissions);
+
+    // Sync to Social Feed in CommunityTab
+    if (communityMessages && onCommunityMessagesChange) {
+      const newSocialMsg: CommunityMessage = {
+        id: `msg_${newSub.id}`,
+        user: senderName,
+        avatar: newSub.userAvatar,
+        avatarColor: 'bg-[#3E4A35]',
+        text: `🏆 Foto inviata per il Concorso: "${selectedChallenge.title}"\n📍 ${modalPlaceName.trim()} (${modalLocation.trim() || 'Italia'})\n"${modalCaption.trim() || 'Partecipazione alla sfida CamperLife App!'}"`,
+        timestamp: new Date().toISOString(),
+        likes: newSub.likes,
+        likedByCurrentUser: newSub.likedByMe,
+        tag: 'Generale',
+        type: 'social',
+        locationName: `${modalPlaceName.trim()} - ${modalLocation.trim() || 'Italia'}`,
+        mediaUrl: newSub.imageUrl,
+        mediaType: 'image',
+        challengeSubmissionId: newSub.id,
+        challengeId: selectedChallenge.id,
+        challengeTitle: selectedChallenge.title,
+        isExpiredChallenge: !!selectedChallenge.isExpired,
+        replies: []
+      };
+      onCommunityMessagesChange([newSocialMsg, ...communityMessages]);
+    }
 
     // Send email notification to admin via backend API
     fetch('/api/notify-photo-submission', {
@@ -254,20 +384,19 @@ export function ChallengesTab({
     }).catch(err => console.warn('[ChallengesTab] Error triggering photo notification email:', err));
 
     // Update challenge progress
-    setChallenges(prev =>
-      prev.map(ch => {
-        if (ch.id === selectedChallenge.id) {
-          const newProgress = Math.min(ch.maxProgress, ch.progress + 1);
-          const isCompleted = newProgress >= ch.maxProgress;
-          return {
-            ...ch,
-            progress: newProgress,
-            isCompleted
-          };
-        }
-        return ch;
-      })
-    );
+    const updatedChallenges = challenges.map(ch => {
+      if (ch.id === selectedChallenge.id) {
+        const newProgress = Math.min(ch.maxProgress, ch.progress + 1);
+        const isCompleted = newProgress >= ch.maxProgress;
+        return {
+          ...ch,
+          progress: newProgress,
+          isCompleted
+        };
+      }
+      return ch;
+    });
+    setChallengesState(updatedChallenges);
 
     // Award XP
     const pointsAwarded = selectedChallenge.xpPoints;
@@ -276,7 +405,7 @@ export function ChallengesTab({
     // Toast
     window.dispatchEvent(
       new CustomEvent('show-toast', {
-        detail: { message: `🎉 Sfida inviata con successo! +${pointsAwarded} Punti XP guadagnati!` }
+        detail: { message: `🎉 Foto pubblicata nel Concorso e sincronizzata sul Social Feed! +${pointsAwarded} Punti XP` }
       })
     );
 
@@ -524,83 +653,109 @@ export function ChallengesTab({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {submissions.map(sub => (
-              <div
-                key={sub.id}
-                className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="relative aspect-video bg-slate-100 overflow-hidden group">
-                    <img
-                      src={sub.imageUrl}
-                      alt={sub.placeName}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white font-bold text-[10px] flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-amber-400" />
-                      <span className="truncate max-w-[160px]">{sub.placeName}</span>
-                    </div>
-                    {sub.isExample && (
-                      <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-sm">
-                        Esempio
+            {submissions.map(sub => {
+              const ch = challenges.find(item => item.id === sub.challengeId);
+              const expired = isChallengeExpired(ch);
+
+              return (
+                <div
+                  key={sub.id}
+                  className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="relative aspect-video bg-slate-100 overflow-hidden group">
+                      <img
+                        src={sub.imageUrl}
+                        alt={sub.placeName}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white font-bold text-[10px] flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-amber-400" />
+                        <span className="truncate max-w-[160px]">{sub.placeName}</span>
                       </div>
+                      {expired ? (
+                        <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-rose-600 text-white font-black text-[9px] uppercase tracking-wider shadow-sm flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5" />
+                          Scaduto
+                        </div>
+                      ) : sub.isExample ? (
+                        <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-sm">
+                          Esempio
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-emerald-700 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+                            {sub.userAvatar}
+                          </div>
+                          <div>
+                            <div className="font-bold text-xs text-slate-900 dark:text-white leading-tight flex items-center gap-1.5">
+                              <span>{sub.userName}</span>
+                              {sub.isExample && (
+                                <span className="px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 text-[9px] font-black">
+                                  (Esempio)
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                              {sub.userBadge}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-slate-400">{sub.date}</span>
+                      </div>
+
+                      <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed italic">
+                        "{sub.caption}"
+                      </p>
+
+                      <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                        <span>{sub.location}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-700/80 flex items-center justify-between">
+                    {expired ? (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleLike(sub.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200/90 dark:bg-slate-700/90 text-slate-600 dark:text-slate-300 cursor-pointer border border-slate-300 dark:border-slate-600"
+                        title="Votazione concorso conclusa per scadenza"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{sub.likes} (Scaduto)</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleLike(sub.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          sub.likedByMe
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${sub.likedByMe ? 'fill-rose-600 text-rose-600' : ''}`} />
+                        <span>{sub.likes} Mi piace</span>
+                      </button>
                     )}
-                  </div>
 
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-emerald-700 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
-                          {sub.userAvatar}
-                        </div>
-                        <div>
-                          <div className="font-bold text-xs text-slate-900 dark:text-white leading-tight flex items-center gap-1.5">
-                            <span>{sub.userName}</span>
-                            {sub.isExample && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 text-[9px] font-black">
-                                (Esempio)
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                            {sub.userBadge}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-slate-400">{sub.date}</span>
-                    </div>
-
-                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed italic">
-                      "{sub.caption}"
-                    </p>
-
-                    <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                      <span>{sub.location}</span>
-                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg ${
+                      expired 
+                        ? 'text-rose-900 dark:text-rose-200 bg-rose-100/80 dark:bg-rose-950/80 border border-rose-300/80' 
+                        : 'text-amber-900 dark:text-amber-200 bg-amber-100/80 dark:bg-amber-950/80 border border-amber-200/80 dark:border-amber-800/60'
+                    }`}>
+                      {expired ? '🔒 Votazioni Chiuse' : sub.isExample ? 'Foto di Esempio' : 'Concorso Valido'}
+                    </span>
                   </div>
                 </div>
-
-                <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-700/80 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleLike(sub.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      sub.likedByMe
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
-                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 border border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    <Heart className={`w-3.5 h-3.5 ${sub.likedByMe ? 'fill-rose-600 text-rose-600' : ''}`} />
-                    <span>{sub.likes} {sub.likes === 1 ? 'Mi piace' : 'Mi piace'}</span>
-                  </button>
-
-                  <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200 bg-amber-100/80 dark:bg-amber-950/80 border border-amber-200/80 dark:border-amber-800/60 px-2.5 py-1 rounded-lg">
-                    {sub.isExample ? 'Foto di Esempio' : 'Concorso Valido'}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

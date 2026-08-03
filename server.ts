@@ -1694,7 +1694,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // --- USER AUTHENTICATION & REGISTRATION ENDPOINTS ---
   app.post("/api/register", async (req, res) => {
     try {
-      const { email, password, name, surname, dob, nickname, inviteCode } = req.body;
+      const { email, password, name, surname, dob, nickname, inviteCode, profilePhoto } = req.body;
       if (!email || !password || !nickname) {
         return res.status(400).json({ error: "Email, password e nickname sono richiesti per la registrazione." });
       }
@@ -1728,6 +1728,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         surname: surname || "",
         dob: dob || "",
         nickname: nickname.trim(),
+        profilePhoto: profilePhoto || "",
         favorites: [],
         createdAt: new Date().toISOString(),
         approved: isRegisteredUserAdmin ? true : false
@@ -1768,7 +1769,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         }
       }
 
-      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, approved: newUserDoc.approved } });
+      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
     } catch (err: any) {
       console.error("Error in register endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown register error" });
@@ -1803,6 +1804,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           email: userData.email, 
           name: userData.name, 
           nickname: userData.nickname,
+          profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
           favorites: userData.favorites || [],
           isModerator: !!userData.isModerator
         } 
@@ -1810,6 +1812,26 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err: any) {
       console.error("Error in login endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown login error" });
+    }
+  });
+
+  // Endpoint for user profile update (photo, nickname, etc.)
+  app.post("/api/user/update-profile", async (req, res) => {
+    try {
+      const { email, profilePhoto, nickname, name } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email mancante." });
+      }
+      const updateData: any = {};
+      if (profilePhoto !== undefined) updateData.profilePhoto = profilePhoto;
+      if (nickname) updateData.nickname = nickname.trim();
+      if (name) updateData.name = name.trim();
+
+      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update(updateData);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error updating user profile:", err);
+      res.status(500).json({ error: err.message || "Errore aggiornamento profilo" });
     }
   });
 
@@ -2127,12 +2149,16 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         user: msg.user,
         avatar: msg.avatar || "👨‍💻",
         avatarColor: msg.avatarColor || "#86C232",
+        title: msg.title || undefined,
         text: msg.text,
         timestamp: msg.timestamp || new Date().toISOString(),
         likes: Number(msg.likes) || 0,
         likedByCurrentUser: false,
         tag: msg.tag || "Generale",
         type: msg.type || (msgId.startsWith("chat_") ? "chat" : "forum"),
+        locationName: msg.locationName || undefined,
+        mediaUrl: msg.mediaUrl || undefined,
+        mediaType: msg.mediaType || undefined,
         isResolved: msg.isResolved || false,
         replies: msg.replies || []
       };

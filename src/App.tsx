@@ -14,6 +14,8 @@ import {
   PlaceCategory,
   DashboardSettings,
   Trip,
+  ChallengeSubmission,
+  ChallengeItem,
 } from "./types";
 import {
   INITIAL_PLACES,
@@ -143,6 +145,7 @@ export default function App() {
     nickname: string;
     email: string;
     name: string;
+    profilePhoto?: string;
     isModerator?: boolean;
   } | null>(() => {
     try {
@@ -242,6 +245,44 @@ export default function App() {
     }
     return INITIAL_COMMUNITY_MESSAGES;
   });
+
+  const [challenges, setChallenges] = React.useState<ChallengeItem[] | undefined>(() => {
+    try {
+      const saved = localStorage.getItem("camper_challenges");
+      return saved ? JSON.parse(saved) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  const [challengeSubmissions, setChallengeSubmissions] = React.useState<ChallengeSubmission[] | undefined>(() => {
+    try {
+      const saved = localStorage.getItem("camper_challenge_submissions");
+      return saved ? JSON.parse(saved) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  React.useEffect(() => {
+    if (challenges) {
+      try {
+        localStorage.setItem("camper_challenges", JSON.stringify(challenges));
+      } catch (e) {
+        console.error("Error saving challenges", e);
+      }
+    }
+  }, [challenges]);
+
+  React.useEffect(() => {
+    if (challengeSubmissions) {
+      try {
+        localStorage.setItem("camper_challenge_submissions", JSON.stringify(challengeSubmissions));
+      } catch (e) {
+        console.error("Error saving challenge submissions", e);
+      }
+    }
+  }, [challengeSubmissions]);
 
   const [checklistItems, setChecklistItems] = useFirestoreSync<ChecklistItem[]>("user_data", "checklist", DEFAULT_CHECKLIST);
   const [deadlines, setDeadlines] = useFirestoreSync<Deadline[]>("user_data", "deadlines", INITIAL_DEADLINES);
@@ -4216,11 +4257,26 @@ out center;`;
                     </div>
 
                     <div className="flex items-center gap-3.5 w-full sm:w-auto justify-between sm:justify-end">
-                      <span className="text-xs font-extrabold text-slate-600 shrink-0">
-                        {currentUser
-                          ? `Profilo: ${currentUser.nickname}`
-                          : "Ospite (Storage Locale)"}
-                      </span>
+                      <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 shrink-0">
+                        {currentUser ? (
+                          <>
+                            {currentUser.profilePhoto ? (
+                              <img
+                                src={currentUser.profilePhoto}
+                                alt={currentUser.nickname}
+                                className="w-6 h-6 rounded-full object-cover border border-[#3E4A35]/30 shadow-2xs"
+                              />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-[#3E4A35] text-white font-extrabold text-[10px] flex items-center justify-center uppercase">
+                                {currentUser.nickname?.[0] || 'U'}
+                              </div>
+                            )}
+                            <span>Profilo: {currentUser.nickname}</span>
+                          </>
+                        ) : (
+                          <span>Ospite (Storage Locale)</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -4410,6 +4466,7 @@ out center;`;
                           email: user.email,
                           nickname: user.nickname,
                           name: user.name,
+                          profilePhoto: user.profilePhoto,
                           isModerator: user.isModerator,
                         };
                         setCurrentUser(sanitizedUser);
@@ -4437,12 +4494,21 @@ out center;`;
                       isAdmin={isAdminLoggedIn}
                       onOpenChallenges={() => setSettingsSubTab("challenges")}
                       currentUser={currentUser}
+                      challengeSubmissions={challengeSubmissions}
+                      onChallengeSubmissionsChange={setChallengeSubmissions}
+                      challenges={challenges}
                     />
                   )}
                   {settingsSubTab === "challenges" && (
                     <ChallengesTab
                       onOpenAddPlace={() => setActiveTab("map_nav")}
                       currentUser={currentUser}
+                      submissions={challengeSubmissions}
+                      onSubmissionsChange={setChallengeSubmissions}
+                      communityMessages={communityMessages}
+                      onCommunityMessagesChange={handleCommunityChange}
+                      challenges={challenges}
+                      onChallengesChange={setChallenges}
                     />
                   )}
                   {settingsSubTab === "shared_trips" && (

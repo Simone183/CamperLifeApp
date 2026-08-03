@@ -15,6 +15,7 @@ import {
   OSMObstacle,
   Trip,
 } from "../types";
+import { detectPlaceCategoryAndLabel, getPlaceBadgeText } from "../utils/placeCategoryHelper";
 import {
   MapPin,
   Heart,
@@ -1736,20 +1737,8 @@ export default function MapTab({
       googleMapInstance.setZoom(13);
     }
 
-    // Determine appropriate category
-    let category: Place["category"] = "area_sosta";
-    const types = (sug.types || []).map((t: string) => t.toLowerCase());
-    const nameLower = (sug.name || sug.display_name || "").toLowerCase();
-
-    if (types.includes("campground") || types.includes("rv_park") || nameLower.includes("camping") || nameLower.includes("campeggio")) {
-      category = "campeggio";
-    } else if (nameLower.includes("service") || nameLower.includes("carico") || nameLower.includes("scarico") || nameLower.includes("sosta camper")) {
-      category = "camper_service";
-    } else if (types.includes("parking") || nameLower.includes("parcheggio")) {
-      category = "parcheggio_camper";
-    } else if (nameLower.includes("agriturismo") || nameLower.includes("agricamper")) {
-      category = "area_sosta";
-    }
+    // Determine appropriate category and human-readable label
+    const detected = detectPlaceCategoryAndLabel(sug);
 
     const distText = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm)
       ? (sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)}m dalla tua posizione` : `${sug.distanceKm.toFixed(1)}km dalla tua posizione`)
@@ -1758,7 +1747,8 @@ export default function MapTab({
     const customPlace: Place = {
       id: sug.id || `google-${Date.now()}`,
       name: sug.name || sug.display_name?.split(",")[0] || "Località Ricercata",
-      category: category,
+      category: detected.category,
+      categoryLabel: detected.categoryLabel,
       lat: lat,
       lng: lng,
       address: sug.address || sug.display_name || "Indirizzo trovato tramite la ricerca",
@@ -4654,11 +4644,24 @@ out center;`;
                               }`}>
                                 {isGoogle ? "Google Places" : "Mappa"}
                               </span>
-                              {sug.types && sug.types.length > 0 && (
-                                <span className="text-[9.5px] text-slate-400 font-semibold truncate capitalize">
-                                  • {sug.types[0].replace(/_/g, " ")}
-                                </span>
-                              )}
+                              {(() => {
+                                const detected = detectPlaceCategoryAndLabel(sug);
+                                if (detected.categoryLabel) {
+                                  return (
+                                    <span className="text-[9.5px] text-emerald-800 font-extrabold uppercase bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-200/60 truncate">
+                                      • {detected.categoryLabel}
+                                    </span>
+                                  );
+                                }
+                                if (sug.types && sug.types.length > 0) {
+                                  return (
+                                    <span className="text-[9.5px] text-slate-400 font-semibold truncate capitalize">
+                                      • {sug.types[0].replace(/_/g, " ")}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                           </div>
                         </button>
@@ -5428,19 +5431,29 @@ out center;`;
                 )}
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${
-                        selectedPlace.category === "area_sosta"
-                          ? "bg-[#5A6B4E]/15 text-[#3E4A35]"
-                          : selectedPlace.category === "campeggio"
-                            ? "bg-[#3E4A35]/15 text-[#3E4A35]"
-                            : selectedPlace.category === "parcheggio_camper"
-                              ? "bg-sky-100 text-sky-800"
-                              : "bg-[#A45C40]/15 text-[#A45C40]"
-                      }`}
-                    >
-                      {selectedPlace.category.replace("_", " ")}
-                    </span>
+                    {(() => {
+                      const badgeText = getPlaceBadgeText(selectedPlace);
+                      if (!badgeText) return null;
+                      return (
+                        <span
+                          className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${
+                            badgeText === "CAMPEGGIO"
+                              ? "bg-[#3E4A35]/15 text-[#3E4A35]"
+                              : badgeText === "PARCHEGGIO" || badgeText === "PARCHEGGIO CAMPER"
+                                ? "bg-sky-100 text-sky-800"
+                                : badgeText === "CAMPER SERVICE"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : badgeText === "RISTORANTE" || badgeText === "BAR" || badgeText === "PASTICCERIA / BAR"
+                                    ? "bg-amber-100 text-amber-900 border border-amber-200/60"
+                                    : badgeText === "AUTORICAMBI" || badgeText === "OFFICINA MECCANICA"
+                                      ? "bg-orange-100 text-orange-900 border border-orange-200/60"
+                                      : "bg-[#5A6B4E]/15 text-[#3E4A35]"
+                          }`}
+                        >
+                          {badgeText}
+                        </span>
+                      );
+                    })()}
                     {selectedPlace.id !== "current_location" && (
                       <span className="text-slate-600 font-bold font-mono text-[10px]">
                         {selectedPlace.priceInfo}
@@ -6258,19 +6271,29 @@ out center;`;
                 {/* Customize/Replace controls directly inline! */}
                 {/* Customize/Replace controls disabled */}
                 <div className="absolute top-3 left-3 flex gap-2">
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm ${
-                      selectedPlace.category === "area_sosta"
-                        ? "bg-[#5A6B4E] text-white"
-                        : selectedPlace.category === "campeggio"
-                          ? "bg-[#3E4A35] text-white"
-                          : selectedPlace.category === "parcheggio_camper"
-                            ? "bg-sky-600 text-white"
-                            : "bg-[#A45C40] text-white"
-                    }`}
-                  >
-                    {selectedPlace.category.replace("_", " ")}
-                  </span>
+                  {(() => {
+                    const badgeText = getPlaceBadgeText(selectedPlace);
+                    if (!badgeText) return null;
+                    return (
+                      <span
+                        className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm ${
+                          badgeText === "CAMPEGGIO"
+                            ? "bg-[#3E4A35] text-white"
+                            : badgeText === "PARCHEGGIO" || badgeText === "PARCHEGGIO CAMPER"
+                              ? "bg-sky-600 text-white"
+                              : badgeText === "CAMPER SERVICE"
+                                ? "bg-emerald-600 text-white"
+                                : badgeText === "RISTORANTE" || badgeText === "BAR" || badgeText === "PASTICCERIA / BAR"
+                                  ? "bg-amber-600 text-white border border-amber-400/30"
+                                  : badgeText === "AUTORICAMBI" || badgeText === "OFFICINA MECCANICA"
+                                    ? "bg-orange-600 text-white border border-orange-400/30"
+                                    : "bg-[#5A6B4E] text-white"
+                        }`}
+                      >
+                        {badgeText}
+                      </span>
+                    );
+                  })()}
                   {selectedPlace.source && (
                     <span className="px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase tracking-wider shadow-sm bg-white/95 text-slate-700 border border-slate-200/50 flex items-center gap-1 backdrop-blur-xs">
                       ℹ️ DATI VERIFICATI

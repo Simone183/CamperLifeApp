@@ -78,6 +78,7 @@ export interface Place {
   id: string;
   name: string;
   category: PlaceCategory;
+  categoryLabel?: string;
   lat: number;
   lng: number;
   address: string;
@@ -109,6 +110,7 @@ export interface CommunityMessage {
   id: string;
   user: string;
   avatar: string;
+  avatarUrl?: string;
   avatarColor: string;
   title?: string; // Titolo dell'argomento di discussione per il forum
   text: string;
@@ -117,17 +119,72 @@ export interface CommunityMessage {
   likedByCurrentUser?: boolean;
   tag: 'SOS' | 'Meteo' | 'Generale' | 'Incontro' | 'Sosta';
   isResolved?: boolean;
-  type?: 'forum' | 'chat';
+  type?: 'forum' | 'chat' | 'social';
+  locationName?: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video';
+  challengeSubmissionId?: string;
+  challengeId?: string;
+  challengeTitle?: string;
+  isExpiredChallenge?: boolean;
+  isModerated?: boolean;
   replies?: Array<{
     id: string;
     user: string;
     text: string;
     timestamp: string;
+    avatar?: string;
+    avatarUrl?: string;
+    avatarColor?: string;
     mediaUrl?: string;
     mediaType?: 'image' | 'video';
+    isModerated?: boolean;
   }>;
+}
+
+export interface User {
+  email: string;
+  nickname: string;
+  name: string;
+  surname?: string;
+  dob?: string;
+  profilePhoto?: string;
+  favorites?: string[];
+  isModerator?: boolean;
+  approved?: boolean;
+}
+
+export interface ChallengeSubmission {
+  id: string;
+  challengeId: string;
+  userName: string;
+  userAvatar: string;
+  userBadge: string;
+  placeName: string;
+  location: string;
+  imageUrl: string;
+  caption: string;
+  likes: number;
+  likedByMe?: boolean;
+  date: string;
+  isExample?: boolean;
+  communityMessageId?: string;
+}
+
+export interface ChallengeItem {
+  id: string;
+  title: string;
+  badgeTag: string;
+  icon: string;
+  description: string;
+  reward: string;
+  xpPoints: number;
+  progress: number;
+  maxProgress: number;
+  unit: string;
+  endDate: string;
+  isCompleted?: boolean;
+  isExpired?: boolean;
 }
 
 export interface CamperGalleryPhoto {

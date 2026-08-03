@@ -3,7 +3,7 @@ import { ArrowLeft, Lock, Mail, Eye, EyeOff } from 'lucide-react';
 
 interface LoginFormProps {
   onBack: () => void;
-  onSuccess: (user: { nickname: string; email: string; name: string; favorites: string[]; isModerator?: boolean }) => void;
+  onSuccess: (user: { nickname: string; email: string; name: string; favorites: string[]; isModerator?: boolean; profilePhoto?: string }) => void;
   onSwitchToRegistration?: () => void;
   hideBack?: boolean;
 }

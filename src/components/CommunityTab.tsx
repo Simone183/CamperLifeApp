@@ -4,7 +4,9 @@
  */
 
 import React from 'react';
-import { CommunityMessage } from '../types';
+import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
+import { CartoonCamperAvatar } from './CartoonCamperAvatar';
+import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
 import {
   MessageSquare,
   Heart,
@@ -28,8 +30,45 @@ import {
   Image as ImageIcon,
   Film,
   Play,
-  ArrowLeft
+  ArrowLeft,
+  Camera,
+  MapPin,
+  ThumbsUp,
+  ShieldCheck
 } from 'lucide-react';
+
+function getRelativeTime(timestamp: string): string {
+  try {
+    const now = new Date();
+    const date = new Date(timestamp);
+    const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diffSeconds < 60) return 'Proprio ora';
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes} min fa`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'ora' : 'ore'} fa`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} ${diffDays === 1 ? 'giorno' : 'giorni'} fa`;
+    return date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+  } catch {
+    return 'Di recente';
+  }
+}
+
+function renderTextWithHashtags(text: string) {
+  if (!text) return null;
+  const parts = text.split(/(\s+)/);
+  return parts.map((part, i) => {
+    if (part.startsWith('#') && part.length > 1) {
+      return (
+        <span key={i} className="font-bold text-[#3E4A35] dark:text-[#A3B896] hover:underline cursor-pointer">
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
 
 interface CommunityTabProps {
   messages: CommunityMessage[];
@@ -41,12 +80,70 @@ interface CommunityTabProps {
     name?: string;
     email?: string;
     isModerator?: boolean;
+    profilePhoto?: string;
   } | null;
+  challengeSubmissions?: ChallengeSubmission[];
+  onChallengeSubmissionsChange?: (subs: ChallengeSubmission[]) => void;
+  challenges?: ChallengeItem[];
 }
 
-export default function CommunityTab({ messages, onChange, isAdmin, onOpenChallenges, currentUser }: CommunityTabProps) {
-  // View mode: 'feed' (Social/Forum), 'chat' (WhatsApp style), 'sos' (Emergency SOS focus)
-  const [viewMode, setViewMode] = React.useState<'feed' | 'chat' | 'sos'>('feed');
+function UserAvatar({
+  avatar,
+  avatarUrl,
+  user,
+  avatarColor,
+  size = 'w-10 h-10',
+  textSize = 'text-sm'
+}: {
+  avatar?: string;
+  avatarUrl?: string;
+  user: string;
+  avatarColor?: string;
+  size?: string;
+  textSize?: string;
+}) {
+  const isRolly = (user && user.toLowerCase().includes('rolly')) || avatar === '🤖' || avatar === 'Rolly' || avatar === 'rolly';
+
+  if (isRolly) {
+    return <CartoonCamperAvatar className={`${size} shrink-0`} />;
+  }
+
+  const photo = avatarUrl || (avatar && (avatar.startsWith('data:') || avatar.startsWith('http') || avatar.startsWith('/')) ? avatar : null);
+
+  if (photo) {
+    return (
+      <div className={`${size} rounded-full overflow-hidden shrink-0 shadow-xs border border-slate-200/80 dark:border-slate-700 bg-slate-100 dark:bg-slate-800`}>
+        <img src={photo} alt={user} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
+  const initial = (avatar && avatar.length <= 4 && !avatar.startsWith('data:')) ? avatar : (user ? user[0].toUpperCase() : 'U');
+
+  return (
+    <div className={`${size} rounded-full ${avatarColor || 'bg-[#3E4A35]'} text-white font-black flex items-center justify-center ${textSize} shadow-xs shrink-0 uppercase`}>
+      {initial}
+    </div>
+  );
+}
+
+export default function CommunityTab({
+  messages,
+  onChange,
+  isAdmin,
+  onOpenChallenges,
+  currentUser,
+  challengeSubmissions,
+  onChallengeSubmissionsChange,
+  challenges
+}: CommunityTabProps) {
+  // View mode: 'social' (Social Feed), 'feed' (Forum Argomenti), 'chat' (WhatsApp style), 'sos' (Emergency SOS focus)
+  const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'sos'>('social');
+  const [socialSubFilter, setSocialSubFilter] = React.useState<'all' | 'media' | 'popular' | 'mine'>('all');
+  const [quickSocialText, setQuickSocialText] = React.useState('');
+  const [postLocationName, setPostLocationName] = React.useState('');
+  const [doubleTapLikedId, setDoubleTapLikedId] = React.useState<string | null>(null);
+  const [copiedPostId, setCopiedPostId] = React.useState<string | null>(null);
   const [selectedTag, setSelectedTag] = React.useState<CommunityMessage['tag'] | 'Tutti'>('Tutti');
   const [searchQuery, setSearchQuery] = React.useState('');
 
@@ -100,7 +197,7 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
   const [expandedReplies, setExpandedReplies] = React.useState<{ [key: string]: boolean }>({});
   const [replyTexts, setReplyTexts] = React.useState<{ [key: string]: string }>({});
   const [showCreatePostModal, setShowCreatePostModal] = React.useState(false);
-  const [postTargetType, setPostTargetType] = React.useState<'forum' | 'chat'>('forum');
+  const [postTargetType, setPostTargetType] = React.useState<'social' | 'forum' | 'chat'>('social');
 
   // Media Attachment States
   const [postMedia, setPostMedia] = React.useState<{ url: string; type: 'image' | 'video'; name: string } | null>(null);
@@ -275,11 +372,70 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
     requestDeleteReply(msgId, replyId);
   };
 
-  const handleCreatePost = (e?: React.FormEvent, overrideTargetType?: 'forum' | 'chat') => {
+  const handleQuickSocialSubmit = () => {
+    if (!quickSocialText.trim() && !postMedia) return;
+    const userPhoto = currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
+    
+    // Rolly AI Moderation check
+    const rawText = quickSocialText.trim() || '📸 Scatto in camper!';
+    const mod = moderateText(rawText);
+
+    const newMsg: CommunityMessage = {
+      id: `m_soc_${Date.now()}`,
+      user: activeUserName,
+      avatar: userPhoto || currentUserAvatar,
+      avatarUrl: userPhoto,
+      avatarColor: currentUserColor,
+      text: mod.cleanText,
+      timestamp: new Date().toISOString(),
+      likes: 0,
+      likedByCurrentUser: false,
+      tag: postTag || 'Generale',
+      type: 'social',
+      locationName: postLocationName.trim() || undefined,
+      mediaUrl: postMedia?.url,
+      mediaType: postMedia?.type,
+      isModerated: mod.hasProfanity,
+      replies: mod.hasProfanity
+        ? [
+            {
+              id: `reply_rolly_mod_${Date.now()}`,
+              user: 'Rolly - Assistente CamperLife',
+              text: getRollyWarningText(activeUserName, 'social'),
+              timestamp: new Date().toISOString(),
+              avatar: 'Rolly',
+              avatarColor: 'bg-[#3E4A35]',
+              isModerated: true,
+            },
+          ]
+        : [],
+    };
+    onChange([newMsg, ...messages]);
+    setQuickSocialText('');
+    setPostMedia(null);
+    setPostLocationName('');
+    
+    if (mod.hasProfanity) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "🛡️ Moderazione Rolly: Il linguaggio è stato censurato per il rispetto del regolamento!" },
+        })
+      );
+    } else {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "✨ Post pubblicato nella Bacheca Social!" },
+        })
+      );
+    }
+  };
+
+  const handleCreatePost = (e?: React.FormEvent, overrideTargetType?: 'social' | 'forum' | 'chat') => {
     if (e) e.preventDefault();
     if (!postText.trim() && !postMedia) return;
 
-    const targetType: 'forum' | 'chat' = overrideTargetType || postTargetType || (viewMode === 'chat' ? 'chat' : 'forum');
+    const targetType: 'social' | 'forum' | 'chat' =
+      overrideTargetType || postTargetType || (viewMode === 'chat' ? 'chat' : viewMode === 'social' ? 'social' : 'forum');
 
     const effectiveTag: CommunityMessage['tag'] =
       viewMode === 'sos' || postTag === 'SOS'
@@ -288,25 +444,67 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
         ? selectedTag
         : postTag;
 
+    const userPhoto = currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
+
+    // Rolly AI Moderation Check
+    const titleMod = moderateText(postTitle.trim());
+    const textMod = moderateText(postText.trim());
+    const hasProfanity = titleMod.hasProfanity || textMod.hasProfanity;
+
     const newMsg: CommunityMessage = {
       id: `m_${Date.now()}`,
       user: activeUserName,
-      avatar: currentUserAvatar,
+      avatar: userPhoto || currentUserAvatar,
+      avatarUrl: userPhoto,
       avatarColor: currentUserColor,
-      title: targetType === 'forum' ? (postTitle.trim() || undefined) : undefined,
-      text: postText.trim(),
+      title: targetType === 'forum' ? (titleMod.cleanText || undefined) : undefined,
+      text: textMod.cleanText,
       timestamp: new Date().toISOString(),
       likes: 0,
       likedByCurrentUser: false,
       tag: effectiveTag,
       type: targetType,
+      locationName: postLocationName.trim() || undefined,
       isResolved: false,
       mediaUrl: postMedia?.url,
       mediaType: postMedia?.type,
-      replies: [],
+      isModerated: hasProfanity,
+      replies: hasProfanity && targetType !== 'chat'
+        ? [
+            {
+              id: `reply_rolly_mod_${Date.now()}`,
+              user: 'Rolly - Assistente CamperLife',
+              text: getRollyWarningText(activeUserName, targetType),
+              timestamp: new Date().toISOString(),
+              avatar: 'Rolly',
+              avatarColor: 'bg-[#3E4A35]',
+              isModerated: true,
+            },
+          ]
+        : [],
     };
 
-    const updated = [newMsg, ...messages];
+    let updated = [newMsg, ...messages];
+
+    // If profanity in Chat Live, Rolly immediately sends an automated public warning chat message right after the user message
+    if (hasProfanity && targetType === 'chat') {
+      const rollyWarningMsg: CommunityMessage = {
+        id: `m_rolly_mod_${Date.now() + 1}`,
+        user: 'Rolly - Assistente CamperLife',
+        avatar: 'Rolly',
+        avatarColor: 'bg-[#3E4A35]',
+        text: getRollyWarningText(activeUserName, 'chat'),
+        timestamp: new Date(Date.now() + 100).toISOString(),
+        likes: 0,
+        likedByCurrentUser: false,
+        tag: 'Generale',
+        type: 'chat',
+        replies: [],
+        isModerated: true,
+      };
+      updated = [rollyWarningMsg, newMsg, ...messages];
+    }
+
     onChange(updated);
 
     if (targetType === 'forum') {
@@ -317,7 +515,16 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
     setPostTitle('');
     setPostText('');
     setPostMedia(null);
+    setPostLocationName('');
     setShowCreatePostModal(false);
+
+    if (hasProfanity) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "🛡️ Rolly Moderatore: Linguaggio non appropriato censurato col richiamo automatico!" },
+        })
+      );
+    }
   };
 
   const simulateReply = (msgId: string, type: 'SOS_RESP' | 'GEN_RESP') => {
@@ -359,18 +566,35 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
   };
 
   const handleLike = (id: string) => {
+    let targetMsg: CommunityMessage | undefined;
     const updated = messages.map((m) => {
       if (m.id === id) {
         const liked = !m.likedByCurrentUser;
-        return {
+        targetMsg = {
           ...m,
           likedByCurrentUser: liked,
-          likes: liked ? m.likes + 1 : m.likes - 1,
+          likes: liked ? m.likes + 1 : Math.max(0, m.likes - 1),
         };
+        return targetMsg;
       }
       return m;
     });
     onChange(updated);
+
+    if (targetMsg && targetMsg.challengeSubmissionId && challengeSubmissions && onChallengeSubmissionsChange) {
+      const subId = targetMsg.challengeSubmissionId;
+      const updatedSubs = challengeSubmissions.map((sub) => {
+        if (sub.id === subId) {
+          return {
+            ...sub,
+            likes: targetMsg!.likes,
+            likedByMe: targetMsg!.likedByCurrentUser,
+          };
+        }
+        return sub;
+      });
+      onChallengeSubmissionsChange(updatedSubs);
+    }
   };
 
   const handleResolve = (msgId: string) => {
@@ -395,23 +619,49 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
     const currentMedia = replyMedia[msgId];
     if (!text.trim() && !currentMedia) return;
 
+    const userPhoto = currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
+
+    // Rolly AI Moderation Check
+    const mod = moderateText(text.trim());
+    const hasProfanity = mod.hasProfanity;
+
+    const userReply = {
+      id: `reply_${Date.now()}`,
+      user: activeUserName,
+      text: mod.cleanText,
+      timestamp: new Date().toISOString(),
+      avatar: userPhoto || activeUserName.substring(0, 2).toUpperCase(),
+      avatarUrl: userPhoto,
+      avatarColor: currentUserColor,
+      mediaUrl: currentMedia?.url,
+      mediaType: currentMedia?.type,
+      isModerated: hasProfanity,
+    };
+
+    const newReplies = [userReply];
+
+    if (hasProfanity) {
+      newReplies.push({
+        id: `reply_rolly_mod_${Date.now() + 1}`,
+        user: 'Rolly - Assistente CamperLife',
+        text: getRollyWarningText(activeUserName, 'reply'),
+        timestamp: new Date(Date.now() + 100).toISOString(),
+        avatar: 'Rolly',
+        avatarUrl: undefined,
+        avatarColor: 'bg-[#3E4A35]',
+        mediaUrl: undefined,
+        mediaType: undefined,
+        isModerated: true,
+      });
+    }
+
     onChange(
       messages.map((m) => {
         if (m.id === msgId) {
           const currentReplies = m.replies || [];
           return {
             ...m,
-            replies: [
-              ...currentReplies,
-              {
-                id: `reply_${Date.now()}`,
-                user: activeUserName,
-                text: text.trim(),
-                timestamp: new Date().toISOString(),
-                mediaUrl: currentMedia?.url,
-                mediaType: currentMedia?.type,
-              }
-            ]
+            replies: [...currentReplies, ...newReplies],
           };
         }
         return m;
@@ -426,6 +676,14 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
     });
     // Automatically expand replies when user comments
     setExpandedReplies(prev => ({ ...prev, [msgId]: true }));
+
+    if (hasProfanity) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "🛡️ Rolly Moderatore: Linguaggio inopportuno censurato ed emesso richiamo!" },
+        })
+      );
+    }
   };
 
   const getTagStyle = (tag: CommunityMessage['tag'], isResolved?: boolean) => {
@@ -441,18 +699,24 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
     }
   };
 
-  // Filtered messages calculation - Strictly separates Forum & Bacheca vs Chat Live vs SOS
+  // Filtered messages calculation - Strictly separates Social vs Forum vs Chat Live vs SOS
   const filteredMessages = messages.filter((m) => {
+    const isSocialMsg = m.type === 'social';
     const isChatMsg = m.type === 'chat';
-    const isForumMsg = m.type === 'forum' || !m.type; // default legacy messages to forum
+    const isForumMsg = m.type === 'forum' || (!m.type && !isSocialMsg);
 
-    if (viewMode === 'chat') {
+    if (viewMode === 'social') {
+      if (!isSocialMsg && !(m.type === 'forum' && m.mediaUrl)) return false;
+      if (socialSubFilter === 'media' && !m.mediaUrl) return false;
+      if (socialSubFilter === 'popular' && m.likes < 3) return false;
+      if (socialSubFilter === 'mine' && !(m.user === activeUserName || (currentUser?.email && m.user === currentUser.email))) return false;
+    } else if (viewMode === 'chat') {
       if (!isChatMsg) return false;
     } else if (viewMode === 'sos') {
-      if (!isForumMsg || m.tag !== 'SOS') return false;
+      if (m.tag !== 'SOS' || m.user.toLowerCase().includes('rolly')) return false;
     } else {
-      // viewMode === 'feed' (Forum & Bacheca) - exclude chat AND exclude SOS emergency posts
-      if (!isForumMsg || m.tag === 'SOS') return false;
+      // viewMode === 'feed' (Forum) - exclude chat, social, and SOS emergency posts
+      if (isChatMsg || isSocialMsg || m.tag === 'SOS') return false;
     }
 
     if (selectedTag !== 'Tutti' && m.tag !== selectedTag) return false;
@@ -460,17 +724,20 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
       const q = searchQuery.toLowerCase();
       const matchText = m.text.toLowerCase().includes(q);
       const matchUser = m.user.toLowerCase().includes(q);
+      const matchTitle = m.title?.toLowerCase().includes(q);
+      const matchLoc = m.locationName?.toLowerCase().includes(q);
       const matchReplies = m.replies?.some(r => r.text.toLowerCase().includes(q) || r.user.toLowerCase().includes(q));
-      return matchText || matchUser || matchReplies;
+      return matchText || matchUser || matchTitle || matchLoc || matchReplies;
     }
     return true;
   });
 
-  const activeSosCount = messages.filter(m => (m.type === 'forum' || !m.type) && m.tag === 'SOS' && !m.isResolved).length;
+  const activeSosCount = messages.filter(m => (m.type === 'forum' || !m.type) && m.tag === 'SOS' && !m.isResolved && !m.user.toLowerCase().includes('rolly')).length;
   const currentModeTotalCount = messages.filter(m => {
+    if (viewMode === 'social') return m.type === 'social' || (m.type === 'forum' && m.mediaUrl);
     if (viewMode === 'chat') return m.type === 'chat';
-    if (viewMode === 'sos') return (m.type === 'forum' || !m.type) && m.tag === 'SOS';
-    return (m.type === 'forum' || !m.type) && m.tag !== 'SOS';
+    if (viewMode === 'sos') return m.tag === 'SOS' && !m.user.toLowerCase().includes('rolly');
+    return (m.type === 'forum' || !m.type) && m.type !== 'social' && m.tag !== 'SOS';
   }).length;
 
   return (
@@ -481,7 +748,7 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
           <div className="flex items-center gap-2">
             <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
             <span>Modalità Amministratore Attiva:</span>
-            <span className="font-normal opacity-90">Puoi eliminare qualsiasi messaggio da Chat Live, Forum e SOS.</span>
+            <span className="font-normal opacity-90">Puoi eliminare qualsiasi messaggio da Social, Chat Live, Forum e SOS.</span>
           </div>
           <span className="text-[10px] bg-amber-500/20 dark:bg-amber-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shrink-0">
             Admin Moderazione
@@ -489,80 +756,111 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
         </div>
       )}
 
-      {/* Contest Banner - Compact Mobile Friendly */}
-      <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-slate-950 rounded-2xl p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border border-amber-400/60">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-slate-950 text-amber-400 rounded-xl shadow-md text-xl shrink-0">
-            🏆
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950 text-amber-300 font-black text-[9px] uppercase tracking-wider">
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-              <span>Concorso Attivo</span>
-            </div>
-            <h3 className="font-black text-slate-950 text-xs sm:text-sm leading-tight mt-0.5 truncate">
-              Sfida #1: Foto Vista Mare 🌊
-            </h3>
-            <p className="text-slate-900/90 text-[11px] mt-0.5 line-clamp-1 sm:line-clamp-none">
-              Pubblica una foto con vista mare, aggiungi spot e scala la classifica!
-            </p>
+      {/* Rolly AI Moderation Status Banner */}
+      <div className="bg-[#3E4A35]/10 dark:bg-[#A3B896]/15 border border-[#3E4A35]/30 dark:border-[#A3B896]/30 rounded-2xl p-2.5 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-[#3E4A35] dark:text-[#A3B896] font-semibold shadow-2xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CartoonCamperAvatar className="w-5 h-5 shrink-0" />
+          <div>
+            <span className="font-black text-[#3E4A35] dark:text-[#A3B896] mr-1">Rolly Moderatore IA:</span>
+            <span className="text-slate-700 dark:text-slate-200 text-[11px]">
+              Protezione attiva 24/7 in Chat Live, Forum e Social (blocco parolacce, censura e richiami automatici).
+            </span>
           </div>
         </div>
-        {onOpenChallenges && (
-          <button
-            type="button"
-            onClick={onOpenChallenges}
-            className="w-full sm:w-auto px-4 py-2 bg-slate-950 hover:bg-slate-900 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-          >
-            <span>Partecipa Ora</span>
-            <ChevronRight className="w-3.5 h-3.5 text-amber-400" />
-          </button>
-        )}
+        <span className="text-[10px] bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 px-2.5 py-1 rounded-full font-black uppercase tracking-wider shrink-0 flex items-center gap-1">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-700" />
+          <span>In Prima Linea</span>
+        </span>
       </div>
 
-      {/* Main Mode Navigation Bar: 3-column equal grid on mobile, zero overflow scroll */}
+      {/* Contest Banner - Compact Mobile Friendly - Hidden in SOS mode */}
+      {viewMode !== 'sos' && (
+        <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-slate-950 rounded-2xl p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border border-amber-400/60">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-slate-950 text-amber-400 rounded-xl shadow-md text-xl shrink-0">
+              🏆
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950 text-amber-300 font-black text-[9px] uppercase tracking-wider">
+                <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                <span>Concorso Attivo</span>
+              </div>
+              <h3 className="font-black text-slate-950 text-xs sm:text-sm leading-tight mt-0.5 truncate">
+                Sfida #1: Foto Vista Mare 🌊
+              </h3>
+              <p className="text-slate-900/90 text-[11px] mt-0.5 line-clamp-1 sm:line-clamp-none">
+                Pubblica una foto con vista mare, aggiungi spot e scala la classifica!
+              </p>
+            </div>
+          </div>
+          {onOpenChallenges && (
+            <button
+              type="button"
+              onClick={onOpenChallenges}
+              className="w-full sm:w-auto px-4 py-2 bg-slate-950 hover:bg-slate-900 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <span>Partecipa Ora</span>
+              <ChevronRight className="w-3.5 h-3.5 text-amber-400" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Main Mode Navigation Bar: 4-column grid for Social, Forum, Chat Live, SOS */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-2 shadow-xs space-y-2">
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-4 gap-1">
+          <button
+            onClick={() => setViewMode('social')}
+            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
+              viewMode === 'social'
+                ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+          >
+            <Camera className="w-4 h-4 shrink-0" />
+            <span className="text-[10px] sm:text-xs">Social</span>
+          </button>
+
           <button
             onClick={() => {
               setViewMode('feed');
               setSelectedForumCategory(null);
               setSelectedDiscussionId(null);
             }}
-            className={`py-2 px-1.5 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
+            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
               viewMode === 'feed'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
           >
             <Flame className="w-4 h-4 shrink-0" />
-            <span className="text-[11px] sm:text-xs">Forum</span>
+            <span className="text-[10px] sm:text-xs">Forum</span>
           </button>
 
           <button
             onClick={() => setViewMode('chat')}
-            className={`py-2 px-1.5 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
+            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
               viewMode === 'chat'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
           >
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <MessageCircle className="w-4 h-4 shrink-0" />
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse sm:hidden" />
             </div>
-            <span className="text-[11px] sm:text-xs">Chat Live</span>
+            <span className="text-[10px] sm:text-xs">Chat Live</span>
           </button>
 
           <button
             onClick={() => setViewMode('sos')}
-            className={`py-2 px-1.5 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer relative ${
+            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer relative ${
               viewMode === 'sos'
                 ? 'bg-rose-600 text-white shadow-xs'
                 : 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60'
             }`}
           >
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <AlertOctagon className="w-4 h-4 shrink-0" />
               {activeSosCount > 0 && (
                 <span className="px-1 rounded-full bg-rose-500 text-white font-black text-[9px] animate-pulse sm:hidden">
@@ -570,13 +868,13 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                 </span>
               )}
             </div>
-            <span className="text-[11px] sm:text-xs">SOS</span>
+            <span className="text-[10px] sm:text-xs">SOS</span>
           </button>
         </div>
 
         <button
           onClick={() => {
-            const target = viewMode === 'chat' ? 'chat' : 'forum';
+            const target = viewMode === 'chat' ? 'chat' : viewMode === 'social' ? 'social' : 'forum';
             setPostTargetType(target);
             if (viewMode === 'sos') {
               setPostTag('SOS');
@@ -591,7 +889,15 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
           className="w-full py-2.5 bg-[#5A6B4E] hover:bg-[#3E4A35] text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
         >
           <Plus className="w-4 h-4" />
-          <span>{viewMode === 'chat' ? 'Scrivi in Chat Live' : viewMode === 'sos' ? 'Segnala Emergenza SOS' : 'Nuovo Post nel Forum'}</span>
+          <span>
+            {viewMode === 'social'
+              ? 'Pubblica uno Scatto / Pensiero Social'
+              : viewMode === 'chat'
+              ? 'Scrivi in Chat Live'
+              : viewMode === 'sos'
+              ? 'Segnala Emergenza SOS'
+              : 'Nuovo Post nel Forum'}
+          </span>
         </button>
       </div>
 
@@ -604,7 +910,13 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={viewMode === 'chat' ? "Cerca nella chat live..." : "Cerca discussioni, soste, consigli..."}
+            placeholder={
+              viewMode === 'chat'
+                ? "Cerca nella chat live..."
+                : viewMode === 'sos'
+                ? "Cerca nelle richieste di soccorso SOS..."
+                : "Cerca discussioni, soste, consigli..."
+            }
             className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all"
           />
           {searchQuery && (
@@ -617,8 +929,8 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
           )}
         </div>
 
-        {/* Category Wrap Pills - Shown for Chat & SOS modes */}
-        {viewMode !== 'feed' && (
+        {/* Category Wrap Pills - Shown ONLY for Chat mode */}
+        {viewMode === 'chat' && (
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <button
               onClick={() => setSelectedTag('Tutti')}
@@ -631,11 +943,7 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
               Tutti ({currentModeTotalCount})
             </button>
             {tags.map((tag) => {
-              const count = messages.filter((m) => {
-                if (viewMode === 'chat') return m.type === 'chat' && m.tag === tag;
-                if (viewMode === 'sos') return (m.type === 'forum' || !m.type) && m.tag === 'SOS';
-                return m.tag === tag;
-              }).length;
+              const count = messages.filter((m) => m.type === 'chat' && m.tag === tag).length;
               return (
                 <button
                   key={tag}
@@ -685,7 +993,408 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
       )}
 
       {/* MAIN CONTENT AREA */}
-      {viewMode === 'chat' ? (
+      {viewMode === 'social' ? (
+        /* SOCIAL FEED VIEW (Bacheca Foto, Video e Scatti On The Road) */
+        <div className="space-y-4">
+          {/* Quick Post Composer Card */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-4 shadow-sm space-y-3">
+            <div className="flex items-center gap-3">
+              <UserAvatar
+                avatar={currentUser?.profilePhoto}
+                user={activeUserName}
+                avatarColor={currentUserColor}
+                size="w-9 h-9"
+              />
+              <input
+                type="text"
+                value={quickSocialText}
+                onChange={(e) => setQuickSocialText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleQuickSocialSubmit(); }}
+                placeholder="Scrivi un pensiero o condividi uno scatto in viaggio..."
+                className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all"
+              />
+            </div>
+
+            {/* Optional Location & Tags Row */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <input
+                  type="text"
+                  value={postLocationName}
+                  onChange={(e) => setPostLocationName(e.target.value)}
+                  placeholder="📍 Aggiungi posizione o spot (es. Lago di Braies)"
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-[#3E4A35]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                {postMedia ? (
+                  <div className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                    <span className="truncate max-w-[120px] font-bold">{postMedia.name}</span>
+                    <button onClick={() => setPostMedia(null)} className="p-0.5 text-rose-500 hover:text-rose-700 cursor-pointer">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="file"
+                      ref={postFileInputRef}
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={(e) => handleFileUpload(e, (url, type, name) => setPostMedia({ url, type, name }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => postFileInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#5A6B4E]" />
+                      <span>Foto / Video</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleQuickSocialSubmit}
+                  className="px-4 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer active:scale-95 shrink-0"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>Pubblica</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Hashtags Suggestions */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-bold text-slate-400">Hashtags:</span>
+              {['#vanlife', '#camperlife', '#dolomiti', '#sostalibera', '#vistaMare', '#onTheRoad'].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => {
+                    if (!quickSocialText.includes(tag)) {
+                      setQuickSocialText(prev => (prev ? `${prev} ${tag}` : tag));
+                    }
+                  }}
+                  className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md text-[10px] font-extrabold text-[#3E4A35] dark:text-[#A3B896] transition-all cursor-pointer"
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Social Feed Sub-filters */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-2 shadow-2xs space-y-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 w-full">
+              {[
+                { id: 'all', label: 'Tutti i Post', icon: '✨' },
+                { id: 'media', label: 'Solo Foto & Video', icon: '📷' },
+                { id: 'popular', label: 'Più Popolari', icon: '🔥' },
+                { id: 'mine', label: 'I Miei Post', icon: '👤' },
+              ].map((sub) => (
+                <button
+                  key={sub.id}
+                  onClick={() => setSocialSubFilter(sub.id as any)}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center ${
+                    socialSubFilter === sub.id
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="text-sm shrink-0">{sub.icon}</span>
+                  <span className="truncate text-[11px] sm:text-xs">{sub.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Social Post Feed Items */}
+          {filteredMessages.length === 0 ? (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-8 text-center space-y-3 shadow-xs">
+              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700/50 text-slate-400 mx-auto flex items-center justify-center text-xl">
+                📸
+              </div>
+              <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Nessun post social trovato</h4>
+              <p className="text-slate-500 text-xs max-w-sm mx-auto">
+                Sii il primo a pubblicare uno scatto della tua avventura in camper o un pensiero con la community!
+              </p>
+              <button
+                onClick={() => {
+                  setPostTargetType('social');
+                  setShowCreatePostModal(true);
+                }}
+                className="px-4 py-2 bg-[#3E4A35] text-white font-bold text-xs rounded-xl hover:bg-[#5A6B4E] cursor-pointer"
+              >
+                Crea il Primo Post Social
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredMessages.map((msg) => {
+                const isLiked = msg.likedByCurrentUser;
+                const relTime = getRelativeTime(msg.timestamp);
+                const showDoubleTapAnim = doubleTapLikedId === msg.id;
+
+                return (
+                  <div
+                    key={msg.id}
+                    className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm overflow-hidden transition-all hover:shadow-md space-y-3"
+                  >
+                    {/* Header: Author & Spot Location */}
+                    <div className="p-4 pb-0 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <UserAvatar
+                          avatar={msg.avatar}
+                          avatarUrl={msg.avatarUrl}
+                          user={msg.user}
+                          avatarColor={msg.avatarColor}
+                          size="w-10 h-10"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs truncate">
+                              {msg.user}
+                            </span>
+                            {msg.challengeSubmissionId && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100/90 text-amber-900 border border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-2xs">
+                                🏆 Concorso: {msg.challengeTitle || 'Foto Contest'}
+                              </span>
+                            )}
+                            {viewMode !== 'social' && (
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getTagStyle(msg.tag)}`}>
+                                {msg.tag}
+                              </span>
+                            )}
+                            {msg.isModerated && !msg.user.includes('Rolly') && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-700 flex items-center gap-1 shadow-2xs">
+                                🛡️ Censurato da Rolly
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              {relTime}
+                            </span>
+                            {msg.locationName && (
+                              <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-bold truncate">
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span>{msg.locationName}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Admin Delete Action */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors"
+                          title="Elimina post (Admin)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Post Text & Hashtags */}
+                    <div className="px-4 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-line">
+                      {renderTextWithHashtags(msg.text)}
+                    </div>
+
+                    {/* Media Attachment (Photo / Video) with Double-Tap Heart */}
+                    {msg.mediaUrl && (
+                      <div
+                        className="relative bg-slate-950 overflow-hidden cursor-pointer group"
+                        onDoubleClick={() => {
+                          if (!isLiked) handleLike(msg.id);
+                          setDoubleTapLikedId(msg.id);
+                          setTimeout(() => setDoubleTapLikedId(null), 1000);
+                        }}
+                        onClick={() => setMediaModal({ url: msg.mediaUrl!, type: msg.mediaType || 'image' })}
+                      >
+                        {msg.mediaType === 'video' ? (
+                          <div className="relative aspect-video flex items-center justify-center bg-black">
+                            <video src={msg.mediaUrl} className="w-full h-full object-cover max-h-[380px]" />
+                            <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center group-hover:bg-slate-950/20 transition-all">
+                              <div className="w-12 h-12 rounded-full bg-white/90 text-slate-900 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                <Play className="w-6 h-6 ml-1 fill-current" />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={msg.mediaUrl}
+                            alt="Scatto social camper"
+                            className="w-full h-auto max-h-[420px] object-cover hover:scale-[1.01] transition-transform duration-300"
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+
+                        {/* Double tap heart animation overlay */}
+                        {showDoubleTapAnim && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none animate-in zoom-in duration-200">
+                            <Heart className="w-20 h-20 text-rose-500 fill-rose-500 drop-shadow-lg animate-pulse" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Social Post Interactive Footer (Like, Comment, Share) */}
+                    <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-4 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-4">
+                        {/* Like Button */}
+                        <button
+                          onClick={() => handleLike(msg.id)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                            isLiked
+                              ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'
+                              : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          <Heart className={`w-4 h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
+                          <span>{msg.likes > 0 ? msg.likes : 'Mi piace'}</span>
+                        </button>
+
+                        {/* Comment Button */}
+                        <button
+                          onClick={() => setExpandedReplies(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                        >
+                          <MessageSquare className="w-4 h-4 text-[#5A6B4E]" />
+                          <span>{msg.replies && msg.replies.length > 0 ? `${msg.replies.length} Commenti` : 'Commenta'}</span>
+                        </button>
+                      </div>
+
+                      {/* Share Link Button */}
+                      <button
+                        onClick={() => {
+                          setCopiedPostId(msg.id);
+                          navigator.clipboard?.writeText(window.location.href);
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: { message: "🔗 Link al post copiato negli appunti!" },
+                            })
+                          );
+                          setTimeout(() => setCopiedPostId(null), 2500);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer text-slate-500"
+                      >
+                        <Share2 className="w-4 h-4 text-slate-400" />
+                        <span className="hidden sm:inline">{copiedPostId === msg.id ? 'Copiato!' : 'Condividi'}</span>
+                      </button>
+                    </div>
+
+                    {/* Comment Thread (Expanded or when has replies) */}
+                    {expandedReplies[msg.id] && (
+                      <div className="p-3 sm:p-4 bg-slate-50/70 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-700/60 space-y-3 max-w-full overflow-hidden">
+                        <h5 className="font-extrabold text-slate-800 dark:text-slate-200 text-xs flex items-center justify-between">
+                          <span>Commenti ({msg.replies?.length || 0})</span>
+                          <span className="text-[10px] font-normal text-slate-400">Scrivi con la community</span>
+                        </h5>
+
+                        {msg.replies && msg.replies.length > 0 && (
+                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {msg.replies.map((reply) => (
+                              <div
+                                key={reply.id}
+                                className="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-2xs space-y-1.5"
+                              >
+                                <div className="flex justify-between items-center gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <UserAvatar
+                                      avatar={reply.avatar}
+                                      avatarUrl={reply.avatarUrl}
+                                      user={reply.user}
+                                      avatarColor={reply.avatarColor}
+                                      size="w-6 h-6"
+                                      textSize="text-[10px]"
+                                    />
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{reply.user}</span>
+                                    <span className="text-[9px] text-slate-400 shrink-0">{getRelativeTime(reply.timestamp)}</span>
+                                  </div>
+
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => handleDeleteReply(msg.id, reply.id)}
+                                      className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer shrink-0"
+                                      title="Elimina commento"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-700 dark:text-slate-300 pl-8">{reply.text}</p>
+                                {reply.mediaUrl && (
+                                  <div className="pl-8 pt-1">
+                                    <img
+                                      src={reply.mediaUrl}
+                                      alt="Allegato commento"
+                                      className="w-24 h-24 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
+                                      onClick={() => setMediaModal({ url: reply.mediaUrl!, type: reply.mediaType || 'image' })}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Reply Input */}
+                        <div className="flex items-center gap-1.5 sm:gap-2 pt-1 min-w-0 max-w-full">
+                          <input
+                            type="file"
+                            id={`reply_file_${msg.id}`}
+                            accept="image/*,video/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleFileUpload(e, (url, type, name) =>
+                                setReplyMedia(prev => ({ ...prev, [msg.id]: { url, type, name } }))
+                              )
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById(`reply_file_${msg.id}`)?.click()}
+                            className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                              replyMedia[msg.id]
+                                ? 'bg-[#3E4A35] text-white border-[#3E4A35]'
+                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                            }`}
+                            title="Allegazione foto/video"
+                          >
+                            <Paperclip className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="text"
+                            placeholder="Aggiungi un commento..."
+                            value={replyTexts[msg.id] || ''}
+                            onChange={(e) => setReplyTexts(prev => ({ ...prev, [msg.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateReply(msg.id); }}
+                            className="flex-1 w-0 min-w-0 px-2.5 sm:px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35]"
+                          />
+                          <button
+                            onClick={() => handleCreateReply(msg.id)}
+                            className="px-2.5 sm:px-3 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0 whitespace-nowrap"
+                          >
+                            <Send className="w-3.5 h-3.5 shrink-0" />
+                            <span>Invia</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : viewMode === 'chat' ? (
         /* WHATSAPP / DIRECT CHAT STREAM VIEW */
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-[520px]">
           {/* Stream Header */}
@@ -718,7 +1427,15 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                     className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} space-y-1`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] text-slate-400 px-1">
-                      <div className="flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
+                        <UserAvatar
+                          avatar={msg.avatar}
+                          avatarUrl={msg.avatarUrl}
+                          user={msg.user}
+                          avatarColor={msg.avatarColor}
+                          size="w-5 h-5"
+                          textSize="text-[8px]"
+                        />
                         <span
                           className={`w-2 h-2 rounded-full shrink-0 ${
                             isOnline
@@ -756,6 +1473,11 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                       }`}
                     >
                       {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
+                      {msg.isModerated && !msg.user.includes('Rolly') && (
+                        <div className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded mt-1">
+                          <span>🛡️ Censurato da Rolly</span>
+                        </div>
+                      )}
 
                       {/* Attached Media in Chat Bubble */}
                       {msg.mediaUrl && (
@@ -906,6 +1628,236 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
               </button>
             </form>
           </div>
+        </div>
+      ) : viewMode === 'sos' ? (
+        /* DEDICATED SOS EMERGENCY REQUESTS STREAM */
+        <div className="space-y-4">
+          {/* List of SOS Emergency Posts */}
+          {filteredMessages.length === 0 ? (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-8 text-center space-y-3 shadow-xs">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center text-xl font-bold">
+                💚
+              </div>
+              <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Nessuna richiesta di SOS al momento</h4>
+              <p className="text-slate-500 text-xs max-w-sm mx-auto">
+                Tutto tranquillo sulla strada! Se hai bisogno di aiuto o supporto d'emergenza, puoi lanciare una richiesta SOS.
+              </p>
+              <button
+                onClick={() => {
+                  setPostTag('SOS');
+                  setPostText('⚠️ RICHIESTA SOS: ');
+                  setShowCreatePostModal(true);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-xs"
+              >
+                Lancia una Richiesta SOS
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredMessages.map((msg) => {
+                const isResolved = msg.isResolved;
+                const relTime = getRelativeTime(msg.timestamp);
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`bg-white dark:bg-slate-800 rounded-2xl border ${
+                      isResolved
+                        ? 'border-emerald-200 dark:border-emerald-900/60'
+                        : 'border-rose-300 dark:border-rose-900/80 shadow-md'
+                    } overflow-hidden transition-all space-y-3`}
+                  >
+                    {/* Emergency Banner Header */}
+                    <div className={`px-4 py-2.5 ${
+                      isResolved
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200'
+                    } flex items-center justify-between gap-2 border-b border-rose-100 dark:border-rose-900/40`}>
+                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider">
+                        <AlertOctagon className={`w-4 h-4 ${isResolved ? 'text-emerald-600' : 'text-rose-600 animate-pulse'}`} />
+                        <span>{isResolved ? '✅ SOS RISOLTO / COMPLETATO' : '🚨 RICHIESTA SOS ATTIVA'}</span>
+                      </div>
+                      <button
+                        onClick={() => handleResolve(msg.id)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          isResolved
+                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                        }`}
+                      >
+                        {isResolved ? 'Riapri SOS' : 'Segna come Risolto'}
+                      </button>
+                    </div>
+
+                    {/* Author & Location Info */}
+                    <div className="px-4 pt-1 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <UserAvatar
+                          avatar={msg.avatar}
+                          avatarUrl={msg.avatarUrl}
+                          user={msg.user}
+                          avatarColor={msg.avatarColor}
+                          size="w-10 h-10"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs truncate">
+                              {msg.user}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              {relTime}
+                            </span>
+                            {msg.locationName && (
+                              <span className="flex items-center gap-1 text-rose-700 dark:text-rose-400 font-bold truncate">
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span>{msg.locationName}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
+                          title="Elimina richiesta SOS (Admin)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* SOS Text */}
+                    <div className="px-4 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+                      {renderTextWithHashtags(msg.text)}
+                    </div>
+
+                    {/* Media Attachment if present */}
+                    {msg.mediaUrl && (
+                      <div
+                        className="mx-4 rounded-xl overflow-hidden bg-slate-950 cursor-pointer"
+                        onClick={() => setMediaModal({ url: msg.mediaUrl!, type: msg.mediaType || 'image' })}
+                      >
+                        {msg.mediaType === 'video' ? (
+                          <video src={msg.mediaUrl} controls className="w-full max-h-72 object-cover" />
+                        ) : (
+                          <img src={msg.mediaUrl} alt="Foto SOS" className="w-full max-h-72 object-cover hover:scale-[1.01] transition-transform" />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Footer Actions */}
+                    <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <button
+                          onClick={() => setExpandedReplies(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 transition-all cursor-pointer text-xs"
+                        >
+                          <MessageSquare className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>Risposte ({msg.replies?.length || 0})</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleLike(msg.id)}
+                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs ${
+                            msg.likedByCurrentUser
+                              ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'
+                              : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          <Heart className={`w-4 h-4 ${msg.likedByCurrentUser ? 'fill-rose-500 text-rose-500' : ''}`} />
+                          <span>{msg.likes > 0 ? msg.likes : 'Supporto'}</span>
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setCopiedPostId(msg.id);
+                          navigator.clipboard?.writeText(window.location.href);
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: { message: "🔗 Link alla richiesta SOS copiato!" },
+                            })
+                          );
+                          setTimeout(() => setCopiedPostId(null), 2500);
+                        }}
+                        className="p-2 text-slate-400 hover:text-slate-600 rounded-xl cursor-pointer shrink-0"
+                        title="Condividi SOS"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* SOS Comment / Support Thread */}
+                    {expandedReplies[msg.id] && (
+                      <div className="p-3 sm:p-4 bg-slate-50/70 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-700/60 space-y-3 max-w-full overflow-hidden">
+                        <h5 className="font-extrabold text-slate-800 dark:text-slate-200 text-xs flex items-center justify-between">
+                          <span>Risposte di Supporto ({msg.replies?.length || 0})</span>
+                          <span className="text-[10px] font-normal text-slate-400">Offri indicazioni o aiuto</span>
+                        </h5>
+
+                        {msg.replies && msg.replies.length > 0 && (
+                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {msg.replies.map((reply) => (
+                              <div
+                                key={reply.id}
+                                className="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-2xs space-y-1.5"
+                              >
+                                <div className="flex justify-between items-center gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-6 h-6 rounded-full bg-rose-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                                      {reply.user[0]}
+                                    </div>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{reply.user}</span>
+                                    <span className="text-[9px] text-slate-400 shrink-0">{getRelativeTime(reply.timestamp)}</span>
+                                  </div>
+
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => handleDeleteReply(msg.id, reply.id)}
+                                      className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer shrink-0"
+                                      title="Elimina commento"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-700 dark:text-slate-300 pl-8">{reply.text}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Reply Input for SOS */}
+                        <div className="flex items-center gap-1.5 sm:gap-2 pt-1 min-w-0 max-w-full">
+                          <input
+                            type="text"
+                            placeholder="Offri supporto o informazioni..."
+                            value={replyTexts[msg.id] || ''}
+                            onChange={(e) => setReplyTexts(prev => ({ ...prev, [msg.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateReply(msg.id); }}
+                            className="flex-1 w-0 min-w-0 px-2.5 sm:px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-rose-500"
+                          />
+                          <button
+                            onClick={() => handleCreateReply(msg.id)}
+                            className="px-2.5 sm:px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0 whitespace-nowrap"
+                          >
+                            <Send className="w-3.5 h-3.5 shrink-0" />
+                            <span>Invia</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
         /* FORUM 3-LEVEL DRILL-DOWN VIEW */
@@ -1077,17 +2029,22 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                           className="p-3.5 sm:p-4 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer flex items-start justify-between gap-3 group"
                         >
                           <div className="flex items-start gap-3 flex-1 min-w-0">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0 mt-0.5 ${msg.avatarColor}`}>
-                              {msg.user === activeUserName || msg.user.includes('Tu') ? currentUserAvatar : msg.avatar}
-                            </div>
+                            <UserAvatar
+                              avatar={msg.avatar}
+                              avatarUrl={msg.avatarUrl}
+                              user={msg.user}
+                              avatarColor={msg.avatarColor}
+                              size="w-8 h-8"
+                              textSize="text-xs"
+                            />
                             <div className="flex-1 min-w-0 space-y-1">
                               <div className="flex items-start gap-1.5">
                                 <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-xs sm:text-sm group-hover:text-[#3E4A35] dark:group-hover:text-[#A3B896] transition-colors leading-snug break-words">
                                   {msg.title || msg.text}
                                 </h4>
                                 {isRolly && (
-                                  <span className="text-[8px] bg-[#3E4A35] text-white px-1.5 py-0.2 rounded-full font-black uppercase shrink-0 mt-0.5">
-                                    🤖 Rolly
+                                  <span className="text-[8px] bg-[#3E4A35] text-white px-1.5 py-0.2 rounded-full font-black uppercase shrink-0 mt-0.5 flex items-center gap-1">
+                                    🚐 Rolly
                                   </span>
                                 )}
                               </div>
@@ -1157,15 +2114,19 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                     {/* Header Author Info */}
                     <div className="flex justify-between items-start gap-3 border-b border-slate-100 dark:border-slate-700/80 pb-3">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-xs shrink-0 ${msg.avatarColor}`}>
-                          {msg.user === activeUserName || msg.user.includes('Tu') ? currentUserAvatar : msg.avatar}
-                        </div>
+                        <UserAvatar
+                          avatar={msg.avatar}
+                          avatarUrl={msg.avatarUrl}
+                          user={msg.user}
+                          avatarColor={msg.avatarColor}
+                          size="w-10 h-10"
+                        />
                         <div>
                           <div className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-1.5 flex-wrap">
                             <span>{msg.user === 'Tu (Camperista)' || msg.user.includes('Tu') ? activeUserName : msg.user}</span>
                             {isRolly && (
-                              <span className="text-[9px] bg-[#3E4A35] text-white px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
-                                🤖 Assistente CamperLife
+                              <span className="text-[9px] bg-[#3E4A35] text-white px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
+                                🚐 Assistente CamperLife
                               </span>
                             )}
                             {(msg.user === activeUserName || msg.user.includes('Tu') || msg.user === currentUser?.email) && (
@@ -1261,11 +2222,23 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                             <div key={reply.id} className="bg-slate-50 dark:bg-slate-900/70 rounded-2xl p-3.5 sm:p-4 space-y-2 border border-slate-200/60 dark:border-slate-700/60">
                               <div className="flex justify-between items-center">
                                 <span className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
-                                  <User className="w-3.5 h-3.5 text-slate-400" />
+                                  <UserAvatar
+                                    avatar={reply.avatar}
+                                    avatarUrl={reply.avatarUrl}
+                                    user={reply.user}
+                                    avatarColor={reply.avatarColor}
+                                    size="w-5 h-5"
+                                    textSize="text-[9px]"
+                                  />
                                   {reply.user === 'Tu (Camperista)' || reply.user.includes('Tu') ? activeUserName : reply.user}
                                   {(reply.user === activeUserName || reply.user.includes('Tu')) && (
                                     <span className="text-[9px] bg-[#3E4A35]/15 dark:bg-[#A3B896]/20 text-[#3E4A35] dark:text-[#A3B896] px-1.5 py-0.2 rounded font-mono font-bold">
                                       Tu
+                                    </span>
+                                  )}
+                                  {reply.isModerated && !reply.user.includes('Rolly') && (
+                                    <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 px-1.5 py-0.2 rounded font-extrabold shrink-0 border border-amber-300 dark:border-amber-700">
+                                      🛡️ Censurato da Rolly
                                     </span>
                                   )}
                                 </span>
@@ -1392,11 +2365,13 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
             <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-700">
               <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#5A6B4E]" />
-                {postTargetType === 'chat'
+                {postTargetType === 'social'
+                  ? 'Pubblica uno Scatto / Pensiero Social'
+                  : postTargetType === 'chat'
                   ? 'Scrivi un Messaggio in Chat Live'
                   : postTag === 'SOS'
-                    ? 'Segnala un\'Emergenza SOS'
-                    : 'Pubblica un Post nel Forum'}
+                  ? 'Segnala un\'Emergenza SOS'
+                  : 'Pubblica un Post nel Forum'}
               </h3>
               <button
                 onClick={() => setShowCreatePostModal(false)}
@@ -1407,6 +2382,51 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
             </div>
 
             <form onSubmit={handleCreatePost} className="space-y-4">
+              {/* Destination selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Destinazione Post:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPostTargetType('social')}
+                    className={`p-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                      postTargetType === 'social'
+                        ? 'bg-[#3E4A35] text-white border-[#3E4A35] dark:bg-[#A3B896] dark:text-slate-950'
+                        : 'bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Social</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPostTargetType('forum')}
+                    className={`p-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                      postTargetType === 'forum'
+                        ? 'bg-[#3E4A35] text-white border-[#3E4A35] dark:bg-[#A3B896] dark:text-slate-950'
+                        : 'bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5" />
+                    <span>Forum</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPostTargetType('chat')}
+                    className={`p-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                      postTargetType === 'chat'
+                        ? 'bg-[#3E4A35] text-white border-[#3E4A35] dark:bg-[#A3B896] dark:text-slate-950'
+                        : 'bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>Chat Live</span>
+                  </button>
+                </div>
+              </div>
+
               {postTargetType === 'forum' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
@@ -1422,36 +2442,56 @@ export default function CommunityTab({ messages, onChange, isAdmin, onOpenChalle
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Seleziona Canale / Categoria:
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {tags.map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => setPostTag(tag)}
-                      className={`p-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
-                        postTag === tag
-                          ? 'bg-[#3E4A35] text-white border-[#3E4A35] dark:bg-[#A3B896] dark:text-slate-950'
-                          : 'bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span>{tag}</span>
-                    </button>
-                  ))}
+              {postTargetType === 'social' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Posizione / Spot (facoltativo):
+                  </label>
+                  <div className="relative">
+                    <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={postLocationName}
+                      onChange={(e) => setPostLocationName(e.target.value)}
+                      placeholder="Es. Passo Gardena, Lago di Braies, Costa Smeralda..."
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35]"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {postTargetType !== 'social' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Seleziona Canale / Categoria:
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {tags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setPostTag(tag)}
+                        className={`p-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
+                          postTag === tag
+                            ? 'bg-[#3E4A35] text-white border-[#3E4A35] dark:bg-[#A3B896] dark:text-slate-950'
+                            : 'bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>{tag}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Testo del Messaggio:
+                  Testo del Messaggio / Pensiero:
                 </label>
                 <textarea
                   value={postText}
                   onChange={(e) => setPostText(e.target.value)}
-                  placeholder="Scrivi qui consigli di viaggio, informazioni sulle condizioni stradali o domande per la community..."
+                  placeholder="Scrivi qui consigli di viaggio, la descrizione dello scatto, o un pensiero per la community..."
                   rows={3}
                   className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35]"
                 />
