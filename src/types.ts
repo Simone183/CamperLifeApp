@@ -110,17 +110,23 @@ export interface CommunityMessage {
   user: string;
   avatar: string;
   avatarColor: string;
+  title?: string; // Titolo dell'argomento di discussione per il forum
   text: string;
   timestamp: string;
   likes: number;
   likedByCurrentUser?: boolean;
   tag: 'SOS' | 'Meteo' | 'Generale' | 'Incontro' | 'Sosta';
   isResolved?: boolean;
+  type?: 'forum' | 'chat';
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video';
   replies?: Array<{
     id: string;
     user: string;
     text: string;
     timestamp: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video';
   }>;
 }
 

@@ -667,7 +667,9 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
 
       // Fit bounds to show entire route
       const bounds = L.latLngBounds(finalCoords);
-      map.fitBounds(bounds, { padding: [40, 40] });
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
     } else if (points.length === 1) {
       map.setView([points[0].lat, points[0].lng], 12);
     }

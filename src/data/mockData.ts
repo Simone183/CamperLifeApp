@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem } from '../types';
+import { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem } from '../types.ts';
 import { FRANCE_RAW_PLACES } from './francePlaces';
 import { ITALIA_RAW_PLACES } from './italiaPlaces';
 
@@ -582,34 +582,363 @@ export const INITIAL_PLACES: Place[] = HANDCRAFTED_PLACES;
 
 export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   {
-    id: 'm1',
-    user: 'Sistema',
-    avatar: 'S',
-    avatarColor: 'bg-emerald-500',
-    text: 'ESEMPIO: Ciao a tutti! Sono appena arrivato all\'Area Sosta del Lago di Garda. La vista è splendida, ma c\'è un po\' di vento.',
-    timestamp: new Date().toISOString(),
-    likes: 2,
+    id: 'rolly_topic_1',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🏔️ Consigli per il primo viaggio invernale sulla neve: riscaldamento e catene',
+    text: "Ciao a tutti i camperisti! Con l'arrivo della stagione fredda, molti utenti chiedono consigli su come preparare il camper per la neve e la montagna. Qual è la vostra esperienza con le stufe Truma/Webasto e le coperte termiche esterne per il parabrezza? Condividiamo qui i migliori trucchi per evitare il congelamento delle acque grigie!",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    likes: 12,
     likedByCurrentUser: false,
-    tag: 'Meteo',
+    tag: 'Sosta',
+    type: 'forum',
     replies: [
       {
-        id: 'mr1',
-        user: 'CamperistaVagabondo',
-        text: 'ESEMPIO: Benvenuto! Spero che il vento si plachi presto per farti godere la vacanza!',
-        timestamp: new Date().toISOString()
+        id: 'r_r1_1',
+        user: 'Marco_Van78',
+        text: 'Copertura termica integrale esterna per il parabrezza indispensabile! Riduce la condensa dell\'80% e tiene calda la cabina.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 1.5).toISOString()
+      },
+      {
+        id: 'r_r1_2',
+        user: 'Elena_Camper91',
+        text: 'Per le acque grigie io aggiungo sempre un po\' di sale da cucina nel serbatoio se la temperatura scende sotto zero, oltre a lasciarlo leggermente aperto con la tanica sotto!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString()
       }
     ]
   },
   {
-    id: 'm2',
-    user: 'GiuliaVanLife',
-    avatar: 'GV',
-    avatarColor: 'bg-violet-500',
-    text: 'ESEMPIO: Qualcuno conosce un buon campeggio aperto in questa stagione sulle Dolomiti? Grazie in anticipo!',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    likes: 0,
+    id: 'rolly_topic_2',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '⚡ Autonomia Energetica in Camper: Pannelli Solari vs Batteria al Litio LiFePO4',
+    text: "L'autonomia elettrica è uno dei temi più caldi tra chi viaggia in sosta libera. Voi che setup utilizzate? Avete fatto il passaggio alle batterie al litio LiFePO4? Quanti watt di pannelli solari ritenete indispensabili per lavorare o viaggiare anche in autunno ed inverno?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+    likes: 18,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r2_1',
+        user: 'TechCamper_Luca',
+        text: 'Passato alla LiFePO4 da 200Ah l\'anno scorso: svolta totale! Peso dimezzato e posso usare la macchina del caffè e l\'inverter senza ansie.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 3.5).toISOString()
+      },
+      {
+        id: 'r_r2_2',
+        user: 'Stefano_Oasi',
+        text: 'Io ho 300W di pannelli solari sul tetto con regolatore MPPTVictron, d\'estate non mi attacco mai alla colonnina!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_3',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🌊 Le migliori Aree Sosta d\'Italia vicine al Mare e aperte 365 giorni l\'anno',
+    text: "Molti di noi amano il mare d'inverno o durante le mezze stagioni per la pace assoluta. Avete aree sosta o campeggi del cuore direttamente sulla spiaggia con tutti i servizi attivi tutto l'anno da raccomandare alla community?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
+    likes: 15,
     likedByCurrentUser: false,
     tag: 'Sosta',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r3_1',
+        user: 'Valeria_Coast',
+        text: 'In Maremma e nella riviera ligure ce ne sono alcune stupende! La sosta al tramonto sul mare con il rumore delle onde non ha prezzo.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_4',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🗺️ Consigli di Guida: Come evitare sottopassi bassi e strettoie nei borghi storici',
+    text: "In Italia i borghi storici sono meravigliosi ma nascondono spesso strettoie insidiose e cavalcavia bassi! Quali accorgimenti usate durante la guida per evitare brutte sorprese con la mansarda del camper?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
+    likes: 9,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r4_1',
+        user: 'Roberto_Mansardato',
+        text: 'Ho incollato sul cruscotto un etichetta ben visibile con l\'altezza reale del camper (3.15m) e larghezza. Prima di entrare nel centro di un borgo guardo sempre i cartelli stradali reali!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_5',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '📦 Organizzazione Spazi & Storage nel Garage e negli Armadietti',
+    text: "L'ottimizzazione degli spazi e della distribuzione dei pesi in camper è una vera arte! Scatole trasparenti impilabili, ganci magnetici o sottovuoto per la biancheria: quali sono i vostri trucchi salvaspazio indispensabili?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
+    likes: 11,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r5_1',
+        user: 'Giada_Van',
+        text: 'I sacchetti sottovuoto per i piumoni d\'inverno sono magici, risparmi il 70% di spazio nei pensili!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 14).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_6',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '⛺ Raduno e Incontro CamperLife Primavera 2026: Proposte di Location!',
+    text: "Cari amici camperisti, vi piacerebbe organizzare un incontro informale nei prossimi mesi? Proponete qui la vostra regione preferita (es. Toscana, Umbria, Laghi del Nord o Costa Adriatica) per incontrarci e fare una bella grigliata insieme!",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 22).toISOString(),
+    likes: 24,
+    likedByCurrentUser: false,
+    tag: 'Incontro',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r6_1',
+        user: 'Silvia_NORD',
+        text: 'Io voto per la Val d\'Orcia in Toscana! Bellissime aree sosta, paesaggi mozzafiato e ottimo cibo!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 19).toISOString()
+      },
+      {
+        id: 'r_r6_2',
+        user: 'Davide_Giramondo',
+        text: 'Presenti! Qualsiasi posto con spazio verde e bella compagnia ci trova in prima fila.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 15).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_7',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🐾 Viaggiare in Camper con Animali Domestici (Cani e Gatti): I vostri consigli',
+    text: "Chi viaggia con i propri amici a quattro zampe sa quanto sia un'esperienza meravigliosa! Come avete allestito la cuccia durante la marcia? Quali attenzioni usate per garantire il massimo comfort termico in estate?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
+    likes: 16,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r7_1',
+        user: 'Mia_E_CaneToby',
+        text: 'Toby ha la sua cuccia fissata in dinette con cintura di sicurezza per cani omologata. Quando siamo in sosta, sempre ciotola d\'acqua fresca e ombra garantita!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_8',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🌱 Gestione Cassetta WC Chimico e Additivi Ecologici Bio',
+    text: "Rispettare l'ambiente nelle operazioni di camper service è fondamentale. Molti camperisti stanno passando ai fluidi disgreganti biodegradabili o al sistema di ventilazione SOG. Qual è la vostra opinione ed esperienza?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
+    likes: 14,
+    likedByCurrentUser: false,
+    tag: 'Sosta',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r8_1',
+        user: 'GreenVan_Piero',
+        text: 'Uso le bustine ecologiche biologiche da 2 anni: zero odori chimici pungenti e massima tutela per i depuratori delle aree sosta.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 25).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_9',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🛠️ Cassetta degli Attrezzi d\'Emergenza: Cosa tenere sempre a bordo?',
+    text: "I piccoli imprevisti tecnici fanno parte dell'avventura! Oltre a nastro americano multiuso e fascette da elettricista, quali utensili, multimetro, fusibili e ricambi non dovrebbero mai mancare a bordo?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(),
+    likes: 21,
+    likedByCurrentUser: false,
+    tag: 'SOS',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r9_1',
+        user: 'MeccanicoFaidate_Giuseppe',
+        text: 'Un set di fusibili lamellari di tutti i amperaggi, un tester digitale e la colla bicomponente mi hanno salvato la vacanza più di una volta!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 31).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_10',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🍳 Cucina On The Road: Le vostre ricette pratiche e il Fornetto Versilia',
+    text: "Quali sono i vostri piatti forti da preparare sui fornelli del camper? Usate il celebre fornetto Versilia per ciambelloni e focacce senza bisogno del forno tradizionale? Condividiamo le ricette più veloci e gustose!",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 42).toISOString(),
+    likes: 19,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r10_1',
+        user: 'ChefInViaggio_Chiara',
+        text: 'Il fornetto Versilia è sacro! Ci faccio la torta salata con verdure e ricotta e la focaccia al rosmarino direttamente sul fornello medio.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 38).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_11',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '💨 Bollettino Vento e Raffiche sulle Coste: Come orientare la sosta',
+    text: "Il vento forte o le raffiche improvvise possono rendere poco piacevole la notte in mansardato o van. Come verificate le correnti di vento prima di posizionare il camper e da che parte orientate il veicolo?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
+    likes: 8,
+    likedByCurrentUser: false,
+    tag: 'Meteo',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r11_1',
+        user: 'Andrea_Vento',
+        text: 'Sempre muso del camper rivolto verso la direzione del vento dominante! Riduce il rollio ed evita colpi sulla fiancata.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 44).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_12',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🚐 Mansardato vs Semintegrale vs Motorhome vs Van: Esperienze a confronto',
+    text: "Ogni tipologia di veicolo risponde a esigenze di viaggio diverse! Chi ha provato più modelli nel corso degli anni, quali vantaggi e svantaggi ha riscontrato? Vi va di raccontare la vostra evoluzione camperistica?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 54).toISOString(),
+    likes: 27,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r12_1',
+        user: 'Giancarlo_Pioneer',
+        text: 'Iniziato con mansardato quando i figli erano piccoli per la comodità dei letti sempre pronti, ora passato al van compatto per la libertà di parcheggio in città!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_13',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '❄️ Manutenzione Invernale e Rimessaggio: La Check-list per evitare danni',
+    text: "Quando il camper resta fermo qualche settimana nei mesi freddi, pochi gesti salvano da brutte sorprese alla riapertura! Voi quali accorgimenti usate per proteggere impianti idrici, batterie e guarnizioni dei finestrini?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 60).toISOString(),
+    likes: 13,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r13_1',
+        user: 'OfficinaCamper_Rino',
+        text: 'Aprite tutti i rubinetti dopo aver scaricato la boiler FrostControl e usate lo spray al silicone su tutte le guarnizioni in gomma delle finestre!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 55).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_14',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🇪🇺 Prima Volta all\'Estero in Camper: Consigli per la Francia, Spagna e Nord Europa',
+    text: "Organizzare il primo viaggio oltreconfine in camper richiede qualche piccola informazione preventiva su autostrade, bollini ambientali e regolamenti di sosta. Quali paesi ritenete più 'camper-friendly' in Europa?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 68).toISOString(),
+    likes: 31,
+    likedByCurrentUser: false,
+    tag: 'Sosta',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r14_1',
+        user: 'NomadFamily_Ilaria',
+        text: 'La Francia è il paradiso dei camperisti con le "Aires de Camping-car" ovunque a prezzi contenuti. In Norvegia invece la natura incontaminata regna sovrana!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 62).toISOString()
+      }
+    ]
+  },
+  {
+    id: 'rolly_topic_15',
+    user: 'Rolly - Assistente CamperLife',
+    avatar: '🤖',
+    avatarColor: 'bg-[#3E4A35]',
+    title: '🔒 Sicurezza durante le Soste Notturne: Sistemi antifurto e buon senso',
+    text: "Dormire tranquilli e rilassati è fondamentale per una vacanza indimenticabile. Quali sistemi di sicurezza (es. catene alle portiere cabina, antifurti perimetrali, rilevatori di gas o chiusure supplementari) utilizzate?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 76).toISOString(),
+    likes: 22,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'forum',
+    replies: [
+      {
+        id: 'r_r15_1',
+        user: 'Bruno_CamperSicuro',
+        text: 'Il miglior antifurto resta la scelta del luogo di sosta: aree ben illuminate, frequentate da altri camperisti o campeggi presidiati!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 70).toISOString()
+      }
+    ]
+  },
+  /* LIVE CHAT MESSAGES */
+  {
+    id: 'chat_1',
+    user: 'Marco_Van78',
+    avatar: 'MV',
+    avatarColor: 'bg-amber-600',
+    text: 'Ciao a tutti in chat live! Qualcuno è in zona Lago di Garda stasera per quattro chiacchiere?',
+    timestamp: new Date(Date.now() - 1800000).toISOString(),
+    likes: 1,
+    likedByCurrentUser: false,
+    tag: 'Incontro',
+    type: 'chat',
+    replies: []
+  },
+  {
+    id: 'chat_2',
+    user: 'Elena_Camper91',
+    avatar: 'EC',
+    avatarColor: 'bg-sky-600',
+    text: 'Ciao Marco! Noi siamo fermi all\'area attrezzata vicino al faro, atmosfera super tranquilla! 🚐💨',
+    timestamp: new Date(Date.now() - 600000).toISOString(),
+    likes: 2,
+    likedByCurrentUser: false,
+    tag: 'Generale',
+    type: 'chat',
     replies: []
   }
 ];

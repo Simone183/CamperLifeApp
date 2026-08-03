@@ -34,7 +34,7 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
 
   const getWeatherIcon = (weatherCode: number) => {
-    const s = "w-3.5 h-3.5";
+    const s = "w-4 h-4 sm:w-4.5 sm:h-4.5";
     switch (weatherCode) {
       case 0:
         return <Sun className={`${s} text-amber-500 animate-[spin_40s_linear_infinite]`} />;
@@ -105,10 +105,10 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
     return (
       <button
         onClick={onRequestGPS}
-        className="flex items-center gap-1 px-2 py-0.5 bg-amber-50/85 hover:bg-amber-100/90 text-[#3E4A35] dark:bg-slate-700 dark:text-white rounded-lg border border-amber-200 dark:border-slate-500 text-[9px] sm:text-[11px] font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+        className="h-9 sm:h-10 flex items-center justify-center gap-1 px-1.5 sm:px-2.5 bg-amber-50/85 hover:bg-amber-100/90 text-[#3E4A35] dark:bg-slate-700 dark:text-white rounded-xl border border-amber-200 dark:border-slate-500 text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap active:scale-95 shrink-0"
         title="Attiva GPS per caricare il meteo locale"
       >
-        <Compass className="w-3 h-3 text-[#3E4A35] dark:text-white animate-[spin_5s_linear_infinite]" />
+        <Compass className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 text-[#3E4A35] dark:text-white animate-[spin_5s_linear_infinite]" />
         <span className="hidden xs:inline">Attiva Meteo GPS</span>
         <span className="xs:hidden">Meteo GPS</span>
       </button>
@@ -117,8 +117,8 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
 
   if (loading && temp === null) {
     return (
-      <div className="flex items-center gap-1 px-2 py-1 bg-[#F4F6F0] rounded-lg border border-[#3E4A35]/10 text-[9px] text-slate-500 font-semibold">
-        <Loader2 className="w-2.5 h-2.5 animate-spin text-[#3E4A35]" />
+      <div className="h-9 sm:h-10 flex items-center justify-center gap-1 px-1.5 sm:px-2.5 bg-[#F4F6F0] rounded-xl border border-[#3E4A35]/10 text-[10px] text-slate-500 font-semibold shrink-0">
+        <Loader2 className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 animate-spin text-[#3E4A35]" />
         <span className="hidden sm:inline">Attendi...</span>
       </div>
     );
@@ -127,12 +127,12 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-2 py-0.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] active:bg-[#D1CDBF]/70 text-[#3E4A35] dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-lg border border-[#3E4A35]/15 dark:border-slate-500 transition-all cursor-pointer shadow-sm active:scale-95 text-[11px] font-black shrink-0"
+      className="h-9 sm:h-10 flex items-center justify-center gap-1 px-1.5 sm:px-2.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] active:bg-[#D1CDBF]/70 text-[#3E4A35] dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-xl border border-[#3E4A35]/15 dark:border-slate-500 transition-all cursor-pointer shadow-xs active:scale-95 text-[11px] font-black shrink-0"
       title="Meteo GPS della tua posizione (Clicca per dettagli)"
     >
       <div className="flex items-center gap-1">
-        {code !== null ? getWeatherIcon(code) : <Sun className="w-3.5 h-3.5 text-amber-500" />}
-        <span className="text-[#3E4A35] dark:text-white font-mono font-bold tracking-tight">
+        {code !== null ? getWeatherIcon(code) : <Sun className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 text-amber-500" />}
+        <span className="text-[#3E4A35] dark:text-white font-mono font-bold tracking-tight text-[11px] sm:text-xs">
           {temp !== null ? `${formatTemperature(temp, settings)}` : settings.temperatureUnit === 'fahrenheit' ? '--°F' : '--°C'}
         </span>
       </div>

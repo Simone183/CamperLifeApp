@@ -8,6 +8,7 @@ import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { ClientFirestoreAdapter } from "./src/client-firestore.ts";
+import { INITIAL_COMMUNITY_MESSAGES } from "./src/data/mockData.ts";
 
 // Use dynamic Firebase Project configuration from our provisioned workspace
 let firebaseConfig = {
@@ -2069,14 +2070,47 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app.get("/api/community-messages", async (req, res) => {
     try {
       const snapshot = await firestoreDb.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
+      
+      // If collection is empty or missing Rolly topics, fire background seed to Firestore
+      const hasRollyTopics = !snapshot.empty && snapshot.docs.some((doc: any) => doc.id && doc.id.startsWith("rolly_topic_"));
+      if (!hasRollyTopics) {
+        console.log("[Firestore Seed] Triggering background seed for Rolly forum topics into Firestore...");
+        Promise.all(
+          INITIAL_COMMUNITY_MESSAGES.map((msg) =>
+            firestoreDb.collection("communityMessages").doc(msg.id).set(msg, { merge: true }).catch(err => console.error("Seed error:", err))
+          )
+        ).catch(e => console.error("Batch seed error:", e));
+      }
+
       const messages: any[] = [];
       snapshot.forEach((doc: any) => {
-        messages.push({ id: doc.id, ...doc.data() });
+        const data = doc.data() || {};
+        let msgType = data.type;
+        if (!msgType) {
+          if (doc.id.startsWith("chat_") || (data.text && (data.text.includes("chat live") || data.text.includes("quattro chiacchiere")))) {
+            msgType = "chat";
+          } else {
+            msgType = "forum";
+          }
+        }
+        messages.push({ id: doc.id, ...data, type: msgType });
       });
+
+      // Combine with INITIAL_COMMUNITY_MESSAGES to ensure instant full list return
+      const fetchedIds = new Set(messages.map((m: any) => m.id));
+      for (const initialMsg of INITIAL_COMMUNITY_MESSAGES) {
+        if (!fetchedIds.has(initialMsg.id)) {
+          messages.push({
+            ...initialMsg,
+            type: initialMsg.type || (initialMsg.id.startsWith("chat_") ? "chat" : "forum")
+          });
+        }
+      }
+
       res.json(messages);
     } catch (err: any) {
       console.error("Error loading community messages from Firestore:", err);
-      res.json([]);
+      res.json(INITIAL_COMMUNITY_MESSAGES);
     }
   });
 
@@ -2098,12 +2132,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         likes: Number(msg.likes) || 0,
         likedByCurrentUser: false,
         tag: msg.tag || "Generale",
+        type: msg.type || (msgId.startsWith("chat_") ? "chat" : "forum"),
         isResolved: msg.isResolved || false,
         replies: msg.replies || []
       };
 
       await firestoreDb.collection("communityMessages").doc(msgId).set(entry);
-      console.log(`[Firestore Chat] Shared message from ${msg.user}`);
+      console.log(`[Firestore Chat] Shared message from ${msg.user} (Type: ${entry.type})`);
       res.json({ success: true, message: { id: msgId, ...entry } });
     } catch (err: any) {
       console.error("Error writing community message to Firestore:", err);
@@ -2236,6 +2271,141 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err: any) {
       console.error("Nominatim proxy error:", err);
       res.status(500).json({ error: err.message || "Unknown error" });
+    }
+  });
+
+  // Proxy for Dynamic Google Places Search
+  app.get("/api/google-places/search", async (req, res) => {
+    try {
+      const q = req.query.q as string;
+      const lat = req.query.lat as string;
+      const lng = req.query.lng as string;
+      const clientKey = req.query.key as string;
+
+      if (!q || !q.trim()) {
+        return res.status(400).json({ error: "Missing parameter q" });
+      }
+
+      const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || clientKey || "";
+
+      // Helper function to calculate distance in km
+      const calcDistKm = (l1: number, n1: number, l2: number, n2: number) => {
+        const R = 6371;
+        const dLat = ((l2 - l1) * Math.PI) / 180;
+        const dLon = ((n2 - n1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((l1 * Math.PI) / 180) *
+            Math.cos((l2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+
+      const userLatNum = lat ? parseFloat(lat) : NaN;
+      const userLngNum = lng ? parseFloat(lng) : NaN;
+      const hasUserCoords = !isNaN(userLatNum) && !isNaN(userLngNum);
+
+      if (googleKey && googleKey !== "YOUR_API_KEY") {
+        let placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${googleKey}&language=it`;
+        if (hasUserCoords) {
+          placesUrl += `&location=${userLatNum},${userLngNum}&radius=50000`;
+        }
+
+        const googleRes = await fetch(placesUrl);
+        if (googleRes.ok) {
+          const googleData: any = await googleRes.json();
+          if (googleData.status === "OK" && Array.isArray(googleData.results) && googleData.results.length > 0) {
+            let places = googleData.results.map((p: any) => {
+              const photoRef = p.photos?.[0]?.photo_reference;
+              const photoUrl = photoRef
+                ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photo_reference=${photoRef}&key=${googleKey}`
+                : null;
+              const pLat = p.geometry?.location?.lat;
+              const pLng = p.geometry?.location?.lng;
+              const distanceKm = hasUserCoords && pLat !== undefined && pLng !== undefined
+                ? calcDistKm(userLatNum, userLngNum, pLat, pLng)
+                : undefined;
+
+              return {
+                id: `google-${p.place_id}`,
+                place_id: p.place_id,
+                name: p.name,
+                address: p.formatted_address || p.vicinity || "",
+                lat: pLat,
+                lng: pLng,
+                rating: p.rating || null,
+                user_ratings_total: p.user_ratings_total || null,
+                types: p.types || [],
+                photoUrl: photoUrl,
+                source: "google_places",
+                distanceKm
+              };
+            });
+
+            if (hasUserCoords) {
+              places.sort((a: any, b: any) => {
+                if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
+                  return a.distanceKm - b.distanceKm;
+                }
+                return 0;
+              });
+            }
+
+            return res.json({ source: "google", places });
+          }
+        }
+      }
+
+      // Fallback to Nominatim OpenStreetMap if no Google key or zero results
+      const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10&addressdetails=1`;
+      const nomRes = await fetch(nomUrl, {
+        headers: {
+          "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
+        }
+      });
+
+      if (nomRes.ok) {
+        const nomData: any = await nomRes.json();
+        let places = nomData.map((item: any) => {
+          const pLat = parseFloat(item.lat);
+          const pLng = parseFloat(item.lon);
+          const distanceKm = hasUserCoords && !isNaN(pLat) && !isNaN(pLng)
+            ? calcDistKm(userLatNum, userLngNum, pLat, pLng)
+            : undefined;
+
+          return {
+            id: `osm-${item.place_id}`,
+            place_id: String(item.place_id),
+            name: item.display_name.split(",")[0] || "Località",
+            address: item.display_name,
+            lat: pLat,
+            lng: pLng,
+            rating: null,
+            user_ratings_total: null,
+            types: [item.type, item.class].filter(Boolean),
+            photoUrl: null,
+            source: "nominatim",
+            distanceKm
+          };
+        });
+
+        if (hasUserCoords) {
+          places.sort((a: any, b: any) => {
+            if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
+              return a.distanceKm - b.distanceKm;
+            }
+            return 0;
+          });
+        }
+
+        return res.json({ source: "nominatim", places });
+      }
+
+      res.json({ source: "empty", places: [] });
+    } catch (err: any) {
+      console.error("Google Places proxy search error:", err);
+      res.status(500).json({ error: err.message || "Search failed" });
     }
   });
 
@@ -2796,6 +2966,158 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     }
   });
 
+  // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
+  async function sendAdminNotificationEmail(subject: string, htmlContent: string) {
+    const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+    console.log(`[Email Service] Preparing to send email to ${targetAdminEmail}: "${subject}"`);
+    
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const { Resend } = await import('resend');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const data = await resend.emails.send({
+          from: 'CamperLifeApp <onboarding@resend.dev>',
+          to: targetAdminEmail,
+          subject: subject,
+          html: htmlContent
+        });
+        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, data);
+        return { success: true, data };
+      } catch (err) {
+        console.error(`[Email Service] Failed to send email via Resend to ${targetAdminEmail}:`, err);
+        return { success: false, error: err };
+      }
+    } else {
+      console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email a ${targetAdminEmail} per: "${subject}". Imposta RESEND_API_KEY nelle variabili d'ambiente.`);
+      return { success: false, reason: "RESEND_API_KEY missing" };
+    }
+  }
+
+  // --- NOTIFY PHOTO SUBMISSION ROUTE (Concorsi, Aree Sosta, Foto Generiche) ---
+  app.post("/api/notify-photo-submission", async (req, res) => {
+    try {
+      const {
+        type = "concorso", // "concorso" | "area_sosta" | "proposta_sosta" | "generico"
+        userName = "Utente CamperLifeApp",
+        userEmail = "",
+        title = "",
+        placeName = "",
+        location = "",
+        imageUrl = "",
+        caption = "",
+        details = {}
+      } = req.body;
+
+      const labelType =
+        type === "concorso"
+          ? "🏆 Concorso Foto Aree Sosta / Sfide"
+          : type === "area_sosta"
+          ? "📍 Nuova Foto Area di Sosta"
+          : type === "proposta_sosta"
+          ? "🆕 Nuova Proposta Sosta con Foto"
+          : "📸 Invio Foto Utente";
+
+      const displayTitle = placeName || title || "Foto CamperLifeApp";
+      const subject = `📸 Nuova foto ricevuta [${labelType}]: ${displayTitle}`;
+
+      const timestamp = new Date().toISOString();
+
+      // 1. Store notification in Firestore adminNotifications
+      try {
+        await firestoreDb.collection("adminNotifications").add({
+          type: "photo_submission",
+          category: type,
+          userName,
+          userEmail,
+          title: displayTitle,
+          location,
+          imageUrl,
+          caption,
+          details,
+          timestamp,
+          read: false
+        });
+      } catch (fsErr) {
+        console.warn("[Photo Notification API] Could not write to adminNotifications:", fsErr);
+      }
+
+      // 2. Build rich HTML email template
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+      const isBase64 = imageUrl?.startsWith("data:");
+      const imagePreviewHtml = imageUrl
+        ? isBase64
+          ? `<div style="margin-top: 16px; text-align: center; background: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+               <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: bold; color: #475569;">Foto caricata dall'utente:</p>
+               <img src="${imageUrl}" alt="Foto Utente" style="max-width: 100%; max-height: 420px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); object-fit: cover;" />
+             </div>`
+          : `<div style="margin-top: 16px; text-align: center; background: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+               <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: bold; color: #475569;">Foto caricata dall'utente:</p>
+               <img src="${imageUrl}" alt="Foto Utente" style="max-width: 100%; max-height: 420px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); object-fit: cover;" />
+               <p style="margin-top: 10px;"><a href="${imageUrl}" target="_blank" style="display: inline-block; padding: 8px 16px; background: #059669; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: bold;">Visualizza o scarica foto originale &rarr;</a></p>
+             </div>`
+        : `<p style="font-style: italic; color: #94a3b8;">(Nessun file immagine allegato)</p>`;
+
+      const htmlContent = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background: #f1f5f9; padding: 24px; border-radius: 18px;">
+          <div style="background: linear-gradient(135deg, #1C3D2B 0%, #2D5A40 100%); padding: 20px 24px; border-radius: 14px; color: #ffffff; box-shadow: 0 4px 14px rgba(0,0,0,0.15);">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">CamperLifeApp • Notifica Amministratore</div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">${labelType}</h2>
+          </div>
+
+          <div style="background: #ffffff; padding: 24px; border-radius: 14px; margin-top: 16px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+            <h3 style="margin-top: 0; margin-bottom: 16px; color: #0f172a; font-size: 18px; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+              ${displayTitle}
+            </h3>
+
+            <table style="width: 100%; font-size: 13.5px; color: #334155; border-collapse: collapse;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; width: 140px; color: #64748b;">Tipologia:</td>
+                <td style="padding: 8px 0; font-weight: 700; color: #0f172a;">${labelType}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Inviato da:</td>
+                <td style="padding: 8px 0;"><strong>${userName}</strong> ${userEmail ? `<span style="color: #64748b;">(&lt;${userEmail}&gt;)</span>` : ''}</td>
+              </tr>
+              ${location ? `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Località / Luogo:</td>
+                <td style="padding: 8px 0;">${location}</td>
+              </tr>` : ''}
+              ${caption ? `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Note / Descrizione:</td>
+                <td style="padding: 8px 0; font-style: italic; color: #1e293b;">"${caption}"</td>
+              </tr>` : ''}
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Data di invio:</td>
+                <td style="padding: 8px 0;">${new Date().toLocaleString('it-IT')}</td>
+              </tr>
+            </table>
+
+            ${imagePreviewHtml}
+          </div>
+
+          <p style="font-size: 11.5px; color: #94a3b8; text-align: center; margin-top: 20px; line-height: 1.5;">
+            Email di notifica per l'amministratore di CamperLifeApp (${targetAdminEmail}).<br/>
+            I contributi inviati sono consultabili e gestibili anche nell'applicazione.
+          </p>
+        </div>
+      `;
+
+      // 3. Send email via Resend
+      const emailRes = await sendAdminNotificationEmail(subject, htmlContent);
+
+      return res.json({
+        success: true,
+        message: "Notifica foto elaborata ed email inviata all'amministratore.",
+        emailSent: emailRes.success
+      });
+    } catch (err: any) {
+      console.error("Error in /api/notify-photo-submission:", err);
+      return res.status(500).json({ error: err.message || "Errore durante l'invio della notifica foto." });
+    }
+  });
+
   // --- FEEDBACK & SUGGESTIONS ENDPOINTS ---
   // Submit feedback
   app.post("/api/feedback", (req, res) => {
@@ -2941,7 +3263,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);

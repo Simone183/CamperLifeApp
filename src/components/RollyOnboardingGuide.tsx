@@ -305,6 +305,30 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
     ],
     rollyTip: '💡 Consiglio di Rolly: Rispetta sempre la natura ed il vicinato nelle aree sosta per far accogliere sempre con il sorriso tutti i camperisti!'
   },
+  challenges: {
+    key: 'challenges',
+    badge: '🏆 Sfide & Concorsi',
+    title: 'Sfide, Concorsi & Badge Camperisti',
+    subtitle: 'Partecipa ai concorsi foto, segnala nuove soste e guadagna badge per la community.',
+    features: [
+      {
+        icon: '🌊',
+        title: 'Sfide Fotografiche',
+        description: 'Scatta foto con vista mare, tramonti dal camper e borghi storici per vincere badge.'
+      },
+      {
+        icon: '🧭',
+        title: 'Aggiungi & Segnala Soste',
+        description: 'Invia nuove aree sosta o camper service e accumula punti XP per la classifica.'
+      },
+      {
+        icon: '👑',
+        title: 'Classifica & Badge',
+        description: 'Scala la classifica della community e sblocca badge di livello esclusivi.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Ogni foto ed area sosta inviata aiuta migliaia di equipaggi in viaggio in tutta Italia ed Europa!'
+  },
   dimensions: {
     key: 'dimensions',
     badge: '🚐 Scheda Mezzo',
@@ -465,6 +489,9 @@ export function RollyOnboardingGuide({
     setIsOpen(true);
   };
 
+  const hasHeightClass = className.includes('h-') || className.includes('!h-');
+  const baseHeightClass = hasHeightClass ? '' : 'h-8';
+
   return (
     <>
       {/* Help Button trigger if requested */}
@@ -472,7 +499,7 @@ export function RollyOnboardingGuide({
         <button
           type="button"
           onClick={handleOpen}
-          className={`h-8 inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-amber-50 hover:bg-amber-100/90 dark:bg-amber-950/60 dark:hover:bg-amber-900/70 border border-amber-300/80 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 text-[10.5px] sm:text-xs font-black transition-all shadow-xs cursor-pointer select-none active:scale-95 shrink-0 ${className}`}
+          className={`${baseHeightClass} inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 rounded-lg sm:rounded-xl bg-amber-50 hover:bg-amber-100/90 dark:bg-amber-950/60 dark:hover:bg-amber-900/70 border border-amber-300/80 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 text-[10.5px] sm:text-xs font-black transition-all shadow-xs cursor-pointer select-none active:scale-95 shrink-0 ${className}`}
           title="Mostra la guida di Rolly per questa sezione"
         >
           <CartoonCamperAvatar className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />

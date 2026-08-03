@@ -58,6 +58,7 @@ import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
 import EventsTab from "./components/EventsTab";
 import OfflineMapsTab from "./components/OfflineMapsTab";
+import { ChallengesTab } from "./components/ChallengesTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
@@ -107,6 +108,7 @@ import {
   ShoppingBag,
   Wrench,
   Heart,
+  Trophy,
   LogOut,
   Users,
   Eye,
@@ -217,19 +219,26 @@ export default function App() {
   >(() => {
     const saved = localStorage.getItem("camper_messages");
     if (saved) {
-      let parsed = JSON.parse(saved);
-      // Rimuovi o aggiorna i vecchi messaggi di esempio (m1, m2, m3, m4)
-      parsed = parsed.filter(
-        (m: CommunityMessage) => !["m3", "m4"].includes(m.id),
-      );
-      parsed = parsed.map((m: CommunityMessage) => {
-        if (m.id === "m1")
-          return INITIAL_COMMUNITY_MESSAGES.find((i) => i.id === "m1") || m;
-        if (m.id === "m2")
-          return INITIAL_COMMUNITY_MESSAGES.find((i) => i.id === "m2") || m;
-        return m;
-      });
-      return parsed.length > 0 ? parsed : INITIAL_COMMUNITY_MESSAGES;
+      try {
+        let parsed = JSON.parse(saved);
+        // Rimuovi i vecchi messaggi di prova m1, m2, m3, m4
+        parsed = parsed.filter(
+          (m: CommunityMessage) => !["m1", "m2", "m3", "m4"].includes(m.id),
+        );
+        // Unisci i messaggi iniziali mancanti (es. gli argomenti creati da Rolly)
+        const existingIds = new Set(parsed.map((m: CommunityMessage) => m.id));
+        const missingInitial = INITIAL_COMMUNITY_MESSAGES.filter(
+          (m) => !existingIds.has(m.id)
+        );
+        let combined = [...missingInitial, ...parsed];
+        combined = combined.map((m: CommunityMessage) => ({
+          ...m,
+          type: m.type || (m.id?.startsWith("chat_") ? "chat" : "forum")
+        }));
+        return combined.length > 0 ? combined : INITIAL_COMMUNITY_MESSAGES;
+      } catch {
+        return INITIAL_COMMUNITY_MESSAGES;
+      }
     }
     return INITIAL_COMMUNITY_MESSAGES;
   });
@@ -582,6 +591,7 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setFavoriteIds([]);
+    setIsAdminLoggedIn(false);
     localStorage.removeItem("camper_user");
     window.dispatchEvent(
       new CustomEvent("show-toast", {
@@ -690,6 +700,7 @@ export default function App() {
     | "hub"
     | "dimensions"
     | "community"
+    | "challenges"
     | "shared_trips"
     | "checklist"
     | "deadlines"
@@ -714,6 +725,39 @@ export default function App() {
     | "dashboard_settings"
     | "general"
   >("hub");
+
+  // Tracking unread community messages for notification badge on main page & header
+  const [lastSeenCommunityCount, setLastSeenCommunityCount] = React.useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("camper_last_seen_community_count");
+      if (saved !== null) {
+        return parseInt(saved, 10);
+      }
+      const initialTotal = INITIAL_COMMUNITY_MESSAGES.reduce((acc, m) => acc + 1 + (m.replies?.length || 0), 0);
+      return initialTotal;
+    } catch {
+      return 0;
+    }
+  });
+
+  const totalCommunityMessagesCount = React.useMemo(() => {
+    return communityMessages.reduce((acc, m) => acc + 1 + (m.replies?.length || 0), 0);
+  }, [communityMessages]);
+
+  const unreadCommunityCount = React.useMemo(() => {
+    if (activeTab === "settings_tools" && settingsSubTab === "community") {
+      return 0;
+    }
+    const diff = totalCommunityMessagesCount - lastSeenCommunityCount;
+    return diff > 0 ? diff : 0;
+  }, [totalCommunityMessagesCount, lastSeenCommunityCount, activeTab, settingsSubTab]);
+
+  React.useEffect(() => {
+    if (activeTab === "settings_tools" && settingsSubTab === "community") {
+      setLastSeenCommunityCount(totalCommunityMessagesCount);
+      localStorage.setItem("camper_last_seen_community_count", totalCommunityMessagesCount.toString());
+    }
+  }, [activeTab, settingsSubTab, totalCommunityMessagesCount]);
 
   // Gestione della cronologia del browser per consentire il tasto "indietro"
   React.useEffect(() => {
@@ -2128,8 +2172,15 @@ out center;`;
         if (contentType && contentType.includes("application/json")) {
           const data = await res.json();
           if (data && data.length > 0) {
-            setCommunityMessages(data);
-            localStorage.setItem("camper_messages", JSON.stringify(data));
+            const fetchedIds = new Set(data.map((m: any) => m.id));
+            const missing = INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id));
+            const combined = [...missing, ...data];
+            const normalizedData: CommunityMessage[] = combined.map((m: any) => ({
+              ...m,
+              type: m.type || (m.id?.startsWith("chat_") ? "chat" : "forum")
+            }));
+            setCommunityMessages(normalizedData);
+            localStorage.setItem("camper_messages", JSON.stringify(normalizedData));
           }
         }
       }
@@ -2148,8 +2199,8 @@ out center;`;
     // 2. Synchronise change events directly with Firestore DB
     try {
       if (newMessages.length > communityMessages.length) {
-        // A new chat post was created
-        const addedMsg = newMessages[0];
+        // A new post was created - find the added item
+        const addedMsg = newMessages.find((nm) => !communityMessages.some((om) => om.id === nm.id)) || newMessages[0];
         await fetch("/api/community-messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2216,11 +2267,15 @@ out center;`;
           }
         }
       }
-    } catch (err) {
-      console.error(
-        "Failed to sync community messaging event with Firestore:",
-        err,
-      );
+    } catch (err: any) {
+      if (err?.message === "Failed to fetch" || String(err).includes("Failed to fetch")) {
+        console.warn("Community messaging sync pending network connection:", err?.message || err);
+      } else {
+        console.error(
+          "Failed to sync community messaging event with Firestore:",
+          err,
+        );
+      }
     }
   };
 
@@ -2951,7 +3006,7 @@ out center;`;
 
       {/* Main Bar Navigation Header - Compact responsiveness with sticky top */}
       <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1 md:py-1.5 flex flex-row justify-between items-center gap-1.5">
+        <div className="max-w-7xl mx-auto px-1.5 min-[375px]:px-2 sm:px-6 lg:px-8 py-1 md:py-1.5 flex flex-row justify-between items-center gap-1 sm:gap-1.5">
           {/* Logo Brand */}
           <div
             className="flex items-center gap-1 sm:gap-2.5 cursor-pointer select-none shrink-0"
@@ -2964,13 +3019,13 @@ out center;`;
               <img
                 src="/logo.svg"
                 alt="CamperLifeApp Logo"
-                className="w-9 h-9 sm:w-11 sm:h-11 object-contain rounded-xl"
+                className="w-7 h-7 sm:w-11 sm:h-11 object-contain rounded-xl"
               />
             </div>
             <div className="shrink-0">
               <div className="flex items-center gap-1">
-                <h1 className="text-sm sm:text-lg font-black text-[#2D2926] tracking-tight font-sans">
-                  CamperLifeApp It
+                <h1 className="text-[11px] min-[375px]:text-xs sm:text-lg font-black text-[#2D2926] tracking-tight font-sans">
+                  CamperLifeApp
                 </h1>
               </div>
               <p className="text-[9px] text-[#2D2926]/75 hidden sm:block">
@@ -2987,6 +3042,35 @@ out center;`;
             onRequestGPS={handleRequestSingleGPS}
           />
 
+          {/* Community Quick Action & Notification Button */}
+          {hasAcceptedTerms && dashboardSettings.showCommunity !== false && (
+            <button
+              onClick={() => {
+                playTapSound();
+                setActiveTab("settings_tools");
+                setSettingsSubTab("community");
+              }}
+              className={`h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-xl border transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group ${
+                unreadCommunityCount > 0
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/40 shadow-md animate-pulse"
+                  : "bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] border-[#3E4A35]/15"
+              }`}
+              title={
+                unreadCommunityCount > 0
+                  ? `Community (${unreadCommunityCount} nuovi messaggi non letti in Chat, Forum o SOS)`
+                  : "Bacheca Community & Chat"
+              }
+            >
+              <Users className={`w-5 h-5 sm:w-5.5 sm:h-5.5 group-hover:scale-110 transition-transform ${unreadCommunityCount > 0 ? "text-white" : "text-[#3E4A35]"}`} />
+              <span className="sr-only">Community</span>
+              {unreadCommunityCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[9px] font-black min-w-[16px] h-[16px] px-0.5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
+                  {unreadCommunityCount > 99 ? "99+" : unreadCommunityCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Dark Mode Theme Toggle */}
           <button
             onClick={() => {
@@ -3001,36 +3085,36 @@ out center;`;
                 }),
               );
             }}
-            className="p-1 sm:p-1.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
+            className="h-9 sm:h-10 px-2.5 sm:px-3.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
             title={
               isDarkMode ? "Passa a Vista Giorno" : "Passa a Vista Notturna"
             }
           >
             {isDarkMode ? (
-              <Sun className="w-3.5 h-3.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
+              <Sun className="w-5 h-5 sm:w-5.5 sm:h-5.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
             ) : (
-              <Moon className="w-3.5 h-3.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
+              <Moon className="w-5 h-5 sm:w-5.5 sm:h-5.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
             )}
             <span className="sr-only">Tema</span>
           </button>
 
           {/* Quick Active vehicle summary panel */}
-          <div className="flex items-center gap-0.5 sm:gap-1.5 bg-[#D1CDBF]/50 backdrop-blur-xs py-0.5 px-1 sm:px-2 rounded-xl border border-[#3E4A35]/10 shrink-0">
+          <div className="h-9 sm:h-10 flex items-center gap-0.5 bg-[#D1CDBF]/50 backdrop-blur-xs px-1 sm:px-1.5 rounded-xl border border-[#3E4A35]/10 shrink-0 max-w-[42px] min-[360px]:max-w-[52px] min-[390px]:max-w-[62px] sm:max-w-[100px]">
             <button
               onClick={() => {
                 setActiveTab("settings_tools");
                 setSettingsSubTab("dimensions");
               }}
-              className="text-left group flex items-center gap-0.5 sm:gap-1.5"
+              className="text-left group flex items-center gap-0.5 sm:gap-1 min-w-0"
             >
-              <div className="p-0.5 bg-white rounded-lg border border-[#3E4A35]/10 group-hover:bg-[#D1CDBF] transition-colors hidden sm:block shrink-0">
+              <div className="p-0.5 sm:p-1 bg-white rounded-lg border border-[#3E4A35]/10 group-hover:bg-[#D1CDBF] transition-colors shrink-0">
                 <Truck className="w-3.5 h-3.5 text-[#5A6B4E]" />
               </div>
-              <div className="max-w-[70px] sm:max-w-[140px] truncate">
-                <div className="text-[7px] sm:text-[8px] font-bold text-[#2D2926]/60 uppercase tracking-wider leading-none">
+              <div className="min-w-0 truncate">
+                <div className="text-[6.5px] sm:text-[7.5px] font-bold text-[#2D2926]/60 uppercase tracking-wider leading-none">
                   Mezzo
                 </div>
-                <div className="text-[9px] sm:text-[11px] font-bold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
+                <div className="text-[8.5px] min-[360px]:text-[9.5px] sm:text-[10.5px] font-bold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
                   {vehicleDimensions.modelName}
                 </div>
               </div>
@@ -3097,9 +3181,9 @@ out center;`;
               >
                 <Sliders className="w-4 h-4" />
                 3. Impostazioni & Strumenti
-                {totalWarnings > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-[#A45C40] text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center border border-white">
-                    {totalWarnings}
+                {(totalWarnings > 0 || unreadCommunityCount > 0) && (
+                  <span className="absolute -top-1 -right-1 bg-[#A45C40] text-white text-[10px] font-extrabold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center border border-white shadow-xs">
+                    {totalWarnings + unreadCommunityCount}
                   </span>
                 )}
               </button>
@@ -3943,9 +4027,41 @@ out center;`;
                                 </div>
                               </div>
                               <div className="flex items-center gap-2.5 shrink-0">
-                                <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                  Disponibile
-                                </span>
+                                {unreadCommunityCount > 0 ? (
+                                  <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-full font-black text-[10px] animate-pulse">
+                                    {unreadCommunityCount} {unreadCommunityCount === 1 ? 'nuovo' : 'nuovi'}
+                                  </span>
+                                ) : (
+                                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
+                                    Disponibile
+                                  </span>
+                                )}
+                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Sfide, Concorsi & Badge */}
+                          {dashboardSettings.showCommunity && (
+                            <div
+                              onClick={() => setSettingsSubTab("challenges")}
+                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
+                            >
+                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
+                                <div className="p-2.5 rounded-xl shrink-0 bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 group-hover:scale-105 transition-transform">
+                                  <Trophy className="w-5 h-5 text-amber-600" />
+                                </div>
+                                <div className="min-w-0">
+                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
+                                    <span>Sfide, Concorsi &amp; Badge</span>
+                                    <span className="bg-amber-400 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-full uppercase">Nuovo</span>
+                                  </h4>
+                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                    Partecipa ai concorsi foto vista mare, segnala nuove soste e vinci badge e premi!
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2.5 shrink-0">
                                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
                               </div>
                             </div>
@@ -4208,6 +4324,7 @@ out center;`;
                           "Checklist Pre-partenza"}
                         {settingsSubTab === "deadlines" && "Scandenziere"}
                         {settingsSubTab === "community" && "Bacheca & Chat"}
+                        {settingsSubTab === "challenges" && "Sfide & Concorsi Camperisti"}
                         {settingsSubTab === "registration" && "Registrazione"}
                         {settingsSubTab === "login" && "Login"}
                         {settingsSubTab === "install" && "Installazione"}
@@ -4317,7 +4434,15 @@ out center;`;
                     <CommunityTab
                       messages={communityMessages}
                       onChange={handleCommunityChange}
-                      isAdmin={isAdminLoggedIn || !!currentUser?.isModerator}
+                      isAdmin={isAdminLoggedIn}
+                      onOpenChallenges={() => setSettingsSubTab("challenges")}
+                      currentUser={currentUser}
+                    />
+                  )}
+                  {settingsSubTab === "challenges" && (
+                    <ChallengesTab
+                      onOpenAddPlace={() => setActiveTab("map_nav")}
+                      currentUser={currentUser}
                     />
                   )}
                   {settingsSubTab === "shared_trips" && (
@@ -5339,9 +5464,9 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
             <span className="text-[10px] tracking-tight leading-none uppercase font-bold">
               {appLang === 'en' ? 'Tools' : appLang === 'fr' ? 'Outils' : 'STRUMENTI'}
             </span>
-            {totalWarnings > 0 && (
-              <span className="absolute top-1 right-3.5 bg-[#E56B38] text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
-                {totalWarnings}
+            {(totalWarnings > 0 || unreadCommunityCount > 0) && (
+              <span className="absolute top-1 right-3.5 bg-[#E56B38] text-white text-[8px] font-black min-w-[16px] h-4 px-0.5 rounded-full flex items-center justify-center border border-white">
+                {totalWarnings + unreadCommunityCount}
               </span>
             )}
           </button>

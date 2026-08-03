@@ -26,6 +26,7 @@ import {
   Compass,
   Layers,
   Plus,
+  Minus,
   Camera,
   Check,
   Search,
@@ -326,11 +327,24 @@ function SmartRouteDisplay({
 
   // Fit view bounds automatically on load
   React.useEffect(() => {
-    if (map) {
-      const bounds = new window.google.maps.LatLngBounds();
-      bounds.extend({ lat: startPt[0], lng: startPt[1] });
-      bounds.extend({ lat: endPt[0], lng: endPt[1] });
-      map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
+    if (map && userLocation && selectedPlace) {
+      const sLat = Number(userLocation.lat);
+      const sLng = Number(userLocation.lng);
+      const eLat = Number(selectedPlace.lat);
+      const eLng = Number(selectedPlace.lng);
+
+      if (!isNaN(sLat) && !isNaN(sLng) && !isNaN(eLat) && !isNaN(eLng)) {
+        try {
+          const bounds = new window.google.maps.LatLngBounds();
+          bounds.extend({ lat: sLat, lng: sLng });
+          bounds.extend({ lat: eLat, lng: eLng });
+          if (!bounds.isEmpty()) {
+            map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
+          }
+        } catch (err) {
+          console.warn("Error fitting Google Maps bounds:", err);
+        }
+      }
     }
   }, [map, userLocation, selectedPlace]);
 
@@ -756,8 +770,54 @@ export default function MapTab({
   // Address search query states
   const [addressSearchQuery, setAddressSearchQuery] = React.useState("");
   const [addressSuggestions, setAddressSuggestions] = React.useState<any[]>([]);
+  const [searchResultPins, setSearchResultPins] = React.useState<any[]>([]);
   const [isSearchingAddress, setIsSearchingAddress] = React.useState(false);
   const [addressSearchError, setAddressSearchError] = React.useState("");
+
+  const fitBoundsToSearchResults = (pinsList?: any[]) => {
+    try {
+      const pins = pinsList || searchResultPins;
+      if (!pins || pins.length === 0) return;
+
+      const validPins = pins
+        .map((p) => {
+          const pLat = typeof p.lat === "number" ? p.lat : parseFloat(p.lat || p.lon);
+          const pLng = typeof p.lng === "number" ? p.lng : parseFloat(p.lng || p.lon);
+          return { lat: pLat, lng: pLng };
+        })
+        .filter((p) => !isNaN(p.lat) && !isNaN(p.lng) && isFinite(p.lat) && isFinite(p.lng));
+
+      if (validPins.length === 0) return;
+
+      const googleMap = googleMapInstance;
+      if (googleMap && (window as any).google?.maps) {
+        if (validPins.length === 1) {
+          googleMap.panTo({ lat: validPins[0].lat, lng: validPins[0].lng });
+          googleMap.setZoom(13);
+        } else {
+          const bounds = new (window as any).google.maps.LatLngBounds();
+          validPins.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+          if (!bounds.isEmpty()) {
+            googleMap.fitBounds(bounds, 60);
+          }
+        }
+      } else if (mapRef.current && (window as any).L) {
+        const map = mapRef.current;
+        if (validPins.length === 1) {
+          map.setView([validPins[0].lat, validPins[0].lng], 13);
+        } else {
+          const L = (window as any).L;
+          const latLngs = validPins.map((p) => [p.lat, p.lng]);
+          const bounds = L.latLngBounds(latLngs);
+          if (bounds && bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [60, 60] });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[fitBoundsToSearchResults] Error fitting bounds:", err);
+    }
+  };
 
   const [selectedCategory, setSelectedCategory] = React.useState<
     Place["category"] | "all"
@@ -995,6 +1055,29 @@ export default function MapTab({
       const updatedPhotos = [...uploadedPhotos, ...newBase64s];
       setUploadedPhotos(updatedPhotos);
       localStorage.setItem(`camper_photos_${selectedPlace.id}`, JSON.stringify(updatedPhotos));
+
+      // Notify admin via Email API for each photo uploaded
+      const senderName = currentUser?.name
+        ? `${currentUser.name} ${(currentUser as any).surname || ''}`.trim()
+        : currentUser?.nickname || currentUser?.email || 'Camperista';
+
+      for (const base64Photo of newBase64s) {
+        try {
+          fetch('/api/notify-photo-submission', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'area_sosta',
+              userName: senderName,
+              userEmail: currentUser?.email || '',
+              placeName: selectedPlace.name,
+              location: selectedPlace.address || `${selectedPlace.lat}, ${selectedPlace.lng}`,
+              imageUrl: base64Photo,
+              caption: `Nuova foto caricata nell'album dell'area sosta: ${selectedPlace.name}`
+            })
+          }).catch(e => console.warn('[MapTab] Email notification error:', e));
+        } catch (e) {}
+      }
     } catch (err) {
       console.error("Error uploading to album:", err);
     }
@@ -1541,68 +1624,166 @@ export default function MapTab({
     }
   };
 
-  const handleAddressSearch = async (e?: React.FormEvent) => {
+  const handleAddressSearch = async (e?: React.FormEvent, customQuery?: string) => {
     if (e) e.preventDefault();
-    if (!addressSearchQuery.trim()) return;
+    const query = (customQuery !== undefined ? customQuery : addressSearchQuery).trim();
+    if (!query) {
+      setAddressSuggestions([]);
+      setAddressSearchError("");
+      return;
+    }
 
     setIsSearchingAddress(true);
     setAddressSearchError("");
     try {
+      const refLat = typeof userLocation?.lat === 'number' ? userLocation.lat : (typeof filterCenter?.lat === 'number' ? filterCenter.lat : undefined);
+      const refLng = typeof userLocation?.lng === 'number' ? userLocation.lng : (typeof filterCenter?.lng === 'number' ? filterCenter.lng : undefined);
+      const latParam = refLat !== undefined ? refLat : '';
+      const lngParam = refLng !== undefined ? refLng : '';
+      const keyParam = googleMapsKey ? `&key=${encodeURIComponent(googleMapsKey)}` : '';
+
       const res = await fetch(
-        `/api/nominatim?q=${encodeURIComponent(addressSearchQuery)}`,
+        `/api/google-places/search?q=${encodeURIComponent(query)}&lat=${latParam}&lng=${lngParam}${keyParam}`,
       );
-      if (!res.ok) throw new Error("Errore di rete");
-      let data;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        throw new Error(
-          "Il server non ha restituito una risposta JSON valida.",
-        );
-      }
-      setAddressSuggestions(data);
-      if (data.length === 0) {
-        setAddressSearchError("Nessuna località trovata con questo nome.");
+      if (!res.ok) throw new Error("Errore di rete durante la ricerca");
+      const data = await res.json();
+
+      if (data.places && Array.isArray(data.places)) {
+        let placesList = [...data.places];
+
+        // Haversine distance calculator
+        const calcDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+          const R = 6371;
+          const dLat = ((lat2 - lat1) * Math.PI) / 180;
+          const dLon = ((lon2 - lon1) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat1 * Math.PI) / 180) *
+              Math.cos((lat2 * Math.PI) / 180) *
+              Math.sin(dLon / 2) *
+              Math.sin(dLon / 2);
+          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        };
+
+        // Calculate distance for each place if user/center coordinates exist
+        if (refLat !== undefined && refLng !== undefined) {
+          placesList = placesList.map((p: any) => {
+            const pLat = typeof p.lat === 'number' ? p.lat : parseFloat(p.lat || p.lon);
+            const pLng = typeof p.lng === 'number' ? p.lng : parseFloat(p.lng || p.lon);
+            let distanceKm = p.distanceKm;
+            if (distanceKm === undefined && !isNaN(pLat) && !isNaN(pLng)) {
+              distanceKm = calcDist(refLat, refLng, pLat, pLng);
+            }
+            return { ...p, lat: pLat, lng: pLng, distanceKm };
+          });
+
+          // Sort in ascending order of distance (closest to furthest)
+          placesList.sort((a, b) => {
+            if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
+              return a.distanceKm - b.distanceKm;
+            }
+            if (a.distanceKm !== undefined) return -1;
+            if (b.distanceKm !== undefined) return 1;
+            return 0;
+          });
+        }
+
+        setAddressSuggestions(placesList);
+        setSearchResultPins(placesList);
+        if (placesList.length === 0) {
+          setAddressSearchError("Nessun luogo o area sosta trovata con questo nome.");
+        } else if (e) {
+          // Auto-fit map bounds to show all search result pins when user manually searches
+          setTimeout(() => fitBoundsToSearchResults(placesList), 200);
+        }
+      } else {
+        setAddressSuggestions([]);
+        setSearchResultPins([]);
+        setAddressSearchError("Nessun risultato disponibile.");
       }
     } catch (err) {
       console.error(err);
-      setAddressSearchError("Errore durante la ricerca della località.");
+      setAddressSearchError("Errore durante la ricerca.");
     } finally {
       setIsSearchingAddress(false);
     }
   };
 
+  // Debounced auto-search when user types in the search bar
+  React.useEffect(() => {
+    if (!addressSearchQuery || addressSearchQuery.trim().length < 2) {
+      setAddressSuggestions([]);
+      setAddressSearchError("");
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleAddressSearch(undefined, addressSearchQuery);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [addressSearchQuery]);
+
   const handleSelectSuggestion = (sug: any) => {
-    const lat = parseFloat(sug.lat);
-    const lng = parseFloat(sug.lon);
+    const lat = typeof sug.lat === 'number' ? sug.lat : parseFloat(sug.lat || sug.lon);
+    const lng = typeof sug.lng === 'number' ? sug.lng : parseFloat(sug.lng || sug.lon);
     if (isNaN(lat) || isNaN(lng)) return;
 
     const map = mapRef.current;
     if (map) {
       map.setView([lat, lng], 13);
     }
+    if (googleMapInstance) {
+      googleMapInstance.panTo({ lat, lng });
+      googleMapInstance.setZoom(13);
+    }
+
+    // Determine appropriate category
+    let category: Place["category"] = "area_sosta";
+    const types = (sug.types || []).map((t: string) => t.toLowerCase());
+    const nameLower = (sug.name || sug.display_name || "").toLowerCase();
+
+    if (types.includes("campground") || types.includes("rv_park") || nameLower.includes("camping") || nameLower.includes("campeggio")) {
+      category = "campeggio";
+    } else if (nameLower.includes("service") || nameLower.includes("carico") || nameLower.includes("scarico") || nameLower.includes("sosta camper")) {
+      category = "camper_service";
+    } else if (types.includes("parking") || nameLower.includes("parcheggio")) {
+      category = "parcheggio_camper";
+    } else if (nameLower.includes("agriturismo") || nameLower.includes("agricamper")) {
+      category = "area_sosta";
+    }
+
+    const distText = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm)
+      ? (sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)}m dalla tua posizione` : `${sug.distanceKm.toFixed(1)}km dalla tua posizione`)
+      : null;
 
     const customPlace: Place = {
-      id: `searched-point-${Date.now()}`,
-      name: sug.display_name.split(",")[0] || "Località Ricercata",
-      category: "area_sosta",
+      id: sug.id || `google-${Date.now()}`,
+      name: sug.name || sug.display_name?.split(",")[0] || "Località Ricercata",
+      category: category,
       lat: lat,
       lng: lng,
-      address: sug.display_name,
-      priceInfo: "Località cercata",
+      address: sug.address || sug.display_name || "Indirizzo trovato tramite la ricerca",
+      priceInfo: distText
+        ? `📍 ${distText}${sug.rating ? ` • ⭐ ${sug.rating} (${sug.user_ratings_total || 0} recensioni)` : ''}`
+        : (sug.rating ? `⭐ ${sug.rating} (${sug.user_ratings_total || 0} recensioni)` : "Risultato Ricerca"),
       priceEuro: 0,
-      rating: 5,
-      facilities: ["Parcheggio"],
+      rating: sug.rating || 5,
+      facilities: ["Parcheggio", "Località Trovata", distText ? distText : "Barra di Ricerca"].filter(Boolean),
       reviews: [],
-      imageUrl:
-        "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80&w=400",
-      source: "inserito_a_mano",
+      imageUrl: sug.photoUrl || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=400",
+      source: (sug.source || "google_places") as any,
       maxHeight: 4.0,
       maxWeight: 5.0,
       isNarrowAccess: false,
     };
 
     setSelectedPlace(customPlace);
+    setIsMobileDetailsOpen(true);
+
+    // Add to current places list if not existing nearby
+    if (!places.some(p => p.id === customPlace.id || (Math.abs(p.lat - lat) < 0.0001 && Math.abs(p.lng - lng) < 0.0001))) {
+      onPlacesChange([customPlace, ...places]);
+    }
+
     setAddressSuggestions([]);
     setAddressSearchQuery(customPlace.name);
 
@@ -1615,7 +1796,7 @@ export default function MapTab({
     window.dispatchEvent(
       new CustomEvent("show-toast", {
         detail: {
-          message: `📍 Centrato su: ${customPlace.name}! Ho attivato il raggio di 15km con download automatico delle aree sosta dal database.`,
+          message: `📍 Centrato su: ${customPlace.name}! Mappa posizionata e raggio di 15km attivato con Google Places.`,
         },
       }),
     );
@@ -2028,6 +2209,32 @@ export default function MapTab({
       (activeMap as any)._isProgrammatic = true;
       activeMap.setView([userLocation.lat, userLocation.lng], 14);
       mapMovedByUserRef.current = false;
+    }
+  };
+
+  const handleZoomIn = () => {
+    const activeMap = googleMapInstance || mapRef.current;
+    if (!activeMap) return;
+    if (typeof activeMap.getZoom === "function") {
+      const currentZoom = activeMap.getZoom() || 10;
+      if (typeof activeMap.setZoom === "function") {
+        activeMap.setZoom(currentZoom + 1);
+      }
+    } else if (typeof activeMap.zoomIn === "function") {
+      activeMap.zoomIn();
+    }
+  };
+
+  const handleZoomOut = () => {
+    const activeMap = googleMapInstance || mapRef.current;
+    if (!activeMap) return;
+    if (typeof activeMap.getZoom === "function") {
+      const currentZoom = activeMap.getZoom() || 10;
+      if (typeof activeMap.setZoom === "function") {
+        activeMap.setZoom(currentZoom - 1);
+      }
+    } else if (typeof activeMap.zoomOut === "function") {
+      activeMap.zoomOut();
     }
   };
 
@@ -3942,6 +4149,8 @@ out center;`;
               filterCenter={filterCenter}
               onMapInstance={setGoogleMapInstance}
               mapMovedByUserRef={mapMovedByUserRef}
+              searchResultPins={searchResultPins}
+              onSelectSuggestion={handleSelectSuggestion}
               indicatorTitle={
                 settings?.mapEngine === "leaflet" && hasValidKey && isOnline
                   ? "Mappa Leaflet Ultra-Rapida ⚡"
@@ -3965,7 +4174,8 @@ out center;`;
                   mapId="DEMO_MAP_ID"
                   mapTypeId={mapTypeId}
                   gestureHandling="greedy"
-                  disableDefaultUI={window.innerWidth < 1024}
+                  zoomControl={false}
+                  disableDefaultUI={true}
                   internalUsageAttributionIds={[
                     "gmp_mcp_codeassist_v1_aistudio",
                   ]}
@@ -4216,6 +4426,41 @@ out center;`;
                     </AdvancedMarker>
                   )}
 
+                  {/* Search Result Pins (Puntine Ricerca da barra di ricerca) */}
+                  {searchResultPins.map((sug, idx) => {
+                    const pLat = typeof sug.lat === 'number' ? sug.lat : parseFloat(sug.lat || sug.lon);
+                    const pLng = typeof sug.lng === 'number' ? sug.lng : parseFloat(sug.lng || sug.lon);
+                    if (isNaN(pLat) || isNaN(pLng)) return null;
+
+                    const isCamp = sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp");
+                    const title = sug.name || sug.display_name?.split(",")[0] || "Risultato Ricerca";
+                    const distText = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm)
+                      ? (sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)}m` : `${sug.distanceKm.toFixed(1)}km`)
+                      : null;
+
+                    return (
+                      <AdvancedMarker
+                        key={`search-pin-gmap-${sug.id || idx}`}
+                        position={{ lat: pLat, lng: pLng }}
+                        title={`${title}${distText ? ` (${distText})` : ''}`}
+                        onClick={() => handleSelectSuggestion(sug)}
+                      >
+                        <div className="flex flex-col items-center justify-center cursor-pointer group hover:scale-110 transition-transform">
+                          <div className="px-1.5 py-0.5 bg-purple-700 hover:bg-purple-600 text-white font-bold text-[10px] rounded-lg shadow-md border border-white flex items-center gap-1 whitespace-nowrap">
+                            <span className="text-[10px]">{isCamp ? "🚐" : "📍"}</span>
+                            <span className="max-w-[85px] truncate">{title}</span>
+                            {distText && (
+                              <span className="bg-purple-900/80 px-1 py-0 rounded text-[9px] text-purple-100 font-bold">
+                                {distText}
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-1.5 h-1.5 bg-purple-700 rotate-45 -mt-0.5 border-r border-b border-white shadow-xs"></div>
+                        </div>
+                      </AdvancedMarker>
+                    );
+                  })}
+
                   {/* OSM Obstacles (limitations overlay) */}
                   {showOsmObstacles &&
                     osmObstacles.map((obs) => {
@@ -4269,80 +4514,305 @@ out center;`;
             </div>
           )}
 
-          {/* Top Control Bar containing Search (with flex-1), Rolly Guide and GPS buttons */}
-          <div className="absolute top-2 left-2 right-2 md:top-3 md:left-3 md:right-3 z-[1000] flex gap-1.5 items-center">
+          {/* Top Control Bar containing Rolly Guide, Search Bar, and GPS Button (Uniform Height h-9) */}
+          <div className={`absolute top-2 left-2 right-2 md:top-3 md:left-3 md:right-3 flex gap-2 items-center transition-all ${
+            addressSuggestions.length > 0 ? "z-[6000]" : "z-[3000]"
+          }`}>
             {/* Rolly Onboarding Guide for Map */}
-            <RollyOnboardingGuide sectionKey="map_nav" />
-            {/* Search Container */}
-            <div className="flex-1 flex flex-col gap-1 min-w-0">
+            <RollyOnboardingGuide sectionKey="map_nav" className="!h-9 rounded-xl border-slate-200/90 shadow-md" />
+
+            {/* Ingrandita Barra di Ricerca con stessa altezza h-9 */}
+            <div className="flex-1 flex flex-col gap-1 min-w-0 relative">
               <form
                 onSubmit={handleAddressSearch}
-                className="flex gap-1.5 shadow bg-white p-1 rounded-lg border border-slate-200 w-full h-8 items-center"
+                className="flex gap-1.5 shadow-md bg-white/95 backdrop-blur-md p-1 rounded-xl border border-slate-200/90 w-full h-9 items-center transition-all focus-within:ring-2 focus-within:ring-emerald-500/40"
               >
+                <div className="pl-1.5 text-slate-400 shrink-0">
+                  <Search className="w-3.5 h-3.5 text-[#3E4A35]" />
+                </div>
                 <input
                   type="text"
-                  placeholder="Cerca località (es. Roma, Garda...)"
+                  placeholder="Cerca su Google Places (es. Garda, Area Roma...)"
                   value={addressSearchQuery}
                   onChange={(e) => setAddressSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent px-2 text-[11px] font-semibold outline-none text-[#2D2926] min-w-0"
+                  className="flex-1 bg-transparent px-1 text-xs font-semibold outline-none text-[#2D2926] placeholder:text-slate-400 min-w-0"
                 />
+                {addressSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddressSearchQuery("");
+                      setAddressSuggestions([]);
+                      setSearchResultPins([]);
+                      setAddressSearchError("");
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-full shrink-0"
+                    title="Cancella ricerca"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={isSearchingAddress}
-                  className="h-6 px-2.5 bg-[#3E4A35] text-white hover:bg-[#5A6B4E] rounded-md text-[10px] font-bold transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                  className="h-7 px-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-xs gap-1"
                 >
-                  {isSearchingAddress ? "..." : <Search className="w-3 h-3" />}
+                  {isSearchingAddress ? (
+                    <span className="animate-pulse">...</span>
+                  ) : (
+                    <>
+                      <Search className="w-3 h-3 hidden sm:inline" />
+                      <span>Cerca</span>
+                    </>
+                  )}
                 </button>
               </form>
 
-              {/* Suggestions list dropdown */}
+              {/* Suggestions list dropdown - Large overlay positioned above all map buttons */}
               {addressSuggestions.length > 0 && (
-                <div className="bg-white rounded-lg border border-slate-200 shadow-lg overflow-hidden divide-y divide-slate-100 text-xs font-semibold max-h-48 overflow-y-auto">
-                  {addressSuggestions.map((sug, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleSelectSuggestion(sug)}
-                      className="w-full text-left p-2 hover:bg-slate-50 transition-all block truncate text-slate-700 active:bg-slate-100 text-[10.5px]"
-                    >
-                      📍 {sug.display_name}
-                    </button>
-                  ))}
+                <div className="fixed inset-x-2 top-12 sm:absolute sm:top-full sm:left-0 sm:right-auto sm:w-[560px] bg-white rounded-2xl border border-slate-200/90 shadow-2xl overflow-hidden text-xs font-semibold max-h-[75vh] sm:max-h-[540px] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150 mt-1 z-[9999]">
+                  <div className="px-3.5 py-2.5 bg-slate-50 text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center justify-between border-b border-slate-100 sticky top-0 bg-white z-10">
+                    <div className="flex items-center gap-1.5">
+                      <span>Risultati per distanza ({addressSuggestions.length})</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold">Più vicini prima</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fitBoundsToSearchResults(addressSuggestions);
+                          setAddressSuggestions([]);
+                        }}
+                        className="px-2.5 py-1 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg transition-all text-[11px] font-extrabold flex items-center gap-1 cursor-pointer shadow-xs"
+                        title="Inquadra tutte le puntine sulla mappa e chiudi l'elenco"
+                      >
+                        <span>📍 Mostra in mappa</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddressSuggestions([])}
+                        className="px-2.5 py-1 hover:bg-slate-100 rounded-lg text-slate-600 hover:text-slate-900 transition-all text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
+                        title="Chiudi risultati"
+                      >
+                        <span>Chiudi</span>
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {addressSuggestions.map((sug, idx) => {
+                      const isGoogle = sug.source === "google_places" || sug.source === "google";
+                      const isCamp = sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp");
+                      const title = sug.name || sug.display_name?.split(",")[0];
+                      const fullAddr = sug.address || sug.display_name;
+                      const hasDist = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm);
+                      
+                      return (
+                        <button
+                          key={sug.id || idx}
+                          type="button"
+                          onClick={() => handleSelectSuggestion(sug)}
+                          className="w-full text-left p-3.5 hover:bg-emerald-50/70 active:bg-emerald-100/70 transition-all flex items-start gap-3 group text-slate-800 cursor-pointer"
+                        >
+                          {sug.photoUrl ? (
+                            <img
+                              src={sug.photoUrl}
+                              alt={title}
+                              className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200 shadow-xs group-hover:scale-105 transition-transform mt-0.5"
+                            />
+                          ) : (
+                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-bold text-base shadow-xs mt-0.5 ${
+                              isCamp ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                            }`}>
+                              {isCamp ? "🚐" : "📍"}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0 pr-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="font-extrabold text-xs sm:text-sm text-slate-900 group-hover:text-emerald-800 leading-snug line-clamp-2">
+                                {title}
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {hasDist && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-extrabold text-[10px] border border-emerald-200/80 flex items-center gap-0.5" title="Distanza dalla tua posizione">
+                                    📍 {sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)} m` : `${sug.distanceKm.toFixed(1)} km`}
+                                  </span>
+                                )}
+                                {sug.rating && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] border border-amber-200/80 flex items-center gap-0.5">
+                                    ⭐ {sug.rating}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium leading-normal mt-1 line-clamp-2">
+                              {fullAddr}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                isGoogle ? "bg-blue-50 text-blue-700 border border-blue-200/80" : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {isGoogle ? "Google Places" : "Mappa"}
+                              </span>
+                              {sug.types && sug.types.length > 0 && (
+                                <span className="text-[9.5px] text-slate-400 font-semibold truncate capitalize">
+                                  • {sug.types[0].replace(/_/g, " ")}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               {addressSearchError && (
-                <div className="bg-white/95 px-2 py-1 rounded-md text-[9px] text-red-650 font-semibold border border-red-200 shadow-xs">
-                  ❌ {addressSearchError}
+                <div className="bg-white/95 px-3 py-1.5 rounded-xl text-[10px] text-red-600 font-bold border border-red-200 shadow-sm mt-1 flex items-center gap-1">
+                  <span>❌ {addressSearchError}</span>
                 </div>
               )}
             </div>
 
-            {/* GPS Activation Button & Align Centra Camper wrapper */}
-            <div className="flex gap-1 items-center shrink-0 relative">
-              {/* Map Type Switcher Button */}
+            {/* Pulsante Attiva GPS Tutto a Destra con stessa altezza h-9 */}
+            <button
+              type="button"
+              onClick={() => onGPSEnabledChange(!isGPSEnabled)}
+              className={`h-9 px-3 rounded-xl shadow-md font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
+                isGPSEnabled
+                  ? "bg-blue-600 text-white border-white animate-pulse"
+                  : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-50 border-slate-200"
+              }`}
+              title={isGPSEnabled ? "Disattiva GPS" : "Attiva GPS"}
+            >
+              <Compass
+                className={`w-3.5 h-3.5 ${isGPSEnabled ? "text-white" : "text-[#3E4A35]"}`}
+              />
+              <span className="hidden sm:inline">{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
+            </button>
+          </div>
+
+          {/* Pulsante di Ricentramento GPS SUBITO SOTTO al pulsante GPS (in alto a destra) */}
+          <div className="absolute top-13 right-2 md:top-14 md:right-3 z-[500] flex flex-col items-end gap-1.5">
+            {isGPSEnabled && userLocation && (
+              <button
+                type="button"
+                onClick={handleCenterOnUser}
+                className="h-9 px-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl shadow-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20 shrink-0"
+                title="Ricentra Mappa sul Camper"
+              >
+                <Navigation className="w-3.5 h-3.5 text-white fill-white" />
+                <span className="hidden sm:inline">Centra Camper</span>
+              </button>
+            )}
+
+            {!userLocation && (
+              <button
+                type="button"
+                onClick={() => {
+                  const map = mapRef.current;
+                  if (map) {
+                    const center = map.getCenter();
+                    let lat = 42.5;
+                    let lng = 12.5;
+                    if (center) {
+                      if (typeof center.lat === "function") {
+                        lat = center.lat();
+                      } else {
+                        lat = Number(center.lat);
+                      }
+                      if (typeof center.lng === "function") {
+                        lng = center.lng();
+                      } else {
+                        lng = Number(center.lng);
+                      }
+                    }
+                    window.dispatchEvent(
+                      new CustomEvent("simulate-camper-location", {
+                        detail: { lat, lng },
+                      }),
+                    );
+                  }
+                }}
+                className="h-8 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md font-extrabold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border border-amber-500 shrink-0"
+                title="Posiziona il camper manualmente al centro attuale della mappa"
+              >
+                📍 Posiziona Camper Qui
+              </button>
+            )}
+
+            {/* Google Maps Key Configuration Button - visible only to admins */}
+            {isAdmin && (currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && (
+              <button
+                type="button"
+                onClick={() => setShowKeyModal(true)}
+                className={`h-8 px-2.5 rounded-xl shadow-md font-extrabold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border shrink-0 ${
+                  hasValidKey
+                    ? "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700"
+                    : "bg-[#A45C40] text-white hover:bg-[#b0674a] border-[#A45C40]/20"
+                }`}
+                title={
+                  hasValidKey
+                    ? "Chiave Google Maps Attiva 🔑"
+                    : "Configura Chiave Google Maps"
+                }
+              >
+                <Lock className="w-3 h-3 text-white" />
+                <span>API Key</span>
+              </button>
+            )}
+          </div>
+
+          {/* Pulsanti + e - (Zoom) con Pulsante dei Livelli SUBITO SOTTO (Floating a sinistra) */}
+          <div className="absolute top-13 left-2 md:top-14 md:left-3 z-[500] flex flex-col items-center gap-1.5">
+            {/* Zoom In (+) */}
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              className="w-9 h-9 bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 rounded-xl shadow-md border border-slate-200/90 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
+              title="Ingrandisci Zoom (+)"
+            >
+              <Plus className="w-4 h-4 text-slate-700" />
+            </button>
+
+            {/* Zoom Out (-) */}
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              className="w-9 h-9 bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 rounded-xl shadow-md border border-slate-200/90 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
+              title="Riduci Zoom (-)"
+            >
+              <Minus className="w-4 h-4 text-slate-700" />
+            </button>
+
+            {/* Pulsante dei Livelli Subito Sotto ai Pulsanti + e - */}
+            <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowMapTypeMenu(!showMapTypeMenu)}
-                className={`h-8 px-2.5 rounded-lg shadow font-extrabold text-[9px] sm:text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
+                className={`w-9 h-9 rounded-xl shadow-md flex items-center justify-center transition-all cursor-pointer border ${
                   showMapTypeMenu || mapTypeId !== "roadmap"
                     ? "bg-[#3E4A35] text-white border-transparent"
-                    : "bg-white text-slate-800 hover:bg-slate-50 border-slate-200"
+                    : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-100 border-slate-200/90"
                 }`}
-                title="Cambia visualizzazione mappa"
+                title="Cambia visualizzazione mappa (Livelli)"
               >
-                <Layers className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Mappa</span>
+                <Layers className="w-4 h-4" />
               </button>
 
+              {/* Menu dei Livelli */}
               {showMapTypeMenu && (
-                <div className="absolute top-9 right-0 bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 p-1 w-36 z-[1100] animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="absolute top-0 left-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-1.5 w-36 z-[1100] animate-in fade-in slide-in-from-left-2 duration-150">
+                  <div className="px-2 py-1 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100 mb-1">
+                    Tipo Mappa
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setMapTypeId("roadmap");
                       setShowMapTypeMenu(false);
                     }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
                       mapTypeId === "roadmap"
                         ? "bg-[#3E4A35]/10 text-[#3E4A35]"
                         : "text-slate-700 hover:bg-slate-50"
@@ -4356,7 +4826,7 @@ out center;`;
                       setMapTypeId("satellite");
                       setShowMapTypeMenu(false);
                     }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
                       mapTypeId === "satellite"
                         ? "bg-[#3E4A35]/10 text-[#3E4A35]"
                         : "text-slate-700 hover:bg-slate-50"
@@ -4370,7 +4840,7 @@ out center;`;
                       setMapTypeId("hybrid");
                       setShowMapTypeMenu(false);
                     }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
                       mapTypeId === "hybrid"
                         ? "bg-[#3E4A35]/10 text-[#3E4A35]"
                         : "text-slate-700 hover:bg-slate-50"
@@ -4384,7 +4854,7 @@ out center;`;
                       setMapTypeId("terrain");
                       setShowMapTypeMenu(false);
                     }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
                       mapTypeId === "terrain"
                         ? "bg-[#3E4A35]/10 text-[#3E4A35]"
                         : "text-slate-700 hover:bg-slate-50"
@@ -4393,89 +4863,6 @@ out center;`;
                     ⛰️ Terreno
                   </button>
                 </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => onGPSEnabledChange(!isGPSEnabled)}
-                className={`h-8 px-2 rounded-lg shadow font-extrabold text-[9px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border shrink-0 ${
-                  isGPSEnabled
-                    ? "bg-blue-600 text-white border-white animate-pulse"
-                    : "bg-white text-slate-800 hover:bg-slate-50 border-slate-200"
-                }`}
-                title={isGPSEnabled ? "Disattiva GPS" : "Attiva GPS"}
-              >
-                <Compass
-                  className={`w-3 h-3 ${isGPSEnabled ? "text-white" : "text-[#3E4A35]"}`}
-                />
-                <span>{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
-              </button>
-
-              {!userLocation && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const map = mapRef.current;
-                    if (map) {
-                      const center = map.getCenter();
-                      let lat = 42.5;
-                      let lng = 12.5;
-                      if (center) {
-                        if (typeof center.lat === "function") {
-                          lat = center.lat();
-                        } else {
-                          lat = Number(center.lat);
-                        }
-                        if (typeof center.lng === "function") {
-                          lng = center.lng();
-                        } else {
-                          lng = Number(center.lng);
-                        }
-                      }
-                      window.dispatchEvent(
-                        new CustomEvent("simulate-camper-location", {
-                          detail: { lat, lng },
-                        }),
-                      );
-                    }
-                  }}
-                  className="h-8 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow font-extrabold text-[9px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border border-amber-500 shrink-0"
-                  title="Posiziona il camper manualmente al centro attuale della mappa"
-                >
-                  📍 Posiziona Camper Qui
-                </button>
-              )}
-
-              {isGPSEnabled && userLocation && (
-                <button
-                  type="button"
-                  onClick={handleCenterOnUser}
-                  className="h-8 w-8 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg shadow font-bold text-[9px] sm:text-[10px] flex items-center justify-center transition-all cursor-pointer border border-white/20 shrink-0"
-                  title="Centra Camper"
-                >
-                  <Navigation className="w-3 h-3 text-white fill-white" />
-                </button>
-              )}
-
-              {/* Google Maps Key Configuration Button - visible only to admins */}
-              {isAdmin && (currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && (
-                <button
-                  type="button"
-                  onClick={() => setShowKeyModal(true)}
-                  className={`h-8 px-2.5 rounded-lg shadow font-extrabold text-[9px] sm:text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border shrink-0 ${
-                    hasValidKey
-                      ? "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700"
-                      : "bg-[#A45C40] text-white hover:bg-[#b0674a] border-[#A45C40]/20"
-                  }`}
-                  title={
-                    hasValidKey
-                      ? "Chiave Google Maps Attiva 🔑"
-                      : "Configura Chiave Google Maps"
-                  }
-                >
-                  <Lock className="w-3 h-3 text-white" />
-                  <span>API Key</span>
-                </button>
               )}
             </div>
           </div>
@@ -8049,6 +8436,8 @@ export function LeafletOfflineMap({
   filterCenter = null,
   onMapInstance,
   mapMovedByUserRef,
+  searchResultPins = [],
+  onSelectSuggestion,
 }: {
   places: Place[];
   userLocation: { lat: number; lng: number } | null;
@@ -8064,6 +8453,8 @@ export function LeafletOfflineMap({
   filterCenter?: { lat: number; lng: number } | null;
   onMapInstance?: (map: L.Map | null) => void;
   mapMovedByUserRef?: React.MutableRefObject<boolean>;
+  searchResultPins?: any[];
+  onSelectSuggestion?: (sug: any) => void;
 }) {
   const settings = useAppSettings();
   const mapRef = React.useRef<L.Map | null>(null);
@@ -8125,7 +8516,7 @@ export function LeafletOfflineMap({
     const map = L.map(containerRef.current, {
       center: [initialLat, initialLng],
       zoom: initialZoom,
-      zoomControl: true,
+      zoomControl: false,
       attributionControl: true,
     });
 
@@ -8339,7 +8730,49 @@ export function LeafletOfflineMap({
       markersRef.current.push(clickMarker);
     }
 
-  // Add markers for all filtered places
+    // Add markers for Search Result Pins
+    if (searchResultPins && searchResultPins.length > 0) {
+      searchResultPins.forEach((sug, idx) => {
+        const pLat = typeof sug.lat === 'number' ? sug.lat : parseFloat(sug.lat || sug.lon);
+        const pLng = typeof sug.lng === 'number' ? sug.lng : parseFloat(sug.lng || sug.lon);
+        if (isNaN(pLat) || isNaN(pLng)) return;
+
+        const isCamp = sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp");
+        const title = sug.name || sug.display_name?.split(",")[0] || "Risultato Ricerca";
+        const distText = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm)
+          ? (sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)}m` : `${sug.distanceKm.toFixed(1)}km`)
+          : null;
+
+        const searchIcon = L.divIcon({
+          className: "custom-div-icon",
+          html: `
+            <div class="flex flex-col items-center justify-center cursor-pointer group hover:scale-110 transition-transform">
+              <div class="px-1.5 py-0.5 bg-purple-700 text-white font-bold text-[10px] rounded-lg shadow-md border border-white flex items-center gap-1 whitespace-nowrap">
+                <span class="text-[10px]">${isCamp ? "🚐" : "📍"}</span>
+                <span>${title.length > 14 ? title.substring(0, 14) + '...' : title}</span>
+                ${distText ? `<span class="bg-purple-900/80 px-1 py-0 rounded text-[9px] text-purple-100 font-bold">${distText}</span>` : ''}
+              </div>
+              <div class="w-1.5 h-1.5 bg-purple-700 rotate-45 -mt-0.5 border-r border-b border-white shadow-xs"></div>
+            </div>
+          `,
+          iconSize: [110, 26],
+          iconAnchor: [55, 26],
+        });
+
+        const searchMarker = L.marker([pLat, pLng], {
+          icon: searchIcon,
+          zIndexOffset: 1200,
+        }).addTo(map);
+
+        searchMarker.on("click", () => {
+          onSelectSuggestion?.(sug);
+        });
+
+        markersRef.current.push(searchMarker);
+      });
+    }
+
+    // Add markers for all filtered places
     console.log("MapTab: rendering places:", places.length);
     places.forEach((place) => {
       const normCat = (place.category || "").toLowerCase();
@@ -8409,6 +8842,8 @@ export function LeafletOfflineMap({
     setIsMobileDetailsOpen,
     clickedCoords,
     settings?.shareLocation,
+    searchResultPins,
+    onSelectSuggestion,
   ]);
 
   // Draw search radius circles for "Intorno a me" and "Intorno a sosta"
@@ -8456,7 +8891,7 @@ export function LeafletOfflineMap({
   return (
     <div className="w-full h-full relative">
       {/* Visual top indicator telling the user they are viewing the Leaflet Offline Map */}
-      <div className="absolute top-11 left-1/2 -translate-x-1/2 z-[1000] bg-[#3E4A35] text-white px-4 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-md border border-white/20 select-none whitespace-nowrap">
+      <div className="absolute top-13 md:top-14 left-1/2 -translate-x-1/2 z-[1000] bg-[#3E4A35] text-white px-4 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-md border border-white/20 select-none whitespace-nowrap">
         <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
         <span>
           {indicatorTitle ||

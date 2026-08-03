@@ -63,13 +63,13 @@ body {
 
 /* Move Leaflet top-left zoom controls down so they are not covered by top search & Rolly bar */
 .leaflet-top.leaflet-left {
-  top: 52px !important;
+  top: 44px !important;
   left: 8px !important;
 }
 
 @media (min-width: 640px) {
   .leaflet-top.leaflet-left {
-    top: 60px !important;
+    top: 50px !important;
     left: 12px !important;
   }
 }
