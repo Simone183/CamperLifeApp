@@ -7,6 +7,7 @@ import React from 'react';
 import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
+import { compressImage } from '../utils/photoCompressor';
 import {
   MessageSquare,
   Heart,
@@ -93,32 +94,57 @@ function UserAvatar({
   user,
   avatarColor,
   size = 'w-10 h-10',
-  textSize = 'text-sm'
+  textSize = 'text-sm',
+  myProfilePhoto,
+  activeUserName,
+  currentUser
 }: {
   avatar?: string;
   avatarUrl?: string;
-  user: string;
+  user?: string;
   avatarColor?: string;
   size?: string;
   textSize?: string;
+  myProfilePhoto?: string | null;
+  activeUserName?: string;
+  currentUser?: any;
 }) {
-  const isRolly = (user && user.toLowerCase().includes('rolly')) || avatar === '🤖' || avatar === 'Rolly' || avatar === 'rolly';
+  const safeUser = user || '';
+  const isRolly = (safeUser && safeUser.toLowerCase().includes('rolly')) || avatar === '🤖' || avatar === 'Rolly' || avatar === 'rolly';
 
   if (isRolly) {
     return <CartoonCamperAvatar className={`${size} shrink-0`} />;
   }
 
-  const photo = avatarUrl || (avatar && (avatar.startsWith('data:') || avatar.startsWith('http') || avatar.startsWith('/')) ? avatar : null);
+  const normUser = safeUser.trim().toLowerCase();
+  const isMe =
+    normUser === 'sam83' ||
+    normUser === 'tu' ||
+    normUser === 'tu (camperista)' ||
+    normUser.startsWith('tu (') ||
+    (activeUserName && normUser === activeUserName.trim().toLowerCase()) ||
+    (currentUser?.email && normUser === currentUser.email.trim().toLowerCase()) ||
+    (currentUser?.nickname && normUser === currentUser.nickname.trim().toLowerCase()) ||
+    (currentUser?.name && normUser === currentUser.name.trim().toLowerCase());
+
+  let photo = avatarUrl || (avatar && (avatar.startsWith('data:') || avatar.startsWith('http') || avatar.startsWith('/')) ? avatar : null);
+
+  // Fallback to active user's profile photo if rendering current user's avatar
+  if (!photo && isMe && myProfilePhoto) {
+    photo = myProfilePhoto;
+  }
 
   if (photo) {
     return (
       <div className={`${size} rounded-full overflow-hidden shrink-0 shadow-xs border border-slate-200/80 dark:border-slate-700 bg-slate-100 dark:bg-slate-800`}>
-        <img src={photo} alt={user} className="w-full h-full object-cover" />
+        <img src={photo} alt={safeUser} className="w-full h-full object-cover" />
       </div>
     );
   }
 
-  const initial = (avatar && avatar.length <= 4 && !avatar.startsWith('data:')) ? avatar : (user ? user[0].toUpperCase() : 'U');
+  const initial = (avatar && avatar.length <= 4 && !avatar.startsWith('data:') && !avatar.startsWith('http') && !avatar.startsWith('/'))
+    ? avatar
+    : (safeUser ? safeUser[0].toUpperCase() : 'U');
 
   return (
     <div className={`${size} rounded-full ${avatarColor || 'bg-[#3E4A35]'} text-white font-black flex items-center justify-center ${textSize} shadow-xs shrink-0 uppercase`}>
@@ -273,6 +299,99 @@ export default function CommunityTab({
   const currentUserAvatar = activeUserName.slice(0, 2).toUpperCase();
   const currentUserColor = 'bg-[#5A6B4E]';
 
+  // Profile photo state management
+  const [myProfilePhoto, setMyProfilePhoto] = React.useState<string | null>(() => {
+    if (currentUser?.profilePhoto) return currentUser.profilePhoto;
+    try {
+      const savedPhoto = localStorage.getItem('camper_profile_photo');
+      if (savedPhoto) return savedPhoto;
+      const savedUser = localStorage.getItem('camper_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        if (u.profilePhoto) return u.profilePhoto;
+      }
+    } catch {}
+    return null;
+  });
+
+  const profilePhotoInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (currentUser?.profilePhoto) {
+      setMyProfilePhoto(currentUser.profilePhoto);
+    }
+  }, [currentUser?.profilePhoto]);
+
+  React.useEffect(() => {
+    const handleSync = () => {
+      try {
+        const photo = localStorage.getItem('camper_profile_photo');
+        if (photo) setMyProfilePhoto(photo);
+      } catch {}
+    };
+    window.addEventListener('camper_profile_photo_updated', handleSync);
+    return () => window.removeEventListener('camper_profile_photo_updated', handleSync);
+  }, []);
+
+  const handleUploadProfilePhoto = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⚠️ Seleziona un file immagine valido (JPG, PNG, WebP)." },
+        })
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const rawBase64 = event.target?.result as string;
+      if (!rawBase64) return;
+      let compressed = rawBase64;
+      try {
+        compressed = await compressImage(rawBase64, 'low');
+      } catch {}
+
+      setMyProfilePhoto(compressed);
+      localStorage.setItem('camper_profile_photo', compressed);
+
+      try {
+        const saved = localStorage.getItem('camper_user');
+        const uObj = saved ? JSON.parse(saved) : {};
+        uObj.profilePhoto = compressed;
+        uObj.nickname = uObj.nickname || activeUserName;
+        localStorage.setItem('camper_user', JSON.stringify(uObj));
+      } catch {}
+
+      window.dispatchEvent(new Event('camper_profile_photo_updated'));
+
+      const updatedMessages = messages.map(m => {
+        const u = m.user.toLowerCase();
+        if (
+          u === activeUserName.toLowerCase() ||
+          u === 'sam83' ||
+          u === 'tu (camperista)' ||
+          u.includes('tu') ||
+          (currentUser?.email && u === currentUser.email.toLowerCase())
+        ) {
+          return {
+            ...m,
+            avatarUrl: compressed,
+            avatar: compressed
+          };
+        }
+        return m;
+      });
+      onChange(updatedMessages);
+
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "📸 Foto profilo aggiornata! Ora è visibile in chat, forum e bacheca social." },
+        })
+      );
+    };
+    reader.readAsDataURL(file);
+  };
+
   // User presence logic for live chat
   const isUserOnlineInChat = React.useCallback((username: string, timestamp?: string) => {
     if (!username) return false;
@@ -374,7 +493,7 @@ export default function CommunityTab({
 
   const handleQuickSocialSubmit = () => {
     if (!quickSocialText.trim() && !postMedia) return;
-    const userPhoto = currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
+    const userPhoto = myProfilePhoto || currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
     
     // Rolly AI Moderation check
     const rawText = quickSocialText.trim() || '📸 Scatto in camper!';
@@ -444,7 +563,7 @@ export default function CommunityTab({
         ? selectedTag
         : postTag;
 
-    const userPhoto = currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
+    const userPhoto = myProfilePhoto || currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
 
     // Rolly AI Moderation Check
     const titleMod = moderateText(postTitle.trim());
@@ -619,7 +738,7 @@ export default function CommunityTab({
     const currentMedia = replyMedia[msgId];
     if (!text.trim() && !currentMedia) return;
 
-    const userPhoto = currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
+    const userPhoto = myProfilePhoto || currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
 
     // Rolly AI Moderation Check
     const mod = moderateText(text.trim());
@@ -742,6 +861,61 @@ export default function CommunityTab({
 
   return (
     <div className="space-y-5">
+      {/* Hidden Profile Photo Input */}
+      <input
+        type="file"
+        ref={profilePhotoInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.[0]) {
+            handleUploadProfilePhoto(e.target.files[0]);
+          }
+          e.target.value = '';
+        }}
+      />
+
+      {/* User Profile Photo Card & Upload Banner */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            onClick={() => profilePhotoInputRef.current?.click()}
+            className="relative group cursor-pointer shrink-0"
+            title="Clicca per caricare o cambiare la tua foto profilo"
+          >
+            <UserAvatar
+              avatarUrl={myProfilePhoto || undefined}
+              user={activeUserName}
+              avatarColor={currentUserColor}
+              size="w-11 h-11"
+              myProfilePhoto={myProfilePhoto}
+              activeUserName={activeUserName}
+              currentUser={currentUser}
+            />
+            <div className="absolute -bottom-1 -right-1 bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 p-1 rounded-full shadow-md group-hover:scale-110 transition-transform">
+              <Camera className="w-3 h-3" />
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-slate-100 text-sm">
+              <span className="truncate">{activeUserName}</span>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 px-1.5 py-0.2 rounded font-extrabold uppercase shrink-0">Online</span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {myProfilePhoto ? 'Foto profilo personalizzata attiva' : 'Nessuna foto profilo caricata (mostra iniziali)'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => profilePhotoInputRef.current?.click()}
+          className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] dark:bg-[#A3B896] dark:hover:bg-[#889B7B] text-white dark:text-slate-950 text-xs font-black rounded-xl transition-all shadow-xs shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95"
+        >
+          <Camera className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">{myProfilePhoto ? 'Cambia Foto Profilo' : 'Carica Foto Profilo'}</span>
+          <span className="sm:hidden">{myProfilePhoto ? 'Cambia Foto' : 'Carica Foto'}</span>
+        </button>
+      </div>
       {/* Admin Mode Status Banner */}
       {isAdmin && (
         <div className="bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/40 rounded-2xl p-3 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-amber-900 dark:text-amber-200 font-bold shadow-xs">
@@ -999,12 +1173,20 @@ export default function CommunityTab({
           {/* Quick Post Composer Card */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-4 shadow-sm space-y-3">
             <div className="flex items-center gap-3">
-              <UserAvatar
-                avatar={currentUser?.profilePhoto}
-                user={activeUserName}
-                avatarColor={currentUserColor}
-                size="w-9 h-9"
-              />
+              <div onClick={() => profilePhotoInputRef.current?.click()} className="relative group cursor-pointer shrink-0" title="Cambia foto profilo">
+                <UserAvatar
+                  avatarUrl={myProfilePhoto || currentUser?.profilePhoto}
+                  user={activeUserName}
+                  avatarColor={currentUserColor}
+                  size="w-9 h-9"
+                  myProfilePhoto={myProfilePhoto}
+                  activeUserName={activeUserName}
+                  currentUser={currentUser}
+                />
+                <div className="absolute -bottom-1 -right-1 bg-[#3E4A35] text-white p-0.5 rounded-full text-[8px] shadow-xs">
+                  <Camera className="w-2.5 h-2.5" />
+                </div>
+              </div>
               <input
                 type="text"
                 value={quickSocialText}
@@ -1153,6 +1335,9 @@ export default function CommunityTab({
                           user={msg.user}
                           avatarColor={msg.avatarColor}
                           size="w-10 h-10"
+                          myProfilePhoto={myProfilePhoto}
+                          activeUserName={activeUserName}
+                          currentUser={currentUser}
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1314,6 +1499,9 @@ export default function CommunityTab({
                                       avatarColor={reply.avatarColor}
                                       size="w-6 h-6"
                                       textSize="text-[10px]"
+                                      myProfilePhoto={myProfilePhoto}
+                                      activeUserName={activeUserName}
+                                      currentUser={currentUser}
                                     />
                                     <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{reply.user}</span>
                                     <span className="text-[9px] text-slate-400 shrink-0">{getRelativeTime(reply.timestamp)}</span>
@@ -1435,6 +1623,9 @@ export default function CommunityTab({
                           avatarColor={msg.avatarColor}
                           size="w-5 h-5"
                           textSize="text-[8px]"
+                          myProfilePhoto={myProfilePhoto}
+                          activeUserName={activeUserName}
+                          currentUser={currentUser}
                         />
                         <span
                           className={`w-2 h-2 rounded-full shrink-0 ${
@@ -1699,6 +1890,9 @@ export default function CommunityTab({
                           user={msg.user}
                           avatarColor={msg.avatarColor}
                           size="w-10 h-10"
+                          myProfilePhoto={myProfilePhoto}
+                          activeUserName={activeUserName}
+                          currentUser={currentUser}
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
@@ -2036,6 +2230,9 @@ export default function CommunityTab({
                               avatarColor={msg.avatarColor}
                               size="w-8 h-8"
                               textSize="text-xs"
+                              myProfilePhoto={myProfilePhoto}
+                              activeUserName={activeUserName}
+                              currentUser={currentUser}
                             />
                             <div className="flex-1 min-w-0 space-y-1">
                               <div className="flex items-start gap-1.5">
@@ -2120,6 +2317,9 @@ export default function CommunityTab({
                           user={msg.user}
                           avatarColor={msg.avatarColor}
                           size="w-10 h-10"
+                          myProfilePhoto={myProfilePhoto}
+                          activeUserName={activeUserName}
+                          currentUser={currentUser}
                         />
                         <div>
                           <div className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-1.5 flex-wrap">
@@ -2229,6 +2429,9 @@ export default function CommunityTab({
                                     avatarColor={reply.avatarColor}
                                     size="w-5 h-5"
                                     textSize="text-[9px]"
+                                    myProfilePhoto={myProfilePhoto}
+                                    activeUserName={activeUserName}
+                                    currentUser={currentUser}
                                   />
                                   {reply.user === 'Tu (Camperista)' || reply.user.includes('Tu') ? activeUserName : reply.user}
                                   {(reply.user === activeUserName || reply.user.includes('Tu')) && (
