@@ -40,19 +40,13 @@ import {
 
 function getRelativeTime(timestamp: string): string {
   try {
-    const now = new Date();
     const date = new Date(timestamp);
-    const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    if (diffSeconds < 60) return 'Proprio ora';
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    if (diffMinutes < 60) return `${diffMinutes} min fa`;
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'ora' : 'ore'} fa`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays < 7) return `${diffDays} ${diffDays === 1 ? 'giorno' : 'giorni'} fa`;
-    return date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+    if (isNaN(date.getTime())) return timestamp || 'Di recente';
+    const dateStr = date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    return `${dateStr} ${timeStr}`;
   } catch {
-    return 'Di recente';
+    return timestamp || 'Di recente';
   }
 }
 
@@ -1638,7 +1632,7 @@ export default function CommunityTab({
                         <span>{displayName}</span>
                       </div>
                       <span>•</span>
-                      <span>{new Date(msg.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>{getRelativeTime(msg.timestamp)}</span>
                       <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${getTagStyle(msg.tag, msg.isResolved)}`}>
                         {msg.tag}
                       </span>
@@ -2132,7 +2126,7 @@ export default function CommunityTab({
                           <span className="truncate flex-1 min-w-0 font-medium text-slate-700 dark:text-slate-300">
                             Ultimo: <span className="font-semibold">{latestMsg.title || latestMsg.text}</span>
                           </span>
-                          <span className="shrink-0 text-[10px]">{new Date(latestMsg.timestamp).toLocaleDateString('it-IT')}</span>
+                          <span className="shrink-0 text-[10px]">{getRelativeTime(latestMsg.timestamp)}</span>
                         </div>
                       )}
                     </div>
@@ -2248,7 +2242,7 @@ export default function CommunityTab({
                               <div className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-2 flex-wrap">
                                 <span>Aperta da <strong className="text-slate-700 dark:text-slate-300">{msg.user}</strong></span>
                                 <span>•</span>
-                                <span>{new Date(msg.timestamp).toLocaleDateString('it-IT')} {new Date(msg.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span>{getRelativeTime(msg.timestamp)}</span>
                               </div>
                             </div>
                           </div>
@@ -2337,7 +2331,7 @@ export default function CommunityTab({
                           </div>
                           <div className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            <span>{new Date(msg.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} • {new Date(msg.timestamp).toLocaleDateString('it-IT')}</span>
+                            <span>{getRelativeTime(msg.timestamp)}</span>
                           </div>
                         </div>
                       </div>
@@ -2446,7 +2440,7 @@ export default function CommunityTab({
                                   )}
                                 </span>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                                  <span>{new Date(reply.timestamp).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} • {new Date(reply.timestamp).toLocaleDateString('it-IT')}</span>
+                                  <span>{getRelativeTime(reply.timestamp)}</span>
                                   {isAdmin && (
                                     <button
                                       type="button"
