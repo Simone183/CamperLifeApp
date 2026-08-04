@@ -24,6 +24,7 @@ import {
   INITIAL_DEADLINES,
   INITIAL_VEHICLE_DIMENSIONS,
 } from "./data/mockData";
+import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
 
 // Modular Tab Components
 import { EditPlaceModal } from "./components/EditPlaceModal";
@@ -224,26 +225,18 @@ export default function App() {
     if (saved) {
       try {
         let parsed = JSON.parse(saved);
-        // Rimuovi i vecchi messaggi di prova m1, m2, m3, m4
-        parsed = parsed.filter(
-          (m: CommunityMessage) => !["m1", "m2", "m3", "m4"].includes(m.id),
-        );
-        // Unisci i messaggi iniziali mancanti (es. gli argomenti creati da Rolly)
+        parsed = sanitizeCommunityMessagesList(parsed);
         const existingIds = new Set(parsed.map((m: CommunityMessage) => m.id));
-        const missingInitial = INITIAL_COMMUNITY_MESSAGES.filter(
-          (m) => !existingIds.has(m.id)
+        const missingInitial = sanitizeCommunityMessagesList(
+          INITIAL_COMMUNITY_MESSAGES.filter((m) => !existingIds.has(m.id))
         );
-        let combined = [...missingInitial, ...parsed];
-        combined = combined.map((m: CommunityMessage) => ({
-          ...m,
-          type: m.type || (m.id?.startsWith("chat_") ? "chat" : "forum")
-        }));
-        return combined.length > 0 ? combined : INITIAL_COMMUNITY_MESSAGES;
+        const combined = [...missingInitial, ...parsed];
+        return combined.length > 0 ? combined : sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES);
       } catch {
-        return INITIAL_COMMUNITY_MESSAGES;
+        return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES);
       }
     }
-    return INITIAL_COMMUNITY_MESSAGES;
+    return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES);
   });
 
   const [challenges, setChallenges] = React.useState<ChallengeItem[] | undefined>(() => {
@@ -2213,15 +2206,14 @@ out center;`;
         if (contentType && contentType.includes("application/json")) {
           const data = await res.json();
           if (data && data.length > 0) {
-            const fetchedIds = new Set(data.map((m: any) => m.id));
-            const missing = INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id));
-            const combined = [...missing, ...data];
-            const normalizedData: CommunityMessage[] = combined.map((m: any) => ({
-              ...m,
-              type: m.type || (m.id?.startsWith("chat_") ? "chat" : "forum")
-            }));
-            setCommunityMessages(normalizedData);
-            localStorage.setItem("camper_messages", JSON.stringify(normalizedData));
+            const sanitizedData = sanitizeCommunityMessagesList(data);
+            const fetchedIds = new Set(sanitizedData.map((m: any) => m.id));
+            const missing = sanitizeCommunityMessagesList(
+              INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id))
+            );
+            const combined = [...missing, ...sanitizedData];
+            setCommunityMessages(combined);
+            localStorage.setItem("camper_messages", JSON.stringify(combined));
           }
         }
       }

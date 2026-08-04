@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
+import { sanitizeCommunityMessagesList } from '../utils/communitySanitizer';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
 import { compressImage } from '../utils/photoCompressor';
@@ -157,6 +158,9 @@ export default function CommunityTab({
   onChallengeSubmissionsChange,
   challenges
 }: CommunityTabProps) {
+  // Sanitize messages array to filter out any remaining fake replies, fake likes, or fake posts
+  const sanitizedMessages = React.useMemo(() => sanitizeCommunityMessagesList(messages), [messages]);
+
   // View mode: 'social' (Social Feed), 'feed' (Forum Argomenti), 'chat' (WhatsApp style), 'sos' (Emergency SOS focus)
   const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'sos'>('social');
   const [socialSubFilter, setSocialSubFilter] = React.useState<'all' | 'media' | 'popular' | 'mine'>('all');
@@ -407,8 +411,8 @@ export default function CommunityTab({
       }
     }
 
-    // Specific active live chat users
-    if (['Elena_Camper91', 'Marco_Van78'].includes(username)) {
+    // Rolly is always online in chat
+    if (username && username.includes('Rolly')) {
       return true;
     }
 
@@ -813,7 +817,7 @@ export default function CommunityTab({
   };
 
   // Filtered messages calculation - Strictly separates Social vs Forum vs Chat Live vs SOS
-  const filteredMessages = messages.filter((m) => {
+  const filteredMessages = sanitizedMessages.filter((m) => {
     const isSocialMsg = m.type === 'social';
     const isChatMsg = m.type === 'chat';
     const isForumMsg = m.type === 'forum' || (!m.type && !isSocialMsg);
@@ -845,8 +849,8 @@ export default function CommunityTab({
     return true;
   });
 
-  const activeSosCount = messages.filter(m => (m.type === 'forum' || !m.type) && m.tag === 'SOS' && !m.isResolved && !m.user.toLowerCase().includes('rolly')).length;
-  const currentModeTotalCount = messages.filter(m => {
+  const activeSosCount = sanitizedMessages.filter(m => (m.type === 'forum' || !m.type) && m.tag === 'SOS' && !m.isResolved && !m.user.toLowerCase().includes('rolly')).length;
+  const currentModeTotalCount = sanitizedMessages.filter(m => {
     if (viewMode === 'social') return m.type === 'social' || (m.type === 'forum' && m.mediaUrl);
     if (viewMode === 'chat') return m.type === 'chat';
     if (viewMode === 'sos') return m.tag === 'SOS' && !m.user.toLowerCase().includes('rolly');
@@ -1111,7 +1115,7 @@ export default function CommunityTab({
               Tutti ({currentModeTotalCount})
             </button>
             {tags.map((tag) => {
-              const count = messages.filter((m) => m.type === 'chat' && m.tag === tag).length;
+              const count = sanitizedMessages.filter((m) => m.type === 'chat' && m.tag === tag).length;
               return (
                 <button
                   key={tag}
@@ -2087,7 +2091,7 @@ export default function CommunityTab({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {(['Generale', 'Sosta', 'Meteo', 'Incontro', 'SOS'] as CommunityMessage['tag'][]).map((catKey) => {
                   const meta = forumCategoryMeta[catKey];
-                  const catMessages = messages.filter((m) => (m.type === 'forum' || !m.type) && m.tag === catKey);
+                  const catMessages = sanitizedMessages.filter((m) => (m.type === 'forum' || !m.type) && m.tag === catKey);
                   const totalReplies = catMessages.reduce((acc, m) => acc + (m.replies?.length || 0), 0);
                   const latestMsg = catMessages[0];
 
@@ -2170,7 +2174,7 @@ export default function CommunityTab({
 
               {/* Discussion Titles List */}
               {(() => {
-                const categoryDiscussions = messages.filter((m) => {
+                const categoryDiscussions = sanitizedMessages.filter((m) => {
                   const isForum = m.type === 'forum' || !m.type;
                   const matchesCat = m.tag === selectedForumCategory;
                   if (!isForum || !matchesCat) return false;
@@ -2288,7 +2292,7 @@ export default function CommunityTab({
 
               {/* Main Discussion Thread Card */}
               {(() => {
-                const msg = messages.find((m) => m.id === selectedDiscussionId);
+                const msg = sanitizedMessages.find((m) => m.id === selectedDiscussionId);
                 if (!msg) {
                   return (
                     <div className="bg-white dark:bg-slate-800 p-6 text-center text-slate-400 rounded-2xl">

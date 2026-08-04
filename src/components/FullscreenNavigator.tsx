@@ -3078,88 +3078,81 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   {currentStepObj.distance}
                 </div>
               )}
-              {/* Button to minimize navigation */}
-              <button
-                type="button"
-                onClick={() => handleSetMinimized(true)}
-                className="p-2 sm:p-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 hover:text-amber-300 rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
-                title="Riduci a finestra fluttuante (abbassa navigazione)"
-              >
-                <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
             </div>
 
             {/* Preview Route Cost & Distance Stats Bar */}
             {isPreview && (
-              <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-[#0b101d]/95 backdrop-blur-md py-2 px-1 rounded-2xl border border-slate-800 shadow-xl text-center pointer-events-auto">
+              <div className="grid grid-cols-5 divide-x divide-slate-800/60 bg-[#0b101d]/95 backdrop-blur-md py-3 px-2 rounded-2xl border border-slate-800 shadow-xl text-center pointer-events-auto">
                 <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                  <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
                     <span className="inline sm:hidden">Distanza</span>
                     <span className="hidden sm:inline">Totale Distanza</span>
                   </span>
-                  <span className="text-[11px] sm:text-sm font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
+                  <span className="text-sm sm:text-lg font-black text-emerald-400 font-mono truncate max-w-full">{remainingDistanceKm.toFixed(1)} km</span>
                 </div>
                 <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                  <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
                     <span className="inline sm:hidden">Tempo</span>
                     <span className="hidden sm:inline">Tempo Percorrenza</span>
                   </span>
-                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
+                  <span className="text-sm sm:text-lg font-black text-slate-200 truncate max-w-full">{formatDuration(remainingMinutes)}</span>
                 </div>
                 <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
+                  <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate max-w-full">
                     <span className="inline sm:hidden">Arrivo</span>
                     <span className="hidden sm:inline">Orario di Arrivo</span>
                   </span>
-                  <span className="text-[11px] sm:text-sm font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
+                  <span className="text-sm sm:text-lg font-black text-slate-200 truncate max-w-full">{etaTimeStr}</span>
                 </div>
                 <div className="flex flex-col items-center justify-center px-1" title={hasRealPrice ? `Spesa stimata basata sul tuo ultimo rifornimento (${lastPrice.toFixed(3)} ${getCurrencySymbol(settings)}/L) e consumo (${consumptionKmPerL.toFixed(1)} km/L)` : `Spesa stimata basata su prezzo carburante di default (${lastPrice.toFixed(2)} ${getCurrencySymbol(settings)}/L)`}>
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                  <span className="text-[9px] sm:text-xs font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
                     <span className="inline sm:hidden">Spesa Carb.</span>
                     <span className="hidden sm:inline">Spesa Carburante</span>
                   </span>
-                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
+                  <span className="text-sm sm:text-lg font-black text-[#A45C40] font-mono truncate max-w-full">{fuelCost.toFixed(2)} {getCurrencySymbol(settings)}</span>
                 </div>
                 <div className="flex flex-col items-center justify-center px-1" title={`Spesa pedaggio stimata basata sulle tratte autostradali rilevate (${tollStats.autostradaKm.toFixed(1)} km a 0.095 ${getCurrencySymbol(settings)}/km)`}>
-                  <span className="text-[7.5px] sm:text-[9px] font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
+                  <span className="text-[9px] sm:text-xs font-bold text-amber-400/90 uppercase tracking-wider block truncate max-w-full">
                     <span className="inline sm:hidden">Spesa Ped.</span>
                     <span className="hidden sm:inline">Spesa Pedaggio</span>
                   </span>
-                  <span className="text-[11px] sm:text-sm font-black text-[#A45C40] font-mono truncate max-w-full">
+                  <span className="text-sm sm:text-lg font-black text-[#A45C40] font-mono truncate max-w-full">
                     {tollStats.tollCost > 0 ? `${tollStats.tollCost.toFixed(2)} ${getCurrencySymbol(settings)}` : "0.00 " + getCurrencySymbol(settings)}
                   </span>
                 </div>
               </div>
             )}
+
+            {/* Vertical Stack: Minimize & Close Buttons right under top HUD bar on right side */}
+            <div className="flex justify-end pointer-events-auto pt-0.5">
+              <div className="flex flex-col gap-2 bg-[#0b101d]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800/90 shadow-2xl">
+                {/* Minimize button */}
+                <button
+                  type="button"
+                  onClick={() => handleSetMinimized(true)}
+                  className="p-2.5 sm:p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 font-bold rounded-xl border border-slate-700 transition-all flex justify-center items-center cursor-pointer shadow-md active:scale-95 shrink-0"
+                  title="Riduci a finestra fluttuante"
+                >
+                  <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
+                {/* Close button */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-2.5 sm:p-3 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-xl transition-all flex justify-center items-center cursor-pointer shadow-md active:scale-95 shrink-0"
+                  title="Chiudi e termina navigazione"
+                >
+                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              </div>
+            </div>
           </div>
 
         {/* Bottom Actions or Route Stats HUD Bar */}
         {isPreview ? (
           <div className="absolute bottom-0 inset-x-0 z-10">
-            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-6 py-5 pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between gap-4 pointer-events-auto font-sans">
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Minimize button */}
-                <button
-                  type="button"
-                  onClick={() => handleSetMinimized(true)}
-                  className="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 font-bold rounded-2xl border border-slate-700 transition-all flex items-center justify-center cursor-pointer shadow-md shrink-0"
-                  title="Abbassa anteprima navigazione"
-                >
-                  <Minimize className="w-5 h-5" />
-                </button>
-
-                {/* X button for closing/returning back */}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 sm:px-5 py-3.5 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-200 font-bold rounded-2xl border border-slate-700 transition-all flex items-center gap-2 cursor-pointer shadow-md text-sm shrink-0"
-                  title="Torna alla mappa"
-                >
-                  <X className="w-5 h-5 text-rose-400" />
-                  <span className="hidden sm:inline">Indietro</span>
-                </button>
-              </div>
-
+            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-6 py-4 pb-6 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-center pointer-events-auto font-sans">
               {/* Large Naviga button to start navigation */}
               <button
                 type="button"
@@ -3167,9 +3160,9 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   setIsPreview(false);
                   setIsDriving(true);
                 }}
-                className="flex-1 max-w-md px-8 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-lg active:scale-95 text-base border border-emerald-400/20"
+                className="w-full max-w-md px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3 cursor-pointer shadow-lg active:scale-95 text-lg border border-emerald-400/20"
               >
-                <Navigation className="w-5 h-5 fill-white animate-pulse" />
+                <Navigation className="w-6 h-6 fill-white animate-pulse" />
                 <span>NAVIGA</span>
               </button>
             </div>
@@ -3177,60 +3170,38 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         ) : (
           /* Bottom Route Stats HUD Bar (Active Navigation) */
           <div className="absolute bottom-0 inset-x-0 z-10 pointer-events-none">
-            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-3 sm:px-6 py-2.5 sm:py-4 pb-4 sm:pb-5 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-1.5 sm:gap-4">
-              <div className="flex-1 min-w-0 flex items-center justify-between gap-1 sm:gap-3 md:gap-6 py-0.5">
+            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-4 sm:px-8 py-3.5 sm:py-5 pb-5 sm:pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-2 sm:gap-6">
+              <div className="flex-1 min-w-0 flex items-center justify-between gap-2 sm:gap-4 md:gap-8 py-0.5">
                 <div className="flex flex-col items-start shrink-0">
-                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight sm:tracking-wider">Arrivo</span>
-                  <span className="text-xs sm:text-sm font-black text-slate-200">{etaTimeStr}</span>
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Arrivo</span>
+                  <span className="text-base sm:text-2xl md:text-3xl font-black text-slate-100 leading-tight">{etaTimeStr}</span>
                 </div>
 
-                <div className="h-5 sm:h-6 w-px bg-slate-800/60 shrink-0" />
+                <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
 
                 <div className="flex flex-col items-start shrink-0">
-                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight sm:tracking-wider">Distanza</span>
-                  <span className="text-xs sm:text-sm font-black text-emerald-400 font-mono">{remainingDistanceKm.toFixed(1)} km</span>
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Distanza</span>
+                  <span className="text-base sm:text-2xl md:text-3xl font-black text-emerald-400 font-mono leading-tight">{remainingDistanceKm.toFixed(1)} <span className="text-xs sm:text-base font-bold text-emerald-400/80">km</span></span>
                 </div>
 
-                <div className="h-5 sm:h-6 w-px bg-slate-800/60 shrink-0" />
+                <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
 
                 <div className="flex flex-col items-start shrink-0">
-                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight sm:tracking-wider">Tempo</span>
-                  <span className="text-xs sm:text-sm font-black text-slate-200">{formatDuration(remainingMinutes)}</span>
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Tempo</span>
+                  <span className="text-base sm:text-2xl md:text-3xl font-black text-slate-100 leading-tight">{formatDuration(remainingMinutes)}</span>
                 </div>
 
-                <div className="h-5 sm:h-6 w-px bg-slate-800/60 shrink-0" />
+                <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
 
-                <div className="flex flex-col items-start shrink-0 bg-slate-900/90 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-xl border border-slate-800 shadow-2xs">
-                  <span className="text-[9px] sm:text-[10px] font-bold text-amber-400/90 uppercase tracking-tight sm:tracking-wider flex items-center gap-0.5 sm:gap-1">
-                    <Gauge className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400 shrink-0" />
+                <div className="flex flex-col items-start shrink-0 bg-slate-900/90 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-2xl border border-slate-800 shadow-inner">
+                  <span className="text-[10px] sm:text-xs font-bold text-amber-400/90 uppercase tracking-wider flex items-center gap-1">
+                    <Gauge className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
                     <span>Velocità</span>
                   </span>
-                  <span className="text-xs sm:text-sm font-black text-amber-400 font-mono leading-none sm:leading-normal">
-                    {displayDetectedSpeed} <span className="text-[9px] sm:text-[10px] font-bold text-amber-300/80">km/h</span>
+                  <span className="text-base sm:text-2xl md:text-3xl font-black text-amber-400 font-mono leading-tight">
+                    {displayDetectedSpeed} <span className="text-xs sm:text-sm font-bold text-amber-300/80">km/h</span>
                   </span>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1">
-                {/* Minimize button */}
-                <button
-                  type="button"
-                  onClick={() => handleSetMinimized(true)}
-                  className="p-2 sm:p-3 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-amber-400 hover:text-amber-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md shrink-0"
-                  title="Abbassa navigazione e naviga nell'app"
-                >
-                  <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
-
-                {/* X to close */}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="p-2 sm:p-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-2xl transition-all flex justify-center items-center cursor-pointer shadow-md shrink-0"
-                  title="Chiudi e termina navigazione"
-                >
-                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
               </div>
             </div>
           </div>

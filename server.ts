@@ -2088,6 +2088,58 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   });
 
   // --- ONLINE GROUP CHAT & COMMUNITY SYSTEM IN FIRESTORE ---
+  const FAKE_USERS = new Set([
+    'Marco_Van78', 'Elena_Camper91', 'Simo_FamilyOnRoad', 'BeppeVan', 'TechCamper_Luca',
+    'Valeria_Coast', 'Pietro_Anto', 'Stefano_Oasi', 'Roberto_Mansardato', 'Giada_Van',
+    'Silvia_NORD', 'Davide_Giramondo', 'Mia_E_CaneToby', 'GreenVan_Piero',
+    'MeccanicoFaidate_Giuseppe', 'ChefInViaggio_Chiara', 'Andrea_Vento', 'Giancarlo_Pioneer',
+    'OfficinaCamper_Rino', 'NomadFamily_Ilaria', 'Bruno_CamperSicuro'
+  ]);
+
+  const FAKE_POST_IDS = new Set([
+    "m1", "m2", "m3", "m4", "social_post_1", "social_post_2", "social_post_3", "social_post_4", "chat_1", "chat_2"
+  ]);
+
+  function sanitizeServerCommunityMessage(docId: string, data: any) {
+    if (!data) return null;
+    const msgUser = data.user || "";
+    if (FAKE_POST_IDS.has(docId) || FAKE_USERS.has(msgUser)) {
+      return null;
+    }
+
+    const isInitialRolly = msgUser.includes("Rolly") || docId.startsWith("rolly_topic_") || docId.startsWith("social_post_rolly") || docId.startsWith("chat_rolly");
+
+    const rawReplies = Array.isArray(data.replies) ? data.replies : [];
+    const cleanReplies = rawReplies.filter((r: any) => {
+      if (!r) return false;
+      if (r.id && (r.id.startsWith("r_r") || r.id.startsWith("r_soc") || r.id.startsWith("r_chat"))) return false;
+      if (r.user && FAKE_USERS.has(r.user)) return false;
+      return true;
+    });
+
+    let likes = Number(data.likes) || 0;
+    if (isInitialRolly) {
+      likes = data.likedByCurrentUser ? 1 : 0;
+    }
+
+    let msgType = data.type;
+    if (!msgType) {
+      if (docId.startsWith("chat_") || (data.text && (data.text.includes("chat live") || data.text.includes("quattro chiacchiere")))) {
+        msgType = "chat";
+      } else {
+        msgType = "forum";
+      }
+    }
+
+    return {
+      ...data,
+      id: docId,
+      type: msgType,
+      likes,
+      replies: cleanReplies
+    };
+  }
+
   // Get all online community messages
   app.get("/api/community-messages", async (req, res) => {
     try {
@@ -2106,33 +2158,41 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       const messages: any[] = [];
       snapshot.forEach((doc: any) => {
-        const data = doc.data() || {};
-        let msgType = data.type;
-        if (!msgType) {
-          if (doc.id.startsWith("chat_") || (data.text && (data.text.includes("chat live") || data.text.includes("quattro chiacchiere")))) {
-            msgType = "chat";
-          } else {
-            msgType = "forum";
+        const rawData = doc.data() || {};
+        const sanitized = sanitizeServerCommunityMessage(doc.id, rawData);
+        if (sanitized) {
+          messages.push(sanitized);
+          // Clean Firestore document if it contained fake replies or fake likes
+          const hadFakeReplies = (rawData.replies || []).length !== sanitized.replies.length;
+          const hadFakeLikes = rawData.likes !== sanitized.likes;
+          if (hadFakeReplies || hadFakeLikes) {
+            firestoreDb.collection("communityMessages").doc(doc.id).update({
+              likes: sanitized.likes,
+              replies: sanitized.replies
+            }).catch(err => console.error("Error updating cleaned Firestore doc:", err));
           }
+        } else {
+          // Delete old fake doc from Firestore
+          firestoreDb.collection("communityMessages").doc(doc.id).delete().catch(err => console.error("Error deleting fake doc:", err));
         }
-        messages.push({ id: doc.id, ...data, type: msgType });
       });
 
       // Combine with INITIAL_COMMUNITY_MESSAGES to ensure instant full list return
       const fetchedIds = new Set(messages.map((m: any) => m.id));
       for (const initialMsg of INITIAL_COMMUNITY_MESSAGES) {
         if (!fetchedIds.has(initialMsg.id)) {
-          messages.push({
-            ...initialMsg,
-            type: initialMsg.type || (initialMsg.id.startsWith("chat_") ? "chat" : "forum")
-          });
+          const sanitizedInitial = sanitizeServerCommunityMessage(initialMsg.id, initialMsg);
+          if (sanitizedInitial) {
+            messages.push(sanitizedInitial);
+          }
         }
       }
 
       res.json(messages);
     } catch (err: any) {
       console.error("Error loading community messages from Firestore:", err);
-      res.json(INITIAL_COMMUNITY_MESSAGES);
+      const fallback = INITIAL_COMMUNITY_MESSAGES.map(m => sanitizeServerCommunityMessage(m.id, m)).filter(Boolean);
+      res.json(fallback);
     }
   });
 
