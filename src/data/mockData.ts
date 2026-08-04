@@ -584,10 +584,10 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   /* SOCIAL POSTS (Rolly Examples) */
   {
     id: 'social_post_rolly_welcome',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
-    text: "👋 Benvenuti nella Community Social di CamperLife! Condividete qui le foto delle vostre soste, paesaggi ed esperienze in camper. Cliccate su \"Nuovo Post\" per pubblicare il vostro primo scatto! 🚐📸 #camperlife #rolly #community",
+    text: "👋 Benvenuti nella Community Social di ViaCamper! Condividete qui le foto delle vostre soste, paesaggi ed esperienze in camper. Cliccate su \"Nuovo Post\" per pubblicare il vostro primo scatto! 🚐📸 #viacamper #rolly #community",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     likes: 0,
     likedByCurrentUser: false,
@@ -600,7 +600,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'social_post_rolly_tip',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     text: "📸 Scatto del giorno dalla Community! Vi ricordiamo di verificare la pressione degli pneumatici e il livello dell'olio prima di mettervi in viaggio. Buon viaggio e felice chilometraggio a tutti! 🚐💨 #campertip #rolly #sicurezza",
@@ -618,7 +618,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   /* FORUM TOPICS (Rolly Examples) */
   {
     id: 'rolly_topic_1',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🏔️ Consigli per il primo viaggio invernale sulla neve: riscaldamento e catene',
@@ -632,7 +632,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_2',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '⚡ Autonomia Energetica in Camper: Pannelli Solari vs Batteria al Litio LiFePO4',
@@ -646,7 +646,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_3',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🌊 Le migliori Aree Sosta d\'Italia vicine al Mare e aperte 365 giorni l\'anno',
@@ -660,7 +660,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_4',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🗺️ Consigli di Guida: Come evitare sottopassi bassi e strettoie nei borghi storici',
@@ -674,7 +674,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_5',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '📦 Organizzazione Spazi & Storage nel Garage e negli Armadietti',
@@ -688,10 +688,10 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_6',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
-    title: '⛺ Raduno e Incontro CamperLife Primavera 2026: Proposte di Location!',
+    title: '⛺ Raduno e Incontro ViaCamper Primavera 2026: Proposte di Location!',
     text: "Cari amici camperisti, vi piacerebbe organizzare un incontro informale nei prossimi mesi? Proponete qui la vostra regione preferita (es. Toscana, Umbria, Laghi del Nord o Costa Adriatica) per incontrarci e fare una bella grigliata insieme!",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 22).toISOString(),
     likes: 0,
@@ -702,7 +702,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_7',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🐾 Viaggiare in Camper con Animali Domestici (Cani e Gatti): I vostri consigli',
@@ -716,7 +716,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_8',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🌱 Gestione Cassetta WC Chimico e Additivi Ecologici Bio',
@@ -730,7 +730,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_9',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🛠️ Cassetta degli Attrezzi d\'Emergenza: Cosa tenere sempre a bordo?',
@@ -744,7 +744,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_10',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🍳 Cucina On The Road: Le vostre ricette pratiche e il Fornetto Versilia',
@@ -758,7 +758,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_11',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '💨 Bollettino Vento e Raffiche sulle Coste: Come orientare la sosta',
@@ -772,7 +772,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_12',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🚐 Mansardato vs Semintegrale vs Motorhome vs Van: Esperienze a confronto',
@@ -786,7 +786,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_13',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '❄️ Manutenzione Invernale e Rimessaggio: La Check-list per evitare danni',
@@ -800,7 +800,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_14',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🇪🇺 Prima Volta all\'Estero in Camper: Consigli per la Francia, Spagna e Nord Europa',
@@ -814,7 +814,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'rolly_topic_15',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     title: '🔒 Sicurezza durante le Soste Notturne: Sistemi antifurto e buon senso',
@@ -830,10 +830,10 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   /* LIVE CHAT MESSAGES (Rolly Examples) */
   {
     id: 'chat_rolly_welcome',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
-    text: '👋 Benvenuti nella Chat Live di CamperLife! Scrivete qui per scambiarvi consigli in tempo reale o condividere informazioni pratiche mentre siete in viaggio. 🚐💬',
+    text: '👋 Benvenuti nella Chat Live di ViaCamper! Scrivete qui per scambiarvi consigli in tempo reale o condividere informazioni pratiche mentre siete in viaggio. 🚐💬',
     timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     likes: 0,
     likedByCurrentUser: false,
@@ -843,7 +843,7 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   },
   {
     id: 'chat_rolly_tip',
-    user: 'Rolly - Assistente CamperLife',
+    user: 'Rolly - Assistente ViaCamper',
     avatar: '🤖',
     avatarColor: 'bg-[#3E4A35]',
     text: '💡 La chat live è uno spazio aperto a tutti i camperisti per scambiarsi saluti e dritte al volo sulla strada! Buona permanenza! 🛣️',

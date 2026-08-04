@@ -343,7 +343,7 @@ export default function NearbyPlacesWidget({
               </div>
 
               {/* Category tabs */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <div className="flex flex-wrap items-center gap-1.5 pb-1">
                 <button
                   onClick={() => setActiveCategory('all')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${

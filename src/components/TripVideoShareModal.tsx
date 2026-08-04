@@ -871,10 +871,10 @@ export default function TripVideoShareModal({
     }
     ctx.fill();
 
-    // E. CamperLife watermarked brand
+    // E. ViaCamper watermarked brand
     ctx.font = "italic bold 11px sans-serif";
     ctx.fillStyle = selectedTheme === "parchment" ? "#9CA3AF" : "rgba(255, 255, 255, 0.35)";
-    ctx.fillText("Realizzato con CamperLife App", hudX + hudW - 18, hudY + hudH - 32);
+    ctx.fillText("Realizzato con ViaCamper App", hudX + hudW - 18, hudY + hudH - 32);
 
     ctx.restore();
   };
@@ -989,7 +989,7 @@ export default function TripVideoShareModal({
         type: "video/webm"
       });
 
-      // Automatically publish trip summary to CamperLife Social Feed as well
+      // Automatically publish trip summary to ViaCamper Social Feed as well
       window.dispatchEvent(
         new CustomEvent("share-trip-to-social", {
           detail: { trip }

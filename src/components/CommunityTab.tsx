@@ -517,7 +517,7 @@ export default function CommunityTab({
         ? [
             {
               id: `reply_rolly_mod_${Date.now()}`,
-              user: 'Rolly - Assistente CamperLife',
+              user: 'Rolly - Assistente ViaCamper',
               text: getRollyWarningText(activeUserName, 'social'),
               timestamp: new Date().toISOString(),
               avatar: 'Rolly',
@@ -590,7 +590,7 @@ export default function CommunityTab({
         ? [
             {
               id: `reply_rolly_mod_${Date.now()}`,
-              user: 'Rolly - Assistente CamperLife',
+              user: 'Rolly - Assistente ViaCamper',
               text: getRollyWarningText(activeUserName, targetType),
               timestamp: new Date().toISOString(),
               avatar: 'Rolly',
@@ -607,7 +607,7 @@ export default function CommunityTab({
     if (hasProfanity && targetType === 'chat') {
       const rollyWarningMsg: CommunityMessage = {
         id: `m_rolly_mod_${Date.now() + 1}`,
-        user: 'Rolly - Assistente CamperLife',
+        user: 'Rolly - Assistente ViaCamper',
         avatar: 'Rolly',
         avatarColor: 'bg-[#3E4A35]',
         text: getRollyWarningText(activeUserName, 'chat'),
@@ -760,7 +760,7 @@ export default function CommunityTab({
     if (hasProfanity) {
       newReplies.push({
         id: `reply_rolly_mod_${Date.now() + 1}`,
-        user: 'Rolly - Assistente CamperLife',
+        user: 'Rolly - Assistente ViaCamper',
         text: getRollyWarningText(activeUserName, 'reply'),
         timestamp: new Date(Date.now() + 100).toISOString(),
         avatar: 'Rolly',
@@ -2324,7 +2324,7 @@ export default function CommunityTab({
                             <span>{msg.user === 'Tu (Camperista)' || msg.user.includes('Tu') ? activeUserName : msg.user}</span>
                             {isRolly && (
                               <span className="text-[9px] bg-[#3E4A35] text-white px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
-                                🚐 Assistente CamperLife
+                                🚐 Assistente ViaCamper
                               </span>
                             )}
                             {(msg.user === activeUserName || msg.user.includes('Tu') || msg.user === currentUser?.email) && (

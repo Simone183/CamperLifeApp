@@ -1,5 +1,5 @@
 {
-  "name": "CamperLifeApp",
+  "name": "ViaCamper",
   "description": "Mappe per aree sosta e campeggi, navigazione basata su dimensioni, checklist per la sicurezza, scadenze e messaggistica community per camperisti.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

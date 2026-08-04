@@ -205,7 +205,7 @@ export default function OfflineMapsTab() {
         </div>
         <p>
           I navigatori e le mappe di Google richiedono una connessione continua per scaricare la cartografia vettoriale. 
-          Quando sei in viaggio e perdi il segnale (es. gole di montagna, boschi o gallerie), CamperLifeApp attiva un 
+          Quando sei in viaggio e perdi il segnale (es. gole di montagna, boschi o gallerie), ViaCamper attiva un 
           <strong> motore cartografico Leaflet di riserva autonomo</strong>. 
         </p>
         <p>

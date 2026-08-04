@@ -293,6 +293,15 @@ export default function App() {
     }
   });
 
+  const [showSplash, setShowSplash] = React.useState<boolean>(true);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 1700);
+    return () => clearTimeout(timer);
+  }, []);
+
   const [showTermsModal, setShowTermsModal] = React.useState<boolean>(() => {
     return localStorage.getItem("has_accepted_terms") !== "true";
   });
@@ -968,7 +977,7 @@ export default function App() {
           new CustomEvent("show-toast", {
             detail: {
               message:
-                "Usa il menu del browser (i tre puntini in alto a destra) e clicca su 'Installa' o 'Aggiungi a schermata home' per scaricare CamperLifeApp!",
+                "Usa il menu del browser (i tre puntini in alto a destra) e clicca su 'Installa' o 'Aggiungi a schermata home' per scaricare ViaCamper!",
             },
           }),
         );
@@ -2989,8 +2998,13 @@ out center;`;
     return (
       <div className="h-[100dvh] bg-[#3E4A35] flex items-center justify-center p-6">
         <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-xl">
-          <div className="w-16 h-16 bg-[#5A6B4E]/10 text-[#3E4A35] rounded-full mx-auto flex items-center justify-center mb-6">
-            <Lock className="w-8 h-8" />
+          <div className="relative w-20 h-20 mx-auto mb-4">
+            <div className="bg-white p-2 rounded-full border-2 border-[#3E4A35]/20 shadow-sm flex items-center justify-center">
+              <CamperLifeIcon size={64} className="text-[#3E4A35]" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 bg-[#3E4A35] text-white p-1.5 rounded-full border-2 border-white shadow-md">
+              <Lock className="w-4 h-4" />
+            </div>
           </div>
           <h2 className="text-2xl font-black text-[#2D2926] mb-2">
             {appLang === 'en' ? 'App Locked' : appLang === 'fr' ? 'Application Verrouillée' : 'App Bloccata'}
@@ -3037,26 +3051,89 @@ out center;`;
       id="root-container"
       className="h-[100dvh] overflow-hidden bg-[#D1CDBF] flex flex-col font-sans text-[#2D2926] selection:bg-[#5A6B4E]/30 selection:text-[#2D2926] pb-[58px] md:pb-0"
     >
-      {showTermsModal && (
-        <div className="fixed inset-0 bg-[#D1CDBF] z-[10000] p-6 flex flex-col items-center justify-center space-y-6">
-          <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full space-y-4 text-center border border-slate-200">
-            <h2 className="text-xl font-black text-[#3E4A35]">
-              Benvenuto su CamperLifeApp
-            </h2>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Per continuare, ti preghiamo di leggere e accettare i termini di
-              utilizzo e la tutela legale.
+      {/* Initial App Startup Splash Screen */}
+      {showSplash && (
+        <div className="fixed inset-0 z-[20000] bg-[#1C261B] flex flex-col items-center justify-center p-6 text-white animate-fade-in select-none">
+          <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6">
+            <div className="relative">
+              <div className="absolute -inset-4 bg-[#5A6B4E]/40 rounded-full blur-xl animate-pulse" />
+              <div className="relative bg-white p-3 rounded-full shadow-2xl border-4 border-[#3E4A35]">
+                <CamperLifeIcon size={128} className="text-[#3E4A35]" />
+              </div>
+            </div>
+            
+            <div className="space-y-1.5">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-serif">
+                ViaCamper App
+              </h1>
+              <p className="text-xs text-[#A8BBA2] font-semibold tracking-wider uppercase">
+                Mappe sosta, navigatore sagomato & community
+              </p>
+            </div>
+
+            <div className="w-44 h-1.5 bg-white/15 rounded-full overflow-hidden relative">
+              <div className="absolute inset-y-0 left-0 bg-[#A8BBA2] rounded-full animate-pulse w-full origin-left duration-1000" />
+            </div>
+            
+            <p className="text-[11px] text-white/50 font-medium">
+              Avvio applicazione in corso...
             </p>
-            <button
-              onClick={() => {
-                setActiveTab("settings_tools");
-                setSettingsSubTab("copyright");
-                setShowTermsModal(false);
-              }}
-              className="w-full py-3 bg-[#3E4A35] text-white font-bold rounded-xl transition cursor-pointer"
-            >
-              Vai alla Tutela Legale
-            </button>
+          </div>
+        </div>
+      )}
+
+      {showTermsModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[10000] p-4 flex flex-col items-center justify-center font-sans animate-fade-in">
+          <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-2xl max-w-md w-full space-y-4 text-center border border-slate-200">
+            <div className="w-20 h-20 mx-auto bg-white p-2 rounded-full border-2 border-[#3E4A35]/20 shadow-md flex items-center justify-center">
+              <CamperLifeIcon size={64} className="text-[#3E4A35]" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-xl font-black text-[#3E4A35]">
+                Benvenuto su ViaCamper App
+              </h2>
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Termini di Servizio & Tutela Legale (2026)
+              </span>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-2.5 text-left bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 max-h-48 overflow-y-auto leading-relaxed">
+              <p>
+                <strong>Proprietà Intellettuale:</strong> ViaCamper è software proprietario privato di <strong>Simone Sambucci</strong> © 2026. Tutti i diritti riservati.
+              </p>
+              <p>
+                <strong>Servizi Terzi & Mappe:</strong> L'applicazione utilizza cartografia OpenStreetMap e le API ufficiali <strong>Google Maps Platform & Google Places API</strong> per l'esplorazione e la ricerca di punti di interesse (POI).
+              </p>
+              <p>
+                <strong>Contenuti Utente (UGC):</strong> Pubblicando recensioni, foto, tappe o itinerari su ViaCamper, concedi al titolare della piattaforma il diritto non esclusivo, gratuito e perpetuo di utilizzo e pubblicazione dei contenuti all'interno del servizio.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                onClick={() => {
+                  setHasAcceptedTerms(true);
+                  localStorage.setItem("has_accepted_terms", "true");
+                  setShowTermsModal(false);
+                }}
+                className="w-full py-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-black text-xs rounded-xl transition cursor-pointer shadow-md"
+              >
+                Accetta e Continua
+              </button>
+
+              <button
+                onClick={() => {
+                  setHasAcceptedTerms(true);
+                  localStorage.setItem("has_accepted_terms", "true");
+                  setActiveTab("settings_tools");
+                  setSettingsSubTab("copyright");
+                  setShowTermsModal(false);
+                }}
+                className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Leggi Tutela Legale Completa 📜
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3156,134 +3233,133 @@ out center;`;
 
       {/* Main Bar Navigation Header - Compact responsiveness with sticky top */}
       <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-1.5 min-[375px]:px-2 sm:px-6 lg:px-8 py-1 md:py-1.5 flex flex-row justify-between items-center gap-1 sm:gap-1.5">
+        <div className="max-w-7xl mx-auto px-1.5 min-[375px]:px-2 sm:px-6 lg:px-8 py-1 md:py-1.5 flex flex-row justify-between items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar">
           {/* Logo Brand */}
           <div
-            className="flex items-center gap-1 sm:gap-2.5 cursor-pointer select-none shrink-0"
+            className="flex items-center gap-1 sm:gap-2 cursor-pointer select-none shrink-0"
             onClick={() => {
               setActiveTab("map_nav");
               setMapNavSubTab("map");
             }}
           >
-            <div className="text-[#3E4A35] transition-all hover:scale-105 duration-300 drop-shadow-sm shrink-0 flex items-center justify-center">
-              <img
-                src="/logo.svg"
-                alt="CamperLifeApp Logo"
-                className="w-7 h-7 sm:w-11 sm:h-11 object-contain rounded-xl"
-              />
+            <div className="text-[#3E4A35] transition-all hover:scale-105 duration-300 shrink-0 flex items-center justify-center">
+              <CamperLifeIcon size={36} className="text-[#3E4A35] w-7 h-7 sm:w-9 sm:h-9 object-contain" />
             </div>
             <div className="shrink-0">
               <div className="flex items-center gap-1">
-                <h1 className="text-[11px] min-[375px]:text-xs sm:text-lg font-black text-[#2D2926] tracking-tight font-sans">
-                  CamperLifeApp
+                <h1 className="text-[11px] min-[375px]:text-xs sm:text-base font-black text-[#2D2926] tracking-tight font-sans">
+                  ViaCamper
                 </h1>
               </div>
-              <p className="text-[9px] text-[#2D2926]/75 hidden sm:block">
+              <p className="text-[8.5px] text-[#2D2926]/75 hidden sm:block">
                 Mappe sosta, navigatore sagomato & community
               </p>
             </div>
           </div>
 
-          {/* Header GPS Weather Widget */}
-          <HeaderGPSWeather
-            lat={userLocation ? userLocation.lat : null}
-            lng={userLocation ? userLocation.lng : null}
-            onClick={() => setShowGPSWeatherModal(true)}
-            onRequestGPS={handleRequestSingleGPS}
-          />
+          {/* Right Header Actions Group */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {/* Header GPS Weather Widget */}
+            <HeaderGPSWeather
+              lat={userLocation ? userLocation.lat : null}
+              lng={userLocation ? userLocation.lng : null}
+              onClick={() => setShowGPSWeatherModal(true)}
+              onRequestGPS={handleRequestSingleGPS}
+            />
 
-          {/* Community Quick Action & Notification Button */}
-          {hasAcceptedTerms && dashboardSettings.showCommunity !== false && (
+            {/* Community Quick Action & Notification Button */}
+            {hasAcceptedTerms && dashboardSettings.showCommunity !== false && (
+              <button
+                onClick={() => {
+                  playTapSound();
+                  setActiveTab("settings_tools");
+                  setSettingsSubTab("community");
+                }}
+                className={`h-8 sm:h-9.5 px-2 sm:px-2.5 rounded-xl border transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group ${
+                  unreadCommunityCount > 0
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/40 shadow-md animate-pulse"
+                    : "bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] border-[#3E4A35]/15"
+                }`}
+                title={
+                  unreadCommunityCount > 0
+                    ? `Community (${unreadCommunityCount} nuovi messaggi non letti in Chat, Forum o SOS)`
+                    : "Bacheca Community & Chat"
+                }
+              >
+                <Users className={`w-4 h-4 sm:w-4.5 sm:h-4.5 group-hover:scale-110 transition-transform ${unreadCommunityCount > 0 ? "text-white" : "text-[#3E4A35]"}`} />
+                <span className="sr-only">Community</span>
+                {unreadCommunityCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[9px] font-black min-w-[15px] h-[15px] px-0.5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
+                    {unreadCommunityCount > 99 ? "99+" : unreadCommunityCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Dark Mode Theme Toggle */}
             <button
               onClick={() => {
-                playTapSound();
-                setActiveTab("settings_tools");
-                setSettingsSubTab("community");
+                setIsDarkMode(!isDarkMode);
+                window.dispatchEvent(
+                  new CustomEvent("show-toast", {
+                    detail: {
+                      message: !isDarkMode
+                        ? "🌙 Vista Notturna attiva! Mappe e pannelli impostati sul tramonto."
+                        : "☀️ Vista Diurna ripristinata!",
+                    },
+                  }),
+                );
               }}
-              className={`h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-xl border transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group ${
-                unreadCommunityCount > 0
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/40 shadow-md animate-pulse"
-                  : "bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] border-[#3E4A35]/15"
-              }`}
+              className="h-8 sm:h-9.5 px-2 sm:px-2.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
               title={
-                unreadCommunityCount > 0
-                  ? `Community (${unreadCommunityCount} nuovi messaggi non letti in Chat, Forum o SOS)`
-                  : "Bacheca Community & Chat"
+                isDarkMode ? "Passa a Vista Giorno" : "Passa a Vista Notturna"
               }
             >
-              <Users className={`w-5 h-5 sm:w-5.5 sm:h-5.5 group-hover:scale-110 transition-transform ${unreadCommunityCount > 0 ? "text-white" : "text-[#3E4A35]"}`} />
-              <span className="sr-only">Community</span>
-              {unreadCommunityCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[9px] font-black min-w-[16px] h-[16px] px-0.5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
-                  {unreadCommunityCount > 99 ? "99+" : unreadCommunityCount}
-                </span>
+              {isDarkMode ? (
+                <Sun className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
+              ) : (
+                <Moon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
               )}
+              <span className="sr-only">Tema</span>
             </button>
-          )}
 
-          {/* Dark Mode Theme Toggle */}
-          <button
-            onClick={() => {
-              setIsDarkMode(!isDarkMode);
-              window.dispatchEvent(
-                new CustomEvent("show-toast", {
-                  detail: {
-                    message: !isDarkMode
-                      ? "🌙 Vista Notturna attiva! Mappe e pannelli impostati sul tramonto."
-                      : "☀️ Vista Diurna ripristinata!",
-                  },
-                }),
-              );
-            }}
-            className="h-9 sm:h-10 px-2.5 sm:px-3.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
-            title={
-              isDarkMode ? "Passa a Vista Giorno" : "Passa a Vista Notturna"
-            }
-          >
-            {isDarkMode ? (
-              <Sun className="w-5 h-5 sm:w-5.5 sm:h-5.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
-            ) : (
-              <Moon className="w-5 h-5 sm:w-5.5 sm:h-5.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
-            )}
-            <span className="sr-only">Tema</span>
-          </button>
-
-          {/* Quick Active vehicle summary panel */}
-          <div className="h-9 sm:h-10 flex items-center gap-0.5 bg-[#D1CDBF]/50 backdrop-blur-xs px-1 sm:px-1.5 rounded-xl border border-[#3E4A35]/10 shrink-0 max-w-[42px] min-[360px]:max-w-[52px] min-[390px]:max-w-[62px] sm:max-w-[100px]">
-            <button
-              onClick={() => {
-                setActiveTab("settings_tools");
-                setSettingsSubTab("dimensions");
-              }}
-              className="text-left group flex items-center gap-0.5 sm:gap-1 min-w-0"
-            >
-              <div className="p-0.5 sm:p-1 bg-white rounded-lg border border-[#3E4A35]/10 group-hover:bg-[#D1CDBF] transition-colors shrink-0">
-                <Truck className="w-3.5 h-3.5 text-[#5A6B4E]" />
-              </div>
-              <div className="min-w-0 truncate">
-                <div className="text-[6.5px] sm:text-[7.5px] font-bold text-[#2D2926]/60 uppercase tracking-wider leading-none">
-                  Mezzo
-                </div>
-                <div className="text-[8.5px] min-[360px]:text-[9.5px] sm:text-[10.5px] font-bold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
-                  {vehicleDimensions.modelName}
-                </div>
-              </div>
-            </button>
-            <ChevronRight className="w-2.5 h-2.5 text-[#2D2926]/30 hidden md:block shrink-0" />
-
-            {/* Quick action button to edit profile properties */}
-            {hasAcceptedTerms && (
+            {/* Quick Active vehicle summary panel */}
+            <div className="h-8 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-1.5 sm:px-2 rounded-xl border border-[#3E4A35]/15 transition-all shrink-0 max-w-[85px] min-[370px]:max-w-[110px] sm:max-w-[150px] shadow-2xs">
               <button
                 onClick={() => {
                   setActiveTab("settings_tools");
                   setSettingsSubTab("dimensions");
                 }}
-                className="p-0.5 text-[#2D2926]/60 hover:text-[#3E4A35] hover:bg-[#D1CDBF] rounded-lg transition-all cursor-pointer hidden sm:block shrink-0"
-                title="Dimensioni camper"
+                className="text-left group flex items-center gap-1 sm:gap-1.5 min-w-0 w-full cursor-pointer"
+                title={`Profilo Mezzo: ${vehicleDimensions.modelName} (${vehicleDimensions.height}m alt. x ${vehicleDimensions.length}m lung. x ${vehicleDimensions.width}m larg.)`}
               >
-                <Settings className="w-3.5 h-3.5" />
+                <div className="p-1 bg-white rounded-lg border border-[#3E4A35]/15 group-hover:bg-[#E7EBDC] group-hover:border-[#3E4A35]/30 transition-all shrink-0 shadow-xs">
+                  <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#3E4A35]" />
+                </div>
+                <div className="min-w-0 truncate flex-1">
+                  <div className="text-[7px] sm:text-[8px] font-bold text-[#2D2926]/70 uppercase tracking-wider leading-none">
+                    Mezzo
+                  </div>
+                  <div className="text-[9.5px] min-[370px]:text-[10.5px] sm:text-[11.5px] font-extrabold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
+                    {vehicleDimensions.modelName}
+                  </div>
+                </div>
               </button>
-            )}
+
+              {/* Quick action button to edit profile properties */}
+              {hasAcceptedTerms && (
+                <button
+                  onClick={() => {
+                    setActiveTab("settings_tools");
+                    setSettingsSubTab("dimensions");
+                  }}
+                  className="p-1 text-[#2D2926]/60 hover:text-[#3E4A35] hover:bg-[#D1CDBF] rounded-lg transition-all cursor-pointer hidden sm:block shrink-0"
+                  title="Impostazioni Dimensioni Camper"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -4641,7 +4717,7 @@ out center;`;
                           </div>
                           <div>
                             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                              Installa CamperLifeApp sul tuo dispositivo
+                              Installa ViaCamper sul tuo dispositivo
                               <span className="text-[10px] bg-emerald-100 text-emerald-850 font-black tracking-wider uppercase px-2 py-0.5 rounded-full">
                                 PWA Funzionante
                               </span>
@@ -4678,7 +4754,7 @@ out center;`;
                                 🔍 Anteprima Protetta Rilevata
                               </h4>
                               <p className="text-xs text-amber-900/90 leading-relaxed">
-                                Attualmente stai visualizzando CamperLifeApp
+                                Attualmente stai visualizzando ViaCamper
                                 all'interno della finestra di modifica integrata
                                 di <strong>Google AI Studio</strong>. I browser
                                 di oggi blinderanno sempre l'installazione delle
@@ -4745,7 +4821,7 @@ out center;`;
                             </h4>
                             <p className="text-[11px] text-[#2D2926]/75 mt-0.5">
                               Aggiunge un'icona nativa bellissima per lanciare
-                              CamperLifeApp istantaneamente direttamente dallo
+                              ViaCamper istantaneamente direttamente dallo
                               schermo.
                             </p>
                           </div>
@@ -4759,7 +4835,7 @@ out center;`;
                             Installazione istantanea sul tuo dispositivo
                           </h4>
                           <p className="text-[11px] text-slate-600 mt-1">
-                            Siamo pronti ad installare CamperLifeApp. Clicca il
+                            Siamo pronti ad installare ViaCamper. Clicca il
                             tasto a destra per lanciare la configurazione
                             guidata.
                           </p>
@@ -4878,7 +4954,7 @@ out center;`;
                           </h2>
                           <p className="text-xs text-[#F2EFE9]/80 mt-1">
                             La tua voce è fondamentale per far crescere
-                            CamperLifeApp. Raccontaci la tua esperienza o segnala
+                            ViaCamper. Raccontaci la tua esperienza o segnala
                             problemi.
                           </p>
                         </div>
@@ -5159,7 +5235,7 @@ out center;`;
                           <p className="text-[10.5px] text-stone-550 leading-relaxed">
                             Resta sintonizzato! Puoi visualizzare le tue
                             segnalazioni ed eventuali risposte inviate
-                            dall'amministratore di CamperLifeApp direttamente qui
+                            dall'amministratore di ViaCamper direttamente qui
                             sotto in tempo reale.
                           </p>
 
@@ -5272,16 +5348,15 @@ out center;`;
                         <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
                         <div className="relative z-10 space-y-2">
                           <span className="text-[9px] uppercase font-black tracking-widest bg-white/20 px-2.5 py-1 rounded-full text-white">
-                            Registro di Tutela Legale
+                            Registro di Tutela Legale & Licenza d'Uso
                           </span>
                           <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
                             <Scale className="w-6 h-6 text-emerald-300 shrink-0" />
-                            Diritto d'Autore & Licenza
+                            Diritto d'Autore, Servizi Google & Contenuti Utente
                           </h2>
-                          <p className="text-xs text-white/95 max-w-xl leading-relaxed">
-                            CamperLifeApp è protetto da copyright ed è software
-                            proprietario privato. Tutti i diritti di
-                            riproduzione, marchi ed algoritmi sono riservati.
+                          <p className="text-xs text-white/95 max-w-2xl leading-relaxed">
+                            ViaCamper è un'applicazione e software proprietario privato ideato e sviluppato da Simone Sambucci.
+                            In questa sezione sono disciplinati la proprietà intellettuale, l'utilizzo delle API terze (Google Maps Platform, Google Places API e OpenStreetMap) e i diritti d'uso relativi ai contenuti pubblicati dagli utenti.
                           </p>
                         </div>
                       </div>
@@ -5296,7 +5371,7 @@ out center;`;
 
                           <div className="space-y-1.5">
                             <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 tracking-widest">
-                              PROPRIETARIO DEGLI ASSET
+                              TITOLARE E PROPRIETARIO UNICO
                             </span>
                             <h3 className="text-base font-extrabold text-slate-800">
                               Simone Sambucci
@@ -5304,66 +5379,78 @@ out center;`;
                             <p className="text-[11px] text-slate-500 font-medium">
                               sambucci.simone@gmail.com
                             </p>
+                            <span className="inline-block text-[10px] font-bold text-slate-600 bg-stone-200/60 px-2.5 py-0.5 rounded-md mt-1">
+                              Anno 2026 • Tutti i Diritti Riservati
+                            </span>
                           </div>
 
                           <div className="bg-emerald-500/10 text-emerald-800 px-3 py-1.5 rounded-full font-black text-[10px] tracking-wider uppercase border border-emerald-500/20 w-full">
-                            🔒 100% Blindato & Riservato
+                            🔒 Software Proprietario Blindato
                           </div>
                         </div>
 
                         {/* Interactive Legal Protection & Copy Area (Right Column) */}
                         <div className="md:col-span-8 bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5">
-                            <span>📜 Certificato di Proprietà Esclusiva</span>
+                            <span>📜 Certificato di Proprietà e Licenza d'Uso ViaCamper</span>
                           </h4>
 
-                          <div className="text-xs text-slate-600 space-y-3 leading-relaxed">
-                            <p>
-                              Tutti gli elementi dell'applicazione{" "}
-                              <strong>CamperLifeApp</strong>, inclusi il codice
-                              sorgente, l'infrastruttura del database locale ed
-                              i formati grafici sono di esclusiva titolarità di{" "}
-                              <strong>Simone Sambucci</strong>.
-                            </p>
-                            <p>
-                              Dati cartografici © contributori di OpenStreetMap.
-                              Google Maps © Google.
-                            </p>
-                            <p>
-                              I dati relativi a campeggi e aree di sosta sono estratti da © OpenStreetMap contributors e rilasciati sotto licenza ODbL.
-                            </p>
-                            <p>
-                              I brani musicali presenti nella playlist di viaggio integrata sono forniti e ospitati da <strong>SoundHelix</strong> (soundhelix.com) e sono utilizzati per finalità dimostrative e di intrattenimento personale. I canali radiofonici in streaming rimangono di esclusiva proprietà dei rispettivi editori e sono trasmessi tramite i loro link di riproduzione pubblici.
-                            </p>
-                            <p>
-                              In quanto licenza{" "}
-                              <strong>
-                                "All Rights Reserved" (Tutti i diritti
-                                riservati)
-                              </strong>
-                              , per legge è vietata qualsiasi forma di
-                              duplicazione o distribuzione non concordata con
-                              l'autore. L'hosting o la pubblicazione pubblica
-                              del codice (es. GitHub pubblico) costituisce
-                              violazione del diritto d'autore (L. 633/1941) e
-                              verrà perseguito civilmente e penalmente.
-                            </p>
+                          <div className="text-xs text-slate-600 space-y-3.5 leading-relaxed">
+                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
+                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                                💻 Proprietà Intellettuale del Software
+                              </h5>
+                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
+                                Tutti gli elementi dell'applicazione <strong>ViaCamper</strong> (inclusi codice sorgente, algoritmi di calcolo rotta e sagomato camper, interfaccia utente, layout grafici, marchio e logo) sono di esclusiva titolarità di <strong>Simone Sambucci</strong>. È vietata qualsiasi forma di copia, decompilazione o distribuzione non autorizzata (L. 633/1941).
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
+                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                                🗺️ Mappe & Servizi di Terze Parti (Google Places & OSM)
+                              </h5>
+                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
+                                • <strong>Google Maps Platform & Google Places API</strong>: I dati di ricerca luoghi d'interesse (POI), ristoranti, attività e servizi nelle vicinanze sono integrati tramite le API ufficiali di Google LLC (© Google LLC).<br />
+                                • <strong>OpenStreetMap (OSM) & Overpass API</strong>: Le aree di sosta, campeggi e tracce cartografiche di base sono estrapolate da © contributori di OpenStreetMap e distribuite sotto licenza Open Database License (ODbL).<br />
+                                • <strong>Google Gemini AI</strong>: I servizi di intelligenza artificiale per l'assistente vocale Rolly e la generazione itinerari utilizzano le API Google Gemini.<br />
+                                • <strong>Audio & Radio</strong>: I brani musicali sono ospitati tramite SoundHelix (soundhelix.com) per finalità dimostrative. I canali radio appartengono ai rispettivi editori.
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 bg-[#3E4A35]/10 rounded-2xl border border-[#3E4A35]/20 space-y-1">
+                              <h5 className="font-extrabold text-[#3E4A35] text-xs flex items-center gap-1.5">
+                                📸 Diritto di Utilizzo sui Contenuti Pubblicati dagli Utenti (UGC)
+                              </h5>
+                              <p className="text-[11.5px] text-[#2D2926] leading-relaxed">
+                                Pubblicando o inviando qualsiasi contenuto all'interno dell'applicazione ViaCamper (inclusi ma non limitati a: recensioni e valutazioni delle aree sosta, fotografie, resoconti dei diari di bordo, segnalazioni di tappe, itinerari condivisi, post nel forum e messaggi in community), l'utente mantiene la paternità morale del contenuto e contestualmente concede a <strong>Simone Sambucci (titolare della piattaforma ViaCamper)</strong> una <strong>licenza d'uso non esclusiva, gratuita, perpetua, irrevocabile, trasferibile e valida in tutto il mondo</strong> per conservare, riprodurre, pubblicare, distribuire, adattare, mostrare e promuovere tali contenuti all'interno dell'applicazione, sui siti web e sui canali social collegati a ViaCamper. L'utente garantisce di essere titolare dei contenuti pubblicati e manleva ViaCamper da pretese di terzi.
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
+                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                                🛡️ Moderazione Contenuti & Sospensione Account
+                              </h5>
+                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
+                                Il titolare di ViaCamper si riserva il diritto insindacabile di rimuovere, modificare o oscurare qualsiasi contenuto (recensioni, foto, commenti o schede di sosta) ritenuto inopportuno, falso, offensivo o in violazione delle leggi vigenti, nonché di sospendere l'accesso agli utenti che violano le regole della community.
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
+                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                                ⚖️ Legge Applicabile e Foro Competente
+                              </h5>
+                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
+                                Le presenti condizioni e tutti i rapporti legali derivanti dall'utilizzo dell'applicazione ViaCamper sono regolati esclusivamente dalla legge italiana. Per qualsiasi controversia è competente in via esclusiva il Foro di residenza del titolare del software (Simone Sambucci).
+                              </p>
+                            </div>
                           </div>
 
-                          <div className="bg-rose-500/5 border border-rose-500/15 p-4 rounded-xl space-y-2">
+                          <div className="bg-rose-500/5 border border-rose-500/15 p-4 rounded-xl space-y-1.5">
                             <div className="flex items-center gap-2 text-rose-900 font-bold text-xs">
-                              ⚠️ Limitazioni di Responsabilità
+                              ⚠️ Limitazioni di Responsabilità per la Navigazione
                             </div>
                             <p className="text-xs text-rose-800 leading-relaxed">
-                              Non ci assumiamo alcuna responsabilità per un uso
-                              improprio dell'app. Le aree segnalate dagli utenti
-                              potrebbero non essere sempre verificate o
-                              corrette. Inoltre, in caso di navigazione su
-                              strade strette o cavalcavia, errori sono sempre
-                              possibili: è fondamentale prestare sempre
-                              attenzione ai segnali stradali reali. Ci
-                              impegniamo costantemente a migliorare CamperLifeApp
-                              per renderla sempre più utile e sicura per tutti.
+                              Le indicazioni sul calcolo rotte (altezza, peso e limiti sagoma camper) e sui punti sosta hanno scopo esclusivamente informativo e ausiliario. Il conducente è l'unico responsabile della condotta di guida e del rispetto della segnaletica stradale reale.
                             </p>
                           </div>
 
@@ -5374,6 +5461,7 @@ out center;`;
                               checked={hasAcceptedTerms}
                               onChange={(e) => {
                                 setHasAcceptedTerms(e.target.checked);
+                                localStorage.setItem("has_accepted_terms", e.target.checked ? "true" : "false");
                                 if (!e.target.checked) setShowTermsModal(true);
                               }}
                               className="w-5 h-5 accent-[#3E4A35]"
@@ -5382,8 +5470,7 @@ out center;`;
                               htmlFor="terms_acceptance"
                               className="text-xs font-bold text-slate-800 cursor-pointer"
                             >
-                              Accetto le condizioni di utilizzo e la tutela
-                              legale sopra descritte.
+                              Accetto integralmente le condizioni di utilizzo, la licenza UGC ed la tutela legale sopra descritte.
                             </label>
                           </div>
 
@@ -5391,23 +5478,26 @@ out center;`;
                             type="button"
                             onClick={() => {
                               navigator.clipboard
-                                .writeText(`CONTRATTO DI LICENZA SOFTWARE PROPRIETARIO (ALL RIGHTS RESERVED)
-PROJECT NAME: CamperLifeApp
+                                .writeText(`CONTRATTO DI LICENZA SOFTWARE E DIRITTI D'AUTORE - VIACAMPER
+PROJECT: ViaCamper App
 COPYRIGHT HOLDER: Simone Sambucci (sambucci.simone@gmail.com)
 YEAR: 2026
-Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
+
+1. DIRITTI SUL SOFTWARE: Tutti i diritti di proprietà intellettuale relativi al software ViaCamper appartengono in via esclusiva a Simone Sambucci (L. 633/1941).
+2. SERVIZI TERZI & GOOGLE PLACES: Mappe, POI, geocodifica e ricerca luoghi integrano servizi Google Maps Platform & Google Places API (© Google LLC), OpenStreetMap (ODbL) e Google Gemini AI.
+3. CONTENUTI UTENTE (UGC): Gli utenti che pubblicano foto, recensioni, tappe ed itinerari su ViaCamper concedono a Simone Sambucci una licenza d'uso perpetua, gratuita, non esclusiva e mondiale per l'utilizzo, riproduzione e diffusione dei contenuti sulla piattaforma ViaCamper e canali correlati.`);
                               window.dispatchEvent(
                                 new CustomEvent("show-toast", {
                                   detail: {
                                     message:
-                                      "📋 Copiata nota di copyright negli appunti!",
+                                      "📋 Copiata dichiarazione completa di copyright e licenza!",
                                   },
                                 }),
                               );
                             }}
                             className="w-full py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
                           >
-                            <span>📋 Copia Dichiarazione di Copyright</span>
+                            <span>📋 Copia Dichiarazione di Copyright & Licenza UGC</span>
                           </button>
                         </div>
                       </div>
@@ -5416,30 +5506,29 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                       <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-5 space-y-3.5">
                         <div className="flex justify-between items-center gap-2">
                           <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 tracking-widest">
-                            TESTO COMPLETO DELLA LICENZA PROPRIETARIA
+                            TESTO COMPLETO DELLA LICENZA PROPRIETARIA & TERMINI UGC
                           </span>
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-755">
-                            LICENSE File
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                            LICENSE File (ViaCamper 2026)
                           </span>
                         </div>
-                        <div className="bg-slate-900 text-slate-100 font-mono text-[10.5px] p-4 rounded-xl overflow-x-auto max-h-[180px] leading-relaxed select-all">
+                        <div className="bg-slate-900 text-slate-100 font-mono text-[10.5px] p-4 rounded-xl overflow-x-auto max-h-[220px] leading-relaxed select-all">
                           <p className="text-emerald-400 font-bold mb-2">
-                            // CONTRATTO DI LICENZA SOFTWARE PROPRIETARIO (ALL
-                            RIGHTS RESERVED)
+                            // VIACAMPER SOFTWARE LICENSE & USER CONTENT AGREEMENT (2026)
                           </p>
-                          <p className="mb-1">PROJECT NAME: CamperLifeApp</p>
+                          <p className="mb-1">PROJECT NAME: ViaCamper App</p>
                           <p className="mb-1 font-bold">
-                            COPYRIGHT OWNER: Simone Sambucci
-                            (sambucci.simone@gmail.com)
+                            COPYRIGHT OWNER: Simone Sambucci (sambucci.simone@gmail.com)
                           </p>
-                          <p className="mb-1">YEAR: 2026</p>
-                          <p className="mt-2 text-slate-400">
-                            Tutti i diritti di proprietà intellettuale relativi
-                            al software CamperLifeApp (incluso codice sorgente,
-                            database blueprint in Firebase, icone e layout di
-                            navigazione) appartengono in via esclusiva ad ogni
-                            effetto di legge a Simone Sambucci. È vietata la
-                            distribuzione non autorizzata.
+                          <p className="mb-1">YEAR: 2026 • ALL RIGHTS RESERVED</p>
+                          <p className="mt-2 text-slate-300">
+                            1. SOFTWARE PRIVATO: Tutti i diritti sul software ViaCamper appartengono a Simone Sambucci.
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            2. GOOGLE PLACES & MAPPE: L'app utilizza Google Maps Platform & Google Places API (© Google LLC) e dati OpenStreetMap (© ODbL).
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            3. LICENZA CONTENUTI UTENTE (UGC): Gli utenti che caricano foto, recensioni o itinerari concedono a Simone Sambucci il diritto perpetuo, gratuito e non esclusivo di utilizzo e pubblicazione dei contenuti sulla piattaforma ViaCamper.
                           </p>
                         </div>
                       </div>
@@ -5654,11 +5743,11 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 bg-[#A45C40] rounded-full animate-ping"></span>
             <span className="font-semibold text-[11px] text-white">
-              CamperLifeApp
+              ViaCamper
             </span>
           </div>
           <p className="text-[10px] text-white/70">
-            © {new Date().getFullYear()} CamperLifeApp • Codice & Design di
+            © {new Date().getFullYear()} ViaCamper • Codice & Design di
             Proprietà Esclusiva di Simone Sambucci. Tutti i diritti riservati.
           </p>
           <div className="flex gap-3 text-[10px] text-white/70">
@@ -6477,7 +6566,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                           ufficiali di <strong>OpenStreetMap</strong> mediante
                           Overpass. Sincronizzerà campeggi, agricampeggi, camper
                           stop e pozzetti di scarico sanitari sul tuo database
-                          locale di CamperLifeApp.
+                          locale di ViaCamper.
                         </p>
                       </div>
 
@@ -6649,7 +6738,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                                 {osmImportSuccessCount}
                               </span>{" "}
                               nuovi punti sosta, camper service e camping alla
-                              mappa del tuo CamperLifeApp offline!
+                              mappa del tuo ViaCamper offline!
                             </p>
                           ) : (
                             <p>

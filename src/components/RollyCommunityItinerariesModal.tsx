@@ -437,6 +437,9 @@ export function RollyCommunityItinerariesModal({
                   </div>
                 </div>
 
+                <div className="text-[10px] text-stone-500 dark:text-stone-400 text-right pt-1 italic">
+                  Inviando questo contenuto concedi a ViaCamper il diritto di pubblicazione e utilizzo del contenuto sulla piattaforma.
+                </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"

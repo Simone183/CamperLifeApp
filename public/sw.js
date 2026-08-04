@@ -1,9 +1,8 @@
-const CACHE_NAME = 'camperlife-cache-v2026-v37';
+const CACHE_NAME = 'camperlife-cache-v2026-v38';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/logo.svg',
   '/logo.png',
   '/logo-192x192.png'
 ];

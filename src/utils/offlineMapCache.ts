@@ -1,5 +1,5 @@
 /**
- * Offline Map Cache Manager for CamperLifeApp It
+ * Offline Map Cache Manager for ViaCamper App
  * Handles IndexedDB local tile caching and region downloads.
  */
 
@@ -207,7 +207,7 @@ export function generatePlaceholderTile(z: number, x: number, y: number, textPre
   ctx.fillStyle = 'rgba(62, 74, 53, 0.03)';
   ctx.font = 'italic 10px font-serif';
   ctx.textAlign = 'center';
-  ctx.fillText("CamperLifeApp Offline Map", 128, 230);
+  ctx.fillText("ViaCamper Offline Map", 128, 230);
 
   // Center coordinate text or label
   ctx.fillStyle = 'rgba(62, 74, 53, 0.35)';

@@ -62,7 +62,7 @@ const geocodeLocation = async (location: string): Promise<{ lat: number; lng: nu
   try {
     const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=1`, {
       headers: {
-        "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
+        "User-Agent": "ViaCamper/2.0 (sambucci.simone@gmail.com)"
       }
     });
     if (res.ok) {

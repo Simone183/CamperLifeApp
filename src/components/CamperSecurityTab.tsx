@@ -114,7 +114,7 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
       cause = "Siamo bloccati a causa di condizioni climatiche avverse (neve alta, fango profondo, esondazione fluviale). Richiediamo assistenza per trazione o soccorso civile.";
     }
 
-    return `${header}\n\nTipo: ${cause}\n\n${locMessage}\n\nInviato tramite la Console Sicurezza Attiva CamperLifeApp.`;
+    return `${header}\n\nTipo: ${cause}\n\n${locMessage}\n\nInviato tramite la Console Sicurezza Attiva ViaCamper.`;
   }, [emergencyType, lat, lng]);
 
   const handleCopySOS = () => {

@@ -3962,10 +3962,10 @@ out center;`;
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5 py-1.5 overflow-x-auto no-scrollbar w-full flex-shrink-0 px-0.5">
+          <div className="flex flex-wrap items-center gap-1.5 py-1.5 w-full shrink-0 px-0.5">
             <button
               onClick={() => setSelectedCategory("all")}
-              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "all"
                   ? "bg-[#1C3D2B] text-white shadow-xs"
                   : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
@@ -3973,11 +3973,15 @@ out center;`;
               title={`Tutti (${places.length})`}
             >
               <span>🔍 Tutti</span>
-              <span className="text-[9px] opacity-80">({places.length})</span>
+              <span className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-mono ${
+                selectedCategory === "all" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+              }`}>
+                {places.length}
+              </span>
             </button>
             <button
               onClick={() => setSelectedCategory("campeggio")}
-              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "campeggio"
                   ? "bg-[#1C3D2B] text-white shadow-xs"
                   : "bg-white text-[#1C3D2B] border border-[#1C3D2B]/30 hover:bg-[#1C3D2B]/10"
@@ -3988,7 +3992,7 @@ out center;`;
             </button>
             <button
               onClick={() => setSelectedCategory("area_sosta")}
-              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "area_sosta"
                   ? "bg-[#1D5E85] text-white shadow-xs"
                   : "bg-white text-[#1D5E85] border border-[#1D5E85]/30 hover:bg-[#1D5E85]/10"
@@ -3999,7 +4003,7 @@ out center;`;
             </button>
             <button
               onClick={() => setSelectedCategory("camper_service")}
-              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "camper_service"
                   ? "bg-[#C85E28] text-white shadow-xs"
                   : "bg-white text-[#C85E28] border border-[#C85E28]/30 hover:bg-[#C85E28]/10"
@@ -4010,7 +4014,7 @@ out center;`;
             </button>
             <button
               onClick={() => setSelectedCategory("parcheggio_camper")}
-              className={`py-1 px-3 rounded-full text-[10px] font-extrabold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1 leading-none ${
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "parcheggio_camper"
                   ? "bg-[#1E738B] text-white shadow-xs"
                   : "bg-white text-[#1E738B] border border-[#1E738B]/30 hover:bg-[#1E738B]/10"
@@ -8181,21 +8185,26 @@ out center;`;
             </div>
 
             {/* Footer triggers */}
-            <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowAddPlaceModal(false)}
-                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 transition cursor-pointer"
-              >
-                Annulla
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitProposedPlace}
-                className="px-5 py-2 bg-[#3E4A35] hover:bg-[#3E4A35]/90 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md hover:shadow transition cursor-pointer"
-              >
-                Invia Proposta Sosta
-              </button>
+            <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 bg-slate-50 shrink-0">
+              <span className="text-[10px] text-slate-500 italic text-center sm:text-left">
+                Inviando questa proposta concedi a ViaCamper il diritto d'uso e pubblicazione dei dati e foto della struttura.
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPlaceModal(false)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 transition cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitProposedPlace}
+                  className="px-5 py-2 bg-[#3E4A35] hover:bg-[#3E4A35]/90 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md hover:shadow transition cursor-pointer"
+                >
+                  Invia Proposta Sosta
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -8720,7 +8729,7 @@ export function LeafletOfflineMap({
       {
         maxZoom: 19,
         maxNativeZoom: offlineActive ? 16 : 19, // Support detailed offline maps up to zoom 16
-        attribution: "&copy; Google | CamperLifeApp Offline Cache",
+        attribution: "&copy; Google | ViaCamper Offline Cache",
       },
     );
 

@@ -93,10 +93,10 @@ export const generateTripPDF = async (
   // Add metadata
   doc.setProperties({
     title: `Diario di Viaggio - ${trip.title}`,
-    subject: "CamperLifeApp Trip Diary",
-    author: "CamperLifeApp",
-    keywords: "camper, viaggio, diario, camperlife",
-    creator: "CamperLifeApp"
+    subject: "ViaCamper Trip Diary",
+    author: "ViaCamper",
+    keywords: "camper, viaggio, diario, viacamper",
+    creator: "ViaCamper"
   });
 
   // Footer/Header Draw Function
@@ -105,7 +105,7 @@ export const generateTripPDF = async (
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-    doc.text("CamperLifeApp - Diario di Bordo", margin, margin - 4);
+    doc.text("ViaCamper - Diario di Bordo", margin, margin - 4);
     
     // Header divider line
     doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
@@ -796,16 +796,16 @@ export const exportAIItineraryToPDF = async (
 
   doc.setProperties({
     title: `Itinerario AI - ${cleanMainTitle}`,
-    subject: "CamperLifeApp AI Itinerary",
-    author: "CamperLifeApp AI",
-    creator: "CamperLifeApp"
+    subject: "ViaCamper AI Itinerary",
+    author: "ViaCamper AI",
+    creator: "ViaCamper"
   });
 
   const drawPageDecorations = () => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-    doc.text("CamperLifeApp AI - Itinerario di Viaggio Personalizzato", margin, margin - 4);
+    doc.text("ViaCamper AI - Itinerario di Viaggio Personalizzato", margin, margin - 4);
     
     doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
     doc.setLineWidth(0.2);

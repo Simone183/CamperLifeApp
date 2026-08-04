@@ -160,13 +160,13 @@ export default function FavoritesTab({
             </div>
 
             {/* Category selection filters */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none scroll-smooth">
+            <div className="flex flex-wrap gap-1.5 pb-1 sm:pb-0">
               <button
                 onClick={() => setSelectedCategory('all')}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold whitespace-nowrap transition-all border ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer border ${
                   selectedCategory === 'all'
                     ? 'bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs font-black'
-                    : 'bg-stone-50 text-slate-650 border-slate-200 hover:bg-slate-100'
+                    : 'bg-stone-50 text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
                 }`}
               >
                 Tutti
@@ -175,10 +175,10 @@ export default function FavoritesTab({
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold whitespace-nowrap transition-all border ${
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer border ${
                     selectedCategory === cat
                       ? 'bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs font-black'
-                      : 'bg-stone-50 text-slate-650 border-slate-200 hover:bg-slate-100'
+                      : 'bg-stone-50 text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
                   }`}
                 >
                   {getCategoryLabel(cat)}

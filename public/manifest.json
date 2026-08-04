@@ -1,9 +1,9 @@
 {
   "id": "/",
   "scope": "/",
-  "name": "CamperLifeApp",
-  "short_name": "CamperLifeApp",
-  "description": "Applicazione per la gestione del viaggio, checklist, scadenze e diario di bordo per la vita in camper.",
+  "name": "ViaCamper",
+  "short_name": "ViaCamper",
+  "description": "Applicazione per la gestione del viaggio, aree sosta, navigatore sagomato, scadenze e diario di bordo in camper.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -24,15 +24,15 @@
       "purpose": "maskable"
     },
     {
-      "src": "/logo.svg",
+      "src": "/logo.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/logo.svg",
+      "src": "/logo.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]

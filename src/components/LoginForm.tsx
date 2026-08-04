@@ -56,7 +56,7 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       )}
 
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-sm mx-auto">
-        <h2 className="text-xl font-black text-slate-900 mb-6 text-center">Login a CamperLifeApp</h2>
+        <h2 className="text-xl font-black text-slate-900 mb-6 text-center">Login a ViaCamper</h2>
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs font-bold rounded-lg border border-red-100 text-center">

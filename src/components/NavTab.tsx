@@ -409,7 +409,7 @@ export default function NavTab({
             {/* Vocal simulation transcript */}
             <div className="bg-white/5 border border-white/10 rounded-xl p-3 mt-4 flex items-center gap-2.5 text-white/90 font-medium text-xs">
               <Volume2 className="w-4 h-4 text-[#5A6B4E] flex-shrink-0" />
-              <span>Vocale CamperLifeApp: &quot;{currentStep?.instruction}&quot;</span>
+              <span>Vocale ViaCamper: &quot;{currentStep?.instruction}&quot;</span>
             </div>
           </div>
 

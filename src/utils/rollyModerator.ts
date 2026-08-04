@@ -1,4 +1,4 @@
-// Rolly AI Automated Moderation Utility for CamperLife App
+// Rolly AI Automated Moderation Utility for ViaCamper App
 
 const PROFANITY_REGEX_PATTERNS = [
   /\bcass?o\b/gi,
@@ -71,7 +71,7 @@ export function getRollyWarningText(username: string, contextType: 'chat' | 'soc
   
   switch (contextType) {
     case 'chat':
-      return `⚠️ Richiamo di Moderazione Rolly: @${cleanUser}, per favore mantieni un linguaggio educato ed esente da turpiloquio nella Live Chat CamperLife! I termini inopportuni sono stati censurati.`;
+      return `⚠️ Richiamo di Moderazione Rolly: @${cleanUser}, per favore mantieni un linguaggio educato ed esente da turpiloquio nella Live Chat ViaCamper! I termini inopportuni sono stati censurati.`;
     case 'forum':
       return `⚠️ Richiamo di Moderazione Rolly: @${cleanUser}, ti ricordiamo che la sezione Forum richiede un linguaggio consono e rispettoso. I termini non adeguati sono stati censurati automaticamente.`;
     case 'reply':

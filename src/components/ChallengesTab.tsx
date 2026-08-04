@@ -333,7 +333,7 @@ export function ChallengesTab({
       placeName: modalPlaceName.trim(),
       location: modalLocation.trim() || 'Italia',
       imageUrl: modalImage || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
-      caption: modalCaption.trim() || 'Partecipazione alla sfida CamperLife App!',
+      caption: modalCaption.trim() || 'Partecipazione alla sfida ViaCamper App!',
       likes: 1,
       likedByMe: true,
       date: 'Appena adesso'
@@ -349,7 +349,7 @@ export function ChallengesTab({
         user: senderName,
         avatar: newSub.userAvatar,
         avatarColor: 'bg-[#3E4A35]',
-        text: `🏆 Foto inviata per il Concorso: "${selectedChallenge.title}"\n📍 ${modalPlaceName.trim()} (${modalLocation.trim() || 'Italia'})\n"${modalCaption.trim() || 'Partecipazione alla sfida CamperLife App!'}"`,
+        text: `🏆 Foto inviata per il Concorso: "${selectedChallenge.title}"\n📍 ${modalPlaceName.trim()} (${modalLocation.trim() || 'Italia'})\n"${modalCaption.trim() || 'Partecipazione alla sfida ViaCamper App!'}"`,
         timestamp: new Date().toISOString(),
         likes: newSub.likes,
         likedByCurrentUser: newSub.likedByMe,
@@ -379,7 +379,7 @@ export function ChallengesTab({
         placeName: modalPlaceName.trim(),
         location: modalLocation.trim() || 'Italia',
         imageUrl: modalImage || newSub.imageUrl,
-        caption: modalCaption.trim() || 'Partecipazione al concorso fotografico CamperLife App!'
+        caption: modalCaption.trim() || 'Partecipazione al concorso fotografico ViaCamper App!'
       })
     }).catch(err => console.warn('[ChallengesTab] Error triggering photo notification email:', err));
 

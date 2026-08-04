@@ -123,7 +123,7 @@ export default function AIItineraryTab({
         title: result.title || "Itinerario AI",
         startDate: new Date().toISOString().split("T")[0],
         endDate: new Date(Date.now() + result.days.length * 86400000).toISOString().split("T")[0],
-        description: result.description || "Itinerario generato con CamperLifeApp AI",
+        description: result.description || "Itinerario generato con ViaCamper AI",
         status: "Pianificato",
         expenses: [],
         photos: [],
@@ -332,7 +332,7 @@ export default function AIItineraryTab({
 
       if (!response.ok) {
         const errJson = await response.json();
-        throw new Error(errJson.error || "Impossibile contattare CamperLifeApp AI.");
+        throw new Error(errJson.error || "Impossibile contattare ViaCamper AI.");
       }
 
       const data = await response.json();
@@ -405,19 +405,19 @@ export default function AIItineraryTab({
       lat: stop.stopCoordinate.lat,
       lng: stop.stopCoordinate.lng,
       address: stop.stopPlaceName + ", " + stop.drivingSegment.split("->").pop()?.trim() || "Itinerario AI",
-      priceInfo: "Consigliata da CamperLifeApp AI - Giorno " + stop.dayNumber,
+      priceInfo: "Consigliata da ViaCamper AI - Giorno " + stop.dayNumber,
       priceEuro: 15,
       rating: 4.5,
       facilities: ["Carico Acqua", "Scarico Grigie", "Scarico Nere fontanella", "Elettricità"],
       reviews: [{
         id: `review_ai`,
-        user: "CamperLifeApp AI",
+        user: "ViaCamper AI",
         date: new Date().toLocaleDateString('it-IT'),
         rating: 5,
         comment: `Punto di sosta eccellente integrato nell'itinerario consigliato. Consigli camperistici: ${stop.camperTips}`
       }],
       imageUrl: "/area_sosta.png",
-      source: "CamperLifeApp AI Planner"
+      source: "ViaCamper AI Planner"
     };
 
     onAddPlace(newPlace);
@@ -517,7 +517,7 @@ export default function AIItineraryTab({
               Ehi, Camperista! Ti aiuto a tracciare percorsi perfetti, verificare sottopassi e scoprire soste mozzafiato escludendo barriere superiori a <strong>{vehicleDimensions.height}m</strong>. Dove ti piacerebbe andare?
             </p>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
-              Assistente attivo gratuitamente per itinerari illimitati · <span className="text-emerald-700 dark:text-emerald-400 font-bold">CamperLife App AI</span>
+              Assistente attivo gratuitamente per itinerari illimitati · <span className="text-emerald-700 dark:text-emerald-400 font-bold">ViaCamper App AI</span>
             </p>
           </div>
         </div>
@@ -1138,7 +1138,7 @@ export default function AIItineraryTab({
         <div className="space-y-1">
           <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Come Funziona la Pianificazione?</h4>
           <p className="text-[11px] text-slate-500 leading-relaxed text-justify">
-            La tecnologia di CamperLifeApp AI analizza la rete stradale del punto di partenza prescelto. Calcola per ciascun giorno una sosta camper reale o credibile (completa di coordinate geografiche lette dal server), estrae consigli utili basati sulle dimensioni reali dei tuoi ingombri ("{vehicleDimensions.height}m"), e seleziona tappe di interesse culturale e ricreativo uniche.
+            La tecnologia di ViaCamper AI analizza la rete stradale del punto di partenza prescelto. Calcola per ciascun giorno una sosta camper reale o credibile (completa di coordinate geografiche lette dal server), estrae consigli utili basati sulle dimensioni reali dei tuoi ingombri ("{vehicleDimensions.height}m"), e seleziona tappe di interesse culturale e ricreativo uniche.
           </p>
         </div>
       </div>

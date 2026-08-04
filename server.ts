@@ -36,9 +36,9 @@ try {
 }
 
 // ... (lines 36-38)
-const app = admin.initializeApp({
+const app = admin.getApps().length === 0 ? admin.initializeApp({
   projectId: firebaseConfig.projectId
-});
+}) : admin.getApp();
 
 const bucketName = (firebaseConfig as any).storageBucket || `${firebaseConfig.projectId}.appspot.com`;
 const bucket = getStorage(app).bucket(bucketName);
@@ -802,7 +802,7 @@ function saveFeedbacks(feedbacks: any[]) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Start-up optimization for all large existing public/ and uploads/ images to prevent mobile browser memory crashes
   (async function optimizeExistingImages() {
@@ -3525,35 +3525,35 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
   }
 
   // Startup cleanup for fake places
-async function cleanupFakePlaces() {
-  try {
-    const fakeNames = [
-      "Campeggio Riva Verde",
-      "Service Scarico Acque Comunale",
-      "Area Attrezzata Camper Oasi",
-      "Sottopasso Ferrovia SP8",
-      "Ponte Stretto Mulino",
-      "Limitazione Peso Ponte SP3",
-      "Sottopasso SP8 Vecchia Ferrovia"
-    ];
-    const snapshot = await firestoreDb.collection("places").get();
-    let count = 0;
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      if (fakeNames.includes(data.name) || fakeNames.includes(data.roadName)) {
-        await doc.ref.delete();
-        count++;
+  async function cleanupFakePlaces() {
+    try {
+      const fakeNames = [
+        "Campeggio Riva Verde",
+        "Service Scarico Acque Comunale",
+        "Area Attrezzata Camper Oasi",
+        "Sottopasso Ferrovia SP8",
+        "Ponte Stretto Mulino",
+        "Limitazione Peso Ponte SP3",
+        "Sottopasso SP8 Vecchia Ferrovia"
+      ];
+      const snapshot = await firestoreDb.collection("places").get();
+      let count = 0;
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        if (fakeNames.includes(data.name) || fakeNames.includes(data.roadName)) {
+          await doc.ref.delete();
+          count++;
+        }
       }
+      if (count > 0) console.log(`[Cleanup] Deleted ${count} fake places from database.`);
+    } catch (e) {
+      console.error("[Cleanup] Error deleting fake places:", e);
     }
-    if (count > 0) console.log(`[Cleanup] Deleted ${count} fake places from database.`);
-  } catch (e) {
-    console.error("[Cleanup] Error deleting fake places:", e);
   }
-}
-cleanupFakePlaces();
 
-app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
+    cleanupFakePlaces().catch(console.error);
   });
 }
 
