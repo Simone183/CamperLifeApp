@@ -289,21 +289,74 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
   community: {
     key: 'community',
     badge: '💬 Community',
-    title: 'Bacheca, Chat & Eventi Camperisti',
-    subtitle: 'Scambia consigli in tempo reale e partecipa a raduni e sagre locali.',
+    title: 'Bacheca, Chat & Forum Camperisti',
+    subtitle: 'Scambia consigli in tempo reale, condividi foto dei tuoi viaggi e discuti nel forum con gli altri camperisti.',
     features: [
       {
-        icon: '🗣️',
-        title: 'Messaggi & Suggerimenti',
-        description: 'Chiedi informazioni su viabilità, passo di montagna e qualità delle aree sosta.'
+        icon: '📱',
+        title: 'Social Feed & Post',
+        description: 'Pubblica foto, aggiornamenti sui tuoi viaggi, scrivi pensieri e interagisci con i post degli altri utenti.'
       },
       {
-        icon: '🎪',
-        title: 'Sagre ed Eventi',
-        description: 'Trova le feste di paese e le manifestazioni vicine al tuo itinerario.'
+        icon: '💬',
+        title: 'Forum per Argomenti',
+        description: 'Discussioni organizzate per categorie: Generale, Sosta, Meteo, Incontri e Meccanica/SOS.'
+      },
+      {
+        icon: '💬',
+        title: 'Chat dal Vivo & SOS',
+        description: 'Scrivi messaggi in tempo reale nella stanza chat o invia una segnalazione d\'emergenza immediata.'
+      },
+      {
+        icon: '🏆',
+        title: 'Sfide & Concorsi',
+        description: 'Pulsante rapido per accedere alle sfide fotografiche, accumulare punti XP e sbloccare badge.'
       }
     ],
-    rollyTip: '💡 Consiglio di Rolly: Rispetta sempre la natura ed il vicinato nelle aree sosta per far accogliere sempre con il sorriso tutti i camperisti!'
+    rollyTip: '💡 Consiglio di Rolly: Se riscontri un problema tecnico durante la sosta, usa la sezione SOS per chiedere aiuto rapido ai camperisti nelle vicinanze!'
+  },
+  favorites: {
+    key: 'favorites',
+    badge: '⭐ Soste Preferite',
+    title: 'Aree Sosta e Campeggi Preferiti',
+    subtitle: 'Conserva e organizza i tuoi punti sosta del cuore per ritrovarli in un tap.',
+    features: [
+      {
+        icon: '⭐',
+        title: 'Salvati del Cuore',
+        description: 'Salva le aree sosta e i campeggi che hai amato di più durante i tuoi viaggi.'
+      },
+      {
+        icon: '🗂️',
+        title: 'Filtra per Categoria',
+        description: 'Filtra rapidamente tra Campeggi, Aree Sosta, Camper Service e Parcheggi salvati.'
+      },
+      {
+        icon: '🧭',
+        title: 'Navigazione Rapida',
+        description: 'Imposta la rotta diretta verso la tua sosta preferita direttamente dal pannello.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Salva le soste più comode lungo le autostrade per avere sempre un punto d\'appoggio sicuro nei viaggi lunghi!'
+  },
+  maintenance_log: {
+    key: 'maintenance_log',
+    badge: '🔧 Manutenzione Cellula',
+    title: 'Registro Manutenzioni & Controllo Infiltrazioni',
+    subtitle: 'Tieni traccia delle scadenze di manutenzione per impianti, accessori e scocca.',
+    features: [
+      {
+        icon: '🛠️',
+        title: 'Storico Interventi',
+        description: 'Annota tagliandi cellula, sostituzione filtri, sanificazione serbatoi e sigillature.'
+      },
+      {
+        icon: '💧',
+        title: 'Test Infiltrazioni',
+        description: 'Registra la data dei controlli igrometrici periodici per preservare la garanzia del produttore.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Una pulizia periodica delle guarnizioni delle finestre con spray al silicone previene l\'invecchiamento e le infiltrazioni d\'acqua!'
   },
   challenges: {
     key: 'challenges',
@@ -332,40 +385,50 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
   dimensions: {
     key: 'dimensions',
     badge: '🚐 Scheda Mezzo',
-    title: 'Scheda Mezzo e Dimensioni Camper',
-    subtitle: 'Imposta dimensioni e caratteristiche per una navigazione GPS senza rischi.',
+    title: 'Scheda Mezzo, Informazioni & Carta d\'Identità',
+    subtitle: 'Registra le dimensioni, le informazioni tecniche del mezzo e la carta d\'identità per una navigazione GPS sicura e dati sempre a portata di mano.',
     features: [
       {
-        icon: '📏',
-        title: 'Misure Esterne',
-        description: 'Registra altezza, lunghezza e larghezza massima compresi accessori.'
+        icon: '📋',
+        title: 'Carta d\'Identità del Camper',
+        description: 'Conserva targa, modello, telaio, potenza motore e dati chiave del veicolo in un unico tesserino digitale.'
       },
       {
-        icon: '🧭',
-        title: 'Protezione Navigatore',
-        description: 'Il navigatore eviterà sottopassi bassi e strade con limite di larghezza.'
+        icon: '📏',
+        title: 'Misure Esterne & Sagoma',
+        description: 'Registra altezza, lunghezza, larghezza e peso per proteggere il navigatore da sottopassi bassi e strade vietate.'
+      },
+      {
+        icon: 'ℹ️',
+        title: 'Informazioni e Dettagli Mezzo',
+        description: 'Annota tipo di trazione, posti letto, allestimento e specifiche tecniche per ogni evenienza.'
       }
     ],
-    rollyTip: '💡 Consiglio di Rolly: Nel calcolo dell\'altezza totale, ricordati di aggiungere i centimetri di antenna parabolica, oblo e climatizzatore da tetto!'
+    rollyTip: '💡 Consiglio di Rolly: Nel calcolo dell\'altezza totale, ricordati di aggiungere i centimetri di antenna parabolica, oblò e climatizzatore da tetto!'
   },
   sosta_libera_tools: {
     key: 'sosta_libera_tools',
     badge: '🌲 Sosta Libera',
     title: 'Pannello Strumenti Sosta Libera',
-    subtitle: 'Strumenti dedicati per chi ama la sosta autonoma in natura.',
+    subtitle: 'Strumenti avanzati per l\'orientamento solare, il controllo batterie e la diagnostica guasti in sosta autonoma.',
     features: [
       {
-        icon: '💧',
-        title: 'Punti Acqua e Carico',
-        description: 'Mappa delle fontanelle per riempire i serbatoi anche in viaggio.'
+        icon: '☀️',
+        title: 'Orientatore Solare & Posizionamento',
+        description: 'Calcola la resa dei pannelli fotovoltaici e l\'orientamento ideale del camper rispetto al sole.'
       },
       {
         icon: '🔋',
-        title: 'Monitor Risorse',
-        description: 'Calcola la durata di gas ed energia per le tue notti in libertà.'
+        title: 'Stato Carica Batterie (SoC)',
+        description: 'Verifica la percentuale di carica della batteria servizi (LiFePO4, AGM, GEL) in base al voltaggio.'
+      },
+      {
+        icon: '🛠️',
+        title: 'Diagnostica & Risoluzione Guasti',
+        description: 'Guida passo-passo per risolvere problemi a gas, pompa acqua, riscaldatore e frigo trivalente.'
       }
     ],
-    rollyTip: '💡 Consiglio di Rolly: In sosta libera non scaricare mai acque grigie o nere al di fuori degli appositi pozzetti di scarico camper!'
+    rollyTip: '💡 Consiglio di Rolly: Prima di accendere il frigo a gas in sosta libera, assicurati con la livella digitale che il camper sia perfettamente in bolla per far circolare l\'ammoniaca!'
   },
   camper_security: {
     key: 'camper_security',
@@ -381,7 +444,7 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       {
         icon: '🚨',
         title: 'Chiamata Rapida SOS',
-        description: 'Numeri di emergenza e soccorso stradale a portata di tap.'
+        description: 'Creazione di messaggio SOS con coordinate da inviare direttamente tramite WhatsApp, SMS, Telegram ed altre app di messaggistica.'
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Se sosti in aree autostradali o non custodite, attiva il rilevatore triovalente gas e blocca le portiere anteriori!'
@@ -424,20 +487,97 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
     ],
     rollyTip: '💡 Consiglio di Rolly: Le sagre di paese sono l\'occasione migliore per scoprire le tradizioni locali e acquistare prodotti a chilometro zero!'
   },
+  fuel_card: {
+    key: 'fuel_card',
+    badge: '⛽ Carta Carburante',
+    title: 'Carta Carburante & Registro Rifornimenti',
+    subtitle: 'Registra i pieni di carburante del tuo camper, calcola la media km/L e monitora i costi.',
+    features: [
+      {
+        icon: '⛽',
+        title: 'Registra Rifornimento',
+        description: 'Inserisci litri immessi, prezzo al litro, spesa totale e chilometraggio attuale dell\'odometro.'
+      },
+      {
+        icon: '📊',
+        title: 'Consumo Reale km/L',
+        description: 'Calcola in automatico l\'efficienza del motore e i chilometri percorsi tra un pieno e l\'altro.'
+      },
+      {
+        icon: '🏷️',
+        title: 'Compagnia & Storico',
+        description: 'Salva il distributore (es. Eni, IP, Q8) e mantieni lo storico di tutti i rifornimenti salvato in cloud.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Ricordati di spuntare "Pieno Completo" ogni volta che riempi il serbatoio fino al click della pistola, così il calcolo dei km/L sarà preciso al 100%!'
+  },
+  shared_trips: {
+    key: 'shared_trips',
+    badge: '🗺️ Viaggi Condivisi',
+    title: 'Viaggi Condivisi della Community',
+    subtitle: 'In questa sezione sono presenti esclusivamente i viaggi e i diari di bordo condivisi dagli altri camperisti.',
+    features: [
+      {
+        icon: '👥',
+        title: 'Diari di Bordo della Community',
+        description: 'Sfoglia i viaggi reali registrati e condivisi dagli altri equipaggi con tappe, date e dettagli di viaggio.'
+      },
+      {
+        icon: '📖',
+        title: 'Consultazione Dettagliata',
+        description: 'Apri e visualizza il diario completo di ogni viaggio condiviso per lasciarti ispirare dalle esperienze altrui.'
+      },
+      {
+        icon: '💬',
+        title: 'Condivisione & Social',
+        description: 'Pubblica i tuoi viaggi o rilancia le avventure della community sulla bacheca social.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Quando completi un viaggio memorabile nel tuo Diario di Bordo, abilita la spunta "Condividi" per mostrarlo agli altri camperisti!'
+  },
+  dashboard_settings: {
+    key: 'dashboard_settings',
+    badge: '📱 Personalizza Home',
+    title: 'Personalizzazione Schede & Dashboard',
+    subtitle: 'Attiva o nascondi le schede e gli strumenti in base al tuo stile di viaggio.',
+    features: [
+      {
+        icon: '👁️',
+        title: 'Mostra/Nascondi Moduli',
+        description: 'Scegli quali strumenti visualizzare nella schermata Strumenti per un\'interfaccia pulita.'
+      },
+      {
+        icon: '⚡',
+        title: 'Accesso Rapido',
+        description: 'Organizza i collegamenti veloci ai tuoi strumenti preferiti.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Se non usi alcuni moduli, disattivali per velocizzare l\'accesso ai tuoi strumenti quotidiani!'
+  },
   general: {
     key: 'general',
     badge: '⚙️ Impostazioni',
-    title: 'Impostazioni App e Personalizzazione',
-    subtitle: 'Configura l\'applicazione e gestisci i consigli dell\'Assistente AI Rolly.',
+    title: 'Impostazioni App & Preferenze',
+    subtitle: 'Configura l\'aspetto visivo, le notifiche vocali GPS, la gestione moduli e il backup dei dati.',
     features: [
       {
         icon: '🎨',
-        title: 'Tema & Grafica',
-        description: 'Scegli tra modalità chiara e scura per una guida notturna confortevole.'
+        title: 'Aspetto & Sistema',
+        description: 'Scegli il tema chiaro o scuro, la modalità offline e le preferenze di sistema.'
+      },
+      {
+        icon: '🔊',
+        title: 'Notifiche & Voce GPS',
+        description: 'Gestisci la sintesi vocale di Rolly e gli avvisi di navigazione stradale.'
+      },
+      {
+        icon: '💾',
+        title: 'Backup & Dati',
+        description: 'Esporta, importa o ripristina lo storico dei tuoi viaggi e dati di bordo.'
       },
       {
         icon: '🔄',
-        title: 'Ripristina Consigli Rolly',
+        title: 'Ripristina Guida Rolly',
         description: 'Riattiva le spiegazioni guidate di Rolly per tutte le sezioni dell\'app.'
       }
     ],

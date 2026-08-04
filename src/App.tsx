@@ -3233,10 +3233,10 @@ out center;`;
 
       {/* Main Bar Navigation Header - Compact responsiveness with sticky top */}
       <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-1.5 min-[375px]:px-2 sm:px-6 lg:px-8 py-1 md:py-1.5 flex flex-row justify-between items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar">
+        <div className="max-w-7xl mx-auto px-2 min-[375px]:px-3 sm:px-6 lg:px-8 py-1.5 md:py-2 flex flex-row justify-between items-center gap-2 sm:gap-6 overflow-x-auto no-scrollbar">
           {/* Logo Brand */}
           <div
-            className="flex items-center gap-1 sm:gap-2 cursor-pointer select-none shrink-0"
+            className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer select-none shrink-0"
             onClick={() => {
               setActiveTab("map_nav");
               setMapNavSubTab("map");
@@ -3257,8 +3257,8 @@ out center;`;
             </div>
           </div>
 
-          {/* Right Header Actions Group */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {/* Right Header Actions Group with comfortable spacing */}
+          <div className="flex items-center gap-2 sm:gap-3 md:gap-4 shrink-0">
             {/* Header GPS Weather Widget */}
             <HeaderGPSWeather
               lat={userLocation ? userLocation.lat : null}
@@ -4585,6 +4585,7 @@ out center;`;
                           "Registro Manutenzione Cellula"}
                         {settingsSubTab === "work_log" && "Registro Lavori"}
                         {settingsSubTab === "favorites" && "Soste Preferite"}
+                        {settingsSubTab === "fuel_card" && "Carta Carburante & Consumi"}
                         {settingsSubTab === "copyright" &&
                           "Tutela & Licenza D’Autore"}
                         {settingsSubTab === "sosta_libera_tools" &&

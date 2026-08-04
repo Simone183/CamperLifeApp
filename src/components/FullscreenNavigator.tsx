@@ -775,6 +775,48 @@ export default function FullscreenNavigator({
     return R * c;
   };
 
+  // Helper to calculate minimum distance from user coordinate to polyline in meters (using point-to-segment perpendicular distance)
+  const calculateDistanceToPolylineMeters = React.useCallback((p: [number, number], polyline: [number, number][]): number => {
+    if (!polyline || polyline.length === 0) return Infinity;
+    if (polyline.length === 1) return calculateHaversineDistance(p, polyline[0]) * 1000;
+
+    const latP = p[0];
+    const lngP = p[1];
+    const cosLat = Math.cos((latP * Math.PI) / 180);
+
+    let minMeters = Infinity;
+
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const a = polyline[i];
+      const b = polyline[i + 1];
+
+      // Convert coordinates to local meters relative to point A
+      const vx = (b[1] - a[1]) * 111000 * cosLat;
+      const vy = (b[0] - a[0]) * 111000;
+
+      const ux = (lngP - a[1]) * 111000 * cosLat;
+      const uy = (latP - a[0]) * 111000;
+
+      const lenSq = vx * vx + vy * vy;
+      let t = 0;
+      if (lenSq > 0) {
+        t = (ux * vx + uy * vy) / lenSq;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+      }
+
+      const projX = ux - t * vx;
+      const projY = uy - t * vy;
+      const distMeters = Math.sqrt(projX * projX + projY * projY);
+
+      if (distMeters < minMeters) {
+        minMeters = distMeters;
+      }
+    }
+
+    return minMeters;
+  }, []);
+
   const findClosestCoordinateIndex = (targetLoc: [number, number], coords: [number, number][]): number => {
     if (coords.length === 0) return 0;
     let closestIdx = 0;
@@ -1057,39 +1099,6 @@ out center;`;
   });
   const lastRecalcPos = React.useRef<[number, number] | null>(null);
 
-  React.useEffect(() => {
-    if (userLocation) {
-      const isDefaultModena = Math.abs(initialStart[0] - 44.5422) < 0.0001 && Math.abs(initialStart[1] - 10.7024) < 0.0001;
-      if (isDefaultModena) {
-        // If we were on default Modena, update immediately as GPS has resolved
-        setInitialStart([userLocation.lat, userLocation.lng]);
-        lastRecalcPos.current = [userLocation.lat, userLocation.lng];
-      } else if (!isPreview) { // Only recalculate route due to off-track deviation during active navigation, not during preview!
-        let minDistanceToRoute = Infinity;
-        if (osrmRoute && osrmRoute.length > 0) {
-          const userPos = [userLocation.lat, userLocation.lng] as [number, number];
-          for (let i = 0; i < osrmRoute.length; i++) {
-            const dist = calculateHaversineDistance(userPos, osrmRoute[i]);
-            if (dist < minDistanceToRoute) minDistanceToRoute = dist;
-          }
-        } else {
-          minDistanceToRoute = calculateHaversineDistance(initialStart, [userLocation.lat, userLocation.lng]);
-        }
-        
-        let distFromLastRecalc = Infinity;
-        if (lastRecalcPos.current) {
-          distFromLastRecalc = calculateHaversineDistance(lastRecalcPos.current, [userLocation.lat, userLocation.lng]);
-        }
-
-        if (minDistanceToRoute > 0.05 && distFromLastRecalc > 0.05) { // Recalculate if > 50m away from route (or start location) to correct wrong directions, with debounce
-          console.log("Off-route detected, triggering recalculation. Distance to route:", minDistanceToRoute);
-          setInitialStart([userLocation.lat, userLocation.lng]);
-          lastRecalcPos.current = [userLocation.lat, userLocation.lng];
-        }
-      }
-    }
-  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, dest.id, osrmRoute, isPreview]);
-
   const startLoc = initialStart;
   const endLoc: [number, number] = [dest.lat, dest.lng];
 
@@ -1364,6 +1373,47 @@ out center;`;
       }
     }
   }, [processSpeechQueue]);
+
+  // Real-time off-route recalculation listener (triggers when driver strays > 10m away from route)
+  React.useEffect(() => {
+    if (userLocation) {
+      const isDefaultModena = Math.abs(initialStart[0] - 44.5422) < 0.0001 && Math.abs(initialStart[1] - 10.7024) < 0.0001;
+      if (isDefaultModena) {
+        // If we were on default Modena, update immediately as GPS has resolved
+        setInitialStart([userLocation.lat, userLocation.lng]);
+        lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+      } else if (!isPreview) { // Only recalculate route due to off-track deviation during active navigation, not during preview!
+        const userPos = [userLocation.lat, userLocation.lng] as [number, number];
+        let minDistanceMeters = Infinity;
+
+        if (osrmRoute && osrmRoute.length > 0) {
+          minDistanceMeters = calculateDistanceToPolylineMeters(userPos, osrmRoute);
+        } else {
+          minDistanceMeters = calculateHaversineDistance(initialStart, userPos) * 1000;
+        }
+        
+        let distFromLastRecalcMeters = Infinity;
+        if (lastRecalcPos.current) {
+          distFromLastRecalcMeters = calculateHaversineDistance(lastRecalcPos.current, userPos) * 1000;
+        }
+
+        // Recalculate instantly when user strays > 10 meters away from route (una decina di metri reali)
+        if (minDistanceMeters > 10 && distFromLastRecalcMeters > 10) {
+          console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation). Triggering instant route recalculation and vocal alert.`);
+          
+          // Vocal communication to driver as requested
+          speakInstruction("Ricalcolo percorso", 'immediate');
+
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: `🔄 Deviazione rilevata (${Math.round(minDistanceMeters)}m): Ricalcolo del percorso in corso...`, duration: 4000 }
+          }));
+
+          setInitialStart([userLocation.lat, userLocation.lng]);
+          lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+        }
+      }
+    }
+  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, dest.id, osrmRoute, isPreview, speakInstruction, calculateDistanceToPolylineMeters]);
 
   // Safe checks for sagoma dimensions
   const hasHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && parseDimToNumber(vehicleDimensions.height) > dest.maxHeight;
@@ -3626,19 +3676,46 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           <div className="absolute bottom-24 inset-x-0 mx-auto flex justify-center z-10 pointer-events-none">
             <div className="flex bg-[#0b0f19]/95 backdrop-blur-md rounded-3xl p-2 shadow-2xl border border-slate-800/90 pointer-events-auto gap-2">
               {navigationMode === 'internal' && !isGPSEnabled && (
-                <button
-                  type="button"
-                  onClick={() => setIsDriving(!isDriving)}
-                  className={`px-6 py-3.5 text-white font-extrabold text-sm rounded-2xl border flex items-center gap-2.5 transition-all shadow-md cursor-pointer ${
-                    isDriving 
-                    ? 'bg-amber-600/90 border-amber-500 hover:bg-amber-700' 
-                    : 'bg-emerald-600/90 border-emerald-500 hover:bg-emerald-700'
-                  }`}
-                  title={isDriving ? "Pausa simulatore di guida" : "Avvia simulatore di guida"}
-                >
-                  {isDriving ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white" />}
-                  <span>{isDriving ? "PAUSA" : "SIMULA"}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsDriving(!isDriving)}
+                    className={`px-5 py-3.5 text-white font-extrabold text-xs sm:text-sm rounded-2xl border flex items-center gap-2 transition-all shadow-md cursor-pointer ${
+                      isDriving 
+                      ? 'bg-amber-600/90 border-amber-500 hover:bg-amber-700' 
+                      : 'bg-emerald-600/90 border-emerald-500 hover:bg-emerald-700'
+                    }`}
+                    title={isDriving ? "Pausa simulatore di guida" : "Avvia simulatore di guida"}
+                  >
+                    {isDriving ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white" />}
+                    <span>{isDriving ? "PAUSA" : "SIMULA"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Offset position by ~20 meters to trigger off-route recalculation
+                      const curIdx = Math.min(simRouteIndex, displayedRouteCoordinates.length - 1);
+                      const currNode = displayedRouteCoordinates[curIdx] || startLoc;
+                      const devLat = currNode[0] + 0.00025;
+                      const devLng = currNode[1] + 0.00025;
+                      
+                      speakInstruction("Ricalcolo percorso", 'immediate');
+                      window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: "🔄 Struttura rotta deviata: Ricalcolo del percorso in corso...", duration: 4000 }
+                      }));
+                      
+                      setInitialStart([devLat, devLng]);
+                      lastRecalcPos.current = [devLat, devLng];
+                      setSimRouteIndex(0);
+                    }}
+                    className="px-4 py-3.5 bg-rose-600/90 border border-rose-500 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
+                    title="Simula errore di percorso per testare il ricalcolo a 10m con annuncio vocale"
+                  >
+                    <RefreshCw className="w-4 h-4 text-white" />
+                    <span>DEVIA STRADA</span>
+                  </button>
+                </>
               )}
               {navigationMode === 'google' && (
                 <button

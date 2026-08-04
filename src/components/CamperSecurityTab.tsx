@@ -276,25 +276,25 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
               
               {/* 1. Lighting Indicator */}
               <div className="space-y-1">
-                <label className="text-[10.5px] font-black text-slate-500 uppercase tracking-wide block">
+                <label className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
                   1. Illuminazione Lampioni dell'Area
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   {[
                     { val: 'dark', label: '🌑 Buio Totale' },
-                    { val: 'dim', label: '🌤️ Penombra/Isolati' },
+                    { val: 'dim', label: '🌤️ Penombra' },
                     { val: 'bright', label: '💡 Buona Luce' }
                   ].map(item => (
                     <button
                       key={item.val}
                       onClick={() => setCriteria(prev => ({ ...prev, lighting: item.val as any }))}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-all cursor-pointer text-center ${
+                      className={`py-2 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer text-center leading-tight flex items-center justify-center min-w-0 ${
                         criteria.lighting === item.val
-                          ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-3xs'
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-extrabold'
+                          : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      {item.label}
+                      <span className="whitespace-normal text-center leading-tight">{item.label}</span>
                     </button>
                   ))}
                 </div>
@@ -302,25 +302,25 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
 
               {/* 2. Camper Peers Density */}
               <div className="space-y-1">
-                <label className="text-[10.5px] font-black text-slate-500 uppercase tracking-wide block">
+                <label className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
                   2. Altri Camper Accanto a Te
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   {[
-                    { val: 'zero', label: '🧑‍🚀 Sei da solo' },
-                    { val: 'some', label: '⛺ 1-2 Equipaggi' },
-                    { val: 'many', label: '🚐 Più camper' }
+                    { val: 'zero', label: '🧑‍🚀 Da solo' },
+                    { val: 'some', label: '⛺ 1-2 Camper' },
+                    { val: 'many', label: '🚐 Molti Camper' }
                   ].map(item => (
                     <button
                       key={item.val}
                       onClick={() => setCriteria(prev => ({ ...prev, peersCount: item.val as any }))}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-all cursor-pointer text-center ${
+                      className={`py-2 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer text-center leading-tight flex items-center justify-center min-w-0 ${
                         criteria.peersCount === item.val
-                          ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-3xs'
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-extrabold'
+                          : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      {item.label}
+                      <span className="whitespace-normal text-center leading-tight">{item.label}</span>
                     </button>
                   ))}
                 </div>
@@ -328,25 +328,25 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
 
               {/* 3. Road Visibility / Hidden from main arteries */}
               <div className="space-y-1">
-                <label className="text-[10.5px] font-black text-slate-500 uppercase tracking-wide block">
+                <label className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
                   3. Esposizione & Visibilità Strada
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   {[
-                    { val: 'hidden', label: '🌲 Molto Nascosto' },
+                    { val: 'hidden', label: '🌲 Nascosto' },
                     { val: 'partial', label: '⚖️ Parziale' },
-                    { val: 'exposed', label: '🚗 Molto Esposto' }
+                    { val: 'exposed', label: '🚗 Esposto' }
                   ].map(item => (
                     <button
                       key={item.val}
                       onClick={() => setCriteria(prev => ({ ...prev, visibility: item.val as any }))}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-all cursor-pointer text-center ${
+                      className={`py-2 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer text-center leading-tight flex items-center justify-center min-w-0 ${
                         criteria.visibility === item.val
-                          ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-3xs'
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-extrabold'
+                          : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      {item.label}
+                      <span className="whitespace-normal text-center leading-tight">{item.label}</span>
                     </button>
                   ))}
                 </div>
@@ -354,25 +354,25 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
 
               {/* 4. Via di Fuga Libera */}
               <div className="space-y-1">
-                <label className="text-[10.5px] font-black text-slate-500 uppercase tracking-wide block">
+                <label className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
                   4. Via di Fuga per Manovra Rapida
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   {[
                     { val: 'none', label: '🛑 Vicolo Cieco' },
-                    { val: 'blocked', label: '⚠️ Retromarcia Obbl.' },
-                    { val: 'open', label: '🟢 Avanti Libero' }
+                    { val: 'blocked', label: '⚠️ Retromarcia' },
+                    { val: 'open', label: '🟢 Via Libera' }
                   ].map(item => (
                     <button
                       key={item.val}
                       onClick={() => setCriteria(prev => ({ ...prev, escapeRoutes: item.val as any }))}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-all cursor-pointer text-center ${
+                      className={`py-2 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer text-center leading-tight flex items-center justify-center min-w-0 ${
                         criteria.escapeRoutes === item.val
-                          ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-3xs'
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs font-extrabold'
+                          : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      {item.label}
+                      <span className="whitespace-normal text-center leading-tight">{item.label}</span>
                     </button>
                   ))}
                 </div>
@@ -471,15 +471,15 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
           )}
 
           {/* Section D: Emergency SOS Template copy-paste */}
-          <div className="bg-white rounded-2xl border border-slate-200/60 p-5 space-y-4">
-            <h3 className="font-bold text-[#3E4A35] text-sm flex items-center gap-2 border-b border-stone-100 pb-2.5">
-              <Compass className="w-4.5 h-4.5 text-[#3E4A35]" />
+          <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/60 dark:border-slate-700 p-5 space-y-4 shadow-sm">
+            <h3 className="font-bold text-[#3E4A35] dark:text-emerald-400 text-sm flex items-center gap-2 border-b border-stone-100 dark:border-slate-700 pb-2.5">
+              <Compass className="w-4.5 h-4.5 text-[#3E4A35] dark:text-emerald-400" />
               Generatore Messaggio SOS Istantaneo
             </h3>
 
             {/* Selector for type of support required */}
             <div className="space-y-1">
-              <label className="text-[10.5px] font-black text-slate-500 uppercase tracking-wide block">
+              <label className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
                 Seleziona Tipo Emergenza
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -494,8 +494,8 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
                     onClick={() => setEmergencyType(opt.typ as any)}
                     className={`py-2 px-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
                       emergencyType === opt.typ
-                        ? 'bg-[#3E4A35] text-white border-[#3E4A35]'
-                        : 'bg-white hover:bg-slate-50 text-slate-650 border-slate-200'
+                        ? 'bg-[#3E4A35] text-white border-[#3E4A35] dark:bg-emerald-600 dark:border-emerald-500'
+                        : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
                     }`}
                   >
                     {opt.title}
@@ -506,12 +506,12 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
 
             {/* Generated template mockup screen */}
             <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-[10.5px] font-black text-slate-400 uppercase tracking-wider">
+              <div className="flex justify-between items-center text-[10.5px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 <span>Contenuto SMS / Whatsapp generato</span>
-                <span className="text-emerald-700 lowercase font-mono">📍 coordinates attached</span>
+                <span className="text-emerald-600 dark:text-emerald-400 lowercase font-mono">📍 coordinates attached</span>
               </div>
               
-              <div className="bg-slate-900 text-emerald-450 p-3.5 rounded-xl text-[11px] font-mono leading-relaxed border border-slate-950 whitespace-pre-wrap select-text max-h-48 overflow-y-auto min-h-24">
+              <div className="bg-slate-950 text-emerald-300 p-3.5 rounded-xl text-[11px] font-mono font-semibold leading-relaxed border border-emerald-900/40 whitespace-pre-wrap select-text max-h-48 overflow-y-auto min-h-24 shadow-inner">
                 {generatedSOSTemplate}
               </div>
             </div>
@@ -520,8 +520,8 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
               onClick={handleCopySOS}
               className={`w-full py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm ${
                 copiedSOS 
-                  ? 'bg-emerald-600 text-white' 
-                  : 'bg-stone-100 hover:bg-stone-200 text-stone-900 border border-stone-300/30'
+                  ? 'bg-emerald-600 text-white border border-emerald-700' 
+                  : 'bg-stone-100 hover:bg-stone-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 border border-slate-300/60 dark:border-slate-600'
               }`}
             >
               {copiedSOS ? (
