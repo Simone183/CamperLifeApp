@@ -67,12 +67,28 @@ export default function SharedTripsTab({ trips, onViewTrip }: Props) {
                   {getDisplayDates(trip).start}
                 </div>
               </div>
-              <button 
-                onClick={() => onViewTrip(trip.id)}
-                className="w-full mt-2 px-4 py-2 bg-[#3E4A35] text-white font-bold rounded-xl text-sm hover:bg-[#5A6B4E] transition-all"
-              >
-                Visualizza Diario
-              </button>
+              <div className="flex gap-2 mt-2">
+                <button 
+                  onClick={() => onViewTrip(trip.id)}
+                  className="flex-1 px-4 py-2 bg-[#3E4A35] text-white font-bold rounded-xl text-sm hover:bg-[#5A6B4E] transition-all cursor-pointer"
+                >
+                  Visualizza Diario
+                </button>
+                <button 
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("share-trip-to-social", {
+                        detail: { trip }
+                      })
+                    );
+                  }}
+                  className="px-4 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold rounded-xl text-sm hover:bg-indigo-100 transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Pubblica questo viaggio sulla Bacheca Social della Community"
+                >
+                  <Share2 className="w-4 h-4" />
+                  Social 💬
+                </button>
+              </div>
             </div>
           ))}
         </div>

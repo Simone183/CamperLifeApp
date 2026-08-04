@@ -5149,12 +5149,24 @@ out center;`;
 
           {/* Pulsante Generatore Itinerari AI Rolly con fumetto a nuvoletta */}
           {onNavigateToAI && (
-            <div className="absolute bottom-16 left-2 z-[1000]">
+            <div
+              className="absolute bottom-16 left-2 z-[1000]"
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               {/* Fumetto a nuvoletta Rolly */}
               {showRollyBubble && rollyBubbleText && (
                 <div
-                  onClick={onNavigateToAI}
-                  className="absolute bottom-12 left-0 z-[1001] w-[210px] sm:w-[230px] bg-white text-slate-800 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-400 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-pointer hover:scale-[1.02] active:scale-98 transition-all group"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowRollyBubble(false);
+                    if (onNavigateToAI) onNavigateToAI();
+                  }}
+                  className="absolute bottom-12 left-0 z-[1001] w-[210px] sm:w-[230px] bg-white text-slate-800 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-400 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-pointer hover:scale-[1.02] active:scale-98 transition-all group select-none"
+                  title="Apri Assistente IA Rolly"
                 >
                   {/* Coda a nuvoletta del fumetto rivolta verso l'icona di Rolly */}
                   <div className="absolute -bottom-2 left-3.5 w-3.5 h-3.5 bg-white border-b-2 border-r-2 border-emerald-400 transform rotate-45 shadow-xs" />
@@ -5172,7 +5184,10 @@ out center;`;
                   </div>
                   <button
                     type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       setShowRollyBubble(false);
                     }}
@@ -5185,9 +5200,17 @@ out center;`;
               )}
 
               <button
-                onClick={onNavigateToAI}
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowRollyBubble(false);
+                  if (onNavigateToAI) onNavigateToAI();
+                }}
                 className="bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer overflow-hidden p-1"
-                title="Generatore Itinerari AI Rolly"
+                title="Assistente IA Rolly - Generatore Itinerari"
               >
                 <CartoonCamperAvatar className="w-6 h-6 shrink-0" />
               </button>

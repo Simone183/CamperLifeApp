@@ -3296,6 +3296,168 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     }
   });
 
+  // --- COMMUNITY ITINERARIES & MODERATION API ---
+
+  // Propose a community itinerary
+  app.post("/api/propose-community-itinerary", async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        authorName = "Camperista Community",
+        authorEmail = "",
+        durationDays = 3,
+        startLocation = "",
+        endLocation = "",
+        waypoints = [],
+        travelStyle = "Generico",
+        interests = [],
+        totalKm = "",
+        days = []
+      } = req.body;
+
+      if (!title || !description) {
+        return res.status(400).json({ error: "Titolo e descrizione sono obbligatori." });
+      }
+
+      const itineraryId = `community_itin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const timestamp = new Date().toISOString();
+
+      const newItinerary = {
+        id: itineraryId,
+        title,
+        description,
+        authorName,
+        authorEmail,
+        createdAt: timestamp,
+        durationDays: Number(durationDays) || 3,
+        startLocation,
+        endLocation,
+        waypoints,
+        travelStyle,
+        interests,
+        totalKm,
+        status: "pending",
+        source: "community",
+        days: days || []
+      };
+
+      // 1. Save to Firestore community_itineraries
+      try {
+        await firestoreDb.collection("community_itineraries").doc(itineraryId).set(newItinerary);
+      } catch (fsErr) {
+        console.warn("[Community Itineraries API] Firestore write warning:", fsErr);
+      }
+
+      // 2. Add notification to adminNotifications
+      try {
+        await firestoreDb.collection("adminNotifications").add({
+          type: "community_itinerary",
+          itineraryId,
+          title,
+          authorName,
+          authorEmail,
+          timestamp,
+          read: false
+        });
+      } catch (err) {
+        console.warn("[Community Itineraries API] Could not write admin notification:", err);
+      }
+
+      // 3. Send notification email to admin (sambucci.simone@gmail.com)
+      const subject = `🗺️ Nuovo Itinerario Proposto da ${authorName}: "${title}"`;
+      const htmlEmail = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
+          <div style="background: linear-gradient(135deg, #1C3D2B 0%, #3E4A35 100%); padding: 20px 24px; border-radius: 12px; color: #ffffff;">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #a7f3d0; margin-bottom: 4px;">CamperLifeApp • Moderazione Itinerari</div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">🗺️ Nuovo Itinerario Proposto dalla Community</h2>
+          </div>
+          <div style="background: #ffffff; padding: 24px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #0f172a; font-size: 18px; font-weight: 800;">${title}</h3>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">${description}</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+            <table style="width: 100%; font-size: 13px; color: #334155;">
+              <tr><td style="padding: 4px 0; font-weight: bold; width: 130px;">Inviato da:</td><td>${authorName} ${authorEmail ? `(&lt;${authorEmail}&gt;)` : ''}</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Durata:</td><td>${durationDays} Giorni</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Partenza & Arrivo:</td><td>${startLocation || 'N/D'} ➔ ${endLocation || 'N/D'}</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Tappe principali:</td><td>${Array.isArray(waypoints) ? waypoints.join(', ') : 'N/D'}</td></tr>
+            </table>
+            <div style="margin-top: 20px; padding: 14px; background: #f1f5f9; border-radius: 10px; text-align: center;">
+              <p style="margin: 0; font-size: 13px; font-weight: bold; color: #1e293b;">Apri il Pannello Moderatore in CamperLifeApp per approvare o rifiutare questo itinerario.</p>
+            </div>
+          </div>
+        </div>
+      `;
+
+      try {
+        await sendAdminNotificationEmail(subject, htmlEmail);
+      } catch (emailErr) {
+        console.warn("[Community Itineraries API] Warning sending notification email:", emailErr);
+      }
+
+      res.json({ success: true, id: itineraryId, message: "Itinerario inviato per la moderazione con successo!" });
+    } catch (err: any) {
+      console.error("Error proposing community itinerary:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'invio dell'itinerario." });
+    }
+  });
+
+  // Get community itineraries
+  app.get("/api/community-itineraries", async (req, res) => {
+    try {
+      const includePending = req.query.includePending === "true";
+      const snapshot = await firestoreDb.collection("community_itineraries").get();
+      const list: any[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (includePending || data.status === "approved") {
+          list.push(data);
+        }
+      });
+      // Sort newest first
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json({ success: true, itineraries: list });
+    } catch (err: any) {
+      console.error("Error fetching community itineraries:", err);
+      res.status(500).json({ error: err.message || "Errore durante il recupero degli itinerari." });
+    }
+  });
+
+  // Admin Approve Community Itinerary
+  app.post("/api/admin/approve-community-itinerary", async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "ID itinerario mancante." });
+
+      await firestoreDb.collection("community_itineraries").doc(id).update({
+        status: "approved",
+        approvedAt: new Date().toISOString()
+      });
+
+      console.log(`[Community Itineraries API] Approved itinerary: ${id}`);
+      res.json({ success: true, message: "Itinerario approvato e pubblicato nella Community!" });
+    } catch (err: any) {
+      console.error("Error approving itinerary:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'approvazione dell'itinerario." });
+    }
+  });
+
+  // Admin Reject Community Itinerary
+  app.post("/api/admin/reject-community-itinerary", async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "ID itinerario mancante." });
+
+      await firestoreDb.collection("community_itineraries").doc(id).delete();
+
+      console.log(`[Community Itineraries API] Rejected and deleted itinerary: ${id}`);
+      res.json({ success: true, message: "Itinerario rifiutato ed eliminato." });
+    } catch (err: any) {
+      console.error("Error rejecting itinerary:", err);
+      res.status(500).json({ error: err.message || "Errore durante il rifiuto dell'itinerario." });
+    }
+  });
+
   // Self-correct files that are created with Windows backslashes by mistake at runtime
   try {
     const rootDir = process.cwd();

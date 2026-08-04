@@ -793,13 +793,25 @@ export default function DiaryTab({
   // Update Trip Status handler
   const handleUpdateTripStatus = (newStatus: Trip["status"]) => {
     if (!selectedTripId) return;
+    let targetTrip: Trip | undefined;
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
-        return { ...t, status: newStatus };
+        const isNowCompleted = newStatus === "Completato";
+        const willBeShared = isNowCompleted ? true : t.isShared;
+        targetTrip = { ...t, status: newStatus, isShared: willBeShared };
+        return targetTrip;
       }
       return t;
     });
     setTrips(updated);
+
+    if (targetTrip && newStatus === "Completato") {
+      window.dispatchEvent(
+        new CustomEvent("share-trip-to-social", {
+          detail: { trip: targetTrip },
+        })
+      );
+    }
   };
 
   // Save Trip Edit handler
@@ -1735,6 +1747,26 @@ export default function DiaryTab({
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.dispatchEvent(
+                                  new CustomEvent("share-trip-to-social", {
+                                    detail: { trip: { ...trip, isShared: true } },
+                                  })
+                                );
+                              }}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 uppercase shadow-xs cursor-pointer ${
+                                trip.isShared
+                                  ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                  : "bg-amber-100 text-amber-900 hover:bg-amber-200"
+                              }`}
+                              title="Condividi questo viaggio sulla Bacheca Social"
+                            >
+                              <Share2 className="w-3 h-3" />
+                              {trip.isShared ? "Social 💬" : "Condividi 🚀"}
+                            </button>
                             <span className="px-2 py-1 bg-[#3E4A35]/5 group-hover:bg-[#3E4A35] text-[#3E4A35] group-hover:text-white rounded-lg text-[10px] font-black transition-all flex items-center gap-0.5 uppercase shadow-xs">
                               Apri 📖
                             </span>
@@ -1963,28 +1995,51 @@ export default function DiaryTab({
                             </button>
                             <button
                               onClick={() => {
+                                const nextIsShared = !activeTrip.isShared;
                                 const updated = trips.map((t) =>
                                   t.id === activeTrip.id
-                                    ? { ...t, isShared: !t.isShared }
+                                    ? { ...t, isShared: nextIsShared }
                                     : t,
                                 );
                                 setTrips(updated);
-                                window.dispatchEvent(
-                                  new CustomEvent("show-toast", {
-                                    detail: {
-                                      message: `🔗 Viaggio ${!activeTrip.isShared ? "reso pubblico!" : "reso privato!"}`,
-                                    },
-                                  }),
-                                );
+                                if (nextIsShared) {
+                                  window.dispatchEvent(
+                                    new CustomEvent("share-trip-to-social", {
+                                      detail: { trip: { ...activeTrip, isShared: true } },
+                                    })
+                                  );
+                                } else {
+                                  window.dispatchEvent(
+                                    new CustomEvent("show-toast", {
+                                      detail: {
+                                        message: `🔒 Viaggio "${activeTrip.title}" reso privato.`,
+                                      },
+                                    }),
+                                  );
+                                }
                               }}
-                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${activeTrip.isShared ? "bg-indigo-100 text-indigo-700" : "text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"}`}
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${activeTrip.isShared ? "bg-indigo-100 text-indigo-700 font-bold" : "text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"}`}
                               title={
                                 activeTrip.isShared
-                                  ? "Viaggio condiviso (clicca per rendere privato)"
-                                  : "Condividi questo viaggio"
+                                  ? "Viaggio condiviso sul Social (clicca per rendere privato)"
+                                  : "Condividi questo viaggio sul Social"
                               }
                             >
                               <Share2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                window.dispatchEvent(
+                                  new CustomEvent("share-trip-to-social", {
+                                    detail: { trip: { ...activeTrip, isShared: true } },
+                                  })
+                                );
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black shadow-xs transition-all cursor-pointer"
+                              title="Condividi sulla Bacheca Social della Community"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              <span>{activeTrip.isShared ? "Pubblicato nel Social 💬" : "Condividi sul Social 👥"}</span>
                             </button>
                           </div>
                           <h2 className="text-xl font-bold tracking-tight text-[#2D2926] mt-1">

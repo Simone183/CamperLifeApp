@@ -16,6 +16,7 @@ import {
   Trip,
   ChallengeSubmission,
   ChallengeItem,
+  CommunityItinerary,
 } from "./types";
 import {
   INITIAL_PLACES,
@@ -25,6 +26,7 @@ import {
   INITIAL_VEHICLE_DIMENSIONS,
 } from "./data/mockData";
 import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
+import { createSocialPostFromTrip } from "./utils/tripSocialShare";
 
 // Modular Tab Components
 import { EditPlaceModal } from "./components/EditPlaceModal";
@@ -1010,11 +1012,13 @@ export default function App() {
   const [showAdminPassword, setShowAdminPassword] = React.useState(false);
   const [pendingPlaces, setPendingPlaces] = React.useState<Place[]>([]);
   const [allPlaces, setAllPlaces] = React.useState<Place[]>([]);
+  const [pendingCommunityItineraries, setPendingCommunityItineraries] = React.useState<CommunityItinerary[]>([]);
   const [adminSubTab, setAdminSubTab] = React.useState<
     | "pending"
     | "all_places"
     | "osm"
     | "feedback"
+    | "community_itineraries"
     | "users"
     | "notifications"
     | "ai-discovery"
@@ -1800,6 +1804,70 @@ export default function App() {
     }
   };
 
+  const fetchPendingCommunityItineraries = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/community-itineraries?includePending=true");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.itineraries) {
+          const pendingOnly = data.itineraries.filter((item: any) => item.status === "pending");
+          setPendingCommunityItineraries(pendingOnly);
+        }
+      }
+    } catch (err) {
+      console.warn("Error fetching pending community itineraries:", err);
+    }
+  }, []);
+
+  const handleApproveCommunityItinerary = async (id: string) => {
+    try {
+      const res = await fetch("/api/admin/approve-community-itinerary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: "Itinerario approvato e pubblicato nella Community! 🎉" },
+          }),
+        );
+        fetchPendingCommunityItineraries();
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Errore durante l'approvazione.");
+      }
+    } catch (err) {
+      console.error("Error approving community itinerary:", err);
+      alert("Impossibile approvare l'itinerario in questo momento.");
+    }
+  };
+
+  const handleRejectCommunityItinerary = async (id: string) => {
+    if (!confirm("Sei sicuro di voler rifiutare ed eliminare questo itinerario?")) return;
+    try {
+      const res = await fetch("/api/admin/reject-community-itinerary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: "Itinerario rifiutato ed eliminato." },
+          }),
+        );
+        fetchPendingCommunityItineraries();
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Errore durante il rifiuto.");
+      }
+    } catch (err) {
+      console.error("Error rejecting community itinerary:", err);
+      alert("Impossibile rifiutare l'itinerario in questo momento.");
+    }
+  };
+
   const getDistanceKm = (
     lat1: number,
     lon1: number,
@@ -2312,6 +2380,54 @@ out center;`;
       }
     }
   };
+
+  const handleShareTripToSocial = React.useCallback(
+    (tripToShare: Trip) => {
+      // 1. Mark trip as isShared in trips state
+      setTrips((prevTrips) => {
+        const updated = prevTrips.map((t) =>
+          t.id === tripToShare.id ? { ...t, isShared: true } : t
+        );
+        localStorage.setItem("camper_trips", JSON.stringify(updated));
+        return updated;
+      });
+
+      // 2. Create the social message
+      const socialMsg = createSocialPostFromTrip(tripToShare, currentUser);
+
+      // 3. Update community messages state and sync to backend
+      setCommunityMessages((prevMsgs) => {
+        if (prevMsgs.some((m) => m.id === socialMsg.id)) {
+          return prevMsgs;
+        }
+        const updatedMsgs = [socialMsg, ...prevMsgs];
+        handleCommunityChange(updatedMsgs);
+        return updatedMsgs;
+      });
+
+      // 4. Toast notification
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `📢 Viaggio "${tripToShare.title}" condiviso sul Social e nei Viaggi Condivisi!`,
+          },
+        })
+      );
+    },
+    [currentUser]
+  );
+
+  React.useEffect(() => {
+    const handleSocialShareEvent = (e: CustomEvent) => {
+      if (e.detail && e.detail.trip) {
+        handleShareTripToSocial(e.detail.trip);
+      }
+    };
+    window.addEventListener("share-trip-to-social" as any, handleSocialShareEvent);
+    return () => {
+      window.removeEventListener("share-trip-to-social" as any, handleSocialShareEvent);
+    };
+  }, [handleShareTripToSocial]);
 
   // Setup periodic sync interval to keep stopping points and community chat fully synchronized in real-time
   React.useEffect(() => {
@@ -5726,6 +5842,21 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
 
                   <button
                     type="button"
+                    onClick={() => {
+                      fetchPendingCommunityItineraries();
+                      setAdminSubTab("community_itineraries");
+                    }}
+                    className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      adminSubTab === "community_itineraries"
+                        ? "bg-[#3E4A35] text-white shadow-xs"
+                        : "text-slate-600 hover:bg-[#3E4A35]/5 hover:text-slate-805"
+                    }`}
+                  >
+                    <span>🧭 Itinerari ({pendingCommunityItineraries.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setAdminSubTab("osm")}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "osm"
@@ -6237,6 +6368,94 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                                 </div>
                               )}
                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sub Tab: Community Itineraries Moderation */}
+                {adminSubTab === "community_itineraries" && (
+                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0">
+                    <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200/80">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-amber-950 dark:text-amber-200">
+                          🗺️ Moderazione Itinerari Proposti dalla Community
+                        </h4>
+                        <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                          Gli utenti possono proporre itinerari per la community. Quando ne approvi uno, comparirà nella sezione "Itinerari creati da Rolly e dalla Community" per tutti i camperisti!
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={fetchPendingCommunityItineraries}
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-2xs transition cursor-pointer"
+                      >
+                        Aggiorna Lista
+                      </button>
+                    </div>
+
+                    {pendingCommunityItineraries.length === 0 ? (
+                      <div className="p-8 text-center bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 text-stone-500">
+                        <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                        <p className="font-bold text-sm text-stone-800 dark:text-stone-200">Nessun itinerario in attesa di moderazione!</p>
+                        <p className="text-xs text-stone-500 mt-1">Tutti gli itinerari inviati dagli utenti sono stati revisionati.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {pendingCommunityItineraries.map((itin) => (
+                          <div
+                            key={itin.id}
+                            className="bg-white dark:bg-stone-800 p-5 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-2xs space-y-3"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 dark:border-stone-700 pb-3">
+                              <div>
+                                <span className="text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                                  In Attesa di Moderazione
+                                </span>
+                                <h3 className="text-base font-black text-stone-900 dark:text-stone-100 mt-1">
+                                  {itin.title}
+                                </h3>
+                                <div className="text-xs text-stone-500 font-medium mt-0.5 flex items-center gap-3">
+                                  <span>👤 Proposto da: <strong>{itin.authorName}</strong> {itin.authorEmail ? `(${itin.authorEmail})` : ''}</span>
+                                  <span>• ⏱️ Durata: {itin.durationDays} Giorni</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveCommunityItinerary(itin.id)}
+                                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  <span>Accetta e Pubblica</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectCommunityItinerary(itin.id)}
+                                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                                >
+                                  Rifiuta
+                                </button>
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+                              {itin.description}
+                            </p>
+
+                            {itin.waypoints && itin.waypoints.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                <span className="text-[10px] font-bold text-stone-400">Tappe:</span>
+                                {itin.waypoints.map((wp, idx) => (
+                                  <span key={idx} className="bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-2 py-0.5 rounded-md text-[10px] font-semibold">
+                                    📍 {wp}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

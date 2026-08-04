@@ -989,6 +989,13 @@ export default function TripVideoShareModal({
         type: "video/webm"
       });
 
+      // Automatically publish trip summary to CamperLife Social Feed as well
+      window.dispatchEvent(
+        new CustomEvent("share-trip-to-social", {
+          detail: { trip }
+        })
+      );
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],

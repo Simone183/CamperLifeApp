@@ -23,6 +23,7 @@ import {
   Eye,
   Calendar,
   XCircle,
+  ChevronRight,
 } from 'lucide-react';
 import { Place, VehicleDimensions, PlaceCategory, Trip, AIItineraryResult, AIDayStop } from '../types';
 import { parseDimToNumber } from '../unit-helpers';
@@ -30,6 +31,8 @@ import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/fi
 import { db } from '../lib/firebase';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import { exportAIItineraryToPDF } from '../utils/pdfGenerator';
+import { RollyCommunityItinerariesModal } from './RollyCommunityItinerariesModal';
+import { getRealRegionalImage } from '../utils/regionalImageHelper';
 
 interface AIItineraryTabProps {
   vehicleDimensions: VehicleDimensions;
@@ -83,6 +86,7 @@ export default function AIItineraryTab({
   const [result, setResult] = React.useState<AIItineraryResult | null>(null);
   const [savedItineraries, setSavedItineraries] = React.useState<AIItineraryResult[]>([]);
   const [showSavedModal, setShowSavedModal] = React.useState(false);
+  const [showCommunityItinerariesModal, setShowCommunityItinerariesModal] = React.useState(false);
 
   // Export states
   const [showExportModal, setShowExportModal] = React.useState(false);
@@ -519,36 +523,91 @@ export default function AIItineraryTab({
         </div>
       </div>
 
+      {/* Prominent Large Rolly & Community Itineraries Feature Banner */}
+      <div 
+        onClick={() => setShowCommunityItinerariesModal(true)}
+        className="group relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] p-5 sm:p-6 text-white shadow-lg border border-emerald-500/30 cursor-pointer hover:shadow-xl hover:border-emerald-400/60 transition-all duration-300 transform active:scale-[0.99]"
+      >
+        {/* Decorative background image / gradient overlay */}
+        <div className="absolute -right-8 -bottom-10 opacity-20 group-hover:opacity-30 transition-opacity duration-500 pointer-events-none">
+          <Compass className="w-64 h-64 text-emerald-200 animate-[spin_40s_linear_infinite]" />
+        </div>
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-2 max-w-2xl">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="bg-amber-400 text-stone-950 font-black text-[11px] uppercase tracking-wider px-3 py-1 rounded-full shadow-xs flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-900 animate-bounce" />
+                <span>Consigliati da Rolly AI & Community</span>
+              </span>
+              <span className="bg-white/15 text-emerald-100 font-bold text-[11px] px-3 py-1 rounded-full backdrop-blur-xs border border-white/10">
+                🌟 Nuova Tappa Ogni Settimana
+              </span>
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white group-hover:text-amber-200 transition-colors">
+              🗺️ Itinerari Creati da Rolly e dalla Community
+            </h3>
+
+            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed font-medium">
+              Sfoglia i 5 itinerari curati con foto reali per Toscana, Dolomiti, Calabria, Sardegna e Umbria, oppure proponi il tuo viaggio per la community!
+            </p>
+          </div>
+
+          <div className="shrink-0 pt-2 md:pt-0">
+            <button
+              type="button"
+              className="w-full sm:w-auto px-6 py-3.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-sm rounded-2xl shadow-md flex items-center justify-center gap-2.5 transition-all group-hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              <Sparkles className="w-5 h-5 text-amber-900" />
+              <span>Esplora gli Itinerari ora</span>
+              <ChevronRight className="w-5 h-5 text-stone-900 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Quick Itineraries Toolbar */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="bg-white dark:bg-stone-850 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-3">
+        {/* Centered full-width Itinerari Rolly button */}
+        <button
+          type="button"
+          onClick={() => setShowCommunityItinerariesModal(true)}
+          className="w-full px-4 py-3 bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] hover:from-[#142C1F] hover:to-[#2D3727] text-white text-xs sm:text-sm font-black rounded-xl transition-all shadow-md flex items-center justify-center text-center gap-2.5 cursor-pointer active:scale-[0.99] border border-emerald-500/30"
+        >
+          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse shrink-0" />
+          <span className="truncate">🗺️ Itinerari Rolly e Community (5+)</span>
+        </button>
+
+        {/* Side-by-side buttons: I Miei Salvati & Crea Nuovo */}
+        <div className="grid grid-cols-2 gap-2.5 w-full">
           <button
             type="button"
             onClick={() => setShowSavedModal(true)}
-            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-black rounded-xl transition-all shadow-2xs flex items-center gap-2 cursor-pointer active:scale-95"
+            className="w-full px-3 sm:px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center text-center gap-1.5 cursor-pointer active:scale-95"
           >
-            <FolderHeart className="w-4 h-4 text-amber-600" />
-            <span>I Miei Itinerari Salvati ({savedItineraries.length})</span>
+            <FolderHeart className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">I Miei Salvati ({savedItineraries.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setResult(null)}
-            className={`px-3.5 py-2 border text-xs font-black rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+            className={`w-full px-3 sm:px-4 py-2.5 border text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center text-center gap-1.5 cursor-pointer active:scale-95 ${
               !result
                 ? 'bg-[#3E4A35] text-white border-[#3E4A35]'
-                : 'bg-stone-50 hover:bg-stone-100 text-slate-700 border-slate-200'
+                : 'bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 text-slate-700 dark:text-stone-300 border-slate-200 dark:border-slate-700'
             }`}
           >
-            <PlusCircle className="w-4 h-4 text-emerald-400" />
-            <span>➕ Crea Nuovo Itinerario</span>
+            <PlusCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="truncate">➕ Crea Nuovo</span>
           </button>
         </div>
 
         {result && (
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-emerald-50/90 border border-emerald-200/80 px-3 py-1.5 rounded-xl">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] text-emerald-950 truncate max-w-[200px] sm:max-w-xs">
+          <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-700 bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 px-3 py-1.5 rounded-xl w-full text-center">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="text-[11px] text-emerald-950 dark:text-emerald-300 truncate">
               Attivo: <strong>{result.title}</strong>
             </span>
           </div>
@@ -728,9 +787,19 @@ export default function AIItineraryTab({
 
                   {/* Details Block */}
                   <div className="flex-1 space-y-4">
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-extrabold text-slate-900">{day.title}</h4>
-                      <p className="text-xs text-slate-600 leading-relaxed text-justify">{day.description}</p>
+                    <div className="flex flex-col sm:flex-row gap-4 items-start">
+                      <div className="w-full sm:w-36 h-24 shrink-0 rounded-xl overflow-hidden border border-slate-200/80 shadow-2xs">
+                        <img
+                          src={day.imageUrl || getRealRegionalImage(day.title + ' ' + day.stopPlaceName + ' ' + day.description + ' ' + result.title)}
+                          alt={day.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                        />
+                      </div>
+                      <div className="space-y-1 flex-1">
+                        <h4 className="text-sm font-extrabold text-slate-900">{day.title}</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed text-justify">{day.description}</p>
+                      </div>
                     </div>
 
                     {/* Recommended Sosta & Interaction Row */}
@@ -834,16 +903,7 @@ export default function AIItineraryTab({
               <h3 className="text-base font-extrabold text-slate-900">Nuovo Itinerario AI</h3>
               <p className="text-xs text-slate-500">Crea un nuovo percorso camper personalizzato</p>
             </div>
-            {savedItineraries.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowSavedModal(true)}
-                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1"
-              >
-                <FolderHeart className="w-3.5 h-3.5 text-amber-600" />
-                <span>Vedi Salvaspazio ({savedItineraries.length})</span>
-              </button>
-            )}
+
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1423,6 +1483,42 @@ export default function AIItineraryTab({
           </div>
         </div>
       )}
+
+      {/* Community & Rolly Itineraries Modal */}
+      <RollyCommunityItinerariesModal
+        isOpen={showCommunityItinerariesModal}
+        onClose={() => setShowCommunityItinerariesModal(false)}
+        currentUser={currentUser}
+        onLoadItineraryIntoRolly={(selectedAIResult) => {
+          setResult(selectedAIResult);
+        }}
+        onSaveTripToDiary={(tripTitle, days) => {
+          if (setTrips) {
+            const newTrip: Trip = {
+              id: `trip_comm_${Date.now()}`,
+              title: tripTitle,
+              startDate: new Date().toISOString().split('T')[0],
+              endDate: new Date(Date.now() + (days?.length || 3) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              description: tripTitle,
+              status: 'Pianificato',
+              expenses: [],
+              photos: [],
+              movements: [],
+              aiItinerary: {
+                title: tripTitle,
+                description: tripTitle,
+                totalKm: '150 km',
+                totalDrivingTime: '3h',
+                days: days || []
+              }
+            };
+
+            const updatedTrips = [newTrip, ...(trips || [])];
+            setTrips(updatedTrips);
+            localStorage.setItem('camper_trips', JSON.stringify(updatedTrips));
+          }
+        }}
+      />
     </div>
   );
 }

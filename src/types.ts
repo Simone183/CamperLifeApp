@@ -330,6 +330,8 @@ export interface AIDayStop {
     lng: number;
     label: string;
   };
+  imageUrl?: string;
+  images?: string[];
 }
 
 export interface AIItineraryResult {
@@ -346,6 +348,30 @@ export interface AIItineraryResult {
   duration?: number;
   travelStyle?: string;
   interests?: string[];
+  imageUrl?: string;
+}
+
+export interface CommunityItinerary {
+  id: string;
+  title: string;
+  description: string;
+  authorName: string;
+  authorEmail?: string;
+  createdAt?: string;
+  durationDays: number;
+  startLocation?: string;
+  endLocation?: string;
+  waypoints?: string[];
+  travelStyle: string;
+  interests?: string[];
+  totalKm?: string;
+  status: 'approved' | 'pending' | 'rejected';
+  source: 'rolly_curated' | 'rolly_weekly' | 'community';
+  isWeeklySpecial?: boolean;
+  weeklyBadgeText?: string;
+  imageUrl?: string;
+  images?: string[];
+  days: AIDayStop[];
 }
 
 export interface Trip {
