@@ -54,6 +54,7 @@ import { CategoryIllustration } from "./CategoryIllustration";
 import { WeatherWidget } from "./WeatherWidget";
 import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
+import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import {
   getTile,
   getBestTile,
@@ -610,6 +611,61 @@ export default function MapTab({
       return "";
     }
   });
+
+  // Periodic speech bubble for Rolly on the map with 5-min inactivity reset on map interaction
+  const [rollyBubbleText, setRollyBubbleText] = React.useState<string | null>(null);
+  const [showRollyBubble, setShowRollyBubble] = React.useState<boolean>(false);
+  const rollyTimerRef = React.useRef<any>(null);
+  const rollyHideTimerRef = React.useRef<any>(null);
+
+  const showRandomRollyPhrase = React.useCallback(() => {
+    const phrases = [
+      "Ciao! Dove vuoi che ti porti oggi? 🚐✨",
+      "Ti va di pianificare un itinerario con me? 🗺️",
+      "Dimmi la tua meta e ti organizzo il viaggio! 🚀",
+      "Trovo le migliori aree sosta per il tuo camper! ⛺",
+      "Sostiamo vista mare o in montagna oggi? 🌊⛰️",
+      "Vuoi scoprire posti fantastici lungo la rotta? 🌲🧭",
+    ];
+    const randomIdx = Math.floor(Math.random() * phrases.length);
+    setRollyBubbleText(phrases[randomIdx]);
+    setShowRollyBubble(true);
+
+    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
+    rollyHideTimerRef.current = setTimeout(() => {
+      setShowRollyBubble(false);
+    }, 7000);
+  }, []);
+
+  // Called whenever user interacts with or explores the map (clicks, drags, zooms)
+  const handleMapUserActivity = React.useCallback(() => {
+    // Hide bubble immediately
+    setShowRollyBubble(false);
+
+    if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
+    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
+
+    if (!onNavigateToAI) return;
+
+    // Reset inactivity timer: show bubble only after 5 minutes (300,000 ms) of inactivity
+    rollyTimerRef.current = setTimeout(() => {
+      showRandomRollyPhrase();
+    }, 300000);
+  }, [onNavigateToAI, showRandomRollyPhrase]);
+
+  // Initial welcome message 3.5s after load if inactive
+  React.useEffect(() => {
+    if (!onNavigateToAI) return;
+
+    rollyTimerRef.current = setTimeout(() => {
+      showRandomRollyPhrase();
+    }, 3500);
+
+    return () => {
+      if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
+      if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
+    };
+  }, [onNavigateToAI, showRandomRollyPhrase]);
 
   // Tracks image error loads (so if /area_sosta.png etc. fails or is missing, we fallback)
   const [imageErrorUrls, setImageErrorUrls] = React.useState<
@@ -1820,6 +1876,7 @@ export default function MapTab({
     React.useState<boolean>(false);
 
   const handleMapClick = (lat: number, lng: number) => {
+    handleMapUserActivity();
     setClickedCoords({ lat, lng });
     setShowClickedPopup(true);
     mapMovedByUserRef.current = true;
@@ -4122,7 +4179,10 @@ out center;`;
         }`}
       >
         {/* Leaflet Frame & forms layer */}
-        <div className="relative bg-slate-100 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-[300px] w-full shrink">
+        <div
+          className="relative bg-slate-100 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-[300px] w-full shrink"
+          onPointerDown={handleMapUserActivity}
+        >
           {/* Map canvas */}
           {!hasValidKey || !isOnline || settings?.mapEngine === "leaflet" ? (
             <LeafletOfflineMap
@@ -5087,15 +5147,51 @@ out center;`;
             </div>
           )}
 
-          {/* Pulsante Spese Viaggio posizionato in basso a sinistra sulla mappa (visibile solo se c'è un viaggio aperto) */}
+          {/* Pulsante Generatore Itinerari AI Rolly con fumetto a nuvoletta */}
           {onNavigateToAI && (
-            <button
-              onClick={onNavigateToAI}
-              className="absolute bottom-16 left-2 z-[1000] bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
-              title="Generatore Itinerari AI"
-            >
-              <Sparkles className="w-5 h-5 text-purple-600 fill-purple-600/20" />
-            </button>
+            <div className="absolute bottom-16 left-2 z-[1000]">
+              {/* Fumetto a nuvoletta Rolly */}
+              {showRollyBubble && rollyBubbleText && (
+                <div
+                  onClick={onNavigateToAI}
+                  className="absolute bottom-12 left-0 z-[1001] w-[210px] sm:w-[230px] bg-white text-slate-800 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-400 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-pointer hover:scale-[1.02] active:scale-98 transition-all group"
+                >
+                  {/* Coda a nuvoletta del fumetto rivolta verso l'icona di Rolly */}
+                  <div className="absolute -bottom-2 left-3.5 w-3.5 h-3.5 bg-white border-b-2 border-r-2 border-emerald-400 transform rotate-45 shadow-xs" />
+
+                  <span className="text-base shrink-0 select-none animate-bounce">💬</span>
+                  <div className="flex-1 pr-1">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider bg-emerald-100 px-1.5 py-0.2 rounded-md">
+                        Rolly AI 🚐
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-slate-700 font-bold leading-snug">
+                      {rollyBubbleText}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowRollyBubble(false);
+                    }}
+                    className="text-slate-400 hover:text-slate-600 p-0.5 -mr-1 -mt-0.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                    title="Chiudi"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={onNavigateToAI}
+                className="bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer overflow-hidden p-1"
+                title="Generatore Itinerari AI Rolly"
+              >
+                <CartoonCamperAvatar className="w-6 h-6 shrink-0" />
+              </button>
+            </div>
           )}
           {onNavigateToExpenses && (
             <button
@@ -5103,7 +5199,12 @@ out center;`;
               className="absolute bottom-5 left-2 z-[1000] bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
               title="Spese di Viaggio (Viaggio Attivo)"
             >
-              <Banknote className="w-5 h-5 text-indigo-600 fill-indigo-600/20" />
+              <svg className="w-6 h-6 text-emerald-600 fill-emerald-50/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1.5" y="4.5" width="21" height="15" rx="2.5" />
+                <circle cx="12" cy="12" r="3.5" fill="white" stroke="currentColor" strokeWidth="1.5" />
+                <text x="12" y="15" fontSize="9" fontWeight="900" textAnchor="middle" fill="currentColor" stroke="none" fontFamily="sans-serif">$</text>
+                <path d="M5 12h.01M19 12h.01" strokeWidth="2.5" />
+              </svg>
             </button>
           )}
 

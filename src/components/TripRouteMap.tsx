@@ -1,6 +1,7 @@
 import React from "react";
 import L from "leaflet";
 import { Trip } from "../types";
+import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import {
   Play,
   Pause,
@@ -1243,8 +1244,8 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
                         onClick={onNavigateToAIItinerary}
                         className="px-3 py-2 bg-white border border-stone-200 hover:bg-stone-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
                       >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Apri Generatore IA</span>
+                        <CartoonCamperAvatar className="w-4 h-4 shrink-0" />
+                        <span>Apri Generatore IA Rolly</span>
                       </button>
                     )}
                   </div>
@@ -1489,7 +1490,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
                     <span>Nessun Programma Dettagliato IA associato a questo viaggio</span>
                   </h4>
                   <p className="text-[11px] text-stone-500">
-                    Puoi generare un itinerario completo con tutte le informazioni su cosa visitare, tappe, tempo al volante e consigli camper dal Generatore IA.
+                    Puoi generare un itinerario completo con tutte le informazioni su cosa visitare, tappe, tempo al volante e consigli camper dal Generatore IA Rolly.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap shrink-0">

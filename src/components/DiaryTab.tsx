@@ -5,6 +5,7 @@ import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
 import { compressImage } from "../utils/photoCompressor";
 import { TripRouteMap } from "./TripRouteMap";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
+import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import {
   BookOpen,
@@ -3139,8 +3140,8 @@ export default function DiaryTab({
                                 onClick={onNavigateToAIItinerary}
                                 className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] border border-emerald-500/30"
                               >
-                                <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300 animate-pulse" />
-                                <span>Generatore Itinerari AI</span>
+                                <CartoonCamperAvatar className="w-4 h-4 shrink-0" />
+                                <span>Generatore Itinerari AI Rolly</span>
                               </button>
                             )}
                           </div>

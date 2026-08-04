@@ -56,6 +56,7 @@ import { applyTtsVoiceAndPitch } from "./utils/ttsHelper";
 import WorkLogTab from "./components/WorkLogTab";
 import SharedTripsTab from "./components/SharedTripsTab";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
+import { CartoonCamperAvatar } from "./components/CartoonCamperAvatar";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
@@ -3560,7 +3561,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Checklist Pre-partenza
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Controlli rigorosi (valvole, finestre
                                     sollevate, bombole) prima della marcia.
                                   </p>
@@ -3597,7 +3598,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Dispensa & Spesa Smart
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Organizza i viveri a bordo, pianifica le
                                     ricette salva-risorse ed evita sprechi.
                                   </p>
@@ -3628,7 +3629,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Bilanciamento & Carico Utile
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Calcolo pesi di bagagli, acqua e passeggeri
                                     sotto i 3500 kg (Patente B).
                                   </p>
@@ -3672,7 +3673,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Carta Carburante Sincronizzata
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Log rifornimenti in cloud, costo totale e
                                     medie consumo.
                                   </p>
@@ -3701,7 +3702,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Scadenziere di Bordo
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Tagliando, bombole gas, bollo, assicurazione
                                     e scadenze impianti.
                                   </p>
@@ -3738,7 +3739,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Registro Manutenzione Cellula
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Traccia lavaggi, ispezioni infiltrazioni,
                                     bombole e sigillature.
                                   </p>
@@ -3769,7 +3770,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Registro Lavori Unificato
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Visualizzazione cronologica unificata, km e costi dei tuoi interventi.
                                   </p>
                                 </div>
@@ -3798,24 +3799,24 @@ out center;`;
                           </span>
                         </div>
                         <div className="divide-y divide-slate-100">
-                          {/* Generatore Itinerari AI */}
+                          {/* Generatore Itinerari AI Rolly */}
                           {dashboardSettings.showAIItinerary && (
                             <div
                               onClick={() => setSettingsSubTab("ai_itinerary")}
                               className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
                             >
                               <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-emerald-50 dark:bg-emerald-900 text-emerald-850 dark:text-emerald-100 border border-emerald-100/50 dark:border-emerald-700 group-hover:scale-105 transition-transform">
-                                  <Sparkles className="w-5 h-5" />
+                                <div className="p-2 rounded-xl shrink-0 bg-emerald-50 dark:bg-emerald-900 text-emerald-850 dark:text-emerald-100 border border-emerald-100/50 dark:border-emerald-700 group-hover:scale-105 transition-transform flex items-center justify-center">
+                                  <CartoonCamperAvatar className="w-6 h-6 shrink-0" />
                                 </div>
                                 <div className="min-w-0">
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-1.5">
-                                    Generatore Itinerari AI
+                                    Generatore Itinerari AI Rolly
                                     <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black tracking-widest px-1 py-0.5 rounded uppercase">
                                       PRO
                                     </span>
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Percorsi personalizzati e aree consigliate
                                     calcolate in base alle misure.
                                   </p>
@@ -3844,7 +3845,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Soste & Aree Preferite
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     La tua selezione personale di punti sosta,
                                     campeggi e parcheggi segreti.
                                   </p>
@@ -3873,7 +3874,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Eventi Camper
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Fiere, raduni ed eventi dedicati al mondo
                                     del plein air.
                                   </p>
@@ -3913,7 +3914,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Livella Digitale Camper
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Allinea il camper in asse inclinazione
                                     usando l'accelerometro del telefono.
                                   </p>
@@ -3944,7 +3945,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Autonomia Off-Grid
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Simula riserva idrica, carica batterie e
                                     consumi energetici per la sosta in libera.
                                   </p>
@@ -3978,7 +3979,7 @@ out center;`;
                                       OFFLINE
                                     </span>
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Allineamento solare fotovoltaico, stato
                                     carica batterie in Volt e risoluzione guasti
                                     fai-da-te.
@@ -4010,7 +4011,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#2D2926] transition-colors">
                                     Sicurezza Attiva & Sosta Notturna
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Valutatore rischio sosta libera, generatore
                                     SOS con GPS e sirena d'allarme.
                                   </p>
@@ -4053,7 +4054,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Bacheca & Chat Locale
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Parla con altri equipaggi vicini, ricevi
                                     pareri e condividi curiosità locali.
                                   </p>
@@ -4089,7 +4090,7 @@ out center;`;
                                     <span>Sfide, Concorsi &amp; Badge</span>
                                     <span className="bg-amber-400 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-full uppercase">Nuovo</span>
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Partecipa ai concorsi foto vista mare, segnala nuove soste e vinci badge e premi!
                                   </p>
                                 </div>
@@ -4114,7 +4115,7 @@ out center;`;
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                     Viaggi Condivisi
                                   </h4>
-                                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Esplora gli itinerari condivisi dalla
                                     community.
                                   </p>
@@ -4150,7 +4151,7 @@ out center;`;
                               <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                 Impostazioni Generali
                               </h4>
-                              <p className="text-xs text-slate-400 mt-0.5 truncate">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                 Tema, moduli dashboard, backup, suoni
                               </p>
                             </div>
@@ -4171,7 +4172,7 @@ out center;`;
                               <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
                                 Il Mio Camper, misure e info
                               </h4>
-                              <p className="text-xs text-slate-400 mt-0.5 truncate">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                 Altezza, larghezza, peso e lunghezza per ponti e
                                 restrizioni.
                               </p>
@@ -4203,7 +4204,7 @@ out center;`;
                                     SALVA REGIONE
                                   </span>
                                 </h4>
-                                <p className="text-xs text-slate-400 mt-0.5 truncate">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                   Scarica e gestisci mappe regionali italiane
                                   per esplorare in assenza di segnale.
                                 </p>
@@ -4379,7 +4380,7 @@ out center;`;
                         {settingsSubTab === "feedback" &&
                           "Segnalazione & Opinione"}
                         {settingsSubTab === "ai_itinerary" &&
-                          "Generatore Itinerari AI"}
+                          "Generatore Itinerari AI Rolly"}
                         {settingsSubTab === "bubble_level" &&
                           "Livella Digitale Camper"}
                         {settingsSubTab === "weight_calculator" &&
