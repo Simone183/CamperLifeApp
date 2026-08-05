@@ -3246,12 +3246,12 @@ out center;`;
         </div>
       )}
 
-      {/* Main Bar Navigation Header - Compact responsiveness with sticky top */}
+      {/* Main Bar Navigation Header - Scalable adaptive spacing across all devices */}
       <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs w-full overflow-hidden">
-        <div className="max-w-7xl mx-auto px-1.5 min-[360px]:px-2.5 sm:px-6 lg:px-8 py-1 sm:py-2 flex flex-row justify-between items-center gap-1 min-[360px]:gap-1.5 sm:gap-4 min-w-0">
+        <div className="max-w-7xl mx-auto px-2 min-[360px]:px-3 sm:px-6 lg:px-8 py-1.5 sm:py-2 flex flex-row items-center justify-between gap-2 min-[360px]:gap-3 sm:gap-4 min-w-0">
           {/* Logo Brand */}
           <div
-            className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2.5 cursor-pointer select-none shrink-0"
+            className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer select-none shrink-0"
             onClick={() => {
               setActiveTab("map_nav");
               setMapNavSubTab("map");
@@ -3262,18 +3262,18 @@ out center;`;
             </div>
             <div className="shrink-0 min-w-0">
               <div className="flex items-center gap-1">
-                <h1 className="text-[10.5px] min-[360px]:text-[11.5px] sm:text-base font-black text-[#2D2926] tracking-tight font-sans truncate">
+                <h1 className="text-[11px] min-[360px]:text-[12px] sm:text-base font-black text-[#2D2926] tracking-tight font-sans truncate">
                   ViaCamper
                 </h1>
               </div>
-              <p className="text-[8.5px] text-[#2D2926]/75 hidden sm:block">
+              <p className="text-[8.5px] text-[#2D2926]/75 hidden lg:block">
                 Mappe sosta, navigatore sagomato & community
               </p>
             </div>
           </div>
 
-          {/* Right Header Actions Group with comfortable spacing */}
-          <div className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-3 md:gap-4 shrink min-w-0 justify-end">
+          {/* Header Actions Group - Adaptively spaced across all buttons */}
+          <div className="flex items-center gap-1.5 min-[360px]:gap-2 sm:gap-4 md:gap-6 lg:gap-8 shrink min-w-0 justify-end flex-1 max-w-4xl ml-auto">
             {/* Header GPS Weather Widget */}
             <HeaderGPSWeather
               lat={userLocation ? userLocation.lat : null}
@@ -3339,7 +3339,7 @@ out center;`;
             </button>
 
             {/* Quick Active vehicle summary panel */}
-            <div className="h-7.5 min-[360px]:h-8 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-1 min-[360px]:px-1.5 sm:px-2 rounded-xl border border-[#3E4A35]/15 transition-all shrink min-w-0 max-w-[65px] min-[360px]:max-w-[85px] min-[400px]:max-w-[110px] sm:max-w-[150px] shadow-2xs">
+            <div className="h-7.5 min-[360px]:h-8 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-1.5 sm:px-2 rounded-xl border border-[#3E4A35]/15 transition-all shrink min-w-0 max-w-[75px] min-[360px]:max-w-[95px] min-[400px]:max-w-[120px] sm:max-w-[160px] shadow-2xs">
               <button
                 onClick={() => {
                   setActiveTab("settings_tools");
