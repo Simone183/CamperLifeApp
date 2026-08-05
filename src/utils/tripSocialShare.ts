@@ -5,8 +5,11 @@ import { Trip, CommunityMessage } from "../types";
  */
 export function createSocialPostFromTrip(
   trip: Trip,
-  currentUser?: { nickname?: string; email?: string; name?: string; profilePhoto?: string } | null
+  currentUser?: { nickname?: string; email?: string; name?: string; profilePhoto?: string } | null,
+  options?: { includeExpenses?: boolean; shareToSharedTrips?: boolean }
 ): CommunityMessage {
+  const includeExpenses = options?.includeExpenses ?? (trip.includeExpenses ?? true);
+  const shareToSharedTrips = options?.shareToSharedTrips ?? (trip.shareToSharedTrips ?? true);
   const activeUserName =
     currentUser?.nickname ||
     currentUser?.name ||
@@ -29,7 +32,7 @@ export function createSocialPostFromTrip(
     distanceKm = Math.max(...allOdos) - Math.min(...allOdos);
   }
 
-  const totalSpent = (trip.expenses || []).reduce((sum, e) => sum + e.amount, 0);
+  const totalSpent = includeExpenses ? (trip.expenses || []).reduce((sum, e) => sum + e.amount, 0) : 0;
 
   // Dates formatting
   const dates: string[] = [];
@@ -52,11 +55,11 @@ export function createSocialPostFromTrip(
     `📅 Periodo: ${dateStr}`,
     distanceKm > 0 ? `🛣️ Chilometri percorsi: ${distanceKm} km` : undefined,
     trip.photos && trip.photos.length > 0 ? `📸 Foto scattate: ${trip.photos.length}` : undefined,
-    totalSpent > 0 ? `💶 Spese registrate: ${totalSpent.toFixed(0)}€` : undefined,
+    includeExpenses && totalSpent > 0 ? `💶 Spese registrate: ${totalSpent.toFixed(0)}€` : undefined,
     stopsSummary,
     trip.description ? `\n“${trip.description}”` : undefined,
     ``,
-    `👉 Puoi esplorare la mappa e i dettagli nella sezione Viaggi Condivisi della Community! 🗺️`
+    shareToSharedTrips ? `👉 Puoi esplorare la mappa e i dettagli nella sezione Viaggi Condivisi della Community! 🗺️` : undefined
   ]
     .filter((line) => line !== undefined)
     .join("\n");
@@ -79,5 +82,6 @@ export function createSocialPostFromTrip(
     locationName: stopNames[0] || trip.title,
     mediaUrl: mainPhoto,
     mediaType: mainPhoto ? "image" : undefined,
+    sharedTripId: trip.id,
   };
 }

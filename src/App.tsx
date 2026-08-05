@@ -57,6 +57,7 @@ import { playAlertSound, playTapSound } from "./utils/soundHelper";
 import { applyTtsVoiceAndPitch } from "./utils/ttsHelper";
 import WorkLogTab from "./components/WorkLogTab";
 import SharedTripsTab from "./components/SharedTripsTab";
+import { TripShareModal } from "./components/TripShareModal";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
 import { CartoonCamperAvatar } from "./components/CartoonCamperAvatar";
 import { OnboardingTour } from "./components/OnboardingTour";
@@ -2390,35 +2391,50 @@ out center;`;
     }
   };
 
-  const handleShareTripToSocial = React.useCallback(
-    (tripToShare: Trip) => {
-      // 1. Mark trip as isShared in trips state
+  const [tripForShareModal, setTripForShareModal] = React.useState<Trip | null>(null);
+
+  const handleShareTripWithOptions = React.useCallback(
+    (tripToShare: Trip, options: { shareToSocial: boolean; shareToSharedTrips: boolean; includeExpenses: boolean }) => {
+      const isNowShared = options.shareToSharedTrips || options.shareToSocial;
       setTrips((prevTrips) => {
         const updated = prevTrips.map((t) =>
-          t.id === tripToShare.id ? { ...t, isShared: true } : t
+          t.id === tripToShare.id
+            ? {
+                ...t,
+                isShared: isNowShared,
+                includeExpenses: options.includeExpenses,
+                shareToSharedTrips: options.shareToSharedTrips,
+                shareToSocial: options.shareToSocial,
+              }
+            : t
         );
         localStorage.setItem("camper_trips", JSON.stringify(updated));
         return updated;
       });
 
-      // 2. Create the social message
-      const socialMsg = createSocialPostFromTrip(tripToShare, currentUser);
+      if (options.shareToSocial) {
+        const socialMsg = createSocialPostFromTrip(tripToShare, currentUser, {
+          includeExpenses: options.includeExpenses,
+          shareToSharedTrips: options.shareToSharedTrips,
+        });
+        setCommunityMessages((prevMsgs) => {
+          if (prevMsgs.some((m) => m.id === socialMsg.id)) {
+            return prevMsgs;
+          }
+          const updatedMsgs = [socialMsg, ...prevMsgs];
+          handleCommunityChange(updatedMsgs);
+          return updatedMsgs;
+        });
+      }
 
-      // 3. Update community messages state and sync to backend
-      setCommunityMessages((prevMsgs) => {
-        if (prevMsgs.some((m) => m.id === socialMsg.id)) {
-          return prevMsgs;
-        }
-        const updatedMsgs = [socialMsg, ...prevMsgs];
-        handleCommunityChange(updatedMsgs);
-        return updatedMsgs;
-      });
+      const dests = [];
+      if (options.shareToSocial) dests.push("Bacheca Social");
+      if (options.shareToSharedTrips) dests.push("Viaggi Condivisi");
 
-      // 4. Toast notification
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: {
-            message: `📢 Viaggio "${tripToShare.title}" condiviso sul Social e nei Viaggi Condivisi!`,
+            message: `📢 Viaggio "${tripToShare.title}" condiviso con successo su: ${dests.join(" e ")}!`,
           },
         })
       );
@@ -2427,16 +2443,16 @@ out center;`;
   );
 
   React.useEffect(() => {
-    const handleSocialShareEvent = (e: CustomEvent) => {
+    const handleOpenShareModal = (e: CustomEvent) => {
       if (e.detail && e.detail.trip) {
-        handleShareTripToSocial(e.detail.trip);
+        setTripForShareModal(e.detail.trip);
       }
     };
-    window.addEventListener("share-trip-to-social" as any, handleSocialShareEvent);
+    window.addEventListener("open-trip-share-modal" as any, handleOpenShareModal);
     return () => {
-      window.removeEventListener("share-trip-to-social" as any, handleSocialShareEvent);
+      window.removeEventListener("open-trip-share-modal" as any, handleOpenShareModal);
     };
-  }, [handleShareTripToSocial]);
+  }, []);
 
   // Setup periodic sync interval to keep stopping points and community chat fully synchronized in real-time
   React.useEffect(() => {
@@ -3213,18 +3229,17 @@ out center;`;
 
       {/* Top Warning Banner if any safety checkpoints are uncompleted */}
       {dashboardSettings.showTopNotifications !== false && incompleteChecklistCount > 0 && (
-        <div className="bg-[#A45C40] text-white font-bold px-4 py-2.5 md:py-4 text-center text-xs min-[375px]:text-sm sm:text-base md:text-lg flex gap-2 sm:gap-3.5 items-center justify-center border-b border-[#A45C40]/20 active:opacity-90 shadow-sm sticky top-0 z-40">
-          <ShieldAlert className="w-[1.25rem] h-[1.25rem] sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
-          <span className="leading-tight">
-            Attenzione: {incompleteChecklistCount} controlli di sicurezza
-            mancanti!
+        <div className="bg-[#A45C40] text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-[#A45C40]/20 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
+          <ShieldAlert className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
+          <span className="leading-tight truncate sm:whitespace-normal">
+            Attenzione: {incompleteChecklistCount} controlli di sicurezza mancanti!
           </span>
           <button
             onClick={() => {
               setActiveTab("settings_tools");
               setSettingsSubTab("checklist");
             }}
-            className="underline hover:text-orange-100 transition-colors ml-1.5 sm:ml-3 font-black shrink-0 cursor-pointer text-[11px] min-[375px]:text-[12.5px] sm:text-sm md:text-base"
+            className="underline hover:text-orange-100 transition-colors ml-1 sm:ml-3 font-black shrink-0 cursor-pointer text-[10px] min-[360px]:text-[11.5px] sm:text-sm md:text-base"
           >
             Controlla →
           </button>
@@ -3232,22 +3247,22 @@ out center;`;
       )}
 
       {/* Main Bar Navigation Header - Compact responsiveness with sticky top */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-2 min-[375px]:px-3 sm:px-6 lg:px-8 py-1.5 md:py-2 flex flex-row justify-between items-center gap-2 sm:gap-6 overflow-x-auto no-scrollbar">
+      <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs w-full overflow-hidden">
+        <div className="max-w-7xl mx-auto px-1.5 min-[360px]:px-2.5 sm:px-6 lg:px-8 py-1 sm:py-2 flex flex-row justify-between items-center gap-1 min-[360px]:gap-1.5 sm:gap-4 min-w-0">
           {/* Logo Brand */}
           <div
-            className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer select-none shrink-0"
+            className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2.5 cursor-pointer select-none shrink-0"
             onClick={() => {
               setActiveTab("map_nav");
               setMapNavSubTab("map");
             }}
           >
             <div className="text-[#3E4A35] transition-all hover:scale-105 duration-300 shrink-0 flex items-center justify-center">
-              <CamperLifeIcon size={36} className="text-[#3E4A35] w-7 h-7 sm:w-9 sm:h-9 object-contain" />
+              <CamperLifeIcon size={36} className="text-[#3E4A35] w-6.5 h-6.5 min-[360px]:w-7 min-[360px]:h-7 sm:w-9 sm:h-9 object-contain" />
             </div>
-            <div className="shrink-0">
+            <div className="shrink-0 min-w-0">
               <div className="flex items-center gap-1">
-                <h1 className="text-[11px] min-[375px]:text-xs sm:text-base font-black text-[#2D2926] tracking-tight font-sans">
+                <h1 className="text-[10.5px] min-[360px]:text-[11.5px] sm:text-base font-black text-[#2D2926] tracking-tight font-sans truncate">
                   ViaCamper
                 </h1>
               </div>
@@ -3258,7 +3273,7 @@ out center;`;
           </div>
 
           {/* Right Header Actions Group with comfortable spacing */}
-          <div className="flex items-center gap-2 sm:gap-3 md:gap-4 shrink-0">
+          <div className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-3 md:gap-4 shrink min-w-0 justify-end">
             {/* Header GPS Weather Widget */}
             <HeaderGPSWeather
               lat={userLocation ? userLocation.lat : null}
@@ -3275,7 +3290,7 @@ out center;`;
                   setActiveTab("settings_tools");
                   setSettingsSubTab("community");
                 }}
-                className={`h-8 sm:h-9.5 px-2 sm:px-2.5 rounded-xl border transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group ${
+                className={`h-7.5 min-[360px]:h-8 sm:h-9.5 px-1.5 min-[360px]:px-2 sm:px-2.5 rounded-xl border transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group ${
                   unreadCommunityCount > 0
                     ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/40 shadow-md animate-pulse"
                     : "bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] border-[#3E4A35]/15"
@@ -3286,7 +3301,7 @@ out center;`;
                     : "Bacheca Community & Chat"
                 }
               >
-                <Users className={`w-4 h-4 sm:w-4.5 sm:h-4.5 group-hover:scale-110 transition-transform ${unreadCommunityCount > 0 ? "text-white" : "text-[#3E4A35]"}`} />
+                <Users className={`w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 group-hover:scale-110 transition-transform ${unreadCommunityCount > 0 ? "text-white" : "text-[#3E4A35]"}`} />
                 <span className="sr-only">Community</span>
                 {unreadCommunityCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[9px] font-black min-w-[15px] h-[15px] px-0.5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
@@ -3310,37 +3325,37 @@ out center;`;
                   }),
                 );
               }}
-              className="h-8 sm:h-9.5 px-2 sm:px-2.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
+              className="h-7.5 min-[360px]:h-8 sm:h-9.5 px-1.5 min-[360px]:px-2 sm:px-2.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
               title={
                 isDarkMode ? "Passa a Vista Giorno" : "Passa a Vista Notturna"
               }
             >
               {isDarkMode ? (
-                <Sun className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
+                <Sun className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
               ) : (
-                <Moon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
+                <Moon className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
               )}
               <span className="sr-only">Tema</span>
             </button>
 
             {/* Quick Active vehicle summary panel */}
-            <div className="h-8 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-1.5 sm:px-2 rounded-xl border border-[#3E4A35]/15 transition-all shrink-0 max-w-[85px] min-[370px]:max-w-[110px] sm:max-w-[150px] shadow-2xs">
+            <div className="h-7.5 min-[360px]:h-8 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-1 min-[360px]:px-1.5 sm:px-2 rounded-xl border border-[#3E4A35]/15 transition-all shrink min-w-0 max-w-[65px] min-[360px]:max-w-[85px] min-[400px]:max-w-[110px] sm:max-w-[150px] shadow-2xs">
               <button
                 onClick={() => {
                   setActiveTab("settings_tools");
                   setSettingsSubTab("dimensions");
                 }}
-                className="text-left group flex items-center gap-1 sm:gap-1.5 min-w-0 w-full cursor-pointer"
+                className="text-left group flex items-center gap-0.5 min-[360px]:gap-1 sm:gap-1.5 min-w-0 w-full cursor-pointer"
                 title={`Profilo Mezzo: ${vehicleDimensions.modelName} (${vehicleDimensions.height}m alt. x ${vehicleDimensions.length}m lung. x ${vehicleDimensions.width}m larg.)`}
               >
-                <div className="p-1 bg-white rounded-lg border border-[#3E4A35]/15 group-hover:bg-[#E7EBDC] group-hover:border-[#3E4A35]/30 transition-all shrink-0 shadow-xs">
-                  <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#3E4A35]" />
+                <div className="p-0.5 min-[360px]:p-1 bg-white rounded-lg border border-[#3E4A35]/15 group-hover:bg-[#E7EBDC] group-hover:border-[#3E4A35]/30 transition-all shrink-0 shadow-xs">
+                  <Truck className="w-3 h-3 min-[360px]:w-3.5 min-[360px]:h-3.5 sm:w-4 sm:h-4 text-[#3E4A35]" />
                 </div>
                 <div className="min-w-0 truncate flex-1">
-                  <div className="text-[7px] sm:text-[8px] font-bold text-[#2D2926]/70 uppercase tracking-wider leading-none">
+                  <div className="text-[6.5px] min-[360px]:text-[7px] sm:text-[8px] font-bold text-[#2D2926]/70 uppercase tracking-wider leading-none truncate">
                     Mezzo
                   </div>
-                  <div className="text-[9.5px] min-[370px]:text-[10.5px] sm:text-[11.5px] font-extrabold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
+                  <div className="text-[8.5px] min-[360px]:text-[9.5px] min-[400px]:text-[10.5px] sm:text-[11.5px] font-extrabold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
                     {vehicleDimensions.modelName}
                   </div>
                 </div>
@@ -4683,6 +4698,11 @@ out center;`;
                       challengeSubmissions={challengeSubmissions}
                       onChallengeSubmissionsChange={setChallengeSubmissions}
                       challenges={challenges}
+                      onViewTrip={(tripId) => {
+                        setSelectedDiaryTripId(tripId);
+                        setDiarySubTab("details");
+                        setActiveTab("diary");
+                      }}
                     />
                   )}
                   {settingsSubTab === "challenges" && (
@@ -4700,6 +4720,7 @@ out center;`;
                   {settingsSubTab === "shared_trips" && (
                     <SharedTripsTab
                       trips={trips}
+                      setTrips={setTrips}
                       onViewTrip={(tripId) => {
                         setSelectedDiaryTripId(tripId);
                         setDiarySubTab("details");
@@ -7637,6 +7658,18 @@ YEAR: 2026
           </motion.div>
         )}
       </AnimatePresence>
+
+      <TripShareModal
+        trip={tripForShareModal}
+        isOpen={!!tripForShareModal}
+        onClose={() => setTripForShareModal(null)}
+        onConfirmShare={(options) => {
+          if (tripForShareModal) {
+            handleShareTripWithOptions(tripForShareModal, options);
+          }
+          setTripForShareModal(null);
+        }}
+      />
     </div>
   );
 }

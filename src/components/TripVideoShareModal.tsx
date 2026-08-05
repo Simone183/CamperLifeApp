@@ -989,9 +989,9 @@ export default function TripVideoShareModal({
         type: "video/webm"
       });
 
-      // Automatically publish trip summary to ViaCamper Social Feed as well
+      // Automatically open trip share modal/publish trip summary
       window.dispatchEvent(
-        new CustomEvent("share-trip-to-social", {
+        new CustomEvent("open-trip-share-modal", {
           detail: { trip }
         })
       );

@@ -226,7 +226,7 @@ export default function GeneralSettingsTab({
     },
     {
       id: 'dashboard_modules',
-      title: 'Moduli Dashboard',
+      title: 'Moduli Strumenti',
       subtitle: 'Personalizza i riquadri visibili nella Home',
       icon: LayoutDashboard,
       color: 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-800'

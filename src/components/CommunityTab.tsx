@@ -81,6 +81,7 @@ interface CommunityTabProps {
   challengeSubmissions?: ChallengeSubmission[];
   onChallengeSubmissionsChange?: (subs: ChallengeSubmission[]) => void;
   challenges?: ChallengeItem[];
+  onViewTrip?: (tripId: string) => void;
 }
 
 function UserAvatar({
@@ -156,7 +157,8 @@ export default function CommunityTab({
   currentUser,
   challengeSubmissions,
   onChallengeSubmissionsChange,
-  challenges
+  challenges,
+  onViewTrip
 }: CommunityTabProps) {
   // Sanitize messages array to filter out any remaining fake replies, fake likes, or fake posts
   const sanitizedMessages = React.useMemo(() => sanitizeCommunityMessagesList(messages), [messages]);
@@ -849,6 +851,15 @@ export default function CommunityTab({
     return true;
   });
 
+  // Sort social posts by timestamp descending (newest on top, older ones below)
+  if (viewMode === 'social') {
+    filteredMessages.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
+  }
+
   const activeSosCount = sanitizedMessages.filter(m => (m.type === 'forum' || !m.type) && m.tag === 'SOS' && !m.isResolved && !m.user.toLowerCase().includes('rolly')).length;
   const currentModeTotalCount = sanitizedMessages.filter(m => {
     if (viewMode === 'social') return m.type === 'social' || (m.type === 'forum' && m.mediaUrl);
@@ -1190,8 +1201,8 @@ export default function CommunityTab({
                 value={quickSocialText}
                 onChange={(e) => setQuickSocialText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleQuickSocialSubmit(); }}
-                placeholder="Scrivi un pensiero o condividi uno scatto in viaggio..."
-                className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all"
+                placeholder="Scrivi un pensiero o scatto..."
+                className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all truncate"
               />
             </div>
 
@@ -1203,8 +1214,8 @@ export default function CommunityTab({
                   type="text"
                   value={postLocationName}
                   onChange={(e) => setPostLocationName(e.target.value)}
-                  placeholder="📍 Aggiungi posizione o spot (es. Lago di Braies)"
-                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-[#3E4A35]"
+                  placeholder="Aggiungi posizione (es. Lago di Braies)"
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-[#3E4A35] truncate"
                 />
               </div>
 
@@ -1293,37 +1304,38 @@ export default function CommunityTab({
           </div>
 
           {/* Social Post Feed Items */}
-          {filteredMessages.length === 0 ? (
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-8 text-center space-y-3 shadow-xs">
-              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700/50 text-slate-400 mx-auto flex items-center justify-center text-xl">
-                📸
+          <div className="bg-[#EDE9E1] dark:bg-slate-900/40 border border-stone-300/60 dark:border-slate-800 rounded-3xl p-3.5 sm:p-5 shadow-inner space-y-4">
+            {filteredMessages.length === 0 ? (
+              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-8 text-center space-y-3 shadow-xs">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700/50 text-slate-400 mx-auto flex items-center justify-center text-xl">
+                  📸
+                </div>
+                <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Nessun post social trovato</h4>
+                <p className="text-slate-500 text-xs max-w-sm mx-auto">
+                  Sii il primo a pubblicare uno scatto della tua avventura in camper o un pensiero con la community!
+                </p>
+                <button
+                  onClick={() => {
+                    setPostTargetType('social');
+                    setShowCreatePostModal(true);
+                  }}
+                  className="px-4 py-2 bg-[#3E4A35] text-white font-bold text-xs rounded-xl hover:bg-[#5A6B4E] cursor-pointer"
+                >
+                  Crea il Primo Post Social
+                </button>
               </div>
-              <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Nessun post social trovato</h4>
-              <p className="text-slate-500 text-xs max-w-sm mx-auto">
-                Sii il primo a pubblicare uno scatto della tua avventura in camper o un pensiero con la community!
-              </p>
-              <button
-                onClick={() => {
-                  setPostTargetType('social');
-                  setShowCreatePostModal(true);
-                }}
-                className="px-4 py-2 bg-[#3E4A35] text-white font-bold text-xs rounded-xl hover:bg-[#5A6B4E] cursor-pointer"
-              >
-                Crea il Primo Post Social
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredMessages.map((msg) => {
-                const isLiked = msg.likedByCurrentUser;
-                const relTime = getRelativeTime(msg.timestamp);
-                const showDoubleTapAnim = doubleTapLikedId === msg.id;
+            ) : (
+              <div className="space-y-4">
+                {filteredMessages.map((msg) => {
+                  const isLiked = msg.likedByCurrentUser;
+                  const relTime = getRelativeTime(msg.timestamp);
+                  const showDoubleTapAnim = doubleTapLikedId === msg.id;
 
-                return (
-                  <div
-                    key={msg.id}
-                    className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm overflow-hidden transition-all hover:shadow-md space-y-3"
-                  >
+                  return (
+                    <div
+                      key={msg.id}
+                      className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm overflow-hidden transition-all hover:shadow-md space-y-3"
+                    >
                     {/* Header: Author & Spot Location */}
                     <div className="p-4 pb-0 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
@@ -1373,14 +1385,15 @@ export default function CommunityTab({
                         </div>
                       </div>
 
-                      {/* Admin Delete Action */}
-                      {isAdmin && (
+                      {/* Delete Action ('X' button in top right) */}
+                      {(viewMode === 'social' || isAdmin || msg.user === activeUserName || msg.user.includes('Tu') || msg.user === 'Tu (Camperista)') && (
                         <button
-                          onClick={() => handleDeleteMessage(msg.id)}
-                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors"
-                          title="Elimina post (Admin)"
+                          type="button"
+                          onClick={() => requestDeleteMessage(msg.id, msg.text)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors"
+                          title="Elimina post"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <X className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -1389,6 +1402,52 @@ export default function CommunityTab({
                     <div className="px-4 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-line">
                       {renderTextWithHashtags(msg.text)}
                     </div>
+
+                    {/* Navigation card to view shared trip */}
+                    {(() => {
+                      const hasTripSnippet = msg.text.includes("Puoi esplorare la mappa") || msg.text.includes("Viaggi Condivisi della Community");
+                      const isTripPost = hasTripSnippet || !!msg.sharedTripId || msg.id.startsWith("m_trip_");
+                      if (!isTripPost) return null;
+
+                      let tripId = msg.sharedTripId;
+                      if (!tripId && msg.id.startsWith("m_trip_")) {
+                        const parts = msg.id.split("_");
+                        if (parts.length >= 3) {
+                          tripId = parts.slice(2, parts.length - 1).join("_");
+                        }
+                      }
+
+                      return (
+                        <div className="mx-4 mt-3 mb-1 p-3 bg-[#F4F1EA]/50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+                          <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300 min-w-0">
+                            <span className="text-xl shrink-0">🗺️</span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-slate-900 dark:text-white">Diario di Viaggio Condiviso</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">Vedi l'itinerario e le tappe di questo viaggio</p>
+                            </div>
+                          </div>
+                          {onViewTrip && (
+                            <button
+                              onClick={() => {
+                                if (tripId) {
+                                  onViewTrip(tripId);
+                                } else {
+                                  window.dispatchEvent(
+                                    new CustomEvent("show-toast", {
+                                      detail: { message: "⚠️ Impossibile caricare il dettaglio per questo vecchio post." },
+                                    })
+                                  );
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-[#3E4A35] hover:bg-[#3E4A35]/90 text-white rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1 shrink-0 shadow-xs uppercase tracking-wider"
+                            >
+                              <span>Apri Viaggio</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Media Attachment (Photo / Video) with Double-Tap Heart */}
                     {msg.mediaUrl && (
@@ -1579,6 +1638,7 @@ export default function CommunityTab({
               })}
             </div>
           )}
+          </div>
         </div>
       ) : viewMode === 'chat' ? (
         /* WHATSAPP / DIRECT CHAT STREAM VIEW */

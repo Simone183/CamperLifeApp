@@ -128,6 +128,7 @@ export interface CommunityMessage {
   challengeTitle?: string;
   isExpiredChallenge?: boolean;
   isModerated?: boolean;
+  sharedTripId?: string;
   replies?: Array<{
     id: string;
     user: string;
@@ -387,6 +388,9 @@ export interface Trip {
   photos: DiaryPhoto[];
   movements: DiaryMovement[];
   isShared?: boolean;
+  includeExpenses?: boolean;
+  shareToSharedTrips?: boolean;
+  shareToSocial?: boolean;
   routePoints?: Array<{
     lat: number;
     lng: number;

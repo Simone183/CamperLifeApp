@@ -807,7 +807,7 @@ export default function DiaryTab({
 
     if (targetTrip && newStatus === "Completato") {
       window.dispatchEvent(
-        new CustomEvent("share-trip-to-social", {
+        new CustomEvent("open-trip-share-modal", {
           detail: { trip: targetTrip },
         })
       );
@@ -1136,7 +1136,7 @@ export default function DiaryTab({
   };
 
   // Calculate stats for current active trip
-  const totalExpensesOfActive = activeTrip
+  const totalExpensesOfActive = activeTrip && activeTrip.includeExpenses !== false
     ? activeTrip.expenses.reduce((sum, exp) => sum + exp.amount, 0)
     : 0;
     
@@ -1687,10 +1687,9 @@ export default function DiaryTab({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-sans">
                   {trips.map((trip) => {
                     const isSelected = selectedTripId === trip.id;
-                    const totalSpent = trip.expenses.reduce(
-                      (sum, e) => sum + e.amount,
-                      0,
-                    );
+                    const totalSpent = trip.includeExpenses !== false
+                      ? trip.expenses.reduce((sum, e) => sum + e.amount, 0)
+                      : 0;
 
                     return (
                       <div
@@ -1752,8 +1751,8 @@ export default function DiaryTab({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 window.dispatchEvent(
-                                  new CustomEvent("share-trip-to-social", {
-                                    detail: { trip: { ...trip, isShared: true } },
+                                  new CustomEvent("open-trip-share-modal", {
+                                    detail: { trip },
                                   })
                                 );
                               }}
@@ -1959,10 +1958,10 @@ export default function DiaryTab({
                     </form>
                   ) : (
                     <div className="space-y-3">
-                      <div className="flex justify-between items-start gap-4 flex-wrap">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black tracking-widest text-[#5A6B4E] uppercase">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 w-full">
+                        <div className="min-w-0 w-full sm:flex-1">
+                          <div className="flex flex-wrap items-center gap-2 w-full">
+                            <span className="text-[10px] font-black tracking-widest text-[#5A6B4E] uppercase shrink-0">
                               Diario Attivo
                             </span>
 
@@ -1973,7 +1972,7 @@ export default function DiaryTab({
                                   e.target.value as Trip["status"],
                                 )
                               }
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono uppercase tracking-wider cursor-pointer outline-none border-none ${
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono uppercase tracking-wider cursor-pointer outline-none border-none shrink-0 ${
                                 activeTrip.status === "Completato"
                                   ? "bg-[#3E4A35]/10 text-[#3E4A35]"
                                   : "bg-orange-100 text-amber-800"
@@ -1986,63 +1985,65 @@ export default function DiaryTab({
                               </option>
                             </select>
 
-                            <button
-                              onClick={startEditingActiveTrip}
-                              className="p-1 text-slate-400 hover:text-[#3E4A35] hover:bg-stone-100 rounded-lg transition-all cursor-pointer"
-                              title="Modifica dettagli del viaggio"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                const nextIsShared = !activeTrip.isShared;
-                                const updated = trips.map((t) =>
-                                  t.id === activeTrip.id
-                                    ? { ...t, isShared: nextIsShared }
-                                    : t,
-                                );
-                                setTrips(updated);
-                                if (nextIsShared) {
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                onClick={startEditingActiveTrip}
+                                className="p-1 text-slate-400 hover:text-[#3E4A35] hover:bg-stone-100 rounded-lg transition-all cursor-pointer shrink-0"
+                                title="Modifica dettagli del viaggio"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const nextIsShared = !activeTrip.isShared;
+                                  const updated = trips.map((t) =>
+                                    t.id === activeTrip.id
+                                      ? { ...t, isShared: nextIsShared }
+                                      : t,
+                                  );
+                                  setTrips(updated);
+                                  if (nextIsShared) {
+                                    window.dispatchEvent(
+                                      new CustomEvent("open-trip-share-modal", {
+                                        detail: { trip: activeTrip },
+                                      })
+                                    );
+                                  } else {
+                                    window.dispatchEvent(
+                                      new CustomEvent("show-toast", {
+                                        detail: {
+                                          message: `🔒 Viaggio "${activeTrip.title}" reso privato.`,
+                                        },
+                                      }),
+                                    );
+                                  }
+                                }}
+                                className={`p-1.5 rounded-lg transition-all cursor-pointer shrink-0 ${activeTrip.isShared ? "bg-indigo-100 text-indigo-700 font-bold" : "text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"}`}
+                                title={
+                                  activeTrip.isShared
+                                    ? "Viaggio condiviso sul Social (clicca per rendere privato)"
+                                    : "Condividi questo viaggio sul Social"
+                                }
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
                                   window.dispatchEvent(
-                                    new CustomEvent("share-trip-to-social", {
-                                      detail: { trip: { ...activeTrip, isShared: true } },
+                                    new CustomEvent("open-trip-share-modal", {
+                                      detail: { trip: activeTrip },
                                     })
                                   );
-                                } else {
-                                  window.dispatchEvent(
-                                    new CustomEvent("show-toast", {
-                                      detail: {
-                                        message: `🔒 Viaggio "${activeTrip.title}" reso privato.`,
-                                      },
-                                    }),
-                                  );
-                                }
-                              }}
-                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${activeTrip.isShared ? "bg-indigo-100 text-indigo-700 font-bold" : "text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"}`}
-                              title={
-                                activeTrip.isShared
-                                  ? "Viaggio condiviso sul Social (clicca per rendere privato)"
-                                  : "Condividi questo viaggio sul Social"
-                              }
-                            >
-                              <Share2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                window.dispatchEvent(
-                                  new CustomEvent("share-trip-to-social", {
-                                    detail: { trip: { ...activeTrip, isShared: true } },
-                                  })
-                                );
-                              }}
-                              className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black shadow-xs transition-all cursor-pointer"
-                              title="Condividi sulla Bacheca Social della Community"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                              <span>{activeTrip.isShared ? "Pubblicato nel Social 💬" : "Condividi sul Social 👥"}</span>
-                            </button>
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0"
+                                title="Condividi sulla Bacheca Social della Community"
+                              >
+                                <Share2 className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate max-w-[130px] sm:max-w-none">{activeTrip.isShared ? "Pubblicato 💬" : "Condividi 👥"}</span>
+                              </button>
+                            </div>
                           </div>
-                          <h2 className="text-xl font-bold tracking-tight text-[#2D2926] mt-1">
+                          <h2 className="text-xl font-bold tracking-tight text-[#2D2926] mt-2 break-words leading-snug w-full">
                             {activeTrip.title}
                           </h2>
                           <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-500 font-semibold font-mono">
@@ -2428,6 +2429,13 @@ export default function DiaryTab({
                     ) : expenseSubMode === "general" ? (
                       /* ---------------- GENERAL EXPENSES VIEW ---------------- */
                       <div className="space-y-4 animate-fade-in">
+                        {activeTrip.includeExpenses === false ? (
+                          <div className="p-8 text-center bg-stone-50 rounded-xl border border-stone-200/60 text-slate-500 space-y-2">
+                            <span className="text-2xl">🔒</span>
+                            <p className="text-xs font-bold text-slate-700">Le spese di questo viaggio sono nascoste per privacy.</p>
+                          </div>
+                        ) : (
+                          <>
                         <div className="flex justify-between items-center">
                           <h3 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                             💸 Nuova Spesa di Viaggio
@@ -2564,10 +2572,19 @@ export default function DiaryTab({
                               ))
                           )}
                         </div>
+                          </>
+                        )}
                       </div>
                     ) : expenseSubMode === "refuel" ? (
                       /* ---------------- FUEL REFUELING DIARY VIEW ---------------- */
                       <div className="space-y-4 animate-fade-in font-sans">
+                        {activeTrip.includeExpenses === false ? (
+                          <div className="p-8 text-center bg-stone-50 rounded-xl border border-stone-200/60 text-slate-500 space-y-2">
+                            <span className="text-2xl">🔒</span>
+                            <p className="text-xs font-bold text-slate-700">I rifornimenti e le spese di questo viaggio sono nascosti per privacy.</p>
+                          </div>
+                        ) : (
+                          <>
                         <div className="flex justify-between items-center">
                           <h3 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                             ⛽ Nuovo Rifornimento Carburante
@@ -2897,6 +2914,8 @@ export default function DiaryTab({
                               })
                           )}
                         </div>
+                          </>
+                        )}
                       </div>
                     ) : expenseSubMode === "movement" ? (
                       <div className="space-y-4 animate-fade-in">
@@ -3206,7 +3225,7 @@ export default function DiaryTab({
                     )}
 
                     {/* Comprehensive overall Category budget breakdown progress bars */}
-                    {expenseSubMode === "general" && activeTrip.expenses.length > 0 && (
+                    {expenseSubMode === "general" && activeTrip.expenses.length > 0 && activeTrip.includeExpenses !== false && (
                       <div className="p-3 bg-[#F2EFE9]/40 border border-slate-200/60 rounded-xl space-y-2 text-sans select-none mt-3 animate-fade-in">
                         <div className="flex justify-between items-center">
                           <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">

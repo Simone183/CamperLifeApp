@@ -50,6 +50,20 @@ const defaultIcons: Record<string, string> = {
   'Parcheggio': 'default_icons/parcheggio_camper.svg',
 };
 
+function removeUndefined(obj: any): any {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefined);
+  }
+  const cleaned: any = {};
+  for (const key of Object.keys(obj)) {
+    if (obj[key] !== undefined) {
+      cleaned[key] = removeUndefined(obj[key]);
+    }
+  }
+  return cleaned;
+}
+
 async function uploadDefaultIcons() {
   try {
     const [bucketExists] = await bucket.exists();
@@ -1528,7 +1542,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         createdAt: new Date().toISOString()
       };
 
-      await firestoreDb.collection("places").doc(placeId).set(entry);
+      await firestoreDb.collection("places").doc(placeId).set(removeUndefined(entry));
       console.log(`[Firestore Sync] Proposed new place: ${entry.name} (${placeId})`);
 
       // Write into local user_places.json as a backup
@@ -2223,7 +2237,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         replies: msg.replies || []
       };
 
-      await firestoreDb.collection("communityMessages").doc(msgId).set(entry);
+      await firestoreDb.collection("communityMessages").doc(msgId).set(removeUndefined(entry));
       console.log(`[Firestore Chat] Shared message from ${msg.user} (Type: ${entry.type})`);
       res.json({ success: true, message: { id: msgId, ...entry } });
     } catch (err: any) {
@@ -3344,7 +3358,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
       // 1. Save to Firestore community_itineraries
       try {
-        await firestoreDb.collection("community_itineraries").doc(itineraryId).set(newItinerary);
+        await firestoreDb.collection("community_itineraries").doc(itineraryId).set(removeUndefined(newItinerary));
       } catch (fsErr) {
         console.warn("[Community Itineraries API] Firestore write warning:", fsErr);
       }

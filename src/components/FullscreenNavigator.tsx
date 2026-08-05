@@ -1098,6 +1098,7 @@ out center;`;
     return userLocation ? [userLocation.lat, userLocation.lng] : [44.5422, 10.7024];
   });
   const lastRecalcPos = React.useRef<[number, number] | null>(null);
+  const isRecalculatedRef = React.useRef<boolean>(false);
 
   const startLoc = initialStart;
   const endLoc: [number, number] = [dest.lat, dest.lng];
@@ -1374,7 +1375,7 @@ out center;`;
     }
   }, [processSpeechQueue]);
 
-  // Real-time off-route recalculation listener (triggers when driver strays > 10m away from route)
+  // Real-time off-route recalculation listener (triggers when driver strays > 20m away from route)
   React.useEffect(() => {
     if (userLocation) {
       const isDefaultModena = Math.abs(initialStart[0] - 44.5422) < 0.0001 && Math.abs(initialStart[1] - 10.7024) < 0.0001;
@@ -1397,17 +1398,18 @@ out center;`;
           distFromLastRecalcMeters = calculateHaversineDistance(lastRecalcPos.current, userPos) * 1000;
         }
 
-        // Recalculate instantly when user strays > 10 meters away from route (una decina di metri reali)
-        if (minDistanceMeters > 10 && distFromLastRecalcMeters > 10) {
+        // Recalculate instantly when user strays > 20 meters away from route (una ventina di metri reali)
+        if (minDistanceMeters > 20 && distFromLastRecalcMeters > 20) {
           console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation). Triggering instant route recalculation and vocal alert.`);
           
           // Vocal communication to driver as requested
-          speakInstruction("Ricalcolo percorso", 'immediate');
+          speakInstruction("Ricalcolo del percorso", 'immediate');
 
           window.dispatchEvent(new CustomEvent('show-toast', {
-            detail: { message: `🔄 Deviazione rilevata (${Math.round(minDistanceMeters)}m): Ricalcolo del percorso in corso...`, duration: 4000 }
+            detail: { message: `Ricalcolo del percorso`, duration: 4000 }
           }));
 
+          isRecalculatedRef.current = true;
           setInitialStart([userLocation.lat, userLocation.lng]);
           lastRecalcPos.current = [userLocation.lat, userLocation.lng];
         }
@@ -1748,6 +1750,27 @@ out center;`;
                 return match;
               });
 
+              // Specific custom guidance based on recalculation
+              if (isRecalculatedRef.current) {
+                const isUTurn = rawModifier === 'uturn' || /u-turn|inversione/i.test(step.maneuver?.instruction || "") || /inversione/i.test(desc);
+                if (isUTurn) {
+                  title = "Inversione a U";
+                  desc = "Fai inversione a U alla prima occasione possibile";
+                  icon = "🔄";
+                } else if (isRoundabout && (exitNumber >= 3 || /inversione|torna indietro/i.test(step.maneuver?.instruction || "") || /inversione|torna indietro/i.test(desc))) {
+                  title = "Rotatoria - Inversione";
+                  desc = "Alla rotonda, fai inversione per tornare indietro";
+                  icon = "🔄";
+                } else if (idx === 1 && (maneuverType === 'turn' || rawModifier === 'left' || rawModifier === 'right' || rawModifier?.includes('left') || rawModifier?.includes('right'))) {
+                  const isLeft = rawModifier?.includes('left') || desc.toLowerCase().includes('sinistra');
+                  title = isLeft ? "Svolta a sinistra" : "Svolta a destra";
+                  desc = `Svolta a ${isLeft ? "sinistra" : "destra"} alla prima occasione possibile ${name}`.trim();
+                  icon = isLeft ? "↩️" : "↪️";
+                } else if (idx === 1 && (maneuverType === 'continue' || rawModifier === 'straight' || maneuverType === 'depart')) {
+                  desc = `Prosegui dritto sulla nuova strada per raggiungere la destinazione ${name}`.trim();
+                }
+              }
+
               // Specific vehicle check injection to warn user of clearance before arriving
               if (hasHeightViolation && idx === Math.max(1, Math.round(route.legs[0].steps.length / 2))) {
                 steps.push({
@@ -1783,6 +1806,7 @@ out center;`;
             });
           }
           setOsrmSteps(steps);
+          isRecalculatedRef.current = false;
           setLoadingRoute(false);
 
           // SCAN OBSTACLES DIRECTLY in the background so it is completely non-blocking!
@@ -3694,23 +3718,24 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   <button
                     type="button"
                     onClick={() => {
-                      // Offset position by ~20 meters to trigger off-route recalculation
+                      // Offset position by ~30 meters to trigger off-route recalculation
                       const curIdx = Math.min(simRouteIndex, displayedRouteCoordinates.length - 1);
                       const currNode = displayedRouteCoordinates[curIdx] || startLoc;
-                      const devLat = currNode[0] + 0.00025;
-                      const devLng = currNode[1] + 0.00025;
+                      const devLat = currNode[0] + 0.00035;
+                      const devLng = currNode[1] + 0.00035;
                       
-                      speakInstruction("Ricalcolo percorso", 'immediate');
+                      speakInstruction("Ricalcolo del percorso", 'immediate');
                       window.dispatchEvent(new CustomEvent('show-toast', {
-                        detail: { message: "🔄 Struttura rotta deviata: Ricalcolo del percorso in corso...", duration: 4000 }
+                        detail: { message: "Ricalcolo del percorso", duration: 4000 }
                       }));
                       
+                      isRecalculatedRef.current = true;
                       setInitialStart([devLat, devLng]);
                       lastRecalcPos.current = [devLat, devLng];
                       setSimRouteIndex(0);
                     }}
                     className="px-4 py-3.5 bg-rose-600/90 border border-rose-500 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
-                    title="Simula errore di percorso per testare il ricalcolo a 10m con annuncio vocale"
+                    title="Simula errore di percorso per testare il ricalcolo a 20m con annuncio vocale"
                   >
                     <RefreshCw className="w-4 h-4 text-white" />
                     <span>DEVIA STRADA</span>
