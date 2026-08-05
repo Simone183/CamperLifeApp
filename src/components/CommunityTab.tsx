@@ -7,6 +7,7 @@ import React from 'react';
 import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
 import { sanitizeCommunityMessagesList } from '../utils/communitySanitizer';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
+import ProfilePhotoCropper from './ProfilePhotoCropper';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
 import { compressImage } from '../utils/photoCompressor';
 import {
@@ -315,6 +316,8 @@ export default function CommunityTab({
   });
 
   const profilePhotoInputRef = React.useRef<HTMLInputElement>(null);
+  const [pendingCropPhotoSrc, setPendingCropPhotoSrc] = React.useState<string | null>(null);
+  const [showPhotoCropper, setShowPhotoCropper] = React.useState(false);
 
   React.useEffect(() => {
     if (currentUser?.profilePhoto) {
@@ -333,6 +336,51 @@ export default function CommunityTab({
     return () => window.removeEventListener('camper_profile_photo_updated', handleSync);
   }, []);
 
+  const handleSaveCroppedPhoto = async (croppedBase64: string) => {
+    let compressed = croppedBase64;
+    try {
+      compressed = await compressImage(croppedBase64, 'low');
+    } catch {}
+
+    setMyProfilePhoto(compressed);
+    localStorage.setItem('camper_profile_photo', compressed);
+
+    try {
+      const saved = localStorage.getItem('camper_user');
+      const uObj = saved ? JSON.parse(saved) : {};
+      uObj.profilePhoto = compressed;
+      uObj.nickname = uObj.nickname || activeUserName;
+      localStorage.setItem('camper_user', JSON.stringify(uObj));
+    } catch {}
+
+    window.dispatchEvent(new Event('camper_profile_photo_updated'));
+
+    const updatedMessages = messages.map(m => {
+      const u = m.user.toLowerCase();
+      if (
+        u === activeUserName.toLowerCase() ||
+        u === 'sam83' ||
+        u === 'tu (camperista)' ||
+        u.includes('tu') ||
+        (currentUser?.email && u === currentUser.email.toLowerCase())
+      ) {
+        return {
+          ...m,
+          avatarUrl: compressed,
+          avatar: compressed
+        };
+      }
+      return m;
+    });
+    onChange(updatedMessages);
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: "📸 Foto profilo aggiornata! Ora è visibile in chat, forum e bacheca social." },
+      })
+    );
+  };
+
   const handleUploadProfilePhoto = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       window.dispatchEvent(
@@ -343,51 +391,11 @@ export default function CommunityTab({
       return;
     }
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = (event) => {
       const rawBase64 = event.target?.result as string;
       if (!rawBase64) return;
-      let compressed = rawBase64;
-      try {
-        compressed = await compressImage(rawBase64, 'low');
-      } catch {}
-
-      setMyProfilePhoto(compressed);
-      localStorage.setItem('camper_profile_photo', compressed);
-
-      try {
-        const saved = localStorage.getItem('camper_user');
-        const uObj = saved ? JSON.parse(saved) : {};
-        uObj.profilePhoto = compressed;
-        uObj.nickname = uObj.nickname || activeUserName;
-        localStorage.setItem('camper_user', JSON.stringify(uObj));
-      } catch {}
-
-      window.dispatchEvent(new Event('camper_profile_photo_updated'));
-
-      const updatedMessages = messages.map(m => {
-        const u = m.user.toLowerCase();
-        if (
-          u === activeUserName.toLowerCase() ||
-          u === 'sam83' ||
-          u === 'tu (camperista)' ||
-          u.includes('tu') ||
-          (currentUser?.email && u === currentUser.email.toLowerCase())
-        ) {
-          return {
-            ...m,
-            avatarUrl: compressed,
-            avatar: compressed
-          };
-        }
-        return m;
-      });
-      onChange(updatedMessages);
-
-      window.dispatchEvent(
-        new CustomEvent("show-toast", {
-          detail: { message: "📸 Foto profilo aggiornata! Ora è visibile in chat, forum e bacheca social." },
-        })
-      );
+      setPendingCropPhotoSrc(rawBase64);
+      setShowPhotoCropper(true);
     };
     reader.readAsDataURL(file);
   };
@@ -2892,6 +2900,21 @@ export default function CommunityTab({
             )}
           </div>
         </div>
+      )}
+
+      {showPhotoCropper && pendingCropPhotoSrc && (
+        <ProfilePhotoCropper
+          imageSrc={pendingCropPhotoSrc}
+          onCrop={async (croppedBase64) => {
+            await handleSaveCroppedPhoto(croppedBase64);
+            setShowPhotoCropper(false);
+            setPendingCropPhotoSrc(null);
+          }}
+          onCancel={() => {
+            setShowPhotoCropper(false);
+            setPendingCropPhotoSrc(null);
+          }}
+        />
       )}
     </div>
   );

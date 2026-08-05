@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Key, Camera, X } from 'lucide-react';
 import { compressImage } from '../utils/photoCompressor';
+import ProfilePhotoCropper from './ProfilePhotoCropper';
 
 interface RegistrationFormProps {
   onBack: () => void;
@@ -21,6 +22,8 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
   const [profilePhoto, setProfilePhoto] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [pendingPhotoSrc, setPendingPhotoSrc] = React.useState<string | null>(null);
+  const [showCropper, setShowCropper] = React.useState(false);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -34,15 +37,10 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
     }
 
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = (event) => {
       if (event.target?.result) {
-        const rawBase64 = event.target.result as string;
-        try {
-          const compressed = await compressImage(rawBase64, 'low');
-          setProfilePhoto(compressed);
-        } catch {
-          setProfilePhoto(rawBase64);
-        }
+        setPendingPhotoSrc(event.target.result as string);
+        setShowCropper(true);
       }
     };
     reader.readAsDataURL(file);
@@ -261,6 +259,26 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
           </div>
         )}
       </div>
+
+      {showCropper && pendingPhotoSrc && (
+        <ProfilePhotoCropper
+          imageSrc={pendingPhotoSrc}
+          onCrop={async (croppedBase64) => {
+            try {
+              const compressed = await compressImage(croppedBase64, 'low');
+              setProfilePhoto(compressed);
+            } catch {
+              setProfilePhoto(croppedBase64);
+            }
+            setShowCropper(false);
+            setPendingPhotoSrc(null);
+          }}
+          onCancel={() => {
+            setShowCropper(false);
+            setPendingPhotoSrc(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { convertDimensionToDisplay, convertWeightTonnesToDisplay, getWeightUnitTonnes, getDimensionUnit, parseDimToNumber } from '../unit-helpers';
 import { VehicleDimensions, CamperGalleryPhoto, CamperMembership } from '../types';
+import ProfilePhotoCropper from './ProfilePhotoCropper';
 import {
   Truck,
   Check,
@@ -117,6 +118,9 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
 
   const mainPhotoFileRef = useRef<HTMLInputElement>(null);
   const galleryPhotoFileRef = useRef<HTMLInputElement>(null);
+
+  const [pendingMainPhotoSrc, setPendingMainPhotoSrc] = useState<string | null>(null);
+  const [showMainPhotoCropper, setShowMainPhotoCropper] = useState<boolean>(false);
 
   useEffect(() => {
     setLocalDims(dimensions);
@@ -261,11 +265,17 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
   const handleMainPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const compressed = await compressImage(file, 1200, 0.82);
-      updateField('mainPhotoUrl', compressed);
-    } catch (err) {
-      console.error('Error uploading main photo:', err);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setPendingMainPhotoSrc(event.target.result as string);
+        setShowMainPhotoCropper(true);
+      }
+    };
+    reader.readAsDataURL(file);
+    // Reset file input value so user can upload the same image again if they want
+    if (e.target) {
+      e.target.value = '';
     }
   };
 
@@ -2013,6 +2023,23 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
             </button>
           </div>
         </div>
+      )}
+
+      {showMainPhotoCropper && pendingMainPhotoSrc && (
+        <ProfilePhotoCropper
+          imageSrc={pendingMainPhotoSrc}
+          aspect="rect"
+          title="Ritaglia Foto Camper"
+          onCrop={(croppedBase64) => {
+            updateField('mainPhotoUrl', croppedBase64);
+            setShowMainPhotoCropper(false);
+            setPendingMainPhotoSrc(null);
+          }}
+          onCancel={() => {
+            setShowMainPhotoCropper(false);
+            setPendingMainPhotoSrc(null);
+          }}
+        />
       )}
     </div>
   );
