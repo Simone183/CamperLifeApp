@@ -1398,15 +1398,16 @@ out center;`;
           distFromLastRecalcMeters = calculateHaversineDistance(lastRecalcPos.current, userPos) * 1000;
         }
 
-        // Recalculate instantly when user strays > 20 meters away from route (una ventina di metri reali)
-        if (minDistanceMeters > 20 && distFromLastRecalcMeters > 20) {
-          console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation). Triggering instant route recalculation and vocal alert.`);
+        // When user is back on route (<= 20m), reset lastRecalcPos so future off-route triggers immediately
+        if (minDistanceMeters <= 20) {
+          lastRecalcPos.current = null;
+        } else if (distFromLastRecalcMeters > 100) {
+          // Recalculate route when off route (>20m),
+          // and repeat recalculation check only if user continues on the wrong road for >100 meters
+          console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
           
-          // Vocal communication to driver as requested
-          speakInstruction("Ricalcolo del percorso", 'immediate');
-
           window.dispatchEvent(new CustomEvent('show-toast', {
-            detail: { message: `Ricalcolo del percorso`, duration: 4000 }
+            detail: { message: `📍 Errore di percorso: Ricalcolo in corso...`, duration: 3000 }
           }));
 
           isRecalculatedRef.current = true;
@@ -1754,17 +1755,17 @@ out center;`;
               if (isRecalculatedRef.current) {
                 const isUTurn = rawModifier === 'uturn' || /u-turn|inversione/i.test(step.maneuver?.instruction || "") || /inversione/i.test(desc);
                 if (isUTurn) {
-                  title = "Inversione a U";
-                  desc = "Fai inversione a U alla prima occasione possibile";
+                  title = "Inversione di marcia";
+                  desc = "Fai inversione di marcia non appena possibile";
                   icon = "🔄";
                 } else if (isRoundabout && (exitNumber >= 3 || /inversione|torna indietro/i.test(step.maneuver?.instruction || "") || /inversione|torna indietro/i.test(desc))) {
                   title = "Rotatoria - Inversione";
-                  desc = "Alla rotonda, fai inversione per tornare indietro";
+                  desc = "Prosegui fino alla rotatoria per fare inversione di marcia";
                   icon = "🔄";
                 } else if (idx === 1 && (maneuverType === 'turn' || rawModifier === 'left' || rawModifier === 'right' || rawModifier?.includes('left') || rawModifier?.includes('right'))) {
                   const isLeft = rawModifier?.includes('left') || desc.toLowerCase().includes('sinistra');
-                  title = isLeft ? "Svolta a sinistra" : "Svolta a destra";
-                  desc = `Svolta a ${isLeft ? "sinistra" : "destra"} alla prima occasione possibile ${name}`.trim();
+                  title = isLeft ? "Nuovo Percorso - Svolta a sinistra" : "Nuovo Percorso - Svolta a destra";
+                  desc = `Svolta a ${isLeft ? "sinistra" : "destra"} alla prossima occasione ${name}`.trim();
                   icon = isLeft ? "↩️" : "↪️";
                 } else if (idx === 1 && (maneuverType === 'continue' || rawModifier === 'straight' || maneuverType === 'depart')) {
                   desc = `Prosegui dritto sulla nuova strada per raggiungere la destinazione ${name}`.trim();
@@ -1805,7 +1806,68 @@ out center;`;
               coordinateIndex: 0
             });
           }
+
+          // Generate tailored vocal recalculation instruction based on recalculated route steps
+          let customRecalcSpeech = "";
+          if (isRecalculatedRef.current && route.legs && route.legs[0] && route.legs[0].steps) {
+            const rawSteps = route.legs[0].steps;
+            let foundRoundabout: any = null;
+            let foundUTurn: any = null;
+            let foundTurn: any = null;
+
+            for (let i = 0; i < Math.min(3, rawSteps.length); i++) {
+              const st = rawSteps[i];
+              const mType = st.maneuver?.type || "";
+              const mMod = st.maneuver?.modifier || "";
+              const stInst = st.maneuver?.instruction || "";
+
+              const isRo = Boolean(
+                mType === 'roundabout' || mType === 'rotary' || mType === 'roundabout turn' ||
+                mMod === 'roundabout' || /roundabout|rotatoria|rotonda/i.test(mType) || /roundabout|rotatoria|rotonda/i.test(stInst)
+              );
+              const isUT = Boolean(
+                mMod === 'uturn' || mType === 'uturn' || /u-turn|inversione/i.test(stInst) || /inversione/i.test(st.name || "")
+              );
+
+              if (isRo && !foundRoundabout) foundRoundabout = st;
+              else if (isUT && !foundUTurn) foundUTurn = st;
+              else if ((mType === 'turn' || mMod.includes('left') || mMod.includes('right')) && !foundTurn) foundTurn = st;
+            }
+
+            if (foundRoundabout) {
+              let exitNum = foundRoundabout.maneuver?.exit;
+              if (!exitNum) {
+                const matchExit = (foundRoundabout.maneuver?.instruction || "").match(/(?:exit|uscita|\b)(\d+)(?:st|nd|rd|th|°|ª)?/i);
+                if (matchExit) exitNum = parseInt(matchExit[1], 10);
+              }
+              const exitOrd = exitNum ? getItalianOrdinalExit(exitNum) : null;
+
+              if (exitOrd && exitOrd.word !== "uscita") {
+                customRecalcSpeech = `Ricalcolo del percorso: prosegui fino alla rotatoria e prendi la ${exitOrd.word} per rientrare sull'itinerario.`;
+              } else {
+                customRecalcSpeech = `Ricalcolo del percorso: prosegui fino alla rotatoria per invertire la marcia o cambiare strada.`;
+              }
+            } else if (foundUTurn) {
+              customRecalcSpeech = `Ricalcolo del percorso: nessuna alternativa avanti. Fai inversione di marcia appena possibile.`;
+            } else if (foundTurn) {
+              const mod = foundTurn.maneuver?.modifier || "";
+              const isLeft = mod.includes('left');
+              const stName = foundTurn.name ? `su ${foundTurn.name}` : "";
+              customRecalcSpeech = `Ricalcolo del percorso: svolta a ${isLeft ? 'sinistra' : 'destra'} ${stName} per seguire il nuovo itinerario.`;
+            } else {
+              customRecalcSpeech = `Ricalcolo del percorso completato: segui il nuovo itinerario.`;
+            }
+          }
+
           setOsrmSteps(steps);
+
+          if (customRecalcSpeech) {
+            speakInstruction(customRecalcSpeech, 'immediate');
+            window.dispatchEvent(new CustomEvent('show-toast', {
+              detail: { message: customRecalcSpeech, duration: 5000 }
+            }));
+          }
+
           isRecalculatedRef.current = false;
           setLoadingRoute(false);
 
