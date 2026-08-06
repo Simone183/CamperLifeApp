@@ -15,10 +15,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
           cache: 'npm'
 
       - name: Setup Java JDK 21
@@ -26,6 +26,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
+          cache: 'gradle'
 
       - name: Install Dependencies
         run: npm install
@@ -36,28 +37,30 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Make Gradle Executable
-        run: chmod +x android/gradlew
-
-      - name: Build Android App Bundle (AAB for Google Play) and APK
+      - name: Make Gradle Executable & Build Android App
         run: |
+          chmod +x android/gradlew
           cd android
-          ./gradlew bundleRelease assembleRelease assembleDebug
+          ./gradlew bundleRelease assembleRelease assembleDebug --stacktrace --no-daemon
 
       - name: Upload Android App Bundle (.aab) Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CamperLifeApp-Release-AAB
-          path: android/app/build/outputs/bundle/release/app-release.aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
 
-      - name: Upload Unsigned Release APK Artifact
+      - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CamperLifeApp-Release-APK
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
 
       - name: Upload Debug APK Artifact (For testing on phone)
         uses: actions/upload-artifact@v4
         with:
           name: CamperLifeApp-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
