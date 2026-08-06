@@ -1,0 +1,6 @@
+# Force Git to treat jar files as binary to avoid line ending corruption
+*.jar binary
+/android/gradle/wrapper/gradle-wrapper.jar binary
+
+# Ensure Gradle wrapper script uses standard LF line endings
+/android/gradlew text eol=lf
