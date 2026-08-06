@@ -1,0 +1,63 @@
+name: Build Android App (APK & AAB)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Make Gradle Executable
+        run: chmod +x android/gradlew
+
+      - name: Build Android App Bundle (AAB for Google Play) and APK
+        run: |
+          cd android
+          ./gradlew bundleRelease assembleRelease assembleDebug
+
+      - name: Upload Android App Bundle (.aab) Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamperLifeApp-Release-AAB
+          path: android/app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload Unsigned Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamperLifeApp-Release-APK
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload Debug APK Artifact (For testing on phone)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamperLifeApp-Debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
