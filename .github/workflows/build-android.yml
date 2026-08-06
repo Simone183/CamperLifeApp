@@ -39,11 +39,12 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
 
       - name: Make Gradle Executable & Build Android App
         run: |
           cd android
-          gradle wrapper --gradle-version 8.11.1
           chmod +x gradlew
           ./gradlew bundleRelease assembleRelease assembleDebug --stacktrace --no-daemon
 
