@@ -43,10 +43,11 @@ jobs:
           gradle-version: '8.11.1'
           validate-wrappers: false
 
-      - name: Build Android App
+      - name: Make Gradle Executable & Build Android App
         run: |
           cd android
-          gradle :app:bundleRelease :app:assembleRelease :app:assembleDebug --stacktrace --no-daemon
+          chmod +x gradlew
+          ./gradlew bundleRelease assembleRelease assembleDebug --stacktrace --no-daemon
 
       - name: Upload Android App Bundle (.aab) Artifact
         uses: actions/upload-artifact@v4
