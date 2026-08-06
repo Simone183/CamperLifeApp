@@ -66,6 +66,7 @@ import { WeatherWidget } from "./components/WeatherWidget";
 import EventsTab from "./components/EventsTab";
 import OfflineMapsTab from "./components/OfflineMapsTab";
 import { ChallengesTab } from "./components/ChallengesTab";
+import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
@@ -771,6 +772,7 @@ export default function App() {
     | "offline_maps"
     | "dashboard_settings"
     | "general"
+    | "delete_account"
   >("hub");
 
   // Tracking unread community messages for notification badge on main page & header
@@ -3113,7 +3115,7 @@ out center;`;
               </span>
             </div>
 
-            <div className="text-xs text-slate-600 space-y-2.5 text-left bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 max-h-48 overflow-y-auto leading-relaxed">
+            <div className="text-xs text-slate-600 space-y-2.5 text-left bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 max-h-56 overflow-y-auto leading-relaxed">
               <p>
                 <strong>Proprietà Intellettuale:</strong> ViaCamper è software proprietario privato di <strong>Simone Sambucci</strong> © 2026. Tutti i diritti riservati.
               </p>
@@ -3122,6 +3124,9 @@ out center;`;
               </p>
               <p>
                 <strong>Contenuti Utente (UGC):</strong> Pubblicando recensioni, foto, tappe o itinerari su ViaCamper, concedi al titolare della piattaforma il diritto non esclusivo, gratuito e perpetuo di utilizzo e pubblicazione dei contenuti all'interno del servizio.
+              </p>
+              <p>
+                <strong>Privacy & Protezione Dati (GDPR):</strong> I tuoi dati personali e di localizzazione sono tutelati in conformità al Regolamento UE 2016/679 (GDPR). La posizione GPS viene usata solo in tempo reale per la navigazione e non viene ceduta a terzi.
               </p>
             </div>
 
@@ -4457,24 +4462,36 @@ out center;`;
                     </div>
 
                     <div className="flex items-center gap-3.5 w-full sm:w-auto justify-between sm:justify-end">
-                      <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 shrink-0">
-                        {currentUser ? (
-                          <>
-                            {currentUser.profilePhoto ? (
-                              <img
-                                src={currentUser.profilePhoto}
-                                alt={currentUser.nickname}
-                                className="w-6 h-6 rounded-full object-cover border border-[#3E4A35]/30 shadow-2xs"
-                              />
-                            ) : (
-                              <div className="w-6 h-6 rounded-full bg-[#3E4A35] text-white font-extrabold text-[10px] flex items-center justify-center uppercase">
-                                {currentUser.nickname?.[0] || 'U'}
-                              </div>
-                            )}
-                            <span>Profilo: {currentUser.nickname}</span>
-                          </>
-                        ) : (
-                          <span>Ospite (Storage Locale)</span>
+                      <div className="flex flex-col items-start sm:items-end gap-1">
+                        <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 shrink-0">
+                          {currentUser ? (
+                            <>
+                              {currentUser.profilePhoto ? (
+                                <img
+                                  src={currentUser.profilePhoto}
+                                  alt={currentUser.nickname}
+                                  className="w-6 h-6 rounded-full object-cover border border-[#3E4A35]/30 shadow-2xs"
+                                />
+                              ) : (
+                                <div className="w-6 h-6 rounded-full bg-[#3E4A35] text-white font-extrabold text-[10px] flex items-center justify-center uppercase">
+                                  {currentUser.nickname?.[0] || 'U'}
+                                </div>
+                              )}
+                              <span>Profilo: {currentUser.nickname}</span>
+                            </>
+                          ) : (
+                            <span>Ospite (Storage Locale)</span>
+                          )}
+                        </div>
+                        {currentUser && (
+                          <button
+                            type="button"
+                            onClick={() => setSettingsSubTab("delete_account")}
+                            className="text-[11px] font-bold text-red-600 hover:text-red-800 hover:underline flex items-center gap-1 cursor-pointer transition-colors pt-0.5"
+                          >
+                            <Trash2 className="w-3 h-3 text-red-600 shrink-0" />
+                            <span>Cancella account</span>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -4615,6 +4632,8 @@ out center;`;
                           "Personalizzazione Dashboard"}
                         {settingsSubTab === "general" &&
                           "Impostazioni Generali"}
+                        {settingsSubTab === "delete_account" &&
+                          "Cancellazione Definitiva Account"}
                       </span>
                       <RollyOnboardingGuide sectionKey={settingsSubTab} key={settingsSubTab} />
                     </div>
@@ -5374,11 +5393,11 @@ out center;`;
                           </span>
                           <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
                             <Scale className="w-6 h-6 text-emerald-300 shrink-0" />
-                            Diritto d'Autore, Servizi Google & Contenuti Utente
+                            Diritto d'Autore, Privacy GDPR & Contenuti Utente
                           </h2>
                           <p className="text-xs text-white/95 max-w-2xl leading-relaxed">
                             ViaCamper è un'applicazione e software proprietario privato ideato e sviluppato da Simone Sambucci.
-                            In questa sezione sono disciplinati la proprietà intellettuale, l'utilizzo delle API terze (Google Maps Platform, Google Places API e OpenStreetMap) e i diritti d'uso relativi ai contenuti pubblicati dagli utenti.
+                            In questa sezione sono disciplinati la proprietà intellettuale, la tutela della privacy degli utenti (GDPR UE 2016/679), l'utilizzo delle API terze (Google Maps Platform, Google Places API e OpenStreetMap) e i diritti d'uso relativi ai contenuti pubblicati dagli utenti.
                           </p>
                         </div>
                       </div>
@@ -5441,6 +5460,18 @@ out center;`;
 
                             <div className="p-3.5 bg-[#3E4A35]/10 rounded-2xl border border-[#3E4A35]/20 space-y-1">
                               <h5 className="font-extrabold text-[#3E4A35] text-xs flex items-center gap-1.5">
+                                🔒 Privacy degli Utenti & Protezione Dati (GDPR UE 2016/679)
+                              </h5>
+                              <p className="text-[11.5px] text-[#2D2926] leading-relaxed">
+                                • <strong>Trattamento dei Dati Personali</strong>: I dati personali inseriti su ViaCamper (email, dati veicolo, diario di bordo) sono trattati in conformità al Regolamento Generale sulla Protezione dei Dati (GDPR UE 2016/679) tramite infrastruttura protetta Firebase Cloud Firestore ed usati esclusivamente per l'erogazione dei servizi dell'app.<br />
+                                • <strong>Geolocalizzazione e Privacy Posizione</strong>: La posizione GPS dell'utente viene elaborata solo in tempo reale per abilitare la navigazione, la ricerca di tappe vicine e l'allerta ostacoli sagoma. I dati di posizione non vengono tracciati a fini profilativi né venduti o ceduti a terzi.<br />
+                                • <strong>Diritti dell'Interessato e Diritto all'Oblio</strong>: L'utente ha il diritto in qualsiasi momento di accedere ai propri dati, correggerli o chiederne la cancellazione definitiva (Diritto all'Oblio - Art. 17 GDPR) inviando una richiesta a <strong>sambucci.simone@gmail.com</strong> o tramite la gestione account nell'app.<br />
+                                • <strong>Cookie e Archiviazione Locale</strong>: ViaCamper utilizza unicamente memorizzazione tecnica locale (localStorage) per salvare le preferenze dell'utente, senza fare uso di cookie di profilazione pubblicitaria di terze parti.
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 bg-[#3E4A35]/10 rounded-2xl border border-[#3E4A35]/20 space-y-1">
+                              <h5 className="font-extrabold text-[#3E4A35] text-xs flex items-center gap-1.5">
                                 📸 Diritto di Utilizzo sui Contenuti Pubblicati dagli Utenti (UGC)
                               </h5>
                               <p className="text-[11.5px] text-[#2D2926] leading-relaxed">
@@ -5492,7 +5523,7 @@ out center;`;
                               htmlFor="terms_acceptance"
                               className="text-xs font-bold text-slate-800 cursor-pointer"
                             >
-                              Accetto integralmente le condizioni di utilizzo, la licenza UGC ed la tutela legale sopra descritte.
+                              Accetto integralmente le condizioni di utilizzo, la politica sulla privacy (GDPR), la licenza UGC e la tutela legale sopra descritte.
                             </label>
                           </div>
 
@@ -5500,26 +5531,27 @@ out center;`;
                             type="button"
                             onClick={() => {
                               navigator.clipboard
-                                .writeText(`CONTRATTO DI LICENZA SOFTWARE E DIRITTI D'AUTORE - VIACAMPER
+                                .writeText(`CONTRATTO DI LICENZA SOFTWARE, PRIVACY & DIRITTI D'AUTORE - VIACAMPER
 PROJECT: ViaCamper App
 COPYRIGHT HOLDER: Simone Sambucci (sambucci.simone@gmail.com)
 YEAR: 2026
 
 1. DIRITTI SUL SOFTWARE: Tutti i diritti di proprietà intellettuale relativi al software ViaCamper appartengono in via esclusiva a Simone Sambucci (L. 633/1941).
 2. SERVIZI TERZI & GOOGLE PLACES: Mappe, POI, geocodifica e ricerca luoghi integrano servizi Google Maps Platform & Google Places API (© Google LLC), OpenStreetMap (ODbL) e Google Gemini AI.
-3. CONTENUTI UTENTE (UGC): Gli utenti che pubblicano foto, recensioni, tappe ed itinerari su ViaCamper concedono a Simone Sambucci una licenza d'uso perpetua, gratuita, non esclusiva e mondiale per l'utilizzo, riproduzione e diffusione dei contenuti sulla piattaforma ViaCamper e canali correlati.`);
+3. CONTENUTI UTENTE (UGC): Gli utenti che pubblicano foto, recensioni, tappe ed itinerari su ViaCamper concedono a Simone Sambucci una licenza d'uso perpetua, gratuita, non esclusiva e mondiale per l'utilizzo, riproduzione e diffusione dei contenuti sulla piattaforma ViaCamper e canali correlati.
+4. PRIVACY E PROTEZIONE DATI (GDPR UE 2016/679): I dati personali e di localizzazione GPS sono protetti e trattati esclusivamente per l'erogazione dei servizi dell'app, senza tracciamento profilativo né cessione a terzi. L'utente ha il diritto di accesso, rettifica e cancellazione (Diritto all'Oblio).`);
                               window.dispatchEvent(
                                 new CustomEvent("show-toast", {
                                   detail: {
                                     message:
-                                      "📋 Copiata dichiarazione completa di copyright e licenza!",
+                                      "📋 Copiata dichiarazione completa di copyright, privacy e licenza!",
                                   },
                                 }),
                               );
                             }}
                             className="w-full py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
                           >
-                            <span>📋 Copia Dichiarazione di Copyright & Licenza UGC</span>
+                            <span>📋 Copia Dichiarazione di Copyright, Privacy & Licenza UGC</span>
                           </button>
                         </div>
                       </div>
@@ -5528,15 +5560,15 @@ YEAR: 2026
                       <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-5 space-y-3.5">
                         <div className="flex justify-between items-center gap-2">
                           <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 tracking-widest">
-                            TESTO COMPLETO DELLA LICENZA PROPRIETARIA & TERMINI UGC
+                            TESTO COMPLETO DELLA LICENZA PROPRIETARIA, PRIVACY & TERMINI UGC
                           </span>
                           <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
                             LICENSE File (ViaCamper 2026)
                           </span>
                         </div>
-                        <div className="bg-slate-900 text-slate-100 font-mono text-[10.5px] p-4 rounded-xl overflow-x-auto max-h-[220px] leading-relaxed select-all">
+                        <div className="bg-slate-900 text-slate-100 font-mono text-[10.5px] p-4 rounded-xl overflow-x-auto max-h-[240px] leading-relaxed select-all">
                           <p className="text-emerald-400 font-bold mb-2">
-                            // VIACAMPER SOFTWARE LICENSE & USER CONTENT AGREEMENT (2026)
+                            // VIACAMPER SOFTWARE LICENSE, PRIVACY POLICY & USER CONTENT AGREEMENT (2026)
                           </p>
                           <p className="mb-1">PROJECT NAME: ViaCamper App</p>
                           <p className="mb-1 font-bold">
@@ -5551,6 +5583,9 @@ YEAR: 2026
                           </p>
                           <p className="mt-1 text-slate-300">
                             3. LICENZA CONTENUTI UTENTE (UGC): Gli utenti che caricano foto, recensioni o itinerari concedono a Simone Sambucci il diritto perpetuo, gratuito e non esclusivo di utilizzo e pubblicazione dei contenuti sulla piattaforma ViaCamper.
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            4. PRIVACY & GDPR (REG. UE 2016/679): I dati personali e le posizioni GPS sono tutelati, trattati esclusivamente per il servizio ed esenti da profilazione commerciale o cessione a terzi. È sempre garantito il diritto alla cancellazione completa dell'account.
                           </p>
                         </div>
                       </div>
@@ -5675,6 +5710,14 @@ YEAR: 2026
                       onToggleTopNotifications={(val) => setDashboardSettings({ ...dashboardSettings, showTopNotifications: val })}
                       dashboardSettings={dashboardSettings}
                       onUpdateDashboardSettings={setDashboardSettings}
+                    />
+                  )}
+
+                  {settingsSubTab === "delete_account" && (
+                    <DeleteAccountTab
+                      currentUser={currentUser}
+                      onDeleteSuccess={handleLogout}
+                      onCancel={() => setSettingsSubTab("hub")}
                     />
                   )}
                 </div>

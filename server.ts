@@ -2003,6 +2003,40 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  // Self-delete user account (GDPR compliant)
+  app.post("/api/user/delete-account", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email non specificata." });
+      }
+      const cleanEmail = email.toLowerCase().trim();
+      
+      if (firestoreDb) {
+        // Delete user main document from Firestore
+        await firestoreDb.collection("users").doc(cleanEmail).delete();
+
+        // Delete user fuel logs subcollection if present
+        try {
+          const fuelLogs = await firestoreDb.collection(`users/${cleanEmail}/fuelLogs`).get();
+          if (!fuelLogs.empty) {
+            const batch = firestoreDb.batch();
+            fuelLogs.forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+          }
+        } catch (subErr) {
+          console.warn("[Firestore] Error deleting fuelLogs subcollection:", subErr);
+        }
+      }
+
+      console.log(`[Firestore Auth] User self-deleted account: ${cleanEmail}`);
+      res.json({ success: true, message: "Account ed i dati personali ad esso associati sono stati eliminati con successo." });
+    } catch (err: any) {
+      console.error("Error in user self-deletion:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'eliminazione dell'account." });
+    }
+  });
+
   // Get favorites list for user
   app.get("/api/user/favorites", async (req, res) => {
     try {
