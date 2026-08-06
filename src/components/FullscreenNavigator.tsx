@@ -1099,6 +1099,7 @@ out center;`;
   });
   const lastRecalcPos = React.useRef<[number, number] | null>(null);
   const isRecalculatedRef = React.useRef<boolean>(false);
+  const onRouteCountRef = React.useRef<number>(0);
 
   const startLoc = initialStart;
   const endLoc: [number, number] = [dest.lat, dest.lng];
@@ -1398,21 +1399,29 @@ out center;`;
           distFromLastRecalcMeters = calculateHaversineDistance(lastRecalcPos.current, userPos) * 1000;
         }
 
-        // When user is back on route (<= 20m), reset lastRecalcPos so future off-route triggers immediately
+        // When user is back on route (<= 20m), reset lastRecalcPos so future off-route triggers immediately.
+        // We require 5 consecutive ticks on-track or driving 50m to avoid rapid reset due to GPS noise or initial route snapping.
         if (minDistanceMeters <= 20) {
-          lastRecalcPos.current = null;
-        } else if (distFromLastRecalcMeters > 100) {
-          // Recalculate route when off route (>20m),
-          // and repeat recalculation check only if user continues on the wrong road for >100 meters
-          console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
-          
-          window.dispatchEvent(new CustomEvent('show-toast', {
-            detail: { message: `📍 Errore di percorso: Ricalcolo in corso...`, duration: 3000 }
-          }));
+          onRouteCountRef.current = onRouteCountRef.current + 1;
+          if (onRouteCountRef.current >= 5 || distFromLastRecalcMeters > 50) {
+            lastRecalcPos.current = null;
+          }
+        } else {
+          onRouteCountRef.current = 0;
 
-          isRecalculatedRef.current = true;
-          setInitialStart([userLocation.lat, userLocation.lng]);
-          lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+          // Recalculate route when off route (>20m),
+          // and repeat recalculation check ONLY if user continues on the wrong road for >100 meters
+          if (lastRecalcPos.current === null || distFromLastRecalcMeters > 100) {
+            console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
+            
+            window.dispatchEvent(new CustomEvent('show-toast', {
+              detail: { message: `📍 Errore di percorso: Ricalcolo in corso...`, duration: 3000 }
+            }));
+
+            isRecalculatedRef.current = true;
+            setInitialStart([userLocation.lat, userLocation.lng]);
+            lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+          }
         }
       }
     }
