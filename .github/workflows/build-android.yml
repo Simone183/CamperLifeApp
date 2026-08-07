@@ -59,27 +59,7 @@ jobs:
           ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          node -e '
-            const fs = require("fs");
-            const raw = process.env.KEYSTORE_B64 || "";
-            if (!raw.trim()) {
-              console.log("⚠️ Secret RELEASE_KEYSTORE_BASE64 non presente. Firma di release in fallback.");
-              process.exit(0);
-            }
-            try {
-              // Rimuovi spazi, a capi e virgolette accidentali
-              const cleaned = raw.trim().replace(/^["'\s]+|["'\s]+$/g, "").replace(/[^A-Za-z0-9+/=]/g, "");
-              const buf = Buffer.from(cleaned, "base64");
-              if (buf.length < 100) {
-                console.log("⚠️ Il secret RELEASE_KEYSTORE_BASE64 è troppo corto o non valido. Fallback debug.");
-                process.exit(0);
-              }
-              fs.writeFileSync("android/app/release.keystore", buf);
-              console.log("✅ Keystore decodificato con successo (" + buf.length + " bytes)");
-            } catch (err) {
-              console.log("⚠️ Errore decodifica Keystore Base64:", err.message);
-            }
-          '
+          node .github/scripts/decode-keystore.js
           if [ -f "android/app/release.keystore" ]; then
             echo "KEYSTORE_FILE=release.keystore" >> $GITHUB_ENV
             echo "KEYSTORE_PASSWORD=${KEYSTORE_PASS}" >> $GITHUB_ENV
