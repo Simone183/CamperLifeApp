@@ -7,11 +7,14 @@ if (!raw.trim()) {
 }
 
 try {
-  // Pulizia da spazi, righe e caratteri non-base64
-  const cleaned = raw.trim().replace(/^["'\s]+|["'\s]+$/g, '').replace(/[^A-Za-z0-9+/=]/g, '');
+  // Clean quotes, newlines, spaces
+  let cleaned = raw.trim().replace(/^["'\s]+|["'\s]+$/g, '').replace(/[\r\n\t ]/g, '');
+  // Normalize URL-safe base64 if present
+  cleaned = cleaned.replace(/-/g, '+').replace(/_/g, '/');
+  
   const buf = Buffer.from(cleaned, 'base64');
   if (buf.length < 100) {
-    console.log('⚠️ RELEASE_KEYSTORE_BASE64 troppo corto o non valido. Fallback debug.');
+    console.log(`⚠️ RELEASE_KEYSTORE_BASE64 generato ha solo ${buf.length} bytes (troppo corto o non valido). Fallback debug.`);
     process.exit(0);
   }
   fs.writeFileSync('android/app/release.keystore', buf);
@@ -19,3 +22,4 @@ try {
 } catch (err) {
   console.log('⚠️ Errore decodifica Keystore Base64:', err.message);
 }
+
