@@ -19,24 +19,29 @@ android {
     }
     signingConfigs {
         release {
-            if (System.getenv("KEYSTORE_FILE") != null && file(System.getenv("KEYSTORE_FILE")).exists()) {
-                storeFile file(System.getenv("KEYSTORE_FILE"))
-                storePassword System.getenv("KEYSTORE_PASSWORD")
-                keyAlias System.getenv("KEY_ALIAS")
-                keyPassword System.getenv("KEY_PASSWORD")
-            } else if (file('release.keystore').exists()) {
-                storeFile file('release.keystore')
+            def ksFile = System.getenv("KEYSTORE_FILE") ? file(System.getenv("KEYSTORE_FILE")) : file('release.keystore')
+            if (!ksFile.exists()) {
+                ksFile = file('viacamper-release-key.jks')
+            }
+            if (ksFile.exists()) {
+                storeFile ksFile
                 storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
                 keyAlias System.getenv("KEY_ALIAS") ?: ""
                 keyPassword System.getenv("KEY_PASSWORD") ?: ""
-            } else {
-                signingConfig signingConfigs.debug
             }
         }
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            def ksFile = System.getenv("KEYSTORE_FILE") ? file(System.getenv("KEYSTORE_FILE")) : file('release.keystore')
+            if (!ksFile.exists()) {
+                ksFile = file('viacamper-release-key.jks')
+            }
+            if (ksFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

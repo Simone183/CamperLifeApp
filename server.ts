@@ -3350,9 +3350,12 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       }
 
       // Optional email notification to admin
-      if (resendClient && targetAdminEmail) {
+      if (process.env.RESEND_API_KEY) {
         try {
-          await resendClient.emails.send({
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+          await resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
             to: targetAdminEmail,
             subject: `🚨 ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
