@@ -53,17 +53,41 @@ jobs:
           gradle wrapper --gradle-version 8.11.1 --distribution-type bin
 
       - name: Setup Release Keystore from Secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
-            echo "Decoding RELEASE_KEYSTORE_BASE64 secret into android/app/release.keystore..."
-            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d ' \r\n' | base64 -d > android/app/release.keystore || echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode -i > android/app/release.keystore
+          node -e '
+            const fs = require("fs");
+            const raw = process.env.KEYSTORE_B64 || "";
+            if (!raw.trim()) {
+              console.log("⚠️ Secret RELEASE_KEYSTORE_BASE64 non presente. Firma di release in fallback.");
+              process.exit(0);
+            }
+            try {
+              // Rimuovi spazi, a capi e virgolette accidentali
+              const cleaned = raw.trim().replace(/^["'\s]+|["'\s]+$/g, "").replace(/[^A-Za-z0-9+/=]/g, "");
+              const buf = Buffer.from(cleaned, "base64");
+              if (buf.length < 100) {
+                console.log("⚠️ Il secret RELEASE_KEYSTORE_BASE64 è troppo corto o non valido. Fallback debug.");
+                process.exit(0);
+              }
+              fs.writeFileSync("android/app/release.keystore", buf);
+              console.log("✅ Keystore decodificato con successo (" + buf.length + " bytes)");
+            } catch (err) {
+              console.log("⚠️ Errore decodifica Keystore Base64:", err.message);
+            }
+          '
+          if [ -f "android/app/release.keystore" ]; then
             echo "KEYSTORE_FILE=release.keystore" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-            echo "KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> $GITHUB_ENV
-            echo "✅ Keystore configured successfully!"
+            echo "KEYSTORE_PASSWORD=${KEYSTORE_PASS}" >> $GITHUB_ENV
+            echo "KEY_ALIAS=${ALIAS}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${KEY_PASS}" >> $GITHUB_ENV
+            echo "✅ Configurazione Keystore Completata."
           else
-            echo "⚠️ RELEASE_KEYSTORE_BASE64 secret not set in GitHub. Release build will use fallback debug certificate until secret is added."
+            echo "⚠️ Utilizzo signing config debug per la build di fallback."
           fi
 
       - name: Build Android App
