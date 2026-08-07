@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.viacamper.app"
+    namespace = "com.ViaCamper.myapp"
     compileSdk 36
     defaultConfig {
-        applicationId "com.viacamper.app"
+        applicationId "com.ViaCamper.myapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion 36
         versionCode 1
