@@ -56,7 +56,7 @@ jobs:
         run: |
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
             echo "Decoding RELEASE_KEYSTORE_BASE64 secret into android/app/release.keystore..."
-            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d ' \r\n' | base64 -d > android/app/release.keystore || echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode -i > android/app/release.keystore
             echo "KEYSTORE_FILE=release.keystore" >> $GITHUB_ENV
             echo "KEYSTORE_PASSWORD=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
             echo "KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> $GITHUB_ENV
