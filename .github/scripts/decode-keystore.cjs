@@ -7,7 +7,7 @@ if (!raw.trim()) {
 }
 
 try {
-  // Clean whitespace, line breaks, quotes
+  // Pulizia da spazi, righe e caratteri non-base64
   const cleaned = raw.trim().replace(/^["'\s]+|["'\s]+$/g, '').replace(/[^A-Za-z0-9+/=]/g, '');
   const buf = Buffer.from(cleaned, 'base64');
   if (buf.length < 100) {

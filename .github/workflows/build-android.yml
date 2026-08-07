@@ -59,7 +59,7 @@ jobs:
           ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          node .github/scripts/decode-keystore.js
+          node .github/scripts/decode-keystore.cjs
           if [ -f "android/app/release.keystore" ]; then
             echo "KEYSTORE_FILE=release.keystore" >> $GITHUB_ENV
             echo "KEYSTORE_PASSWORD=${KEYSTORE_PASS}" >> $GITHUB_ENV
