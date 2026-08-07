@@ -1,6 +1,6 @@
 {
-  "appId": "com.camperlife.app",
-  "appName": "CamperLifeApp",
+  "appId": "com.viacamper.app",
+  "appName": "ViaCamper",
   "webDir": "dist",
   "bundledWebRuntime": false
 }

@@ -1,12 +1,12 @@
 CONTRATTO DI LICENZA SOFTWARE PROPRIETARIO (ALL RIGHTS RESERVED)
-PROJECT NAME: CamperLifeApp
+PROJECT NAME: ViaCamperApp
 COPYRIGHT HOLDER: Simone Sambucci (sambucci.simone@gmail.com)
 YEAR: 2026
 
-IMPORTANTE: IL PRESENTE DOCUMENTO È UN ACCORDO LEGALE PER LA PROTEZIONE DELLA PROPRIETÀ INTELLETTUALE E DEI DIRITTI D'AUTORE SULLA PRESENTE APPLICAZIONE "CamperLifeApp".
+IMPORTANTE: IL PRESENTE DOCUMENTO È UN ACCORDO LEGALE PER LA PROTEZIONE DELLA PROPRIETÀ INTELLETTUALE E DEI DIRITTI D'AUTORE SULLA PRESENTE APPLICAZIONE "ViaCamperApp".
 
 1. COPYRIGHT E PROPRIETÀ INTELLETTUALE
-Tutti i diritti di proprietà intellettuale relativi al software "CamperLifeApp" (inclusi, a titolo esemplificativo, codice sorgente TypeScript/JavaScript, database schema in "firebase-blueprint.json", configurazioni, icone, file CSS, testi, layout grafici, diagrammi, loghi e algoritmi associati) appartengono in via esclusiva ed assoluta a Simone Sambucci. Il software è protetto dalle leggi sul copyright italiane, dalle direttive europee e dai trattati internazionali in materia di diritto d'autore.
+Tutti i diritti di proprietà intellettuale relativi al software "ViaCamperApp" (inclusi, a titolo esemplificativo, codice sorgente TypeScript/JavaScript, database schema in "firebase-blueprint.json", configurazioni, icone, file CSS, testi, layout grafici, diagrammi, loghi e algoritmi associati) appartengono in via esclusiva ed assoluta a Simone Sambucci. Il software è protetto dalle leggi sul copyright italiane, dalle direttive europee e dai trattati internazionali in materia di diritto d'autore.
 
 2. RESTRIZIONI SULL'USO E DISTRIBUZIONE
 - TUTTI I DIRITTI RISERVATI. Nessuna parte di questo codice sorgente, dei file di configurazione o degli asset grafici associati può essere copiata, riprodotta, ridistribuita, concessa in licenza, sublicenziata, venduta, modificata, o utilizzata per creare opere derivate senza l'espresso consenso scritto di Simone Sambucci.
@@ -22,12 +22,12 @@ Il software viene fornito "COSI COM'È" (As-Is), senza garanzie di alcun tipo, e
 ---
 
 PROPRIETARY SOFTWARE LICENSE AGREEMENT (ALL RIGHTS RESERVED)
-PROJECT NAME: CamperLifeApp
+PROJECT NAME: ViaCamperApp
 COPYRIGHT HOLDER: Simone Sambucci (sambucci.simone@gmail.com)
 YEAR: 2026
 
 1. INTELLECTUAL PROPERTY & OWNERSHIP
-All intellectual property rights in and to the "CamperLifeApp" software (including but not limited to TypeScript/JavaScript source code, database design in "firebase-blueprint.json", system styles, layout designs, icons, documentation, and logic structures) are owned exclusively by Simone Sambucci. This software is protected by domestic copyright laws, EU directives, and international intellectual property treaties.
+All intellectual property rights in and to the "ViaCamperApp" software (including but not limited to TypeScript/JavaScript source code, database design in "firebase-blueprint.json", system styles, layout designs, icons, documentation, and logic structures) are owned exclusively by Simone Sambucci. This software is protected by domestic copyright laws, EU directives, and international intellectual property treaties.
 
 2. RESTRICTIONS
 - ALL RIGHTS RESERVED. No portion of this package, code, metadata, or media asset may be duplicated, distributed, sublicensed, sold, or used in derivative works without the express written consent of the copyright owner, Simone Sambucci.

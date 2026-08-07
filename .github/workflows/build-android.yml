@@ -52,6 +52,20 @@ jobs:
           cd android
           gradle wrapper --gradle-version 8.11.1 --distribution-type bin
 
+      - name: Setup Release Keystore from Secrets
+        run: |
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding RELEASE_KEYSTORE_BASE64 secret into android/app/release.keystore..."
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+            echo "KEYSTORE_FILE=release.keystore" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+            echo "KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> $GITHUB_ENV
+            echo "✅ Keystore configured successfully!"
+          else
+            echo "⚠️ RELEASE_KEYSTORE_BASE64 secret not set in GitHub. Release build will use fallback debug certificate until secret is added."
+          fi
+
       - name: Build Android App
         run: |
           cd android
@@ -61,21 +75,21 @@ jobs:
       - name: Upload Android App Bundle (.aab) Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CamperLifeApp-Release-AAB
+          name: ViaCamperApp-Release-AAB
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: warn
 
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CamperLifeApp-Release-APK
+          name: ViaCamperApp-Release-APK
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
 
       - name: Upload Debug APK Artifact (For testing on phone)
         uses: actions/upload-artifact@v4
         with:
-          name: CamperLifeApp-Debug-APK
+          name: ViaCamperApp-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
 

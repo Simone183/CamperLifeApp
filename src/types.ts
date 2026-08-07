@@ -198,7 +198,7 @@ export interface CamperGalleryPhoto {
 
 export interface CamperMembership {
   id: string;
-  clubName: string; // e.g. Agricamper Italia, ACSI Camping Card, PleinAir Club, Camperlife, CCI, etc.
+  clubName: string; // e.g. Agricamper Italia, ACSI Camping Card, PleinAir Club, ViaCamper, CCI, etc.
   cardNumber?: string;
   holderName?: string;
   expiryDate?: string;
@@ -254,7 +254,7 @@ export interface VehicleDimensions {
   galleryPhotos?: CamperGalleryPhoto[];// Gallery of photos (interior, engine, documents)
 
   // Tessere, Convenzioni & Club
-  memberships?: CamperMembership[];    // Agricamper, ACSI, PleinAir, Camperlife, CCI, etc.
+  memberships?: CamperMembership[];    // Agricamper, ACSI, PleinAir, ViaCamper, CCI, etc.
 
   // Note Libere
   notes?: string;                      // Free notes, key codes, maintenance info

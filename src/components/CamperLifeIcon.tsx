@@ -17,3 +17,5 @@ export function CamperLifeIcon({ size = 44, className, style, alt = "ViaCamper L
     />
   );
 }
+
+export const ViaCamperIcon = CamperLifeIcon;

@@ -3,7 +3,7 @@
  * Handles IndexedDB local tile caching and region downloads.
  */
 
-const DB_NAME = "CamperLifeOfflineMap";
+const DB_NAME = "ViaCamperOfflineMap";
 const STORE_NAME = "tiles";
 const DB_VERSION = 2; // Bumped to clear old placeholders
 

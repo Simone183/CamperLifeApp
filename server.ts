@@ -601,7 +601,7 @@ async function getProvinceCoordinates(province: string): Promise<{ lat: number; 
     const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(province + ", Italy")}&limit=1`;
     const response = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
+        "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
       }
     });
     if (response.ok) {
@@ -920,7 +920,7 @@ async function startServer() {
       const vType = vehicleType || "Mansardato";
 
       const systemInstruction = 
-        "Sei 'CamperLifeApp AI', una guida turistica esperta specializzata in viaggi itineranti in camper. " +
+        "Sei 'ViaCamperApp AI', una guida turistica esperta specializzata in viaggi itineranti in camper. " +
         "Il tuo compito è generare un itinerario in camper realistico, entusiasmante e sicuro, partendo dalla località richiesta, toccando tutte le tappe intermedie inserite dall'utente (se presenti) e terminando nella località specificata (se presente, altrimenti proponi un itinerario circolare o aperto). " +
         "Fornisci consigli specifici per i camperisti (ad esempio strade strette da evitare se il mezzo è alto, aree sosta consigliate, camper service, facilità di manovra). " +
         "Qualsiasi stima del tempo di guida/al volante complessivo (campo 'totalDrivingTime') o dei singoli segmenti (campo 'drivingSegment') deve essere calcolata applicando una maggiorazione fissa del 15% rispetto ai tempi standard di un'autovettura (per tenere conto del ritmo ridotto del camper e delle andature più prudenti). " +
@@ -1082,7 +1082,7 @@ Esegui una ricerca approfondita e ad ampio spettro che interroghi e combini i ri
 - area-sosta-camper.it
 - Caramaps / CaraMaps.com
 - Campermaps.com
-- Camperlife.it
+- viacamper.app
 - Associazionecamperistiarianna.it (aree sosta Arianna)
 - Siti ufficiali di enti turistici e comuni locali della zona
 
@@ -1212,7 +1212,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
             console.log(`[Fallback Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
             const enriched = VERIFIED_REAL_PLACES[norm].map((p: any) => ({
               ...p,
-              source: "Database Certificato CamperLife",
+              source: "Database Certificato ViaCamper",
               nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
             }));
             saveCachedProvincePlaces(province, enriched);
@@ -1248,7 +1248,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
           console.log(`[Fallback Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
           const enriched = VERIFIED_REAL_PLACES[norm].map((p: any) => ({
             ...p,
-            source: "Database Certificato CamperLife",
+            source: "Database Certificato ViaCamper",
             nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
           }));
           saveCachedProvincePlaces(province, enriched);
@@ -1282,7 +1282,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
       const { destinationType, season, crew, parkingStyle, additionalNotes } = req.body;
 
       const systemInstruction = 
-        "Sei 'CamperLifeApp AI', l'assistente camperista intelligente. Il tuo obiettivo è generare controlli di sicurezza, sosta pre-partenza ed equipaggiamento personalizzati per un viaggio in camper sulla base delle specifiche fornite dall'utente.\n" +
+        "Sei 'ViaCamperApp AI', l'assistente camperista intelligente. Il tuo obiettivo è generare controlli di sicurezza, sosta pre-partenza ed equipaggiamento personalizzati per un viaggio in camper sulla base delle specifiche fornite dall'utente.\n" +
         "Le categorie possibili in cui dividere e allocare ciascun elemento sono TASSATIVAMENTE le seguenti quattro:\n" +
         "1. 'Partenza': riguardanti le fasi di preparazione del mezzo immediatamente prima dello sblocco freno a mano e accensione motore (es. chiudere oblò, bloccare sportelli, chiudere gas).\n" +
         "2. 'Sosta': riguardanti la sosta e l'installazione all'arrivo (es. livellamento con cunei, allacciamento corrente 230V, scarico grigie).\n" +
@@ -1561,12 +1561,12 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
           await resend.emails.send({
-            from: 'CamperLifeApp <onboarding@resend.dev>',
+            from: 'ViaCamperApp <onboarding@resend.dev>',
             to: targetAdminEmail,
             subject: `📍 Nuova proposta di sosta da approvare: ${entry.name}`,
             html: `
               <h2>📍 Nuova Proposta di Sosta Inviata dagli Utenti</h2>
-              <p>Un utente ha proposto una nuova struttura su CamperLifeApp ed è in attesa di approvazione:</p>
+              <p>Un utente ha proposto una nuova struttura su ViaCamperApp ed è in attesa di approvazione:</p>
               <ul>
                 <li><strong>Nome Sosta:</strong> ${entry.name}</li>
                 <li><strong>Categoria:</strong> ${entry.category}</li>
@@ -1757,9 +1757,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
           await resend.emails.send({
-            from: 'CamperLifeApp <onboarding@resend.dev>',
+            from: 'ViaCamperApp <onboarding@resend.dev>',
             to: process.env.ADMIN_EMAIL,
-            subject: `Richiesta di approvazione nuovo utente su CamperLifeApp [${newUserDoc.nickname}]`,
+            subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
             html: `
               <h2>Richiesta di approvazione nuovo utente registrato</h2>
               <p>Un nuovo camperista si è appena iscritto ed è in attesa di essere approvato per accedere all'app:</p>
@@ -1773,7 +1773,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 <li><strong>Stato approvazione:</strong> IN ATTESA DI APPROVAZIONE</li>
               </ul>
               <br/>
-              <p>Puoi approvare questo utente direttamente dal pannello amministratore di CamperLifeApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
+              <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
             `
           });
           console.log(`[Email] Admin notification sent for user: ${email}`);
@@ -1868,11 +1868,11 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
           await resend.emails.send({
-            from: 'CamperLifeApp <onboarding@resend.dev>',
+            from: 'ViaCamperApp <onboarding@resend.dev>',
             to: email,
-            subject: 'Il tuo account CamperLifeApp è stato approvato! 🎉',
+            subject: 'Il tuo account ViaCamperApp è stato approvato! 🎉',
             html: `
-              <h2>Benvenuto su CamperLifeApp!</h2>
+              <h2>Benvenuto su ViaCamperApp!</h2>
               <p>Siamo felici di comunicarti che il tuo account è stato approvato dall'amministratore.</p>
               <p>Ora puoi effettuare il login con la tua email e password e iniziare ad utilizzare l'applicazione.</p>
               <br/>
@@ -2394,7 +2394,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`;
       const response = await fetch(targetUrl, {
         headers: {
-          "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
+          "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
         }
       });
       if (!response.ok) {
@@ -2495,7 +2495,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10&addressdetails=1`;
       const nomRes = await fetch(nomUrl, {
         headers: {
-          "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
+          "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
         }
       });
 
@@ -2556,7 +2556,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       try {
         const response = await fetch(targetUrl, {
           headers: {
-            "User-Agent": "CamperLifeApp/2.0 (sambucci.simone@gmail.com)"
+            "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
           }
         });
         if (response.ok) {
@@ -3110,7 +3110,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
         const { Resend } = await import('resend');
         const resend = new Resend(process.env.RESEND_API_KEY);
         const data = await resend.emails.send({
-          from: 'CamperLifeApp <onboarding@resend.dev>',
+          from: 'ViaCamperApp <onboarding@resend.dev>',
           to: targetAdminEmail,
           subject: subject,
           html: htmlContent
@@ -3132,7 +3132,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     try {
       const {
         type = "concorso", // "concorso" | "area_sosta" | "proposta_sosta" | "generico"
-        userName = "Utente CamperLifeApp",
+        userName = "Utente ViaCamperApp",
         userEmail = "",
         title = "",
         placeName = "",
@@ -3151,7 +3151,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           ? "🆕 Nuova Proposta Sosta con Foto"
           : "📸 Invio Foto Utente";
 
-      const displayTitle = placeName || title || "Foto CamperLifeApp";
+      const displayTitle = placeName || title || "Foto ViaCamperApp";
       const subject = `📸 Nuova foto ricevuta [${labelType}]: ${displayTitle}`;
 
       const timestamp = new Date().toISOString();
@@ -3194,7 +3194,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       const htmlContent = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background: #f1f5f9; padding: 24px; border-radius: 18px;">
           <div style="background: linear-gradient(135deg, #1C3D2B 0%, #2D5A40 100%); padding: 20px 24px; border-radius: 14px; color: #ffffff; box-shadow: 0 4px 14px rgba(0,0,0,0.15);">
-            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">CamperLifeApp • Notifica Amministratore</div>
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp • Notifica Amministratore</div>
             <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">${labelType}</h2>
           </div>
 
@@ -3232,7 +3232,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           </div>
 
           <p style="font-size: 11.5px; color: #94a3b8; text-align: center; margin-top: 20px; line-height: 1.5;">
-            Email di notifica per l'amministratore di CamperLifeApp (${targetAdminEmail}).<br/>
+            Email di notifica per l'amministratore di ViaCamperApp (${targetAdminEmail}).<br/>
             I contributi inviati sono consultabili e gestibili anche nell'applicazione.
           </p>
         </div>
@@ -3316,6 +3316,118 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     } catch (err: any) {
       console.error("Error loading admin notifications:", err);
       res.json([]);
+    }
+  });
+
+  // Client endpoint: report a crash / JS runtime exception
+  app.post("/api/report-crash", async (req, res) => {
+    try {
+      const { message, stack, componentStack, userEmail, url, userAgent, appVersion } = req.body || {};
+      if (!message) {
+        return res.status(400).json({ error: "Messaggio errore obbligatorio" });
+      }
+
+      const report = {
+        message: String(message).slice(0, 1000),
+        stack: stack ? String(stack).slice(0, 4000) : "",
+        componentStack: componentStack ? String(componentStack).slice(0, 4000) : "",
+        userEmail: userEmail ? String(userEmail).slice(0, 100) : "Anonimo",
+        url: url ? String(url).slice(0, 300) : "",
+        userAgent: userAgent ? String(userAgent).slice(0, 300) : "",
+        appVersion: appVersion || "1.0.0",
+        status: "open",
+        timestamp: new Date().toISOString()
+      };
+
+      console.error("[CRASH REPORT RECEIVED]", report.message, "| User:", report.userEmail);
+
+      let docId = "crash-" + Date.now();
+      try {
+        const added = await firestoreDb.collection("crashReports").add(report);
+        docId = added.id;
+      } catch (fsErr) {
+        console.warn("[Crash API] Firestore write failed, logged to console:", fsErr);
+      }
+
+      // Optional email notification to admin
+      if (resendClient && targetAdminEmail) {
+        try {
+          await resendClient.emails.send({
+            from: "ViaCamperApp <onboarding@resend.dev>",
+            to: targetAdminEmail,
+            subject: `🚨 ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
+            html: `
+              <div style="font-family: sans-serif; padding: 20px; background: #fff1f2; border-radius: 12px; border: 1px solid #fecdd3;">
+                <h2 style="color: #9f1239; margin-top: 0;">🚨 Segnalazione Crash / Errore Runtime</h2>
+                <p><strong>Utente:</strong> ${report.userEmail}</p>
+                <p><strong>Errore:</strong> ${report.message}</p>
+                <p><strong>Pagina/URL:</strong> ${report.url}</p>
+                <p><strong>Data/Ora:</strong> ${report.timestamp}</p>
+                <pre style="background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 8px; font-size: 11px; overflow-x: auto;">${report.stack || 'Nessuno stack trace'}</pre>
+                <p style="font-size: 12px; color: #475569;">Puoi gestire questo crash log direttamente dal Pannello Moderatore in ViaCamperApp sotto <strong>Crash & Logs</strong>.</p>
+              </div>
+            `
+          });
+        } catch (e) {
+          console.warn("[Crash API] Failed to send email alert:", e);
+        }
+      }
+
+      res.json({ success: true, id: docId });
+    } catch (err: any) {
+      console.error("Error saving crash report:", err);
+      res.status(500).json({ error: "Errore durante il salvataggio del report." });
+    }
+  });
+
+  // Admin endpoint: Get all crash reports
+  app.get("/api/admin/crash-reports", async (req, res) => {
+    try {
+      let snapshot;
+      try {
+        snapshot = await firestoreDb.collection("crashReports").orderBy('timestamp', 'desc').get();
+      } catch (e) {
+        snapshot = await firestoreDb.collection("crashReports").get();
+      }
+      const reports: any[] = [];
+      snapshot.forEach((doc: any) => {
+        reports.push({ id: doc.id, ...doc.data() });
+      });
+      reports.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+      res.json(reports);
+    } catch (err: any) {
+      console.error("Error fetching crash reports:", err);
+      res.json([]);
+    }
+  });
+
+  // Admin endpoint: Delete/clear a crash report
+  app.delete("/api/admin/crash-reports/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (id) {
+        await firestoreDb.collection("crashReports").doc(id).delete();
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error deleting crash report:", err);
+      res.status(500).json({ error: "Errore eliminazione." });
+    }
+  });
+
+  // Admin endpoint: Clear all crash reports
+  app.post("/api/admin/crash-reports/clear-all", async (req, res) => {
+    try {
+      const snapshot = await firestoreDb.collection("crashReports").get();
+      const batch = firestoreDb.batch();
+      snapshot.forEach((doc: any) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error clearing all crash reports:", err);
+      res.status(500).json({ error: "Errore pulizia crash log." });
     }
   });
 
@@ -3417,7 +3529,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       const htmlEmail = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
           <div style="background: linear-gradient(135deg, #1C3D2B 0%, #3E4A35 100%); padding: 20px 24px; border-radius: 12px; color: #ffffff;">
-            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #a7f3d0; margin-bottom: 4px;">CamperLifeApp • Moderazione Itinerari</div>
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp • Moderazione Itinerari</div>
             <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">🗺️ Nuovo Itinerario Proposto dalla Community</h2>
           </div>
           <div style="background: #ffffff; padding: 24px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
@@ -3431,7 +3543,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
               <tr><td style="padding: 4px 0; font-weight: bold;">Tappe principali:</td><td>${Array.isArray(waypoints) ? waypoints.join(', ') : 'N/D'}</td></tr>
             </table>
             <div style="margin-top: 20px; padding: 14px; background: #f1f5f9; border-radius: 10px; text-align: center;">
-              <p style="margin: 0; font-size: 13px; font-weight: bold; color: #1e293b;">Apri il Pannello Moderatore in CamperLifeApp per approvare o rifiutare questo itinerario.</p>
+              <p style="margin: 0; font-size: 13px; font-weight: bold; color: #1e293b;">Apri il Pannello Moderatore in ViaCamperApp per approvare o rifiutare questo itinerario.</p>
             </div>
           </div>
         </div>

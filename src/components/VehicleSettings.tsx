@@ -153,7 +153,7 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
       presetClub === 'Agricamper Italia' ? 'https://www.agricamper-italia.com' :
       presetClub === 'ACSI CampingCard' ? 'https://www.campingcard.it' :
       presetClub === 'PleinAir Club' ? 'https://www.pleinairclub.it' :
-      presetClub === 'CamperLife Club' ? 'https://www.camperlife.it' :
+      presetClub === 'ViaCamper Club' ? 'https://www.viacamper.app' :
       presetClub === 'CCI International' ? 'https://www.ficc.org' : ''
     );
     setCardNotes(
@@ -1139,7 +1139,7 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
                   <span>Tessere Soci, Convenzioni & Codici QR</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Conserva i tuoi codici associazione (Agricamper, ACSI, PleinAir, CCI, Camperlife) e mostra il QR code al check-in in campeggio.
+                  Conserva i tuoi codici associazione (Agricamper, ACSI, PleinAir, CCI, ViaCamper) e mostra il QR code al check-in in campeggio.
                 </p>
               </div>
               <button
@@ -1163,7 +1163,7 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
                   'Agricamper Italia',
                   'ACSI CampingCard',
                   'PleinAir Club',
-                  'CamperLife Club',
+                  'ViaCamper Club',
                   'CCI International',
                   'CampingKey Europe'
                 ].map((preset) => (

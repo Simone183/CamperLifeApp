@@ -1269,7 +1269,7 @@ export default function CommunityTab({
             {/* Quick Hashtags Suggestions */}
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
               <span className="text-[10px] font-bold text-slate-400">Hashtags:</span>
-              {['#vanlife', '#camperlife', '#dolomiti', '#sostalibera', '#vistaMare', '#onTheRoad'].map((tag) => (
+              {['#vanlife', '#viacamper', '#dolomiti', '#sostalibera', '#vistaMare', '#onTheRoad'].map((tag) => (
                 <button
                   key={tag}
                   type="button"

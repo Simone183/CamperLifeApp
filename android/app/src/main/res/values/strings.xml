@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">CamperLife</string>
-    <string name="title_activity_main">CamperLife</string>
-    <string name="package_name">com.camperlife.app</string>
-    <string name="custom_url_scheme">com.camperlife.app</string>
+    <string name="app_name">ViaCamper</string>
+    <string name="title_activity_main">ViaCamper</string>
+    <string name="package_name">com.viacamper.app</string>
+    <string name="custom_url_scheme">com.viacamper.app</string>
 </resources>
