@@ -61,6 +61,19 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Fix Leaflet tile seams & white grid lines bug on scaled/HiDPI screens */
+.leaflet-container {
+  background-color: #aad3df !important; /* matches map background color */
+}
+
+.leaflet-tile-container img.leaflet-tile {
+  margin: -0.5px !important;
+  padding: 0.5px !important;
+  outline: 1px solid transparent;
+  mix-blend-mode: normal;
+  border: none !important;
+}
+
 /* Move Leaflet top-left zoom controls down so they are not covered by top search & Rolly bar */
 .leaflet-top.leaflet-left {
   top: 44px !important;
