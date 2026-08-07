@@ -28,20 +28,14 @@ android {
                 storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
                 keyAlias System.getenv("KEY_ALIAS") ?: ""
                 keyPassword System.getenv("KEY_PASSWORD") ?: ""
+            } else {
+                initWith debug
             }
         }
     }
     buildTypes {
         release {
-            def ksFile = System.getenv("KEYSTORE_FILE") ? file(System.getenv("KEYSTORE_FILE")) : file('release.keystore')
-            if (!ksFile.exists()) {
-                ksFile = file('viacamper-release-key.jks')
-            }
-            if (ksFile.exists()) {
-                signingConfig signingConfigs.release
-            } else {
-                signingConfig signingConfigs.debug
-            }
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
