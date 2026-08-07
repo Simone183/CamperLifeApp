@@ -47,9 +47,10 @@ jobs:
         with:
           validate-wrappers: false
 
-      - name: Fix Corrupt Gradle Wrapper Jar (AI Studio Sync Bypass)
+      - name: Regenerate Valid Gradle Wrapper
         run: |
-          curl -sSLo android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.11.1/gradle/wrapper/gradle-wrapper.jar
+          cd android
+          gradle wrapper --gradle-version 8.11.1 --distribution-type bin
 
       - name: Build Android App
         run: |
