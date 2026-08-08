@@ -601,7 +601,7 @@ async function getProvinceCoordinates(province: string): Promise<{ lat: number; 
     const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(province + ", Italy")}&limit=1`;
     const response = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
+        "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
       }
     });
     if (response.ok) {
@@ -656,7 +656,7 @@ out center;`;
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; sambucci.simone@gmail.com)"
+          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; viacamperapp@gmail.com)"
         },
         body: "data=" + encodeURIComponent(query),
         signal: controller.signal
@@ -1555,7 +1555,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       // Send email notification to admin if Resend is configured
-      const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
       if (process.env.RESEND_API_KEY && targetAdminEmail && entry.status === "pending") {
         try {
           const { Resend } = await import('resend');
@@ -2394,7 +2394,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`;
       const response = await fetch(targetUrl, {
         headers: {
-          "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
+          "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
         }
       });
       if (!response.ok) {
@@ -2495,7 +2495,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10&addressdetails=1`;
       const nomRes = await fetch(nomUrl, {
         headers: {
-          "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
+          "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
         }
       });
 
@@ -2556,7 +2556,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       try {
         const response = await fetch(targetUrl, {
           headers: {
-            "User-Agent": "ViaCamperApp/2.0 (sambucci.simone@gmail.com)"
+            "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
           }
         });
         if (response.ok) {
@@ -2611,7 +2611,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; sambucci.simone@gmail.com)"
+          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; viacamperapp@gmail.com)"
         },
         body: `data=${encodeURIComponent(bodyStr)}`,
         signal: controller.signal
@@ -2710,21 +2710,37 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const { z, x, y } = req.params;
       const lyrs = (req.query.lyrs as string) || "m";
       
-      // Try multiple subdomains to improve reliability
+      // Try multiple subdomains to improve reliability with automatic retries
       const subdomains = ["mt0", "mt1", "mt2", "mt3"];
-      const subdomain = subdomains[Math.floor(Math.random() * subdomains.length)];
-      const targetUrl = `https://${subdomain}.google.com/vt/lyrs=${lyrs}&x=${x}&y=${y}&z=${z}`;
+      let response: any = null;
+      let lastError: any = null;
       
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-        },
-        signal: AbortSignal.timeout(5000)
-      });
+      // Shuffle subdomains so we can try different ones in sequence if there is a failure
+      const shuffledSubdomains = [...subdomains].sort(() => Math.random() - 0.5);
       
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tile: ${response.status}`);
+      for (const subdomain of shuffledSubdomains) {
+        try {
+          const targetUrl = `https://${subdomain}.google.com/vt/lyrs=${lyrs}&x=${x}&y=${y}&z=${z}`;
+          response = await fetch(targetUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+            },
+            signal: AbortSignal.timeout(4000) // 4 seconds timeout per attempt
+          });
+          
+          if (response && response.ok) {
+            break; // Success!
+          } else {
+            lastError = new Error(response ? `Status ${response.status}` : "No response");
+          }
+        } catch (e: any) {
+          lastError = e;
+        }
+      }
+      
+      if (!response || !response.ok) {
+        throw lastError || new Error("Failed to fetch map tile after retrying all subdomains");
       }
       
       const contentType = response.headers.get("content-type") || "image/png";
@@ -2734,9 +2750,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const buffer = Buffer.from(await response.arrayBuffer());
       res.send(buffer);
     } catch (err: any) {
-      console.error("[Map Tile Proxy] Error:", err);
-      // Return 404 to allow map library to handle missing tiles gracefully (e.g. placeholder/empty)
-      res.status(404).end();
+      console.warn("[Map Tile Proxy] Falling back to 1x1 transparent PNG due to fetch error:", err.message || err);
+      // Return a transparent 1x1 PNG instead of a 404/500 to prevent Ajax/Fetch exceptions in the client
+      const transparentPngBase64 = "iVBOR0w0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+      const buffer = Buffer.from(transparentPngBase64, "base64");
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour
+      res.status(200).send(buffer);
     }
   });
 
@@ -3102,7 +3122,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
   // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
   async function sendAdminNotificationEmail(subject: string, htmlContent: string) {
-    const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+    const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
     console.log(`[Email Service] Preparing to send email to ${targetAdminEmail}: "${subject}"`);
     
     if (process.env.RESEND_API_KEY) {
@@ -3176,7 +3196,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       }
 
       // 2. Build rich HTML email template
-      const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
       const isBase64 = imageUrl?.startsWith("data:");
       const imagePreviewHtml = imageUrl
         ? isBase64
@@ -3354,7 +3374,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
         try {
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
-          const targetAdminEmail = process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com";
+          const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
           await resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
             to: targetAdminEmail,
@@ -3527,7 +3547,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
         console.warn("[Community Itineraries API] Could not write admin notification:", err);
       }
 
-      // 3. Send notification email to admin (sambucci.simone@gmail.com)
+      // 3. Send notification email to admin (viacamperapp@gmail.com)
       const subject = `🗺️ Nuovo Itinerario Proposto da ${authorName}: "${title}"`;
       const htmlEmail = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">

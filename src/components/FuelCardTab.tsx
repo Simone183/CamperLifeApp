@@ -451,11 +451,12 @@ export default function FuelCardTab({ currentUser }: FuelCardTabProps) {
       {!loading && !error && logs.length > 0 && !showAddForm && (
         <div className="space-y-2.5">
           {logs.map((log) => {
-            const cColor = log.fuelCompany.toLowerCase().includes('eni') ? 'bg-yellow-400 text-slate-900' :
-                           log.fuelCompany.toLowerCase().includes('q8') ? 'bg-blue-600 text-white' :
-                           log.fuelCompany.toLowerCase().includes('esso') ? 'bg-red-500 text-white' :
-                           log.fuelCompany.toLowerCase().includes('ip') ? 'bg-green-600 text-white' :
-                           log.fuelCompany.toLowerCase().includes('tamoil') ? 'bg-emerald-600 text-white' :
+            const companyLower = (log.fuelCompany || '').toLowerCase();
+            const cColor = companyLower.includes('eni') ? 'bg-yellow-400 text-slate-900' :
+                           companyLower.includes('q8') ? 'bg-blue-600 text-white' :
+                           companyLower.includes('esso') ? 'bg-red-500 text-white' :
+                           companyLower.includes('ip') ? 'bg-green-600 text-white' :
+                           companyLower.includes('tamoil') ? 'bg-emerald-600 text-white' :
                            'bg-slate-200 text-slate-700';
 
             return (

@@ -4595,7 +4595,7 @@ out center;`;
                       <span className="truncate">Tutela & Licenza</span>
                     </button>
 
-                    {(isAdminLoggedIn || currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && (
+                    {(isAdminLoggedIn || currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && (
                       <button
                         type="button"
                         onClick={() => {
@@ -5455,7 +5455,7 @@ out center;`;
                               Simone Sambucci
                             </h3>
                             <p className="text-[11px] text-slate-500 font-medium">
-                              sambucci.simone@gmail.com
+                              viacamperapp@gmail.com
                             </p>
                             <span className="inline-block text-[10px] font-bold text-slate-600 bg-stone-200/60 px-2.5 py-0.5 rounded-md mt-1">
                               Anno 2026 • Tutti i Diritti Riservati
@@ -5502,7 +5502,7 @@ out center;`;
                               <p className="text-[11.5px] text-[#2D2926] leading-relaxed">
                                 • <strong>Trattamento dei Dati Personali</strong>: I dati personali inseriti su ViaCamper (email, dati veicolo, diario di bordo) sono trattati in conformità al Regolamento Generale sulla Protezione dei Dati (GDPR UE 2016/679) tramite infrastruttura protetta Firebase Cloud Firestore ed usati esclusivamente per l'erogazione dei servizi dell'app.<br />
                                 • <strong>Geolocalizzazione e Privacy Posizione</strong>: La posizione GPS dell'utente viene elaborata solo in tempo reale per abilitare la navigazione, la ricerca di tappe vicine e l'allerta ostacoli sagoma. I dati di posizione non vengono tracciati a fini profilativi né venduti o ceduti a terzi.<br />
-                                • <strong>Diritti dell'Interessato e Diritto all'Oblio</strong>: L'utente ha il diritto in qualsiasi momento di accedere ai propri dati, correggerli o chiederne la cancellazione definitiva (Diritto all'Oblio - Art. 17 GDPR) inviando una richiesta a <strong>sambucci.simone@gmail.com</strong> o tramite la gestione account nell'app.<br />
+                                • <strong>Diritti dell'Interessato e Diritto all'Oblio</strong>: L'utente ha il diritto in qualsiasi momento di accedere ai propri dati, correggerli o chiederne la cancellazione definitiva (Diritto all'Oblio - Art. 17 GDPR) inviando una richiesta a <strong>viacamperapp@gmail.com</strong> o tramite la gestione account nell'app.<br />
                                 • <strong>Cookie e Archiviazione Locale</strong>: ViaCamper utilizza unicamente memorizzazione tecnica locale (localStorage) per salvare le preferenze dell'utente, senza fare uso di cookie di profilazione pubblicitaria di terze parti.
                               </p>
                             </div>
@@ -5570,7 +5570,7 @@ out center;`;
                               navigator.clipboard
                                 .writeText(`CONTRATTO DI LICENZA SOFTWARE, PRIVACY & DIRITTI D'AUTORE - VIACAMPER
 PROJECT: ViaCamper App
-COPYRIGHT HOLDER: Simone Sambucci (sambucci.simone@gmail.com)
+COPYRIGHT HOLDER: Simone Sambucci (viacamperapp@gmail.com)
 YEAR: 2026
 
 1. DIRITTI SUL SOFTWARE: Tutti i diritti di proprietà intellettuale relativi al software ViaCamper appartengono in via esclusiva a Simone Sambucci (L. 633/1941).
@@ -5609,7 +5609,7 @@ YEAR: 2026
                           </p>
                           <p className="mb-1">PROJECT NAME: ViaCamper App</p>
                           <p className="mb-1 font-bold">
-                            COPYRIGHT OWNER: Simone Sambucci (sambucci.simone@gmail.com)
+                            COPYRIGHT OWNER: Simone Sambucci (viacamperapp@gmail.com)
                           </p>
                           <p className="mb-1">YEAR: 2026 • ALL RIGHTS RESERVED</p>
                           <p className="mt-2 text-slate-300">

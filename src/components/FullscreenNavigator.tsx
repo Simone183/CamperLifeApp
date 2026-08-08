@@ -1415,7 +1415,7 @@ out center;`;
             console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
             
             window.dispatchEvent(new CustomEvent('show-toast', {
-              detail: { message: `📍 Errore di percorso: Ricalcolo in corso...`, duration: 3000 }
+              detail: { message: `📍 Ricalcolo percorso`, duration: 3000 }
             }));
 
             isRecalculatedRef.current = true;

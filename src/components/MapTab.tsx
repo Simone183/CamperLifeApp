@@ -390,7 +390,7 @@ function SmartRouteDisplay({
 
   // Weather alert check (simplified mock)
   const isBadWeather =
-    selectedPlace.name.toLowerCase().includes("montagna") ||
+    (selectedPlace?.name || "").toLowerCase().includes("montagna") ||
     Math.random() > 0.7; // Mock weather check
 
   return (
@@ -692,7 +692,7 @@ export default function MapTab({
   };
 
   const getCategoryDefaults = (category: string) => {
-    const cat = category.toLowerCase();
+    const cat = (category || "").toLowerCase();
     if (cat.includes("sosta")) {
       return [
         "/area_sosta.svg",
@@ -1150,7 +1150,7 @@ export default function MapTab({
     setUploadedPhotos(saved ? JSON.parse(saved) : []);
   }, [selectedPlace?.id]);
 
-  const isUserAdmin = isAdmin || Boolean(currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com");
+  const isUserAdmin = isAdmin || Boolean(currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com");
 
   const handleDeleteReview = async (reviewId: string) => {
     if (!selectedPlace || !isUserAdmin) return;
@@ -2144,8 +2144,8 @@ export default function MapTab({
 
       // 2. Search query (Matches name, description or address)
       const matchesSearch =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.address.toLowerCase().includes(searchQuery.toLowerCase());
+        (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+        (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
       // 3. Proximity Radius (15km)
@@ -2187,8 +2187,8 @@ export default function MapTab({
         // Only free (0 € or "Gratuito" in text)
         const isFree =
           p.priceEuro === 0 ||
-          p.priceInfo.toLowerCase().includes("gratuito") ||
-          p.priceInfo.toLowerCase().includes("gratis");
+          (p.priceInfo || "").toLowerCase().includes("gratuito") ||
+          (p.priceInfo || "").toLowerCase().includes("gratis");
         if (!isFree) return false;
       } else if (filterMaxPrice < 100) {
         // Limit defined
@@ -2214,9 +2214,9 @@ export default function MapTab({
       // 8. Advanced Facilities / Services Filters
       if (filterSelectedFacilities.length > 0) {
         const hasAll = filterSelectedFacilities.every((facility) => {
-          return p.facilities.some((pf) => {
-            const val = pf.toLowerCase();
-            const query = facility.toLowerCase();
+          return (p.facilities || []).some((pf) => {
+            const val = (pf || "").toLowerCase();
+            const query = (facility || "").toLowerCase();
             if (
               query === "wi-fi" &&
               (val.includes("wifi") || val.includes("wi-fi"))
@@ -4809,7 +4809,7 @@ out center;`;
             )}
 
             {/* Google Maps Key Configuration Button - visible only to admins */}
-            {isAdmin && (currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && (
+            {isAdmin && (currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && (
               <button
                 type="button"
                 onClick={() => setShowKeyModal(true)}
@@ -8439,7 +8439,7 @@ out center;`;
       )}
 
       {/* Google Maps API Key Modal */}
-      {isAdmin && (currentUser?.isModerator || currentUser?.email === "sambucci.simone@gmail.com") && showKeyModal && (
+      {isAdmin && (currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && showKeyModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10005] flex items-center justify-center p-4 animate-fade-in font-sans">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full p-6 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center mb-4">
@@ -8733,36 +8733,15 @@ export function LeafletOfflineMap({
       },
     );
 
-    // Intercept Tile Creation completely to avoid initial network load and prevent direct OSM CORS requests
+    // Delegate to standard Leaflet createTile so Leaflet attaches internal handlers, sizing & positioning correctly
+    const origCreateTile = (customTileLayer as any).createTile;
     (customTileLayer as any).createTile = function (coords: any, done: any) {
-      const tile = document.createElement("img");
-      tile.className = "leaflet-tile";
-      tile.width = 256;
-      tile.height = 256;
-      tile.alt = "";
-      tile.setAttribute("role", "presentation");
-      tile.onload = function () {
-        done(null, tile);
-      };
-      tile.onerror = function () {
-        tile.src = generatePlaceholderTile(
-          coords.z,
-          coords.x,
-          coords.y,
-          "Mappa Offline",
-        );
-      };
+      const tile = origCreateTile.call(this, coords, done);
       
       const isSimulated = localStorage.getItem("camper_simulated_offline") === "true";
       const offlineActive = isSimulated || !isOnline || (typeof navigator !== "undefined" && !navigator.onLine);
       
-      if (!offlineActive) {
-        const theme = settings?.mapTheme || 'standard';
-        let lyrsType = 'm';
-        if (theme === 'satellite') lyrsType = 's';
-        else if (theme === 'hybrid') lyrsType = 'y';
-        tile.src = `/api/map-tile/${coords.z}/${coords.x}/${coords.y}?lyrs=${lyrsType}`;
-      } else {
+      if (offlineActive) {
         getBestTile(coords.z, coords.x, coords.y)
           .then((cachedBase64) => {
             if (cachedBase64) {

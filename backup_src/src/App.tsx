@@ -2420,7 +2420,7 @@ out center;`;
                               Simone Sambucci
                             </h3>
                             <p className="text-[11px] text-slate-500 font-medium">
-                              sambucci.simone@gmail.com
+                              viacamperapp@gmail.com
                             </p>
                           </div>
 
@@ -2458,7 +2458,7 @@ out center;`;
                             onClick={() => {
                               navigator.clipboard.writeText(`CONTRATTO DI LICENZA SOFTWARE PROPRIETARIO (ALL RIGHTS RESERVED)
 PROJECT NAME: CamperLife
-COPYRIGHT HOLDER: Simone Sambucci (sambucci.simone@gmail.com)
+COPYRIGHT HOLDER: Simone Sambucci (viacamperapp@gmail.com)
 YEAR: 2026
 Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                               window.dispatchEvent(new CustomEvent('show-toast', { 
@@ -2485,7 +2485,7 @@ Tutti i diritti esclusivi riservati. È vietata la copia e riproduzione.`);
                         <div className="bg-slate-900 text-slate-100 font-mono text-[10.5px] p-4 rounded-xl overflow-x-auto max-h-[180px] leading-relaxed select-all">
                           <p className="text-emerald-400 font-bold mb-2">// CONTRATTO DI LICENZA SOFTWARE PROPRIETARIO (ALL RIGHTS RESERVED)</p>
                           <p className="mb-1">PROJECT NAME: CamperLife</p>
-                          <p className="mb-1 font-bold">COPYRIGHT OWNER: Simone Sambucci (sambucci.simone@gmail.com)</p>
+                          <p className="mb-1 font-bold">COPYRIGHT OWNER: Simone Sambucci (viacamperapp@gmail.com)</p>
                           <p className="mb-1">YEAR: 2026</p>
                           <p className="mt-2 text-slate-400">Tutti i diritti di proprietà intellettuale relativi al software CamperLife (incluso codice sorgente, database blueprint in Firebase, icone e layout di navigazione) appartengono in via esclusiva ad ogni effetto di legge a Simone Sambucci. È vietata la distribuzione non autorizzata.</p>
                         </div>

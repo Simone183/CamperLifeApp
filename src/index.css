@@ -61,17 +61,28 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Fix Leaflet tile seams & white grid lines bug on scaled/HiDPI screens */
+/* Leaflet container & tile styling */
 .leaflet-container {
-  background-color: #aad3df !important; /* matches map background color */
+  background-color: #aad3df !important; /* Ocean blue background matching map tiles */
 }
 
-.leaflet-tile-container img.leaflet-tile {
-  margin: -0.5px !important;
-  padding: 0.5px !important;
-  outline: 1px solid transparent;
-  mix-blend-mode: normal;
+.leaflet-tile-container {
+  will-change: transform !important;
+}
+
+.leaflet-tile-container img.leaflet-tile,
+.leaflet-tile {
+  margin: 0 !important;
+  padding: 0 !important;
   border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  max-width: none !important;
+  max-height: none !important;
+  /* Use plus-lighter blend mode to perfectly weld subpixel tile boundaries without stretching */
+  mix-blend-mode: plus-lighter !important;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 /* Move Leaflet top-left zoom controls down so they are not covered by top search & Rolly bar */
