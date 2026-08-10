@@ -75,14 +75,18 @@ body {
   margin: 0 !important;
   padding: 0 !important;
   border: none !important;
-  outline: none !important;
+  outline: 1px solid transparent !important;
   box-shadow: none !important;
   max-width: none !important;
   max-height: none !important;
-  /* Use plus-lighter blend mode to perfectly weld subpixel tile boundaries without stretching */
-  mix-blend-mode: plus-lighter !important;
+  mix-blend-mode: normal !important;
+  image-rendering: -webkit-optimize-contrast;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+.maplibregl-canvas {
+  image-rendering: -webkit-optimize-contrast;
 }
 
 /* Move Leaflet top-left zoom controls down so they are not covered by top search & Rolly bar */

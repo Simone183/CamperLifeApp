@@ -121,6 +121,13 @@ export default function FullscreenNavigator({
   const [speed, setSpeed] = React.useState<number>(80); // km/h
   const [currentDetectedSpeed, setCurrentDetectedSpeed] = React.useState<number | null>(null);
 
+  // Tunnel / Dead Reckoning Mode state (cruise speed 90 km/h when GPS signal is lost inside tunnels)
+  const [isTunnelDeadReckoning, setIsTunnelDeadReckoning] = React.useState<boolean>(false);
+  const [tunnelStepTick, setTunnelStepTick] = React.useState<number>(0);
+  const lastGpsUpdateRef = React.useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const tunnelRouteIndexRef = React.useRef<number>(0);
+  const wasInTunnelRef = React.useRef<boolean>(false);
+
   // Mantiene lo schermo attivo per tutta la durata della navigazione per evitare lo standby del telefono
   React.useEffect(() => {
     requestScreenWakeLock();
@@ -1153,6 +1160,9 @@ out center;`;
   const speechQueueRef = React.useRef<{ text: string; priority: 'immediate' | 'advance' | 'info'; timestamp: number }[]>([]);
   const isSpeakingRef = React.useRef<boolean>(false);
   const spokenHistoryRef = React.useRef<Record<string, number>>({});
+  const lastRecalcSpeechTimeRef = React.useRef<number>(0);
+  const isFetchInProgressRef = React.useRef<boolean>(false);
+  const lastRecalcTimestampRef = React.useRef<number>(0);
   const activeUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
   const speechTimeoutRef = React.useRef<any>(null);
   const lastSpeechTimeRef = React.useRef<number>(0);
@@ -1342,6 +1352,16 @@ out center;`;
 
     const now = Date.now();
 
+    // Guarantee that "ricalcolo" / "ricalcolo del percorso" is spoken only ONCE per recalculation event (25s window)
+    if (/ricalcolo/i.test(cleanText)) {
+      const lastRecalcTime = lastRecalcSpeechTimeRef.current || 0;
+      if (now - lastRecalcTime < 25000) {
+        console.log("[TTS] Suppressed duplicate 'Ricalcolo' voice alert within 25s window:", cleanText);
+        return;
+      }
+      lastRecalcSpeechTimeRef.current = now;
+    }
+
     // Check recent spoken history to avoid repeating identical sentence within 10 seconds
     const lastTime = spokenHistoryRef.current[cleanText] || 0;
     if (now - lastTime < 10000) {
@@ -1378,7 +1398,7 @@ out center;`;
 
   // Real-time off-route recalculation listener (triggers when driver strays > 20m away from route)
   React.useEffect(() => {
-    if (userLocation) {
+    if (userLocation && !isTunnelDeadReckoning) {
       const isDefaultModena = Math.abs(initialStart[0] - 44.5422) < 0.0001 && Math.abs(initialStart[1] - 10.7024) < 0.0001;
       if (isDefaultModena) {
         // If we were on default Modena, update immediately as GPS has resolved
@@ -1409,23 +1429,34 @@ out center;`;
         } else {
           onRouteCountRef.current = 0;
 
-          // Recalculate route when off route (>20m),
-          // and repeat recalculation check ONLY if user continues on the wrong road for >100 meters
-          if (lastRecalcPos.current === null || distFromLastRecalcMeters > 100) {
-            console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
-            
-            window.dispatchEvent(new CustomEvent('show-toast', {
-              detail: { message: `📍 Ricalcolo percorso`, duration: 3000 }
-            }));
+          // Recalculate route when off route (>20m).
+          // Guard: If a route fetch is already in progress OR a recalculation was triggered less than 8s ago, DO NOT trigger again!
+          const now = Date.now();
+          const timeSinceLastRecalc = now - lastRecalcTimestampRef.current;
 
-            isRecalculatedRef.current = true;
-            setInitialStart([userLocation.lat, userLocation.lng]);
-            lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+          if (!isFetchInProgressRef.current && timeSinceLastRecalc > 8000) {
+            if (lastRecalcPos.current === null || distFromLastRecalcMeters > 100) {
+              console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
+              
+              isFetchInProgressRef.current = true;
+              lastRecalcTimestampRef.current = now;
+
+              window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: { message: `📍 Ricalcolo percorso`, duration: 3000 }
+              }));
+
+              // Spoken ONCE per off-route event
+              speakInstruction("Ricalcolo del percorso", 'immediate');
+
+              isRecalculatedRef.current = true;
+              setInitialStart([userLocation.lat, userLocation.lng]);
+              lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+            }
           }
         }
       }
     }
-  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, dest.id, osrmRoute, isPreview, speakInstruction, calculateDistanceToPolylineMeters]);
+  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, dest.id, osrmRoute, isPreview, speakInstruction, calculateDistanceToPolylineMeters]);
 
   // Safe checks for sagoma dimensions
   const hasHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && parseDimToNumber(vehicleDimensions.height) > dest.maxHeight;
@@ -1545,6 +1576,11 @@ out center;`;
       setOsmObstacles([]);
       try {
         let url = `/api/osrm?start=${startLoc[1]},${startLoc[0]}&end=${endLoc[1]},${endLoc[0]}`;
+        const activeHeading = (useCompass && deviceHeading !== null) ? deviceHeading : bearing;
+        if (typeof activeHeading === 'number' && activeHeading >= 0) {
+          url += `&heading=${Math.round(activeHeading)}`;
+        }
+
         const res = await fetch(url, { signal });
         let data: any = null;
         if (res.ok) {
@@ -1563,6 +1599,11 @@ out center;`;
           
           // INSTANTLY render the standard route and directions to satisfy immediate user visual request
           setOsrmRoute(osrmCoords);
+          lastRecalcPos.current = [startLoc[0], startLoc[1]];
+          onRouteCountRef.current = 10;
+          setTimeout(() => {
+            isFetchInProgressRef.current = false;
+          }, 2500);
 
           // Check if start or end coordinate was snapped to the nearest road (distance > 25 meters)
           if (osrmCoords.length > 0) {
@@ -1852,19 +1893,19 @@ out center;`;
               const exitOrd = exitNum ? getItalianOrdinalExit(exitNum) : null;
 
               if (exitOrd && exitOrd.word !== "uscita") {
-                customRecalcSpeech = `Ricalcolo del percorso: prosegui fino alla rotatoria e prendi la ${exitOrd.word} per rientrare sull'itinerario.`;
+                customRecalcSpeech = `Prosegui fino alla rotatoria e prendi la ${exitOrd.word} per rientrare sull'itinerario.`;
               } else {
-                customRecalcSpeech = `Ricalcolo del percorso: prosegui fino alla rotatoria per invertire la marcia o cambiare strada.`;
+                customRecalcSpeech = `Prosegui fino alla rotatoria per invertire la marcia o cambiare strada.`;
               }
             } else if (foundUTurn) {
-              customRecalcSpeech = `Ricalcolo del percorso: nessuna alternativa avanti. Fai inversione di marcia appena possibile.`;
+              customRecalcSpeech = `Nessuna alternativa avanti. Fai inversione di marcia appena possibile.`;
             } else if (foundTurn) {
               const mod = foundTurn.maneuver?.modifier || "";
               const isLeft = mod.includes('left');
               const stName = foundTurn.name ? `su ${foundTurn.name}` : "";
-              customRecalcSpeech = `Ricalcolo del percorso: svolta a ${isLeft ? 'sinistra' : 'destra'} ${stName} per seguire il nuovo itinerario.`;
+              customRecalcSpeech = `Svolta a ${isLeft ? 'sinistra' : 'destra'} ${stName} per seguire il nuovo itinerario.`;
             } else {
-              customRecalcSpeech = `Ricalcolo del percorso completato: segui il nuovo itinerario.`;
+              customRecalcSpeech = `Nuovo itinerario calcolato: segui le indicazioni.`;
             }
           }
 
@@ -1960,7 +2001,12 @@ out center;`;
           }
         }
       } finally {
-        if (active) setLoadingRoute(false);
+        if (active) {
+          setLoadingRoute(false);
+          setTimeout(() => {
+            isFetchInProgressRef.current = false;
+          }, 1500);
+        }
       }
     };
 
@@ -1973,22 +2019,109 @@ out center;`;
 
   const routeCoordinates = osrmRoute.length > 0 ? osrmRoute : fallbackRouteCoordinates;
 
+  // Monitor incoming GPS fixes and manage Tunnel Dead Reckoning state transitions
+  React.useEffect(() => {
+    if (!isGPSEnabled || !userLocation) return;
+    const now = Date.now();
+    const prev = lastGpsUpdateRef.current;
+    
+    // Check if new GPS coordinates have arrived
+    if (!prev || prev.lat !== userLocation.lat || prev.lng !== userLocation.lng) {
+      lastGpsUpdateRef.current = { lat: userLocation.lat, lng: userLocation.lng, time: now };
+      
+      if (isTunnelDeadReckoning) {
+        setIsTunnelDeadReckoning(false);
+        if (wasInTunnelRef.current) {
+          wasInTunnelRef.current = false;
+          speakInstruction("Segnale GPS ripristinato. Navigazione in tempo reale ripresa.");
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: "📶 Segnale GPS ripristinato!" }
+          }));
+        }
+      }
+    }
+  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, speakInstruction]);
+
+  // Dead Reckoning Interval loop (90 km/h cruising speed inside tunnels / GPS dead zones)
+  React.useEffect(() => {
+    if (!isGPSEnabled || isPreview || routeCoordinates.length === 0) {
+      if (isTunnelDeadReckoning) setIsTunnelDeadReckoning(false);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const lastTime = lastGpsUpdateRef.current?.time || 0;
+      const timeSinceLastFix = now - lastTime;
+
+      // If no fresh GPS fix received for > 3.5 seconds (tunnel or lost signal)
+      if (timeSinceLastFix > 3500) {
+        if (!isTunnelDeadReckoning) {
+          setIsTunnelDeadReckoning(true);
+          wasInTunnelRef.current = true;
+          // Start dead reckoning from last known GPS position on the route
+          let startIdx = 0;
+          if (lastGpsUpdateRef.current) {
+            startIdx = findClosestCoordinateIndex([lastGpsUpdateRef.current.lat, lastGpsUpdateRef.current.lng], routeCoordinates);
+          } else if (userLocation) {
+            startIdx = findClosestCoordinateIndex([userLocation.lat, userLocation.lng], routeCoordinates);
+          }
+          tunnelRouteIndexRef.current = startIdx;
+          speakInstruction("Assenza di segnale GPS. Attivata navigazione in galleria a 90 chilometri orari.");
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: "🚇 Modalità Galleria (GPS Assente): navigazione stimata a 90 km/h" }
+          }));
+        } else {
+          // Cruise speed = 90 km/h (25 m/s). Interval runs every 800ms -> ~20 meters per tick
+          const deltaMeters = (90 * 1000 / 3600) * 0.8;
+          let curIdx = tunnelRouteIndexRef.current;
+          let distAcc = 0;
+          while (curIdx < routeCoordinates.length - 1 && distAcc < deltaMeters) {
+            const p1 = routeCoordinates[curIdx];
+            const p2 = routeCoordinates[curIdx + 1];
+            const segDistMeters = calculateHaversineDistance(p1, p2) * 1000;
+            distAcc += segDistMeters;
+            curIdx++;
+          }
+          tunnelRouteIndexRef.current = Math.min(curIdx, routeCoordinates.length - 1);
+          setTunnelStepTick(prev => prev + 1);
+        }
+      }
+    }, 800);
+
+    return () => clearInterval(interval);
+  }, [isGPSEnabled, isPreview, routeCoordinates, isTunnelDeadReckoning, userLocation?.lat, userLocation?.lng, speakInstruction]);
+
+  // Derive effective user location (real GPS fix or Dead Reckoning coordinate)
+  const effectiveUserLocation = React.useMemo(() => {
+    if (isGPSEnabled && isTunnelDeadReckoning && routeCoordinates.length > 0) {
+      const tunnelPt = routeCoordinates[tunnelRouteIndexRef.current] || routeCoordinates[0];
+      return { lat: tunnelPt[0], lng: tunnelPt[1] };
+    }
+    return userLocation;
+  }, [isGPSEnabled, isTunnelDeadReckoning, userLocation, routeCoordinates, tunnelStepTick]);
+
   const displayedRouteCoordinates = React.useMemo(() => {
-    if (isGPSEnabled && userLocation && routeCoordinates.length > 0 && !isPreview) {
-      const userPos: [number, number] = [userLocation.lat, userLocation.lng];
+    const loc = effectiveUserLocation;
+    if (isGPSEnabled && loc && routeCoordinates.length > 0 && !isPreview) {
+      const userPos: [number, number] = [loc.lat, loc.lng];
       let closestIdx = 0;
-      let minDist = calculateHaversineDistance(userPos, routeCoordinates[0]);
-      for (let i = 1; i < routeCoordinates.length; i++) {
-        const dist = calculateHaversineDistance(userPos, routeCoordinates[i]);
-        if (dist < minDist) {
-          minDist = dist;
-          closestIdx = i;
+      if (isTunnelDeadReckoning) {
+        closestIdx = tunnelRouteIndexRef.current;
+      } else {
+        let minDist = calculateHaversineDistance(userPos, routeCoordinates[0]);
+        for (let i = 1; i < routeCoordinates.length; i++) {
+          const dist = calculateHaversineDistance(userPos, routeCoordinates[i]);
+          if (dist < minDist) {
+            minDist = dist;
+            closestIdx = i;
+          }
         }
       }
       return routeCoordinates.slice(closestIdx);
     }
     return routeCoordinates;
-  }, [routeCoordinates, isGPSEnabled, userLocation?.lat, userLocation?.lng, isPreview]);
+  }, [routeCoordinates, isGPSEnabled, effectiveUserLocation?.lat, effectiveUserLocation?.lng, isPreview, isTunnelDeadReckoning, tunnelStepTick]);
 
   const fallbackSequence = React.useMemo((): NavigationStep[] => {
     const steps: NavigationStep[] = [];
@@ -2088,9 +2221,13 @@ out center;`;
 
     // Determine the current user index on the route
     let currentRouteIdx = 0;
-    if (isGPSEnabled && userLocation && routeCoordinates.length > 0) {
-      const userPos = [userLocation.lat, userLocation.lng] as [number, number];
-      currentRouteIdx = findClosestCoordinateIndex(userPos, routeCoordinates);
+    if (isGPSEnabled && effectiveUserLocation && routeCoordinates.length > 0) {
+      if (isTunnelDeadReckoning) {
+        currentRouteIdx = tunnelRouteIndexRef.current;
+      } else {
+        const userPos = [effectiveUserLocation.lat, effectiveUserLocation.lng] as [number, number];
+        currentRouteIdx = findClosestCoordinateIndex(userPos, routeCoordinates);
+      }
     } else {
       currentRouteIdx = Math.min(simRouteIndex, routeCoordinates.length - 1);
     }
@@ -2245,9 +2382,11 @@ out center;`;
     directionsSequence,
     dest.id,
     isGPSEnabled,
+    isTunnelDeadReckoning,
+    tunnelStepTick,
     vehicleDimensions.height,
-    userLocation?.lat,
-    userLocation?.lng,
+    effectiveUserLocation?.lat,
+    effectiveUserLocation?.lng,
     routeCoordinates,
     simRouteIndex,
     speed
@@ -2729,21 +2868,25 @@ out center;`;
     let targetCoords: [number, number] = startLoc;
     let currentBearing = bearing;
 
-    if (isGPSEnabled && userLocation) {
-      const userPos: [number, number] = [userLocation.lat, userLocation.lng];
+    if (isGPSEnabled && effectiveUserLocation) {
+      const userPos: [number, number] = [effectiveUserLocation.lat, effectiveUserLocation.lng];
       if (routeCoordinates.length > 0) {
         let closestIdx = 0;
-        let minDist = calculateHaversineDistance(userPos, routeCoordinates[0]);
-        for (let i = 1; i < routeCoordinates.length; i++) {
-          const dist = calculateHaversineDistance(userPos, routeCoordinates[i]);
-          if (dist < minDist) {
-            minDist = dist;
-            closestIdx = i;
+        if (isTunnelDeadReckoning) {
+          closestIdx = tunnelRouteIndexRef.current;
+        } else {
+          let minDist = calculateHaversineDistance(userPos, routeCoordinates[0]);
+          for (let i = 1; i < routeCoordinates.length; i++) {
+            const dist = calculateHaversineDistance(userPos, routeCoordinates[i]);
+            if (dist < minDist) {
+              minDist = dist;
+              closestIdx = i;
+            }
           }
         }
         const closestPt = routeCoordinates[closestIdx];
 
-        // Always use real user location for smooth movement
+        // Always use real user location or dead reckoning location for smooth movement
         targetCoords = userPos;
 
         // Calculate bearing orientation for the current road segment
@@ -2859,7 +3002,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         });
       }
     }
-  }, [simRouteIndex, userLocation?.lat, userLocation?.lng, isGPSEnabled, routeCoordinates, autoCenter, deviceHeading, useCompass, isPreview]);
+  }, [simRouteIndex, effectiveUserLocation?.lat, effectiveUserLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, tunnelStepTick, routeCoordinates, autoCenter, deviceHeading, useCompass, isPreview]);
 
   // Dynamically rotate camper chevron inside the HTML marker to support seamless navigation heading
   React.useEffect(() => {
@@ -2973,8 +3116,8 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     }
 
     // Find current route coordinate index
-    const currentRouteIdx = (isGPSEnabled && !isPreview && userLocation) 
-      ? findClosestCoordinateIndex([userLocation.lat, userLocation.lng], routeCoordinates)
+    const currentRouteIdx = (isGPSEnabled && !isPreview && effectiveUserLocation) 
+      ? (isTunnelDeadReckoning ? tunnelRouteIndexRef.current : findClosestCoordinateIndex([effectiveUserLocation.lat, effectiveUserLocation.lng], routeCoordinates))
       : Math.min(simRouteIndex, routeCoordinates.length - 1);
 
     // Calculate active step index dynamically based on actual coordinate index
@@ -3046,6 +3189,9 @@ const newCenter = [targetCoords[1], targetCoords[0]];
   const etaTimeStr = getETA(remainingMinutes);
 
   const displayDetectedSpeed = React.useMemo(() => {
+    if (isTunnelDeadReckoning) {
+      return 90;
+    }
     if (currentDetectedSpeed !== null && currentDetectedSpeed >= 0) {
       return currentDetectedSpeed;
     }
@@ -3053,7 +3199,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
       return Math.min(115, Math.max(25, Math.round(speed + (Math.sin(simStep * 0.4) * 5))));
     }
     return 0;
-  }, [currentDetectedSpeed, isDriving, speed, simStep]);
+  }, [currentDetectedSpeed, isDriving, speed, simStep, isTunnelDeadReckoning]);
 
   const { lastPrice, consumptionKmPerL, hasRealPrice, hasRealConsumption } = getCamperFuelStats();
   const fuelCost = (remainingDistanceKm / consumptionKmPerL) * lastPrice;
@@ -3224,6 +3370,19 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 </div>
               )}
             </div>
+
+            {/* Tunnel Dead Reckoning Mode Indicator Badge */}
+            {isTunnelDeadReckoning && !isPreview && (
+              <div className="bg-amber-500/95 text-slate-950 font-bold px-3.5 py-2 rounded-xl shadow-2xl border border-amber-300/80 animate-pulse text-xs flex items-center justify-between pointer-events-auto">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base shrink-0">🚇</span>
+                  <span className="font-extrabold text-slate-950 truncate">Modalità Galleria (GPS Assente)</span>
+                </div>
+                <span className="font-mono bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-md text-[11px] font-black border border-amber-400/40 shrink-0 ml-2">
+                  Crociera 90 km/h
+                </span>
+              </div>
+            )}
 
             {/* Preview Route Cost & Distance Stats Bar */}
             {isPreview && (

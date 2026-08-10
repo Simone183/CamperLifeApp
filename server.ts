@@ -2857,12 +2857,12 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
   app.get("/api/osrm", async (req, res) => {
     try {
-      const { start, end, avoidHighways, avoidTolls } = req.query;
+      const { start, end, heading, avoidHighways, avoidTolls } = req.query;
       if (!start || !end) {
         return res.status(400).json({ error: "Missing parameters start and/or end" });
       }
 
-      const cacheKey = `${start}-${end}-${avoidHighways}-${avoidTolls}`;
+      const cacheKey = `${start}-${end}-${heading || ''}-${avoidHighways}-${avoidTolls}`;
       if (osrmCache.has(cacheKey)) {
         console.log(`[OSRM Proxy] Returning cached route for ${cacheKey}`);
         return res.json(osrmCache.get(cacheKey));
@@ -2898,10 +2898,14 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
         };
       };
 
-      const getRoute = async (s: string, e: string) => {
+      const getRoute = async (s: string, e: string, h?: string) => {
+        const bearingsParam = (h !== undefined && h !== null && h !== "" && !isNaN(Number(h)))
+          ? `&bearings=${Math.round((Number(h) % 360 + 360) % 360)},45;`
+          : "";
+
         const servers = [
-          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100`,
-          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100`
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100${bearingsParam}`,
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100${bearingsParam}`
         ];
         
         for (const url of servers) {
@@ -2922,6 +2926,13 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
             console.log(`[OSRM Proxy] Server response was busy for ${url}, trying next...`);
           }
         }
+
+        // If bearings constraint was used and failed or produced no route, retry without bearings
+        if (bearingsParam !== "") {
+          console.log("[OSRM Proxy] Retrying route request without bearings constraint...");
+          return getRoute(s, e, undefined);
+        }
+
         throw new Error("All OSRM routing servers were busy");
       };
 
@@ -2936,11 +2947,11 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       let data: any;
       try {
         console.log(`[OSRM Proxy] Routing with snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
-        data = await getRoute(snappedStart, snappedEnd);
+        data = await getRoute(snappedStart, snappedEnd, heading as string);
       } catch (err) {
         console.log("[OSRM Proxy] Routing with snapped coordinates was unsuccessful. Retrying with original coordinates...");
         try {
-          data = await getRoute(start as string, end as string);
+          data = await getRoute(start as string, end as string, heading as string);
         } catch (retryErr) {
           console.log("[OSRM Proxy] All OSRM routing servers were busy. Fetching BRouter backup...");
           try {
@@ -2948,8 +2959,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
             data = convertBRouterToOSRM(brouterData);
             console.log("[OSRM Proxy] Successfully fell back to backend BRouter and converted to OSRM format.");
           } catch (brouterErr) {
-            console.log("[OSRM Proxy] Both OSRM and backend BRouter fallback were unsuccessful");
-            return res.status(502).json({ error: "All OSRM routing servers and BRouter fallback were unsuccessful" });
+            throw new Error("Failed to fetch route from both OSRM and BRouter");
           }
         }
       }
@@ -2957,8 +2967,8 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       osrmCache.set(cacheKey, data);
       res.json(data);
     } catch (err: any) {
-      console.error("OSRM proxy error:", err);
-      res.status(500).json({ error: err.message || "Unknown error" });
+      console.error("[OSRM Proxy] Final catch error:", err);
+      res.status(502).json({ error: err.message || "Failed to fetch route" });
     }
   });
 

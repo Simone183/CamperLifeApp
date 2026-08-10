@@ -61,7 +61,20 @@ export class GlobalErrorBoundary extends Component<Props, State> {
   };
 
   sendCrashReport = async (error: Error, componentStack: string) => {
-    if (this.state.isReporting || this.state.reported) return;
+    const msg = (error.message || String(error)).toLowerCase();
+    
+    // Filtra rumore innocuo di sviluppo (es. WebSocket di Vite HMR o estensioni browser)
+    if (
+      msg.includes("websocket closed") ||
+      msg.includes("failed to connect to websocket") ||
+      msg.includes("resizeobserver loop") ||
+      msg.includes("chrome-extension://") ||
+      msg.includes("moz-extension://")
+    ) {
+      return;
+    }
+
+    if (this.state.isReporting) return;
     this.setState({ isReporting: true });
 
     try {

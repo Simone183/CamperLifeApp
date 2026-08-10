@@ -133,6 +133,8 @@ import {
   LayoutDashboard,
   CloudSun,
   Terminal,
+  Bot,
+  Copy,
 } from "lucide-react";
 
 import { ClientFirestoreAdapter } from "./client-firestore";
@@ -1040,6 +1042,7 @@ export default function App() {
   const [feedbacks, setFeedbacks] = React.useState<any[]>([]);
   const [adminNotifications, setAdminNotifications] = React.useState<any[]>([]);
   const [crashReports, setCrashReports] = React.useState<any[]>([]);
+  const [copiedReportId, setCopiedReportId] = React.useState<string | null>(null);
   const [adminReplies, setAdminReplies] = React.useState<{
     [key: string]: string;
   }>({});
@@ -7333,14 +7336,64 @@ YEAR: 2026
                                   </h5>
                                 </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteCrashReport(report.id)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/50 rounded-lg transition cursor-pointer shrink-0"
-                                  title="Elimina questo report"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const promptText = `[SEGNALAZIONE CRASH DA APPLICAZIONE VIACAMPER]
+Ho riscontrato un errore runtime e desidero la tua assistenza per correggerlo:
+
+- Errore: ${report.message || 'N/D'}
+- Pagina/URL: ${report.url || 'N/D'}
+- Data/Ora: ${report.timestamp ? new Date(report.timestamp).toLocaleString("it-IT") : 'N/D'}
+- Utente: ${report.userEmail || 'Anonimo'}
+- User Agent: ${report.userAgent || 'N/D'}
+
+Stack Trace:
+\`\`\`
+${report.stack || 'Nessuno stack trace disponibile'}
+${report.componentStack ? `\nComponent Stack:\n${report.componentStack}` : ''}
+\`\`\`
+
+Per favore analizza questo bug nel codice della nostra applicazione e applica la correzione.`;
+
+                                      navigator.clipboard.writeText(promptText);
+                                      setCopiedReportId(report.id);
+                                      window.dispatchEvent(
+                                        new CustomEvent("show-toast", {
+                                          detail: {
+                                            message: "📋 Report di crash copiato! Incollalo nella chat con l'Assistente AI per la correzione.",
+                                            type: "success",
+                                          },
+                                        })
+                                      );
+                                      setTimeout(() => setCopiedReportId(null), 3000);
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-bold text-[11px] rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                                    title="Copia i dettagli di questo crash formattati per l'Assistente AI Studio"
+                                  >
+                                    {copiedReportId === report.id ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                        <span>Copiato per l'AI!</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                                        <span>Invia a Assistente AI</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCrashReport(report.id)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/50 rounded-lg transition cursor-pointer shrink-0"
+                                    title="Elimina questo report"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px] text-slate-400 font-mono bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
