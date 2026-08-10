@@ -55,6 +55,7 @@ import { WeatherWidget } from "./WeatherWidget";
 import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
+import { MapPoiIcon, getMapPoiIconHtml } from "./MapPoiIcon";
 import {
   getTile,
   getBestTile,
@@ -4394,23 +4395,11 @@ out center;`;
                           setShowClickedPopup(false);
                         }}
                       >
-                        <div className="flex flex-col items-center justify-center w-9 h-12">
-                          <div
-                            className={`w-9 h-9 rounded-full ${colorClass} ${ringClass} flex items-center justify-center shadow-md border-2 text-white relative`}
-                          >
-                            <span className="text-sm select-none">
-                              {labelLetter}
-                            </span>
-                            {heightViolation && (
-                              <span className="absolute -top-1 -right-1 text-[9px] bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center border border-white font-bold animate-bounce">
-                                ⚠️
-                              </span>
-                            )}
-                          </div>
-                          <div
-                            className={`w-2 h-2 rounded-full ${heightViolation ? "bg-rose-600" : colorClass} rotate-45 -mt-1 shadow-sm`}
-                          ></div>
-                        </div>
+                        <MapPoiIcon
+                          category={place.category}
+                          isViolation={heightViolation}
+                          isSelected={selectedPlace?.id === place.id}
+                        />
                       </AdvancedMarker>
                     );
                   })}
@@ -8910,47 +8899,18 @@ export function LeafletOfflineMap({
     // Add markers for all filtered places
     console.log("MapTab: rendering places:", places.length);
     places.forEach((place) => {
-      const normCat = (place.category || "").toLowerCase();
-      let emoji = "💧";
-      let colorClass = "bg-[#0077B6]";
-      if (normCat.includes("sosta")) {
-        colorClass = "bg-[#FF8552]";
-        emoji = "📍";
-      } else if (normCat.includes("campeggio") || normCat.includes("camping")) {
-        colorClass = "bg-[#5A6B4E]";
-        emoji = "⛺";
-      } else if (normCat.includes("parcheggio") || normCat.includes("parcheggio_camper")) {
-        colorClass = "bg-[#0056b3]";
-        emoji = "🅿️";
-      } else if (normCat.includes("service")) {
-        colorClass = "bg-[#0077B6]";
-        emoji = "💧";
-      } else if (normCat.includes("camper")) {
-        colorClass = "bg-[#0056b3]";
-        emoji = "🅿️";
-      }
-
       const isViolation =
         place.hasMaxHeightLimit &&
         place.maxHeight &&
         parseDimToNumber(vehicleDimensions.height) > place.maxHeight;
-      const ringClass = isViolation
-        ? "ring-4 ring-rose-500 bg-rose-600 border-rose-200 animate-pulse"
-        : "border-white";
+
+      const { html, iconSize, iconAnchor } = getMapPoiIconHtml(place.category, isViolation);
 
       const customDivIcon = L.divIcon({
         className: "custom-div-icon",
-        html: `
-          <div class="flex flex-col items-center justify-center">
-            <div class="w-8 h-8 rounded-full ${colorClass} ${ringClass} flex items-center justify-center shadow-md border-2 text-white relative">
-              <span style="font-size: 12px;">${emoji}</span>
-              ${isViolation ? '<span class="absolute -top-1 -right-1 text-[8px] bg-red-600 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center border border-white font-bold">⚠️</span>' : ""}
-            </div>
-            <div class="w-1.5 h-1.5 rounded-full ${isViolation ? "bg-rose-600" : colorClass} rotate-45 -mt-0.5 shadow-sm"></div>
-          </div>
-        `,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
+        html,
+        iconSize,
+        iconAnchor,
       });
 
       const marker = L.marker([place.lat, place.lng], {
