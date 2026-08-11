@@ -1932,22 +1932,25 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   });
   app2.post("/api/login", async (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "Email e password richiesti per accedere." });
+      const { email, password } = req.body || {};
+      const cleanEmail = String(email || "").toLowerCase().trim();
+      const cleanPass = String(password || "").trim();
+      if (!cleanEmail || !cleanPass) {
+        return res.status(400).json({ error: "Email e password sono richiesti per accedere." });
       }
-      const userDoc = await firestoreDb.collection("users").doc(email.toLowerCase().trim()).get();
+      const userDoc = await firestoreDb.collection("users").doc(cleanEmail).get();
       if (!userDoc.exists) {
-        return res.status(400).json({ error: "Nessun account trovato con questa email." });
+        return res.status(400).json({ error: "Nessun account registrato con questa email." });
       }
       const userData = userDoc.data();
-      if (userData.password !== password) {
-        return res.status(400).json({ error: "Password non corretta." });
+      const storedPass = String(userData.password || "").trim();
+      if (storedPass !== cleanPass) {
+        return res.status(400).json({ error: "Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'." });
       }
       if (userData.approved === false) {
         return res.status(403).json({ error: "Il tuo account \xE8 in attesa di approvazione da parte di un moderatore." });
       }
-      console.log(`[Firestore Auth] User logged in: ${email}`);
+      console.log(`[Firestore Auth] User logged in: ${cleanEmail}`);
       res.json({
         success: true,
         user: {
@@ -1962,6 +1965,55 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err) {
       console.error("Error in login endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown login error" });
+    }
+  });
+  app2.post("/api/reset-password", async (req, res) => {
+    try {
+      const { email, newPassword } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "L'indirizzo email \xE8 obbligatorio." });
+      }
+      const formattedEmail = email.toLowerCase().trim();
+      const userRef = firestoreDb.collection("users").doc(formattedEmail);
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        return res.status(404).json({ error: "Nessun utente trovato con questo indirizzo email." });
+      }
+      let updatedPass = newPassword;
+      if (!updatedPass || updatedPass.trim().length < 4) {
+        updatedPass = "ViaCamper" + Math.floor(1e3 + Math.random() * 9e3);
+      } else {
+        updatedPass = updatedPass.trim();
+      }
+      await userRef.update({ password: updatedPass });
+      if (process.env.RESEND_API_KEY) {
+        try {
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: "ViaCamperApp <onboarding@resend.dev>",
+            to: formattedEmail,
+            subject: "\u{1F511} Ripristino Password ViaCamper",
+            html: `<div style="font-family: sans-serif; padding: 20px;">
+              <h2>Ripristino Password ViaCamper</h2>
+              <p>Ciao <strong>${userDoc.data()?.nickname || "Camperista"}</strong>,</p>
+              <p>La tua password per l'account <code>${formattedEmail}</code> \xE8 stata aggiornata:</p>
+              <p style="font-size: 18px; font-weight: bold; background: #f1f5f9; padding: 10px; border-radius: 8px;">${updatedPass}</p>
+              <p>Puoi accedere all'app utilizzando questa password.</p>
+            </div>`
+          });
+        } catch (e) {
+          console.warn("[Reset Password] Errore invio email resend:", e);
+        }
+      }
+      res.json({
+        success: true,
+        message: `Password impostata con successo! Password: ${updatedPass}`,
+        password: updatedPass
+      });
+    } catch (err) {
+      console.error("Error in reset-password endpoint:", err);
+      res.status(500).json({ error: err.message || "Errore durante il ripristino password." });
     }
   });
   app2.post("/api/user/update-profile", async (req, res) => {

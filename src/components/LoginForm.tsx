@@ -15,16 +15,57 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
+  const [showResetModal, setShowResetModal] = React.useState(false);
+  const [resetEmail, setResetEmail] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [resetMsg, setResetMsg] = React.useState<string | null>(null);
+  const [isResetting, setIsResetting] = React.useState(false);
+
+  const handleResetPassword = async () => {
+    if (!resetEmail) {
+      setResetMsg('⚠️ Inserisci la tua email.');
+      return;
+    }
+    setResetMsg(null);
+    setIsResetting(true);
+    try {
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Errore nel ripristino password.');
+      }
+      setResetMsg(data.message || '✅ Password aggiornata con successo! Ora puoi accedere.');
+      setTimeout(() => {
+        if (data.success) {
+          setEmail(resetEmail);
+          if (newPassword) setPassword(newPassword);
+          setShowResetModal(false);
+        }
+      }, 2000);
+    } catch (err: any) {
+      setResetMsg(`⚠️ ${err.message || 'Errore imprevisto.'}`);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
+    const cleanEmail = email.trim();
+    const cleanPass = password.trim();
+
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: cleanEmail, password: cleanPass })
       });
 
       const data = await res.json();
@@ -97,6 +138,16 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
             </button>
           </div>
           
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowResetModal(true)}
+              className="text-xs text-slate-500 hover:text-[#3E4A35] font-bold underline cursor-pointer"
+            >
+              Password dimenticata?
+            </button>
+          </div>
+
           <button 
             type="submit"
             disabled={isLoading}
@@ -105,6 +156,55 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
             {isLoading ? 'Connessione...' : 'Accedi'}
           </button>
         </form>
+
+        {showResetModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+              <h3 className="font-black text-lg text-slate-900 text-center">Recupera / Imposta Password</h3>
+              <p className="text-xs text-slate-600 text-center">
+                Inserisci l'email del tuo account per ricevere la tua password o impostarne una nuova.
+              </p>
+              {resetMsg && (
+                <div className={`p-3 text-xs font-bold rounded-lg text-center ${resetMsg.includes('⚠️') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {resetMsg}
+                </div>
+              )}
+              <div className="space-y-3">
+                <input
+                  type="email"
+                  placeholder="La tua email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20"
+                />
+                <input
+                  type="password"
+                  placeholder="Nuova Password (opzionale)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-200 cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={isResetting}
+                  className="flex-1 py-2 bg-[#3E4A35] text-white font-bold text-xs rounded-lg hover:bg-[#5A6B4E] cursor-pointer"
+                >
+                  {isResetting ? 'Invio...' : 'Ripristina'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {onSwitchToRegistration && (
           <div className="mt-6 text-center text-xs text-slate-500 font-medium">
