@@ -2,13 +2,13 @@ apply plugin: 'com.android.application'
 
 android {
     namespace = "com.ViaCamper.myapp"
-    compileSdk 36
+    compileSdk 35
     defaultConfig {
         applicationId "com.ViaCamper.myapp"
         minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion 36
-        versionCode 7
-        versionName "2.0.5"
+        targetSdkVersion 35
+        versionCode 9
+        versionName "2.0.7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
