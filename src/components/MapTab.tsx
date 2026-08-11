@@ -8808,6 +8808,7 @@ export function LeafletOfflineMap({
         maxZoom: 19,
         maxNativeZoom: offlineActive ? 16 : 19, // Support detailed offline maps up to zoom 16
         attribution: "&copy; Google | ViaCamper Offline Cache",
+        subdomains: "0123",
       },
     );
 

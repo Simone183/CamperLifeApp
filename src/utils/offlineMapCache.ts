@@ -359,8 +359,8 @@ export async function downloadRegion(
 
         if (navigator.onLine && realDownloadCount < maxConsecutiveRealDownloads) {
           try {
-            // Use proxy API to bypass CORS
-            const directTileUrl = `/api/map-tile/${tile.z}/${tile.x}/${tile.y}`;
+            // Fetch directly from Google's CORS-enabled tile server
+            const directTileUrl = `https://mt1.google.com/vt/lyrs=m&x=${tile.x}&y=${tile.y}&z=${tile.z}`;
             
             const res = await fetch(directTileUrl);
             if (res.ok) {

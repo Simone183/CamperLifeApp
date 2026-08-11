@@ -62,6 +62,78 @@ try {
           }
 
           if (isApiCall && apiPath) {
+            // Intercettazioni di servizi cartografici pubblici per bypassare il server sandbox quando siamo su mobile nativo
+            if (apiPath.startsWith("/api/map-data-proxy")) {
+              try {
+                let query = "";
+                if (init && init.body) {
+                  const bodyStr = init.body.toString();
+                  if (bodyStr.startsWith("{")) {
+                    const parsed = JSON.parse(bodyStr);
+                    query = parsed.data || "";
+                  } else {
+                    query = bodyStr;
+                  }
+                }
+                if (query) {
+                  const servers = [
+                    "https://overpass-api.de/api/interpreter",
+                    "https://lz4.overpass-api.de/api/interpreter",
+                    "https://overpass.openstreetmap.fr/api/interpreter"
+                  ];
+                  const tryOverpass = async (index: number): Promise<Response> => {
+                    if (index >= servers.length) throw new Error("All overpass servers busy");
+                    const controller = new AbortController();
+                    const tId = setTimeout(() => controller.abort(), 6000);
+                    try {
+                      const res = await originalFetch.call(window, servers[index], {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: `data=${encodeURIComponent(query)}`,
+                        signal: controller.signal
+                      });
+                      clearTimeout(tId);
+                      if (res.ok) return res;
+                      return tryOverpass(index + 1);
+                    } catch (e) {
+                      clearTimeout(tId);
+                      return tryOverpass(index + 1);
+                    }
+                  };
+                  return tryOverpass(0);
+                }
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct OSM proxy:", err);
+              }
+            }
+
+            if (apiPath.startsWith("/api/nominatim-reverse")) {
+              try {
+                const urlObj = new URL(urlStr, window.location.href);
+                const lat = urlObj.searchParams.get("lat") || "";
+                const lon = urlObj.searchParams.get("lon") || "";
+                const targetUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&addressdetails=1`;
+                return originalFetch.call(window, targetUrl, {
+                  headers: { "User-Agent": "ViaCamperApp/2.0" }
+                });
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct Nominatim Reverse:", err);
+              }
+            }
+
+            if (apiPath.startsWith("/api/nominatim")) {
+              try {
+                const urlObj = new URL(urlStr, window.location.href);
+                const q = urlObj.searchParams.get("q") || "";
+                const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`;
+                return originalFetch.call(window, targetUrl, {
+                  headers: { "User-Agent": "ViaCamperApp/2.0" }
+                });
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct Nominatim Search:", err);
+              }
+            }
+
             // SE HAI UN URL DI PRODUZIONE PUBBLICO (es. Cloud Run pubblico, Railway, Render), inseriscilo qui.
             // Se questo URL è configurato, l'app sul telefono dei beta tester proverà prima questo, bypassando i blocchi di Google AI Studio!
             const productionBase = ""; 

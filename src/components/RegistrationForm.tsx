@@ -14,7 +14,9 @@ interface RegistrationFormProps {
 export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, hideBack, firestore }: RegistrationFormProps) {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const [name, setName] = React.useState('');
   const [surname, setSurname] = React.useState('');
   const [dob, setDob] = React.useState('');
@@ -51,6 +53,12 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Le password inserite non corrispondono.");
+      return;
+    }
+
     setIsLoading(true);
 
     const isNativeOrExternal = typeof window !== "undefined" && (
@@ -232,15 +240,26 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
             </div>
           </div>
 
-          <div className="relative">
-            <Calendar className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-            <input 
-              type="date" 
-              value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20 text-slate-500"
-              required
-            />
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 pl-1">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <label className="text-xs font-bold text-slate-700">
+                Data di nascita
+              </label>
+            </div>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-3 w-5 h-5 text-slate-400 pointer-events-none" />
+              <input 
+                type={dob ? "date" : "text"} 
+                placeholder="Data di nascita"
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+                onFocus={(e) => { e.target.type = "date"; }}
+                onBlur={(e) => { if (!e.target.value) e.target.type = "text"; }}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20 text-slate-500"
+                required
+              />
+            </div>
           </div>
 
           <div className="relative">
@@ -284,6 +303,26 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
               title={showPassword ? "Nascondi password" : "Mostra password"}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+
+          <div className="relative">
+            <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+            <input 
+              type={showConfirmPassword ? "text" : "password"} 
+              placeholder="Conferma password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none cursor-pointer flex items-center justify-center h-5 w-5"
+              title={showConfirmPassword ? "Nascondi password" : "Mostra password"}
+            >
+              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
 

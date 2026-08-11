@@ -132,15 +132,8 @@ export function getWeightUnitTonnes(settings: AppSettings): string {
 }
 
 export function getTileUrl(mapTheme: string): string {
-  switch (mapTheme) {
-    case 'satellite':
-      return '/api/map-tile/{z}/{x}/{y}?lyrs=s';
-    case 'hybrid':
-      return '/api/map-tile/{z}/{x}/{y}?lyrs=y';
-    case 'standard':
-    default:
-      return '/api/map-tile/{z}/{x}/{y}?lyrs=m';
-  }
+  const lyrs = mapTheme === 'satellite' ? 's' : mapTheme === 'hybrid' ? 'y' : 'm';
+  return `https://mt{s}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`;
 }
 
 export function parseDimToNumber(val: string | number | undefined | null): number {
