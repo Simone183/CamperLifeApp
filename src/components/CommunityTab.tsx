@@ -52,19 +52,128 @@ function getRelativeTime(timestamp: string): string {
   }
 }
 
-function renderTextWithHashtags(text: string) {
+function renderTextWithHashtagsAndMentions(text: string) {
   if (!text) return null;
   const parts = text.split(/(\s+)/);
   return parts.map((part, i) => {
     if (part.startsWith('#') && part.length > 1) {
       return (
-        <span key={i} className="font-bold text-[#3E4A35] dark:text-[#A3B896] hover:underline cursor-pointer">
+        <span key={i} className="font-extrabold text-[#3E4A35] dark:text-[#A3B896] hover:underline cursor-pointer">
+          {part}
+        </span>
+      );
+    }
+    if (part.startsWith('@') && part.length > 1) {
+      return (
+        <span key={i} className="inline-flex items-center font-extrabold bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 dark:bg-emerald-500/25 px-1.5 py-0.5 rounded-md mx-0.5 text-[0.9em] border border-emerald-500/20 shadow-2xs">
           {part}
         </span>
       );
     }
     return part;
   });
+}
+
+function QuotedReplyBox({ replyTo }: { replyTo?: { id: string; user: string; text: string } }) {
+  if (!replyTo) return null;
+  return (
+    <div className="mb-2 p-2.5 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border-l-4 border-emerald-600 dark:border-emerald-500 text-xs shadow-2xs">
+      <div className="font-extrabold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 text-[11px]">
+        <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+        <span>Risposta a</span>
+        <span className="bg-emerald-200/80 dark:bg-emerald-800/80 text-emerald-950 dark:text-emerald-100 px-1.5 py-0.2 rounded font-black">
+          @{replyTo.user}
+        </span>
+      </div>
+      <p className="italic line-clamp-2 text-slate-600 dark:text-slate-300 text-[11px] mt-1 pl-1 border-l border-emerald-300/50 dark:border-emerald-800/50">
+        "{replyTo.text}"
+      </p>
+    </div>
+  );
+}
+
+function UserMentionPickerModal({
+  isOpen,
+  onClose,
+  users,
+  onSelectUser,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  users: string[];
+  onSelectUser: (username: string) => void;
+}) {
+  const [query, setQuery] = React.useState('');
+
+  if (!isOpen) return null;
+
+  const filtered = users.filter((u) =>
+    u.toLowerCase().includes(query.toLowerCase())
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full p-4 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+        <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-700">
+          <div className="flex items-center gap-2 font-extrabold text-xs text-slate-800 dark:text-slate-100">
+            <span className="text-base">🏷️</span>
+            <span>Tagga un Utente della Community</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cerca nickname..."
+            className="w-full pl-9 pr-3 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-600"
+            autoFocus
+          />
+        </div>
+
+        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+          {filtered.length === 0 ? (
+            <div className="text-center py-6 text-xs text-slate-400 italic">
+              Nessun utente trovato per "{query}"
+            </div>
+          ) : (
+            filtered.map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => {
+                  onSelectUser(u);
+                  onClose();
+                }}
+                className="w-full text-left p-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-slate-700/60 flex items-center justify-between gap-2.5 transition-colors cursor-pointer group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[10px] flex items-center justify-center shrink-0 uppercase shadow-2xs">
+                    {u[0]}
+                  </div>
+                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
+                    @{u}
+                  </span>
+                </div>
+                <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300 px-2 py-0.5 rounded-md shrink-0">
+                  Tagga
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface CommunityTabProps {
@@ -231,6 +340,11 @@ export default function CommunityTab({
   const [replyMedia, setReplyMedia] = React.useState<{ [msgId: string]: { url: string; type: 'image' | 'video'; name: string } }>({});
   const [mediaModal, setMediaModal] = React.useState<{ url: string; type: 'image' | 'video' } | null>(null);
 
+  // Quoted Reply & User Tagging States
+  const [quotedTarget, setQuotedTarget] = React.useState<{ id: string; user: string; text: string; msgId?: string } | null>(null);
+  const [showMentionPicker, setShowMentionPicker] = React.useState(false);
+  const [activeMentionTargetKey, setActiveMentionTargetKey] = React.useState<'chat' | 'social' | 'postModal' | string>('chat');
+
   const postFileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (
@@ -296,6 +410,79 @@ export default function CommunityTab({
     }
     return 'Sam83';
   }, [currentUser]);
+
+  // Unique community usernames list for tagging autocomplete
+  const communityUsersList = React.useMemo(() => {
+    const set = new Set<string>();
+    sanitizedMessages.forEach((m) => {
+      if (m.user) set.add(m.user.replace(/ \(Camperista\)/, '').replace(/^Tu$/, '').trim());
+      m.replies?.forEach((r) => {
+        if (r.user) set.add(r.user.replace(/ \(Camperista\)/, '').replace(/^Tu$/, '').trim());
+      });
+    });
+    if (activeUserName) set.add(activeUserName.replace(/ \(Camperista\)/, '').trim());
+    if (currentUser?.nickname) set.add(currentUser.nickname.trim());
+    return Array.from(set).filter(
+      (u) => u && !u.toLowerCase().includes('rolly') && u !== 'Tu' && u.length > 1
+    );
+  }, [sanitizedMessages, activeUserName, currentUser]);
+
+  const handleTagUser = React.useCallback((username: string, targetKey: 'chat' | 'social' | 'postModal' | string) => {
+    const cleanUser = username.replace(/ \(Camperista\)/, '').trim();
+    const tagStr = `@${cleanUser} `;
+
+    if (targetKey === 'chat' || targetKey === 'postModal') {
+      setPostText((prev) => (prev.includes(tagStr) ? prev : `${prev ? prev + ' ' : ''}${tagStr}`));
+    } else if (targetKey === 'social') {
+      setQuickSocialText((prev) => (prev.includes(tagStr) ? prev : `${prev ? prev + ' ' : ''}${tagStr}`));
+    } else {
+      setReplyTexts((prev) => {
+        const current = prev[targetKey] || '';
+        return {
+          ...prev,
+          [targetKey]: current.includes(tagStr) ? current : `${current ? current + ' ' : ''}${tagStr}`,
+        };
+      });
+      setExpandedReplies((prev) => ({ ...prev, [targetKey]: true }));
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: `🎯 Utente @${cleanUser} taggato nel messaggio!` },
+      })
+    );
+  }, []);
+
+  const handleStartReply = React.useCallback((target: { id: string; user: string; text: string; msgId?: string }) => {
+    const cleanUser = target.user.replace(/ \(Camperista\)/, '').trim();
+    setQuotedTarget({
+      id: target.id,
+      user: cleanUser,
+      text: target.text,
+      msgId: target.msgId,
+    });
+
+    if (target.msgId) {
+      setExpandedReplies((prev) => ({ ...prev, [target.msgId!]: true }));
+    }
+
+    // Auto-tag user in appropriate input field
+    if (viewMode === 'chat') {
+      handleTagUser(cleanUser, 'chat');
+    } else if (viewMode === 'social' && !target.msgId) {
+      handleTagUser(cleanUser, 'social');
+    } else if (target.msgId) {
+      handleTagUser(cleanUser, target.msgId);
+    } else {
+      handleTagUser(cleanUser, target.id);
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: `💬 Stai rispondendo a @${cleanUser}` },
+      })
+    );
+  }, [viewMode, handleTagUser]);
 
   const currentUserAvatar = activeUserName.slice(0, 2).toUpperCase();
   const currentUserColor = 'bg-[#5A6B4E]';
@@ -523,6 +710,7 @@ export default function CommunityTab({
       mediaUrl: postMedia?.url,
       mediaType: postMedia?.type,
       isModerated: mod.hasProfanity,
+      replyTo: quotedTarget ? { id: quotedTarget.id, user: quotedTarget.user, text: quotedTarget.text } : undefined,
       replies: mod.hasProfanity
         ? [
             {
@@ -541,6 +729,7 @@ export default function CommunityTab({
     setQuickSocialText('');
     setPostMedia(null);
     setPostLocationName('');
+    setQuotedTarget(null);
     
     if (mod.hasProfanity) {
       window.dispatchEvent(
@@ -596,6 +785,7 @@ export default function CommunityTab({
       mediaUrl: postMedia?.url,
       mediaType: postMedia?.type,
       isModerated: hasProfanity,
+      replyTo: quotedTarget ? { id: quotedTarget.id, user: quotedTarget.user, text: quotedTarget.text } : undefined,
       replies: hasProfanity && targetType !== 'chat'
         ? [
             {
@@ -643,6 +833,7 @@ export default function CommunityTab({
     setPostText('');
     setPostMedia(null);
     setPostLocationName('');
+    setQuotedTarget(null);
     setShowCreatePostModal(false);
 
     if (hasProfanity) {
@@ -763,6 +954,7 @@ export default function CommunityTab({
       mediaUrl: currentMedia?.url,
       mediaType: currentMedia?.type,
       isModerated: hasProfanity,
+      replyTo: quotedTarget ? { id: quotedTarget.id, user: quotedTarget.user, text: quotedTarget.text } : undefined,
     };
 
     const newReplies = [userReply];
@@ -779,6 +971,7 @@ export default function CommunityTab({
         mediaUrl: undefined,
         mediaType: undefined,
         isModerated: true,
+        replyTo: undefined,
       });
     }
 
@@ -796,6 +989,7 @@ export default function CommunityTab({
     );
 
     setReplyTexts(prev => ({ ...prev, [msgId]: '' }));
+    setQuotedTarget(null);
     setReplyMedia(prev => {
       const next = { ...prev };
       delete next[msgId];
@@ -1406,9 +1600,10 @@ export default function CommunityTab({
                       )}
                     </div>
 
-                    {/* Post Text & Hashtags */}
-                    <div className="px-4 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-line">
-                      {renderTextWithHashtags(msg.text)}
+                    {/* Post Text & Hashtags & Quotes */}
+                    <div className="px-4 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-line space-y-1.5">
+                      <QuotedReplyBox replyTo={msg.replyTo} />
+                      <div>{renderTextWithHashtagsAndMentions(msg.text)}</div>
                     </div>
 
                     {/* Navigation card to view shared trip */}
@@ -1555,6 +1750,8 @@ export default function CommunityTab({
                                 key={reply.id}
                                 className="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-2xs space-y-1.5"
                               >
+                                <QuotedReplyBox replyTo={reply.replyTo} />
+
                                 <div className="flex justify-between items-center gap-2">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <UserAvatar
@@ -1572,17 +1769,33 @@ export default function CommunityTab({
                                     <span className="text-[9px] text-slate-400 shrink-0">{getRelativeTime(reply.timestamp)}</span>
                                   </div>
 
-                                  {isAdmin && (
+                                  <div className="flex items-center gap-1.5 shrink-0">
                                     <button
-                                      onClick={() => handleDeleteReply(msg.id, reply.id)}
-                                      className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer shrink-0"
-                                      title="Elimina commento"
+                                      type="button"
+                                      onClick={() => handleStartReply({ id: reply.id, user: reply.user, text: reply.text, msgId: msg.id })}
+                                      className="text-[10px] font-extrabold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-1"
+                                      title="Rispondi a questo commento"
                                     >
-                                      <Trash2 className="w-3 h-3" />
+                                      <MessageSquare className="w-3 h-3" />
+                                      <span>Rispondi</span>
                                     </button>
-                                  )}
+
+                                    {isAdmin && (
+                                      <button
+                                        onClick={() => handleDeleteReply(msg.id, reply.id)}
+                                        className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
+                                        title="Elimina commento"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <p className="text-xs text-slate-700 dark:text-slate-300 pl-8">{reply.text}</p>
+
+                                <div className="text-xs text-slate-700 dark:text-slate-300 pl-8">
+                                  {renderTextWithHashtagsAndMentions(reply.text)}
+                                </div>
+
                                 {reply.mediaUrl && (
                                   <div className="pl-8 pt-1">
                                     <img
@@ -1595,6 +1808,25 @@ export default function CommunityTab({
                                 )}
                               </div>
                             ))}
+                          </div>
+                        )}
+
+                        {/* Quoted Banner inside comment box if active for this message */}
+                        {quotedTarget && (quotedTarget.msgId === msg.id || quotedTarget.id === msg.id) && (
+                          <div className="p-2 bg-emerald-50 dark:bg-emerald-950/80 rounded-xl border border-emerald-300 dark:border-emerald-800 flex items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-1.5 overflow-hidden text-emerald-900 dark:text-emerald-200 text-[11px]">
+                              <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="truncate">
+                                <strong className="font-extrabold">Rispondi a @{quotedTarget.user}:</strong> "{quotedTarget.text}"
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setQuotedTarget(null)}
+                              className="p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900 rounded-full text-slate-500 cursor-pointer shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         )}
 
@@ -1622,6 +1854,17 @@ export default function CommunityTab({
                             title="Allegazione foto/video"
                           >
                             <Paperclip className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMentionTargetKey(msg.id);
+                              setShowMentionPicker(true);
+                            }}
+                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 font-extrabold text-xs cursor-pointer flex items-center justify-center shrink-0"
+                            title="Tagga un utente della community"
+                          >
+                            <span className="font-black text-xs text-[#3E4A35] dark:text-[#A3B896]">@</span>
                           </button>
                           <input
                             type="text"
@@ -1729,7 +1972,14 @@ export default function CommunityTab({
                           : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/70 dark:border-slate-700 rounded-bl-none'
                       }`}
                     >
-                      {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
+                      {/* Quoted Message if replying */}
+                      <QuotedReplyBox replyTo={msg.replyTo} />
+
+                      {msg.text && (
+                        <p className="whitespace-pre-wrap">
+                          {renderTextWithHashtagsAndMentions(msg.text)}
+                        </p>
+                      )}
                       {msg.isModerated && !msg.user.includes('Rolly') && (
                         <div className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded mt-1">
                           <span>🛡️ Censurato da Rolly</span>
@@ -1755,8 +2005,8 @@ export default function CommunityTab({
                         </div>
                       )}
 
-                      {/* Like button & footer for chat bubble */}
-                      <div className={`mt-2 pt-1.5 border-t flex items-center justify-between text-[10px] ${
+                      {/* Like & Reply button footer for chat bubble */}
+                      <div className={`mt-2 pt-1.5 border-t flex items-center justify-between gap-2 text-[10px] ${
                         isMe ? 'border-white/20 text-white/90' : 'border-slate-200/60 dark:border-slate-700/60 text-slate-500 dark:text-slate-400'
                       }`}>
                         <button
@@ -1771,6 +2021,18 @@ export default function CommunityTab({
                         >
                           <Heart className={`w-3.5 h-3.5 ${msg.likedByCurrentUser ? 'fill-current' : ''}`} />
                           <span>{msg.likes > 0 ? msg.likes : 'Mi piace'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleStartReply({ id: msg.id, user: msg.user, text: msg.text })}
+                          className={`flex items-center gap-1 font-bold transition-all cursor-pointer hover:scale-105 ${
+                            isMe ? 'text-white/90 hover:text-white' : 'hover:text-emerald-600 dark:hover:text-emerald-400'
+                          }`}
+                          title="Rispondi e cita questo messaggio"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Rispondi</span>
                         </button>
                       </div>
 
@@ -1832,6 +2094,26 @@ export default function CommunityTab({
 
           {/* Quick Chat Bottom Input Bar */}
           <div>
+            {quotedTarget && (
+              <div className="px-3 py-2 bg-emerald-50 dark:bg-emerald-950/80 border-t border-emerald-300 dark:border-emerald-800 flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 overflow-hidden text-emerald-900 dark:text-emerald-200">
+                  <MessageSquare className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div className="truncate">
+                    <span className="font-extrabold">Risposta a @{quotedTarget.user}: </span>
+                    <span className="italic opacity-90">"{quotedTarget.text}"</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuotedTarget(null)}
+                  className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900 rounded-full text-slate-500 cursor-pointer shrink-0"
+                  title="Annulla citazione"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {postMedia && (
               <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 overflow-hidden text-xs text-slate-700 dark:text-slate-300">
@@ -1868,6 +2150,17 @@ export default function CommunityTab({
                 title="Allegato foto o video"
               >
                 <Paperclip className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveMentionTargetKey('chat');
+                  setShowMentionPicker(true);
+                }}
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-extrabold text-xs transition-all cursor-pointer shrink-0 flex items-center justify-center"
+                title="Tagga un utente della community"
+              >
+                <span className="font-black text-sm text-[#3E4A35] dark:text-[#A3B896]">@</span>
               </button>
               <input
                 type="text"
@@ -1994,7 +2287,7 @@ export default function CommunityTab({
 
                     {/* SOS Text */}
                     <div className="px-4 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
-                      {renderTextWithHashtags(msg.text)}
+                      {renderTextWithHashtagsAndMentions(msg.text)}
                     </div>
 
                     {/* Media Attachment if present */}
@@ -2754,9 +3047,21 @@ export default function CommunityTab({
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Testo del Messaggio / Pensiero:
-                </label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Testo del Messaggio / Pensiero:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMentionTargetKey('postModal');
+                      setShowMentionPicker(true);
+                    }}
+                    className="text-[11px] font-extrabold text-[#3E4A35] dark:text-[#A3B896] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>🏷️ Tagga Utente</span>
+                  </button>
+                </div>
                 <textarea
                   value={postText}
                   onChange={(e) => setPostText(e.target.value)}
@@ -2916,6 +3221,14 @@ export default function CommunityTab({
           }}
         />
       )}
+
+      {/* User Mention Picker Modal */}
+      <UserMentionPickerModal
+        isOpen={showMentionPicker}
+        onClose={() => setShowMentionPicker(false)}
+        users={communityUsersList}
+        onSelectUser={(u) => handleTagUser(u, activeMentionTargetKey)}
+      />
     </div>
   );
 }

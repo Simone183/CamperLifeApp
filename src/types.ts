@@ -137,6 +137,11 @@ export interface CommunityMessage {
   isExpiredChallenge?: boolean;
   isModerated?: boolean;
   sharedTripId?: string;
+  replyTo?: {
+    id: string;
+    user: string;
+    text: string;
+  };
   replies?: Array<{
     id: string;
     user: string;
@@ -148,6 +153,11 @@ export interface CommunityMessage {
     mediaUrl?: string;
     mediaType?: 'image' | 'video';
     isModerated?: boolean;
+    replyTo?: {
+      id: string;
+      user: string;
+      text: string;
+    };
   }>;
 }
 
