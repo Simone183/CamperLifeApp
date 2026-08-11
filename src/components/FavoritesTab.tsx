@@ -7,6 +7,7 @@ import React from 'react';
 import { Place, PlaceCategory } from '../types';
 import { Heart, Search, Compass, MapPin, Trash2, Star, ArrowRight } from 'lucide-react';
 import { CategoryIllustration } from './CategoryIllustration';
+import { PlaceOccupancyBadge } from './PlaceOccupancyBadge';
 
 interface FavoritesTabProps {
   favoriteIds: string[];
@@ -227,6 +228,7 @@ export default function FavoritesTab({
                           <Star className="w-3 h-3 fill-current" />
                           <span className="font-bold text-slate-800 dark:text-slate-200 font-mono text-[9px]">{place.rating.toFixed(1)}</span>
                         </div>
+                        <PlaceOccupancyBadge placeId={place.id} size="sm" />
                       </div>
 
                       <h4 className="font-black text-slate-850 dark:text-slate-100 text-sm truncate leading-snug group-hover:text-[#3E4A35] dark:group-hover:text-emerald-400 transition-colors">

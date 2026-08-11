@@ -255,34 +255,34 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ lat, lng, placeNam
   }
 
   return (
-    <div className="bg-[#F4F6F0] rounded-2xl p-3 sm:p-4 border border-[#3E4A35]/15 mt-4 group">
+    <div className="bg-slate-200 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl p-4 my-4 shadow-xs group">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#3E4A35]/10 pb-2 mb-3">
+      <div className="flex items-center justify-between border-b border-slate-300 dark:border-slate-700 pb-2.5 mb-3">
         <div className="flex items-center gap-1.5">
           {getWeatherIcon(current.weatherCode, "w-5 h-5")}
-          <span className="font-extrabold text-xs text-[#3E4A35] uppercase tracking-wide">
+          <span className="font-extrabold text-xs text-slate-800 dark:text-slate-100 uppercase tracking-wide">
             Previsioni Meteo
           </span>
         </div>
 
         {/* Toggle view mode */}
-        <div className="flex bg-[#E7EBDC] p-0.5 rounded-lg border border-[#3E4A35]/10">
+        <div className="flex bg-white dark:bg-slate-900 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700">
           <button
             onClick={() => setViewMode('today')}
-            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+            className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
               viewMode === 'today' 
                 ? 'bg-[#3E4A35] text-white shadow-sm' 
-                : 'text-[#3E4A35] hover:bg-[#3E4A35]/5'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             Oggi
           </button>
           <button
             onClick={() => setViewMode('forecast')}
-            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+            className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
               viewMode === 'forecast' 
                 ? 'bg-[#3E4A35] text-white shadow-sm' 
-                : 'text-[#3E4A35] hover:bg-[#3E4A35]/5'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             5 Giorni
@@ -297,43 +297,43 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ lat, lng, placeNam
           <div className="flex items-center justify-between gap-2.5">
             <div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-black text-[#3E4A35] tracking-tight">{formatTemperature(current.temperature, settings)}</span>
+                <span className="text-2xl sm:text-3xl font-black text-[#3E4A35] dark:text-emerald-400 tracking-tight">{formatTemperature(current.temperature, settings)}</span>
                 {current.apparentTemperature !== undefined && (
-                  <span className="text-slate-500 text-[10px] font-medium font-mono">Perc. {current.apparentTemperature}°</span>
+                  <span className="text-slate-600 dark:text-slate-400 text-[10px] font-medium font-mono">Perc. {current.apparentTemperature}°</span>
                 )}
               </div>
-              <p className="text-xs font-bold text-slate-700 mt-0.5">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
                 {getWeatherLabel(current.weatherCode)}
               </p>
             </div>
 
-            <div className="p-1 px-2.5 bg-[#E7EBDC] rounded-xl flex items-center justify-center border border-[#3E4A35]/10">
+            <div className="p-1 px-2.5 bg-white dark:bg-slate-900 rounded-xl flex items-center justify-center border border-slate-300 dark:border-slate-700 shadow-2xs">
               {getWeatherIcon(current.weatherCode, "w-10 h-10")}
             </div>
           </div>
 
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-3 gap-1.5 mt-3">
-            <div className="bg-[#E7EBDC]/50 rounded-xl p-2 flex flex-col items-center justify-center border border-[#3E4A35]/5">
-              <Thermometer className="w-3.5 h-3.5 text-[#3E4A35]/70 mb-1" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Min / Max</span>
-              <span className="text-xs font-black text-[#3E4A35] mt-1 font-mono">
+            <div className="bg-white dark:bg-slate-900 rounded-xl p-2 flex flex-col items-center justify-center border border-slate-300 dark:border-slate-700 shadow-2xs">
+              <Thermometer className="w-3.5 h-3.5 text-[#3E4A35] dark:text-emerald-400 mb-1" />
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Min / Max</span>
+              <span className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1 font-mono">
                 {daily[0] ? `${daily[0].tempMin}° / ${daily[0].tempMax}°` : '-- / --'}
               </span>
             </div>
 
-            <div className="bg-[#E7EBDC]/50 rounded-xl p-2 flex flex-col items-center justify-center border border-[#3E4A35]/5">
-              <Wind className="w-3.5 h-3.5 text-sky-600 mb-1" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Vento</span>
-              <span className="text-xs font-black text-[#3E4A35] mt-1 font-mono">
+            <div className="bg-white dark:bg-slate-900 rounded-xl p-2 flex flex-col items-center justify-center border border-slate-300 dark:border-slate-700 shadow-2xs">
+              <Wind className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 mb-1" />
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Vento</span>
+              <span className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1 font-mono">
                 {formatSpeed(current.windSpeed, settings)}
               </span>
             </div>
 
-            <div className="bg-[#E7EBDC]/50 rounded-xl p-2 flex flex-col items-center justify-center border border-[#3E4A35]/5">
-              <Droplets className="w-3.5 h-3.5 text-blue-500 mb-1" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Umidità</span>
-              <span className="text-xs font-black text-[#3E4A35] mt-1 font-mono">
+            <div className="bg-white dark:bg-slate-900 rounded-xl p-2 flex flex-col items-center justify-center border border-slate-300 dark:border-slate-700 shadow-2xs">
+              <Droplets className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 mb-1" />
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">Umidità</span>
+              <span className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1 font-mono">
                 {current.humidity}%
               </span>
             </div>
@@ -352,19 +352,21 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ lat, lng, placeNam
           {daily.map((day, idx) => (
             <div 
               key={day.date} 
-              className={`flex items-center justify-between p-2 rounded-xl border border-transparent transition-all ${
-                idx === 0 ? 'bg-[#E7EBDC] border-[#3E4A35]/15' : 'bg-white/40 hover:bg-[#E7EBDC]/30'
+              className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
+                idx === 0 
+                  ? 'bg-white dark:bg-slate-900 border-[#3E4A35] dark:border-emerald-500 shadow-2xs' 
+                  : 'bg-white/80 dark:bg-slate-900/80 border-slate-300 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-900'
               }`}
             >
               <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-[#E7EBDC]/60 flex items-center justify-center">
+                <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                   {getWeatherIcon(day.weatherCode, "w-4 h-4")}
                 </div>
                 <div>
-                  <p className="text-[11px] font-black text-[#3E4A35] leading-none">
+                  <p className="text-[11px] font-black text-slate-800 dark:text-slate-100 leading-none">
                     {formatDayName(day.date)}
                   </p>
-                  <p className="text-[9px] font-bold text-slate-500 mt-0.5 leading-none">
+                  <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">
                     {getWeatherLabel(day.weatherCode)}
                   </p>
                 </div>
@@ -372,14 +374,14 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ lat, lng, placeNam
 
               <div className="flex items-center gap-3">
                 {day.precipitationProbability !== undefined && day.precipitationProbability > 10 && (
-                  <span className="text-[9px] font-bold font-mono text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                  <span className="text-[9px] font-bold font-mono text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/60 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                     💧{day.precipitationProbability}%
                   </span>
                 )}
                 <div className="text-right font-mono text-[10px]">
-                  <span className="text-slate-500 font-medium">{day.tempMin}°</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">{day.tempMin}°</span>
                   <span className="text-slate-400 mx-1">/</span>
-                  <span className="text-[#3E4A35] font-extrabold">{day.tempMax}°</span>
+                  <span className="text-[#3E4A35] dark:text-emerald-400 font-extrabold">{day.tempMax}°</span>
                 </div>
               </div>
             </div>

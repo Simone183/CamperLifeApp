@@ -74,6 +74,14 @@ export interface AppSettings {
   ttsGender?: 'auto' | 'female' | 'male';
 }
 
+export type OccupancyStatus = 'molto_posto' | 'vari_posti' | 'pochi_posti' | 'tutto_pieno';
+
+export interface PlaceOccupancyReport {
+  status: OccupancyStatus;
+  timestamp: number; // ms timestamp
+  reportedBy?: string;
+}
+
 export interface Place {
   id: string;
   name: string;

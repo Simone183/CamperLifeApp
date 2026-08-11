@@ -58,6 +58,7 @@ import { applyTtsVoiceAndPitch } from "./utils/ttsHelper";
 import WorkLogTab from "./components/WorkLogTab";
 import SharedTripsTab from "./components/SharedTripsTab";
 import { TripShareModal } from "./components/TripShareModal";
+import { LegalTermsSection } from "./components/LegalTermsSection";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
 import { CartoonCamperAvatar } from "./components/CartoonCamperAvatar";
 import { OnboardingTour } from "./components/OnboardingTour";
@@ -2599,8 +2600,11 @@ out center;`;
     lng: number;
   } | null>(null);
   const [userAccuracy, setUserAccuracy] = React.useState<number | null>(null);
-  const [isGPSEnabled, setIsGPSEnabled] = React.useState<boolean>(false);
+  const [isGPSEnabled, setIsGPSEnabled] = React.useState<boolean>(true);
   const [hasDeniedGPS, setHasDeniedGPS] = React.useState<boolean>(false);
+  const [isManualCamperLocation, setIsManualCamperLocation] = React.useState<boolean>(false);
+  const [manualCamperPlaceId, setManualCamperPlaceId] = React.useState<string | null>(null);
+  const manualCamperTimeRef = React.useRef<number>(0);
 
   const handleGPSEnabledChange = (enabled: boolean) => {
     setTimeout(() => {
@@ -2611,7 +2615,7 @@ out center;`;
     }, 0);
   };
 
-  const handleRequestSingleGPS = () => {
+  const handleRequestSingleGPS = React.useCallback(() => {
     if (typeof window !== "undefined" && navigator.geolocation) {
       let resolvedFast = false;
 
@@ -2623,16 +2627,10 @@ out center;`;
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: {
-                message: "⚡ Posizione rapida rilevata! Affinamento GPS in corso...",
-              },
-            }),
-          );
+          setUserAccuracy(position.coords.accuracy);
         },
         () => {
-          // If fast path fails, we'll wait for the high accuracy one
+          // If fast path fails, high accuracy query will attempt next
         },
         { timeout: 3000, enableHighAccuracy: false, maximumAge: 10000 }
       );
@@ -2644,19 +2642,11 @@ out center;`;
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
-          if (!resolvedFast) {
-            window.dispatchEvent(
-              new CustomEvent("show-toast", {
-                detail: {
-                  message: "✅ Posizione GPS accurata rilevata! Meteo caricato.",
-                },
-              }),
-            );
-          }
+          setUserAccuracy(position.coords.accuracy);
         },
         (error) => {
           console.warn("GPS high-accuracy fetch warning: ", error);
-          if (resolvedFast) return; // Keep the fast network location if high accuracy failed
+          if (resolvedFast) return; // Keep fast location if high accuracy failed
 
           const isPermissionDenied =
             error.code === 1 ||
@@ -2665,40 +2655,32 @@ out center;`;
             error.message?.toLowerCase().includes("denied");
           if (isPermissionDenied) {
             setHasDeniedGPS(true);
+            setIsGPSEnabled(false);
           }
-          setIsGPSEnabled(false);
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: {
-                message:
-                  "⚠️ Impossibile rilevare la posizione GPS accurata. Accetta i permessi di localizzazione nelle impostazioni.",
-              },
-            }),
-          );
         },
         { timeout: 8000, enableHighAccuracy: true },
       );
-    } else {
-      window.dispatchEvent(
-        new CustomEvent("show-toast", {
-          detail: {
-            message: "⚠️ Geolocation non supportata da questo browser.",
-          },
-        }),
-      );
     }
-  };
+  }, []);
+
+  // Aggancio automatico GPS all'avvio dell'app
+  React.useEffect(() => {
+    if (!hasDeniedGPS && typeof window !== "undefined" && navigator.geolocation) {
+      handleRequestSingleGPS();
+    }
+  }, [handleRequestSingleGPS, hasDeniedGPS]);
 
   // Watch GPS Position of device
   React.useEffect(() => {
     let watchId: number | null = null;
+    let fallbackWatchId: number | null = null;
+
     if (
       isGPSEnabled &&
       typeof window !== "undefined" &&
       navigator.geolocation
     ) {
-      // Parallel fast IP fallback to avoid being stuck on the generic center of Italy
-      // especially inside iframes/sandboxes and desktops without GPS hardware
+      // Parallel fast IP fallback if user location is not yet known
       if (!userLocation) {
         fetch("https://ipapi.co/json/")
           .then((res) => res.json())
@@ -2730,6 +2712,7 @@ out center;`;
           });
       }
 
+      // Fast immediate fix
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setUserLocation(prev => prev || {
@@ -2742,14 +2725,32 @@ out center;`;
         { enableHighAccuracy: false, timeout: 5000, maximumAge: Infinity }
       );
       
+      const handlePositionSuccess = (position: GeolocationPosition) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+        const now = Date.now();
+
+        if (manualCamperTimeRef.current > 0 && now - manualCamperTimeRef.current > 800) {
+          setIsManualCamperLocation(false);
+          setManualCamperPlaceId(null);
+          manualCamperTimeRef.current = 0;
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: "🛰️ Posizione GPS reale rilevata! Aggiornata posizione del camper.",
+              },
+            })
+          );
+        }
+
+        setUserLocation({ lat, lng });
+        setUserAccuracy(accuracy);
+      };
+
+      // Primary High Accuracy Watch
       watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setUserAccuracy(position.coords.accuracy);
-        },
+        handlePositionSuccess,
         (error) => {
           const isPermissionDenied =
             error.code === 1 ||
@@ -2769,27 +2770,32 @@ out center;`;
               }),
             );
           } else {
-            console.warn(
-              "GPS Watch warning (ignorable):",
-              error.code,
-              error.message,
-            );
-            // Don't spam toast for simple timeouts if we are still enabled
+            console.warn("GPS High Accuracy Watch warning:", error.code, error.message);
+            // If high accuracy times out or fails, start a low-accuracy fallback watch
+            if (!fallbackWatchId) {
+              fallbackWatchId = navigator.geolocation.watchPosition(
+                handlePositionSuccess,
+                (err) => console.warn("GPS Low Accuracy Watch warning:", err),
+                { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
+              );
+            }
           }
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 },
       );
-    } else {
-      // Do not clear the last known location when disabling GPS to save battery, just stop updating it.
     }
+
     return () => {
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
       }
+      if (fallbackWatchId !== null) {
+        navigator.geolocation.clearWatch(fallbackWatchId);
+      }
     };
   }, [isGPSEnabled]);
 
-  // Listen for simulated/manual camper location updates
+  // Listen for simulated/manual camper location updates and GPS resets
   React.useEffect(() => {
     const handleSimulate = (e: any) => {
       if (e.detail && e.detail.lat && e.detail.lng) {
@@ -2798,30 +2804,59 @@ out center;`;
           lng: e.detail.lng,
         });
         setUserAccuracy(10); // manually placed camper has high precision (10m)
+        setIsManualCamperLocation(true);
+        setManualCamperPlaceId(e.detail.placeId || null);
+        manualCamperTimeRef.current = Date.now();
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: "📍 Posizione Camper impostata manualmente sulla mappa!",
+              message: "📍 Posizione Camper impostata su questa sosta!",
             },
           })
         );
       }
     };
+
+    const handleResetGPS = () => {
+      setIsManualCamperLocation(false);
+      setManualCamperPlaceId(null);
+      manualCamperTimeRef.current = 0;
+      if (typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setUserLocation({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            });
+            setUserAccuracy(position.coords.accuracy);
+            window.dispatchEvent(
+              new CustomEvent("show-toast", {
+                detail: {
+                  message: "🛰️ Posizione GPS reale ripristinata!",
+                },
+              })
+            );
+          },
+          (err) => console.warn("Reset GPS error:", err),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+    };
+
     window.addEventListener("simulate-camper-location", handleSimulate);
+    window.addEventListener("reset-real-gps", handleResetGPS);
     return () => {
       window.removeEventListener("simulate-camper-location", handleSimulate);
+      window.removeEventListener("reset-real-gps", handleResetGPS);
     };
   }, []);
 
-  // Attiva automaticamente il GPS quando si entra nella scheda "mappa & navigatore" o se c'è un viaggio attivo, e lo disattiva nelle altre per risparmiare batteria
+  // Mantiene il GPS sempre attivo all'avvio dell'app se i permessi sono concessi
   React.useEffect(() => {
-    const hasActive = trips.some((t) => t.status === "Attivo");
-    if ((activeTab === "map_nav" || hasActive) && !hasDeniedGPS) {
+    if (!hasDeniedGPS) {
       setIsGPSEnabled(true);
-    } else {
-      setIsGPSEnabled(false);
     }
-  }, [activeTab, hasDeniedGPS, trips]);
+  }, [hasDeniedGPS]);
 
   // Helper to calculate distance between coordinates (Haversine formula)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -3150,23 +3185,23 @@ out center;`;
               <h2 className="text-xl font-black text-[#3E4A35]">
                 Benvenuto su ViaCamper App
               </h2>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                Termini di Servizio & Tutela Legale (2026)
+              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                Termini di Servizio & Privacy Policy (v2.1 • Agosto 2026)
               </span>
             </div>
 
             <div className="text-xs text-slate-600 space-y-2.5 text-left bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 max-h-56 overflow-y-auto leading-relaxed">
               <p>
-                <strong>Proprietà Intellettuale:</strong> ViaCamper è software proprietario privato di <strong>Simone Sambucci</strong> © 2026. Tutti i diritti riservati.
+                <strong>Titolare del Trattamento:</strong> ViaCamper nella persona di <strong>Simone Sambucci</strong> (email: viacamperapp@gmail.com).
               </p>
               <p>
-                <strong>Servizi Terzi & Mappe:</strong> L'applicazione utilizza cartografia OpenStreetMap e le API ufficiali <strong>Google Maps Platform & Google Places API</strong> per l'esplorazione e la ricerca di punti di interesse (POI).
+                <strong>Proprietà Intellettuale:</strong> ViaCamper è un software proprietario privato dedicato al turismo itinerante. Mappe, POI, rotte e calcolo sagoma utilizzano OpenStreetMap, Google Maps Platform, Google Places API e Google Gemini AI.
               </p>
               <p>
-                <strong>Contenuti Utente (UGC):</strong> Pubblicando recensioni, foto, tappe o itinerari su ViaCamper, concedi al titolare della piattaforma il diritto non esclusivo, gratuito e perpetuo di utilizzo e pubblicazione dei contenuti all'interno del servizio.
+                <strong>Contenuti Utente (UGC):</strong> Caricando recensioni, fotografie o tappe, concedi al Titolare una licenza d'uso non esclusiva, gratuita e valida in tutto il mondo per la pubblicazione e promozione nell'app.
               </p>
               <p>
-                <strong>Privacy & Protezione Dati (GDPR):</strong> I tuoi dati personali e di localizzazione sono tutelati in conformità al Regolamento UE 2016/679 (GDPR). La posizione GPS viene usata solo in tempo reale per la navigazione e non viene ceduta a terzi.
+                <strong>Privacy & GDPR (UE 2016/679):</strong> I dati personali e la geolocalizzazione GPS sono trattati nel pieno rispetto del GDPR. Puoi richiedere in qualsiasi momento l'accesso o la cancellazione dei dati (Diritto all'Oblio).
               </p>
             </div>
 
@@ -3192,7 +3227,7 @@ out center;`;
                 }}
                 className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs rounded-xl transition cursor-pointer"
               >
-                Leggi Tutela Legale Completa 📜
+                Leggi Tutela Legale Completa & Scarica PDF 📜
               </button>
             </div>
           </div>
@@ -3558,6 +3593,8 @@ out center;`;
                   userAccuracy={userAccuracy}
                   isGPSEnabled={isGPSEnabled}
                   onGPSEnabledChange={handleGPSEnabledChange}
+                  isManualCamperLocation={isManualCamperLocation}
+                  manualCamperPlaceId={manualCamperPlaceId}
                   hasSafetyBanner={incompleteChecklistCount > 0}
                   isAdmin={isAdminLoggedIn}
                   favoriteIds={favoriteIds}
@@ -5423,213 +5460,14 @@ out center;`;
                   )}
 
                   {settingsSubTab === "copyright" && (
-                    <div className="space-y-6 max-w-4xl mx-auto p-4 sm:p-6 font-sans">
-                      {/* Top Header Card with premium aesthetic */}
-                      <div className="bg-gradient-to-br from-[#3E4A35] via-[#4D5D42] to-[#5A6B4E] text-white p-6 rounded-2xl shadow-md relative overflow-hidden">
-                        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-                        <div className="relative z-10 space-y-2">
-                          <span className="text-[9px] uppercase font-black tracking-widest bg-white/20 px-2.5 py-1 rounded-full text-white">
-                            Registro di Tutela Legale & Licenza d'Uso
-                          </span>
-                          <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
-                            <Scale className="w-6 h-6 text-emerald-300 shrink-0" />
-                            Diritto d'Autore, Privacy GDPR & Contenuti Utente
-                          </h2>
-                          <p className="text-xs text-white/95 max-w-2xl leading-relaxed">
-                            ViaCamper è un'applicazione e software proprietario privato ideato e sviluppato da Simone Sambucci.
-                            In questa sezione sono disciplinati la proprietà intellettuale, la tutela della privacy degli utenti (GDPR UE 2016/679), l'utilizzo delle API terze (Google Maps Platform, Google Places API e OpenStreetMap) e i diritti d'uso relativi ai contenuti pubblicati dagli utenti.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Info grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                        {/* Status Card (Left Column) */}
-                        <div className="md:col-span-4 bg-[#F2EFE9] rounded-2xl p-5 border border-stone-200/60 flex flex-col items-center text-center justify-between space-y-4">
-                          <div className="w-16 h-16 bg-[#3E4A35]/15 text-[#3E4A35] rounded-2xl flex items-center justify-center border border-[#3E4A35]/20">
-                            <Lock className="w-8 h-8" />
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 tracking-widest">
-                              TITOLARE E PROPRIETARIO UNICO
-                            </span>
-                            <h3 className="text-base font-extrabold text-slate-800">
-                              Simone Sambucci
-                            </h3>
-                            <p className="text-[11px] text-slate-500 font-medium">
-                              viacamperapp@gmail.com
-                            </p>
-                            <span className="inline-block text-[10px] font-bold text-slate-600 bg-stone-200/60 px-2.5 py-0.5 rounded-md mt-1">
-                              Anno 2026 • Tutti i Diritti Riservati
-                            </span>
-                          </div>
-
-                          <div className="bg-emerald-500/10 text-emerald-800 px-3 py-1.5 rounded-full font-black text-[10px] tracking-wider uppercase border border-emerald-500/20 w-full">
-                            🔒 Software Proprietario Blindato
-                          </div>
-                        </div>
-
-                        {/* Interactive Legal Protection & Copy Area (Right Column) */}
-                        <div className="md:col-span-8 bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
-                          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5">
-                            <span>📜 Certificato di Proprietà e Licenza d'Uso ViaCamper</span>
-                          </h4>
-
-                          <div className="text-xs text-slate-600 space-y-3.5 leading-relaxed">
-                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
-                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
-                                💻 Proprietà Intellettuale del Software
-                              </h5>
-                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
-                                Tutti gli elementi dell'applicazione <strong>ViaCamper</strong> (inclusi codice sorgente, algoritmi di calcolo rotta e sagomato camper, interfaccia utente, layout grafici, marchio e logo) sono di esclusiva titolarità di <strong>Simone Sambucci</strong>. È vietata qualsiasi forma di copia, decompilazione o distribuzione non autorizzata (L. 633/1941).
-                              </p>
-                            </div>
-
-                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
-                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
-                                🗺️ Mappe & Servizi di Terze Parti (Google Places & OSM)
-                              </h5>
-                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
-                                • <strong>Google Maps Platform & Google Places API</strong>: I dati di ricerca luoghi d'interesse (POI), ristoranti, attività e servizi nelle vicinanze sono integrati tramite le API ufficiali di Google LLC (© Google LLC).<br />
-                                • <strong>OpenStreetMap (OSM) & Overpass API</strong>: Le aree di sosta, campeggi e tracce cartografiche di base sono estrapolate da © contributori di OpenStreetMap e distribuite sotto licenza Open Database License (ODbL).<br />
-                                • <strong>Google Gemini AI</strong>: I servizi di intelligenza artificiale per l'assistente vocale Rolly e la generazione itinerari utilizzano le API Google Gemini.<br />
-                                • <strong>Audio & Radio</strong>: I brani musicali sono ospitati tramite SoundHelix (soundhelix.com) per finalità dimostrative. I canali radio appartengono ai rispettivi editori.
-                              </p>
-                            </div>
-
-                            <div className="p-3.5 bg-[#3E4A35]/10 rounded-2xl border border-[#3E4A35]/20 space-y-1">
-                              <h5 className="font-extrabold text-[#3E4A35] text-xs flex items-center gap-1.5">
-                                🔒 Privacy degli Utenti & Protezione Dati (GDPR UE 2016/679)
-                              </h5>
-                              <p className="text-[11.5px] text-[#2D2926] leading-relaxed">
-                                • <strong>Trattamento dei Dati Personali</strong>: I dati personali inseriti su ViaCamper (email, dati veicolo, diario di bordo) sono trattati in conformità al Regolamento Generale sulla Protezione dei Dati (GDPR UE 2016/679) tramite infrastruttura protetta Firebase Cloud Firestore ed usati esclusivamente per l'erogazione dei servizi dell'app.<br />
-                                • <strong>Geolocalizzazione e Privacy Posizione</strong>: La posizione GPS dell'utente viene elaborata solo in tempo reale per abilitare la navigazione, la ricerca di tappe vicine e l'allerta ostacoli sagoma. I dati di posizione non vengono tracciati a fini profilativi né venduti o ceduti a terzi.<br />
-                                • <strong>Diritti dell'Interessato e Diritto all'Oblio</strong>: L'utente ha il diritto in qualsiasi momento di accedere ai propri dati, correggerli o chiederne la cancellazione definitiva (Diritto all'Oblio - Art. 17 GDPR) inviando una richiesta a <strong>viacamperapp@gmail.com</strong> o tramite la gestione account nell'app.<br />
-                                • <strong>Cookie e Archiviazione Locale</strong>: ViaCamper utilizza unicamente memorizzazione tecnica locale (localStorage) per salvare le preferenze dell'utente, senza fare uso di cookie di profilazione pubblicitaria di terze parti.
-                              </p>
-                            </div>
-
-                            <div className="p-3.5 bg-[#3E4A35]/10 rounded-2xl border border-[#3E4A35]/20 space-y-1">
-                              <h5 className="font-extrabold text-[#3E4A35] text-xs flex items-center gap-1.5">
-                                📸 Diritto di Utilizzo sui Contenuti Pubblicati dagli Utenti (UGC)
-                              </h5>
-                              <p className="text-[11.5px] text-[#2D2926] leading-relaxed">
-                                Pubblicando o inviando qualsiasi contenuto all'interno dell'applicazione ViaCamper (inclusi ma non limitati a: recensioni e valutazioni delle aree sosta, fotografie, resoconti dei diari di bordo, segnalazioni di tappe, itinerari condivisi, post nel forum e messaggi in community), l'utente mantiene la paternità morale del contenuto e contestualmente concede a <strong>Simone Sambucci (titolare della piattaforma ViaCamper)</strong> una <strong>licenza d'uso non esclusiva, gratuita, perpetua, irrevocabile, trasferibile e valida in tutto il mondo</strong> per conservare, riprodurre, pubblicare, distribuire, adattare, mostrare e promuovere tali contenuti all'interno dell'applicazione, sui siti web e sui canali social collegati a ViaCamper. L'utente garantisce di essere titolare dei contenuti pubblicati e manleva ViaCamper da pretese di terzi.
-                              </p>
-                            </div>
-
-                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
-                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
-                                🛡️ Moderazione Contenuti & Sospensione Account
-                              </h5>
-                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
-                                Il titolare di ViaCamper si riserva il diritto insindacabile di rimuovere, modificare o oscurare qualsiasi contenuto (recensioni, foto, commenti o schede di sosta) ritenuto inopportuno, falso, offensivo o in violazione delle leggi vigenti, nonché di sospendere l'accesso agli utenti che violano le regole della community.
-                              </p>
-                            </div>
-
-                            <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/70 space-y-1">
-                              <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
-                                ⚖️ Legge Applicabile e Foro Competente
-                              </h5>
-                              <p className="text-[11.5px] text-slate-600 leading-relaxed">
-                                Le presenti condizioni e tutti i rapporti legali derivanti dall'utilizzo dell'applicazione ViaCamper sono regolati esclusivamente dalla legge italiana. Per qualsiasi controversia è competente in via esclusiva il Foro di residenza del titolare del software (Simone Sambucci).
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="bg-rose-500/5 border border-rose-500/15 p-4 rounded-xl space-y-1.5">
-                            <div className="flex items-center gap-2 text-rose-900 font-bold text-xs">
-                              ⚠️ Limitazioni di Responsabilità per la Navigazione
-                            </div>
-                            <p className="text-xs text-rose-800 leading-relaxed">
-                              Le indicazioni sul calcolo rotte (altezza, peso e limiti sagoma camper) e sui punti sosta hanno scopo esclusivamente informativo e ausiliario. Il conducente è l'unico responsabile della condotta di guida e del rispetto della segnaletica stradale reale.
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                            <input
-                              type="checkbox"
-                              id="terms_acceptance"
-                              checked={hasAcceptedTerms}
-                              onChange={(e) => {
-                                setHasAcceptedTerms(e.target.checked);
-                                localStorage.setItem("has_accepted_terms", e.target.checked ? "true" : "false");
-                                if (!e.target.checked) setShowTermsModal(true);
-                              }}
-                              className="w-5 h-5 accent-[#3E4A35]"
-                            />
-                            <label
-                              htmlFor="terms_acceptance"
-                              className="text-xs font-bold text-slate-800 cursor-pointer"
-                            >
-                              Accetto integralmente le condizioni di utilizzo, la politica sulla privacy (GDPR), la licenza UGC e la tutela legale sopra descritte.
-                            </label>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard
-                                .writeText(`CONTRATTO DI LICENZA SOFTWARE, PRIVACY & DIRITTI D'AUTORE - VIACAMPER
-PROJECT: ViaCamper App
-COPYRIGHT HOLDER: Simone Sambucci (viacamperapp@gmail.com)
-YEAR: 2026
-
-1. DIRITTI SUL SOFTWARE: Tutti i diritti di proprietà intellettuale relativi al software ViaCamper appartengono in via esclusiva a Simone Sambucci (L. 633/1941).
-2. SERVIZI TERZI & GOOGLE PLACES: Mappe, POI, geocodifica e ricerca luoghi integrano servizi Google Maps Platform & Google Places API (© Google LLC), OpenStreetMap (ODbL) e Google Gemini AI.
-3. CONTENUTI UTENTE (UGC): Gli utenti che pubblicano foto, recensioni, tappe ed itinerari su ViaCamper concedono a Simone Sambucci una licenza d'uso perpetua, gratuita, non esclusiva e mondiale per l'utilizzo, riproduzione e diffusione dei contenuti sulla piattaforma ViaCamper e canali correlati.
-4. PRIVACY E PROTEZIONE DATI (GDPR UE 2016/679): I dati personali e di localizzazione GPS sono protetti e trattati esclusivamente per l'erogazione dei servizi dell'app, senza tracciamento profilativo né cessione a terzi. L'utente ha il diritto di accesso, rettifica e cancellazione (Diritto all'Oblio).`);
-                              window.dispatchEvent(
-                                new CustomEvent("show-toast", {
-                                  detail: {
-                                    message:
-                                      "📋 Copiata dichiarazione completa di copyright, privacy e licenza!",
-                                  },
-                                }),
-                              );
-                            }}
-                            className="w-full py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
-                          >
-                            <span>📋 Copia Dichiarazione di Copyright, Privacy & Licenza UGC</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Full License Code block displayer */}
-                      <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-5 space-y-3.5">
-                        <div className="flex justify-between items-center gap-2">
-                          <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 tracking-widest">
-                            TESTO COMPLETO DELLA LICENZA PROPRIETARIA, PRIVACY & TERMINI UGC
-                          </span>
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
-                            LICENSE File (ViaCamper 2026)
-                          </span>
-                        </div>
-                        <div className="bg-slate-900 text-slate-100 font-mono text-[10.5px] p-4 rounded-xl overflow-x-auto max-h-[240px] leading-relaxed select-all">
-                          <p className="text-emerald-400 font-bold mb-2">
-                            // VIACAMPER SOFTWARE LICENSE, PRIVACY POLICY & USER CONTENT AGREEMENT (2026)
-                          </p>
-                          <p className="mb-1">PROJECT NAME: ViaCamper App</p>
-                          <p className="mb-1 font-bold">
-                            COPYRIGHT OWNER: Simone Sambucci (viacamperapp@gmail.com)
-                          </p>
-                          <p className="mb-1">YEAR: 2026 • ALL RIGHTS RESERVED</p>
-                          <p className="mt-2 text-slate-300">
-                            1. SOFTWARE PRIVATO: Tutti i diritti sul software ViaCamper appartengono a Simone Sambucci.
-                          </p>
-                          <p className="mt-1 text-slate-300">
-                            2. GOOGLE PLACES & MAPPE: L'app utilizza Google Maps Platform & Google Places API (© Google LLC) e dati OpenStreetMap (© ODbL).
-                          </p>
-                          <p className="mt-1 text-slate-300">
-                            3. LICENZA CONTENUTI UTENTE (UGC): Gli utenti che caricano foto, recensioni o itinerari concedono a Simone Sambucci il diritto perpetuo, gratuito e non esclusivo di utilizzo e pubblicazione dei contenuti sulla piattaforma ViaCamper.
-                          </p>
-                          <p className="mt-1 text-slate-300">
-                            4. PRIVACY & GDPR (REG. UE 2016/679): I dati personali e le posizioni GPS sono tutelati, trattati esclusivamente per il servizio ed esenti da profilazione commerciale o cessione a terzi. È sempre garantito il diritto alla cancellazione completa dell'account.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                    <LegalTermsSection
+                      hasAcceptedTerms={hasAcceptedTerms}
+                      onToggleAcceptance={(acc) => {
+                        setHasAcceptedTerms(acc);
+                        localStorage.setItem("has_accepted_terms", acc ? "true" : "false");
+                        if (!acc) setShowTermsModal(true);
+                      }}
+                    />
                   )}
 
                   {settingsSubTab === "ai_itinerary" && (

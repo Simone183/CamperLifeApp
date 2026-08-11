@@ -125,6 +125,7 @@ export default function FullscreenNavigator({
   const [isTunnelDeadReckoning, setIsTunnelDeadReckoning] = React.useState<boolean>(false);
   const [tunnelStepTick, setTunnelStepTick] = React.useState<number>(0);
   const lastGpsUpdateRef = React.useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const vehicleHeadingRef = React.useRef<number | null>(null);
   const tunnelRouteIndexRef = React.useRef<number>(0);
   const wasInTunnelRef = React.useRef<boolean>(false);
 
@@ -1438,6 +1439,15 @@ out center;`;
             if (lastRecalcPos.current === null || distFromLastRecalcMeters > 100) {
               console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
               
+              // Calculate vehicle motion heading vector along the mistaken road
+              if (lastRecalcPos.current) {
+                const motionHeading = getBearing(lastRecalcPos.current, userPos);
+                vehicleHeadingRef.current = Math.round(motionHeading);
+              } else if (lastGpsUpdateRef.current) {
+                const motionHeading = getBearing([lastGpsUpdateRef.current.lat, lastGpsUpdateRef.current.lng], userPos);
+                vehicleHeadingRef.current = Math.round(motionHeading);
+              }
+
               isFetchInProgressRef.current = true;
               lastRecalcTimestampRef.current = now;
 
@@ -1576,7 +1586,9 @@ out center;`;
       setOsmObstacles([]);
       try {
         let url = `/api/osrm?start=${startLoc[1]},${startLoc[0]}&end=${endLoc[1]},${endLoc[0]}`;
-        const activeHeading = (useCompass && deviceHeading !== null) ? deviceHeading : bearing;
+        const activeHeading = (useCompass && deviceHeading !== null) 
+          ? deviceHeading 
+          : (vehicleHeadingRef.current !== null ? vehicleHeadingRef.current : bearing);
         if (typeof activeHeading === 'number' && activeHeading >= 0) {
           url += `&heading=${Math.round(activeHeading)}`;
         }
@@ -1893,19 +1905,19 @@ out center;`;
               const exitOrd = exitNum ? getItalianOrdinalExit(exitNum) : null;
 
               if (exitOrd && exitOrd.word !== "uscita") {
-                customRecalcSpeech = `Prosegui fino alla rotatoria e prendi la ${exitOrd.word} per rientrare sull'itinerario.`;
+                customRecalcSpeech = `Prosegui sulla strada attuale fino alla rotatoria e prendi la ${exitOrd.word} per rientrare sull'itinerario.`;
               } else {
-                customRecalcSpeech = `Prosegui fino alla rotatoria per invertire la marcia o cambiare strada.`;
+                customRecalcSpeech = `Prosegui sulla strada attuale fino alla rotatoria per invertire la marcia o rientrare sull'itinerario.`;
               }
-            } else if (foundUTurn) {
-              customRecalcSpeech = `Nessuna alternativa avanti. Fai inversione di marcia appena possibile.`;
             } else if (foundTurn) {
               const mod = foundTurn.maneuver?.modifier || "";
               const isLeft = mod.includes('left');
               const stName = foundTurn.name ? `su ${foundTurn.name}` : "";
-              customRecalcSpeech = `Svolta a ${isLeft ? 'sinistra' : 'destra'} ${stName} per seguire il nuovo itinerario.`;
+              customRecalcSpeech = `Prosegui sulla strada attuale e svolta a ${isLeft ? 'sinistra' : 'destra'} ${stName} per seguire il nuovo itinerario.`;
+            } else if (foundUTurn) {
+              customRecalcSpeech = `Prosegui fino al prossimo punto sicuro per effettuare l'inversione di marcia.`;
             } else {
-              customRecalcSpeech = `Nuovo itinerario calcolato: segui le indicazioni.`;
+              customRecalcSpeech = `Nuovo itinerario calcolato: prosegui dritto sulla strada attuale.`;
             }
           }
 
@@ -2892,11 +2904,15 @@ out center;`;
         // Calculate bearing orientation for the current road segment
         const nextIdx = Math.min(closestIdx + 1, routeCoordinates.length - 1);
         const nextCoords = routeCoordinates[nextIdx];
-        if (nextCoords && (targetCoords[0] !== nextCoords[0] || targetCoords[1] !== nextCoords[1])) {
-          const b = getBearing(targetCoords, nextCoords);
-          currentBearing = b;
-          setBearing(b);
+        let b = bearing;
+        if (minDist > 0.02 && vehicleHeadingRef.current !== null) {
+          // Off-route (>20m deviation): orientation follows the vehicle's true motion vector along the mistaken road
+          b = vehicleHeadingRef.current;
+        } else if (nextCoords && (targetCoords[0] !== nextCoords[0] || targetCoords[1] !== nextCoords[1])) {
+          b = getBearing(targetCoords, nextCoords);
         }
+        currentBearing = b;
+        setBearing(b);
       } else {
         targetCoords = userPos;
       }
@@ -3948,15 +3964,24 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   <button
                     type="button"
                     onClick={() => {
-                      // Offset position by ~30 meters to trigger off-route recalculation
+                      // Offset position along a branch direction to simulate taking a wrong turn onto a new road
                       const curIdx = Math.min(simRouteIndex, displayedRouteCoordinates.length - 1);
                       const currNode = displayedRouteCoordinates[curIdx] || startLoc;
-                      const devLat = currNode[0] + 0.00035;
-                      const devLng = currNode[1] + 0.00035;
+                      const nextNode = displayedRouteCoordinates[Math.min(curIdx + 1, displayedRouteCoordinates.length - 1)] || currNode;
+                      
+                      const currHeading = getBearing(currNode, nextNode);
+                      const branchHeading = (currHeading + 35) % 360; // 35 degrees offset onto mistaken road
+                      const devRad = branchHeading * Math.PI / 180;
+                      
+                      // Offset position ~40m forward along the mistaken road vector
+                      const devLat = currNode[0] + (0.00038 * Math.cos(devRad));
+                      const devLng = currNode[1] + (0.00038 * Math.sin(devRad));
+                      
+                      vehicleHeadingRef.current = Math.round(branchHeading);
                       
                       speakInstruction("Ricalcolo del percorso", 'immediate');
                       window.dispatchEvent(new CustomEvent('show-toast', {
-                        detail: { message: "Ricalcolo del percorso", duration: 4000 }
+                        detail: { message: "📍 Ricalcolo del percorso", duration: 4000 }
                       }));
                       
                       isRecalculatedRef.current = true;

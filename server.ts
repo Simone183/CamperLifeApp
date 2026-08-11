@@ -2763,10 +2763,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   const osrmCache = new Map<string, any>();
   const brouterCache = new Map<string, any>();
 
-  async function snapToRoad(coord: string): Promise<string> {
+  async function snapToRoad(coord: string, heading?: string): Promise<string> {
+    const bearingsQuery = (heading !== undefined && heading !== null && heading !== "" && !isNaN(Number(heading)))
+      ? `&bearings=${Math.round((Number(heading) % 360 + 360) % 360)},45`
+      : "";
+
     const servers = [
-      `https://routing.openstreetmap.de/routed-car/nearest/v1/driving/${coord}?number=1`,
-      `https://router.project-osrm.org/nearest/v1/driving/${coord}?number=1`
+      `https://routing.openstreetmap.de/routed-car/nearest/v1/driving/${coord}?number=1${bearingsQuery}`,
+      `https://router.project-osrm.org/nearest/v1/driving/${coord}?number=1${bearingsQuery}`
     ];
     
     try {
@@ -2787,6 +2791,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       });
       return await Promise.any(fetchPromises);
     } catch (e) {
+      if (bearingsQuery !== "") {
+        // Fall back to snapping without bearing constraint if strict bearing match fails
+        return snapToRoad(coord, undefined);
+      }
       console.log(`[OSRM Proxy] All parallel snapping servers returned busy/timeout for coord ${coord}. Using original.`);
       return coord; // Fallback to original
     }
@@ -2904,8 +2912,8 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           : "";
 
         const servers = [
-          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100${bearingsParam}`,
-          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&radiuses=100;100${bearingsParam}`
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`,
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`
         ];
         
         for (const url of servers) {
@@ -2937,9 +2945,9 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       };
 
       // Pre-snap coordinates in parallel always!
-      console.log(`[OSRM Proxy] Snapping coordinates in parallel: ${start} and ${end}`);
+      console.log(`[OSRM Proxy] Snapping coordinates in parallel (heading: ${heading || 'none'}): ${start} and ${end}`);
       const [snappedStart, snappedEnd] = await Promise.all([
-        snapToRoad(start as string),
+        snapToRoad(start as string, heading as string),
         snapToRoad(end as string)
       ]);
       console.log(`[OSRM Proxy] Snapped coordinates: ${snappedStart} -> ${snappedEnd}`);

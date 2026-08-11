@@ -56,6 +56,8 @@ import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { MapPoiIcon, getMapPoiIconHtml } from "./MapPoiIcon";
+import { PlaceOccupancyWidget } from "./PlaceOccupancyWidget";
+import { PlaceOccupancyBadge } from "./PlaceOccupancyBadge";
 import {
   getTile,
   getBestTile,
@@ -454,6 +456,8 @@ interface MapTabProps {
   userAccuracy: number | null;
   isGPSEnabled: boolean;
   onGPSEnabledChange: (enabled: boolean) => void;
+  isManualCamperLocation?: boolean;
+  manualCamperPlaceId?: string | null;
   hasSafetyBanner?: boolean;
   isAdmin?: boolean;
   favoriteIds?: string[];
@@ -557,6 +561,8 @@ export default function MapTab({
   userAccuracy,
   isGPSEnabled,
   onGPSEnabledChange,
+  isManualCamperLocation = false,
+  manualCamperPlaceId = null,
   hasSafetyBanner = false,
   isAdmin = false,
   favoriteIds = [],
@@ -5584,6 +5590,9 @@ out center;`;
                         ℹ️ DATI VERIFICATI
                       </span>
                     )}
+                    {selectedPlace.id !== "current_location" && (
+                      <PlaceOccupancyBadge placeId={selectedPlace.id} size="sm" />
+                    )}
                   </div>
                   <h3 className="font-bold text-slate-800 text-sm mt-1">
                     {selectedPlace.name}
@@ -5650,9 +5659,9 @@ out center;`;
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row flex-wrap gap-2.5 w-full">
+              <div className="w-full space-y-2">
                 {selectedPlace.id === "current_location" ? (
-                  <>
+                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 w-full">
                     <button
                       onClick={() => {
                         setNewPlaceForm((prev) => ({
@@ -5662,10 +5671,10 @@ out center;`;
                         }));
                         setShowAddPlaceModal(true);
                       }}
-                      className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider border border-emerald-500 whitespace-nowrap"
+                      className="px-2 sm:px-4 py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-[10px] sm:text-xs tracking-wider border border-emerald-500 col-span-2"
                     >
-                      <Plus className="w-5 h-5 text-white" />
-                      <span>Nuova Sosta</span>
+                      <Plus className="w-4 h-4 text-white shrink-0" />
+                      <span className="truncate">Nuova Sosta</span>
                     </button>
                     <button
                       onClick={async () => {
@@ -5675,43 +5684,29 @@ out center;`;
                           await autoLoadOSMForProximity(userLocation.lat, userLocation.lng);
                         }
                       }}
-                      className="px-5 py-3.5 bg-orange-600 hover:bg-[#d4510d] active:bg-[#a63d08] text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-[10px] tracking-wider border border-orange-500 whitespace-nowrap"
+                      className="px-2 sm:px-4 py-3 bg-orange-600 hover:bg-[#d4510d] active:bg-[#a63d08] text-white font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-[10px] sm:text-xs tracking-wider border border-orange-500"
                     >
-                      <Navigation className="w-3.5 h-3.5 text-white" />
-                      <span>Soste Vicine</span>
+                      <Navigation className="w-3.5 h-3.5 text-white shrink-0" />
+                      <span className="truncate">Soste Vicine</span>
                     </button>
-                  </>
+                  </div>
                 ) : (
-                  <>
+                  <div className="grid grid-cols-3 gap-2 w-full">
                     <button
                       onClick={() => handleOpenNavigatorSelector(selectedPlace)}
-                      className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider border border-emerald-500 flex-1 min-w-[120px]"
+                      className="py-3 px-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs tracking-tight border border-emerald-500 w-full"
                       title="Scegli il tuo navigatore (Interno sicuro, Google Maps, Waze, Apple Maps)"
                     >
-                      <Compass className="w-5 h-5 text-white animate-pulse" />
+                      <Compass className="w-4 h-4 text-white animate-pulse shrink-0" />
                       <span>Naviga</span>
                     </button>
 
                     <button
-                      onClick={() => {
-                        window.dispatchEvent(
-                          new CustomEvent("simulate-camper-location", {
-                            detail: { lat: selectedPlace.lat, lng: selectedPlace.lng },
-                          }),
-                        );
-                      }}
-                      className="px-5 py-3.5 border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-[10px] tracking-wider whitespace-nowrap"
-                      title="Imposta questa sosta come posizione attuale del camper"
-                    >
-                      <span>🚐 Imposta Camper</span>
-                    </button>
-
-                    <button
                       onClick={() => onToggleFavorite?.(selectedPlace.id)}
-                      className={`px-5 py-3.5 border font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-[10px] tracking-wider whitespace-nowrap ${
+                      className={`py-3 px-1.5 border font-black rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs tracking-tight w-full ${
                         favoriteIds?.includes(selectedPlace.id)
-                          ? "bg-rose-50 border-rose-200 text-rose-600 hover:text-rose-700 hover:bg-rose-100/50"
-                          : "border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 hover:border-rose-200 bg-white"
+                          ? "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800"
+                          : "border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-rose-600 hover:bg-rose-50/50 bg-white dark:bg-slate-900"
                       }`}
                       title={
                         favoriteIds?.includes(selectedPlace.id)
@@ -5720,15 +5715,50 @@ out center;`;
                       }
                     >
                       <Heart
-                        className={`w-3.5 h-3.5 ${favoriteIds?.includes(selectedPlace.id) ? "fill-current text-rose-600" : "text-slate-400"}`}
+                        className={`w-4 h-4 shrink-0 ${
+                          favoriteIds?.includes(selectedPlace.id)
+                            ? "fill-current text-rose-600 dark:text-rose-400 animate-pulse"
+                            : "text-slate-400"
+                        }`}
                       />
                       <span>
-                        {favoriteIds?.includes(selectedPlace.id)
-                          ? "Preferito ❤️"
-                          : "Salva"}
+                        {favoriteIds?.includes(selectedPlace.id) ? "Salva ❤️" : "Salva"}
                       </span>
                     </button>
-                  </>
+
+                    {isManualCamperLocation &&
+                    selectedPlace &&
+                    (manualCamperPlaceId === selectedPlace.id ||
+                      (userLocation &&
+                        Math.abs(userLocation.lat - selectedPlace.lat) < 0.0001 &&
+                        Math.abs(userLocation.lng - selectedPlace.lng) < 0.0001)) ? (
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent("reset-real-gps"));
+                        }}
+                        className="py-3 px-1.5 border border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 font-extrabold rounded-xl flex items-center justify-center gap-1 transition-all shadow-md cursor-pointer uppercase text-xs tracking-tight w-full"
+                        title="Posizione camper impostata manualmente su questa sosta. Clicca per disattivare e ripristinare il GPS reale"
+                      >
+                        <span className="shrink-0 text-sm">📍</span>
+                        <span className="truncate">Sei qui ✅</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          window.dispatchEvent(
+                            new CustomEvent("simulate-camper-location", {
+                              detail: { lat: selectedPlace.lat, lng: selectedPlace.lng, placeId: selectedPlace.id },
+                            }),
+                          );
+                        }}
+                        className="py-3 px-1.5 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 hover:bg-amber-100 font-extrabold rounded-xl flex items-center justify-center gap-1 transition-all shadow-md cursor-pointer uppercase text-xs tracking-tight w-full"
+                        title="Imposta questa sosta come posizione attuale del camper"
+                      >
+                        <span className="shrink-0 text-sm">🚐</span>
+                        <span>Sono qui</span>
+                      </button>
+                    )}
+                  </div>
                 )}
 
                 {activeTrip && (
@@ -5743,11 +5773,11 @@ out center;`;
                       setNewMovementDate(localISOTime);
                       setShowAddMovementModal(true);
                     }}
-                    className="px-5 py-3.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider border border-indigo-500 whitespace-nowrap"
+                    className="w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider border border-indigo-500"
                     title="Aggiungi questo luogo come tappa nel viaggio attivo"
                   >
-                    <Route className="w-5 h-5 text-white" />
-                    <span>Aggiungi Tappa</span>
+                    <Route className="w-5 h-5 text-white shrink-0" />
+                    <span>Aggiungi Tappa nel Viaggio</span>
                   </button>
                 )}
               </div>
@@ -5796,6 +5826,15 @@ out center;`;
               </div>
             )}
 
+            {/* Real-time Occupancy / Availability Widget */}
+            {selectedPlace.id !== "current_location" && (
+              <PlaceOccupancyWidget
+                placeId={selectedPlace.id}
+                placeName={selectedPlace.name}
+                userNickname={currentUser?.nickname}
+              />
+            )}
+
             {/* Weather Widget */}
             <WeatherWidget
               lat={selectedPlace.lat}
@@ -5805,52 +5844,52 @@ out center;`;
 
             {/* Rating Details */}
             {selectedPlace.id !== "current_location" && (
-              <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs">
                 <div className="text-center">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Rumorosità
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.noiseLevel || 3}/5
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Manovre
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.maneuverability || 3}/5
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Segnale
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.cellularSignal || 3}/5
                   </div>
                 </div>
-                <div className="text-center border-t border-slate-200/50 pt-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Terreno
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.groundLevelness || 3}/5
                   </div>
                 </div>
-                <div className="text-center border-t border-slate-200/50 pt-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Ombra
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.shade || 3}/5
                   </div>
                 </div>
-                <div className="text-center border-t border-slate-200/50 pt-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Pulizia
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.cleanliness || 3}/5
                   </div>
                 </div>
@@ -5859,17 +5898,17 @@ out center;`;
 
             {/* Facilities lists */}
             {selectedPlace.id !== "current_location" && (
-              <div>
-                <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                  Servizi Disponibili
+              <div className="my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs space-y-2">
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-700 dark:text-slate-200 block">
+                  🛠️ Servizi Disponibili
                 </span>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {selectedPlace.facilities.map((fac) => (
                     <span
                       key={fac}
-                      className="bg-slate-50 text-slate-700 font-semibold px-2 py-1 rounded-lg border border-slate-100 flex items-center gap-1"
+                      className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold px-2.5 py-1 rounded-xl border border-slate-300 dark:border-slate-700 text-xs flex items-center gap-1.5 shadow-2xs"
                     >
-                      <span className="w-1.5 h-1.5 bg-[#5A6B4E] rounded-full"></span>
+                      <span className="w-1.5 h-1.5 bg-[#5A6B4E] dark:bg-emerald-400 rounded-full"></span>
                       {fac}
                     </span>
                   ))}
@@ -5878,7 +5917,7 @@ out center;`;
             )}
 
             {/* Nearby Places & Restaurants (Google Places) */}
-            <div className="border-t border-slate-100 pt-4">
+            <div className="my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs">
               <NearbyPlacesWidget
                 lat={selectedPlace.lat}
                 lng={selectedPlace.lng}
@@ -5910,19 +5949,19 @@ out center;`;
 
             {/* Photos and Reviews */}
             {selectedPlace.id !== "current_location" && (
-              <div className="border-t border-slate-100 pt-4 space-y-4">
+              <div className="space-y-4 my-4">
               
               {/* Photo Album Preview Button */}
               <button
                 type="button"
                 onClick={() => setIsPhotoAlbumOpen(true)}
-                className="w-full text-left bg-slate-50 hover:bg-slate-100/80 active:scale-[0.99] transition-all p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 group shrink-0"
+                className="w-full text-left bg-slate-200 dark:bg-slate-800 hover:bg-slate-300/80 dark:hover:bg-slate-700/80 active:scale-[0.99] transition-all p-4 rounded-2xl border-2 border-slate-300 dark:border-slate-700 flex items-center justify-between gap-3 group shrink-0 shadow-xs"
               >
                 <div className="flex items-center gap-3 overflow-hidden">
                   {allAlbumPhotos.length > 0 ? (
                     <div className="flex -space-x-3 overflow-hidden shrink-0">
                       {allAlbumPhotos.slice(0, 4).map((url, idx) => (
-                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-white shadow-sm shrink-0">
+                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
                           <img
                             src={url}
                             alt=""
@@ -5938,17 +5977,17 @@ out center;`;
                       ))}
                     </div>
                   ) : (
-                    <div className="w-12 h-12 rounded-lg bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-450 shrink-0">
+                    <div className="w-12 h-12 rounded-lg bg-slate-300 dark:bg-slate-700 border border-slate-400 dark:border-slate-600 flex items-center justify-center text-slate-500 shrink-0">
                       <Camera className="w-5 h-5" />
                     </div>
                   )}
                   
                   <div className="overflow-hidden min-w-0">
-                    <div className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
-                      <Image className="w-3.5 h-3.5 text-[#5A6B4E]" />
+                    <div className="font-bold text-slate-800 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                      <Image className="w-3.5 h-3.5 text-[#5A6B4E] dark:text-emerald-400" />
                       <span>Album Fotografico ({allAlbumPhotos.length})</span>
                     </div>
-                    <p className="text-slate-400 text-[10px] truncate">
+                    <p className="text-slate-600 dark:text-slate-400 text-[10px] truncate">
                       {allAlbumPhotos.length > 0
                         ? "Clicca per guardare tutte le foto o caricarne di nuove"
                         : "Nessuna foto presente. Condividi la tua prima foto!"}
@@ -5956,114 +5995,115 @@ out center;`;
                   </div>
                 </div>
                 
-                <div className="bg-white group-hover:bg-slate-200 p-1.5 rounded-lg border border-slate-200/60 transition-colors">
-                  <Plus className="w-3.5 h-3.5 text-slate-500" />
+                <div className="bg-white dark:bg-slate-900 group-hover:bg-slate-100 dark:group-hover:bg-slate-800 p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 transition-colors">
+                  <Plus className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />
                 </div>
               </button>
 
               {/* Reviews list panel inside */}
-              <div className="flex justify-between items-center">
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-                  Recensioni della Community in Tempo Reale (
-                  {combinedReviews.length})
-                </h4>
-                <div className="flex items-center gap-1 font-bold text-[#3E4A35]">
-                  <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
-                  <span>{Number(selectedPlace.rating).toFixed(1)} / 5.0</span>
-                </div>
-              </div>
-
-              {/* Scroller review records */}
-              <div className="space-y-3 max-h-44 overflow-y-auto pr-1">
-                {combinedReviews.map((rev) => (
-                  <div
-                    key={rev.id}
-                    className="bg-slate-200 p-4 rounded-xl border border-slate-300 shadow-sm space-y-1.5"
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-700">
-                        {rev.user}{" "}
-                        <span className="text-slate-400 font-medium font-mono text-[10px]">
-                          ({rev.vehicleType || "Camperista"})
-                        </span>
-                      </span>
-                      <div className="flex gap-1.5 items-center">
-                        <span className="text-slate-400 text-[10px]">
-                          {rev.date.split("-").reverse().join("/")}
-                        </span>
-                        <div className="flex text-amber-400">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`w-3 h-3 ${i < rev.rating ? "fill-current" : "text-slate-200"}`}
-                            />
-                          ))}
-                        </div>
-                        {isUserAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (deleteConfirmId === rev.id) {
-                                handleDeleteReview(rev.id);
-                                setDeleteConfirmId(null);
-                              } else {
-                                setDeleteConfirmId(rev.id);
-                                setTimeout(() => setDeleteConfirmId(prev => prev === rev.id ? null : prev), 4000);
-                              }
-                            }}
-                            className={`p-1 rounded transition-all cursor-pointer flex items-center gap-1 text-[10px] ${
-                              deleteConfirmId === rev.id
-                                ? "bg-rose-600 text-white hover:bg-rose-700 px-1.5 py-0.5 font-bold"
-                                : "text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                            }`}
-                            title={deleteConfirmId === rev.id ? "Clicca di nuovo per eliminare definitivamente" : "Elimina recensione"}
-                          >
-                            {deleteConfirmId === rev.id ? (
-                              <>
-                                <Check className="w-3 h-3 text-white" />
-                                <span>Sicuro?</span>
-                              </>
-                            ) : (
-                              <Trash2 className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-slate-600 leading-relaxed font-normal">
-                      {rev.comment}
-                    </p>
-                    {rev.priceUpdated && (
-                      <span className="inline-block text-[10px] bg-[#5A6B4E]/10 text-[#3E4A35] border border-[#5A6B4E]/20 rounded-md px-1.5 py-0.5 font-bold font-mono">
-                        Prezzo confermato: {rev.priceUpdated}
-                      </span>
-                    )}
-                    {rev.imageUrl && !brokenReviewImages[rev.imageUrl] && (
-                      <img
-                        style={{ height: "4rem" }}
-                        src={rev.imageUrl}
-                        alt="Revision post"
-                        className="rounded-lg object-cover border mt-1"
-                        onError={() => {
-                          if (rev.imageUrl) {
-                            setBrokenReviewImages(prev => ({ ...prev, [rev.imageUrl!]: true }));
-                          }
-                        }}
-                        referrerPolicy={
-                          rev.imageUrl?.startsWith("http")
-                            ? "no-referrer"
-                            : undefined
-                        }
-                      />
-                    )}
+              <div className="p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs space-y-3.5">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider">
+                    💬 Recensioni Community ({combinedReviews.length})
+                  </h4>
+                  <div className="flex items-center gap-1 font-bold text-[#3E4A35] dark:text-emerald-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs shadow-2xs">
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                    <span>{Number(selectedPlace.rating).toFixed(1)} / 5.0</span>
                   </div>
-                ))}
+                </div>
+
+                {/* Scroller review records */}
+                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                  {combinedReviews.map((rev) => (
+                    <div
+                      key={rev.id}
+                      className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-1.5"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+                          {rev.user}{" "}
+                          <span className="text-slate-400 font-medium font-mono text-[10px]">
+                            ({rev.vehicleType || "Camperista"})
+                          </span>
+                        </span>
+                        <div className="flex gap-1.5 items-center">
+                          <span className="text-slate-400 text-[10px]">
+                            {rev.date.split("-").reverse().join("/")}
+                          </span>
+                          <div className="flex text-amber-400">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`w-3 h-3 ${i < rev.rating ? "fill-current" : "text-slate-200 dark:text-slate-700"}`}
+                              />
+                            ))}
+                          </div>
+                          {isUserAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (deleteConfirmId === rev.id) {
+                                  handleDeleteReview(rev.id);
+                                  setDeleteConfirmId(null);
+                                } else {
+                                  setDeleteConfirmId(rev.id);
+                                  setTimeout(() => setDeleteConfirmId(prev => prev === rev.id ? null : prev), 4000);
+                                }
+                              }}
+                              className={`p-1 rounded transition-all cursor-pointer flex items-center gap-1 text-[10px] ${
+                                deleteConfirmId === rev.id
+                                  ? "bg-rose-600 text-white hover:bg-rose-700 px-1.5 py-0.5 font-bold"
+                                  : "text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                              }`}
+                              title={deleteConfirmId === rev.id ? "Clicca di nuovo per eliminare definitivamente" : "Elimina recensione"}
+                            >
+                              {deleteConfirmId === rev.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-white" />
+                                  <span>Sicuro?</span>
+                                </>
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-normal text-xs">
+                        {rev.comment}
+                      </p>
+                      {rev.priceUpdated && (
+                        <span className="inline-block text-[10px] bg-[#5A6B4E]/10 text-[#3E4A35] dark:text-emerald-400 border border-[#5A6B4E]/20 rounded-md px-1.5 py-0.5 font-bold font-mono">
+                          Prezzo confermato: {rev.priceUpdated}
+                        </span>
+                      )}
+                      {rev.imageUrl && !brokenReviewImages[rev.imageUrl] && (
+                        <img
+                          style={{ height: "4rem" }}
+                          src={rev.imageUrl}
+                          alt="Revision post"
+                          className="rounded-lg object-cover border mt-1"
+                          onError={() => {
+                            if (rev.imageUrl) {
+                              setBrokenReviewImages(prev => ({ ...prev, [rev.imageUrl!]: true }));
+                            }
+                          }}
+                          referrerPolicy={
+                            rev.imageUrl?.startsWith("http")
+                              ? "no-referrer"
+                              : undefined
+                          }
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Write review form */}
               <form
                 onSubmit={handleAddReview}
-                className="p-5 border border-slate-300 rounded-xl space-y-4 bg-slate-200 shadow-sm"
+                className="p-4 border-2 border-slate-300 dark:border-slate-700 rounded-2xl space-y-3.5 bg-slate-200 dark:bg-slate-800 shadow-xs my-4"
               >
                 <span className="text-[10px] font-bold text-slate-700 block uppercase tracking-wider">
                   Aggiungi la tua recensione sul posto
@@ -6416,6 +6456,9 @@ out center;`;
                       ℹ️ DATI VERIFICATI
                     </span>
                   )}
+                  {selectedPlace.id !== "current_location" && (
+                    <PlaceOccupancyBadge placeId={selectedPlace.id} size="sm" />
+                  )}
                 </div>
               </div>
             )}
@@ -6508,52 +6551,52 @@ out center;`;
 
             {/* Rating Details */}
             {selectedPlace.id !== "current_location" && (
-              <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs">
                 <div className="text-center">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Rumorosità
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.noiseLevel || 3}/5
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Manovre
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.maneuverability || 3}/5
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Segnale
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.cellularSignal || 3}/5
                   </div>
                 </div>
-                <div className="text-center border-t border-slate-200/50 pt-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Terreno
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.groundLevelness || 3}/5
                   </div>
                 </div>
-                <div className="text-center border-t border-slate-200/50 pt-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Ombra
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.shade || 3}/5
                   </div>
                 </div>
-                <div className="text-center border-t border-slate-200/50 pt-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                     Pulizia
                   </div>
-                  <div className="text-sm font-black text-[#3E4A35]">
+                  <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.cleanliness || 3}/5
                   </div>
                 </div>
@@ -6561,9 +6604,9 @@ out center;`;
             )}
 
             {/* Quick Actions Panel */}
-            <div className="grid grid-cols-2 gap-2.5 pt-2">
+            <div className="w-full pt-2">
               {selectedPlace.id === "current_location" ? (
-                <>
+                <div className="grid grid-cols-2 gap-2.5 w-full">
                   <button
                     onClick={() => {
                       setNewPlaceForm((prev) => ({
@@ -6593,51 +6636,77 @@ out center;`;
                     <Navigation className="w-4 h-4 text-white" />
                     <span>Soste Vicine</span>
                   </button>
-                </>
+                </div>
               ) : (
-                <div className="flex flex-col gap-2 w-full">
-                  <div className="flex gap-2 w-full">
-                    <button
-                      onClick={() => {
-                        handleOpenNavigatorSelector(selectedPlace);
-                      }}
-                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs tracking-wider border border-emerald-500 cursor-pointer flex-1"
-                    >
-                      <Compass className="w-4 h-4 text-white animate-pulse" />
-                      <span>🗺️ Naviga</span>
-                    </button>
-
-                    <button
-                      onClick={() => onToggleFavorite?.(selectedPlace.id)}
-                      className={`w-full py-3.5 border font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider whitespace-nowrap flex-1 ${
-                        favoriteIds?.includes(selectedPlace.id)
-                          ? "bg-rose-50 text-rose-600 border-rose-200"
-                          : "bg-white border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 hover:border-rose-200"
-                      }`}
-                    >
-                      <Heart
-                        className={`w-4 h-4 ${favoriteIds?.includes(selectedPlace.id) ? "fill-current text-rose-600 animate-pulse" : "text-slate-400"}`}
-                      />
-                      <span>
-                        {favoriteIds?.includes(selectedPlace.id)
-                          ? "Salvato"
-                          : "Salva"}
-                      </span>
-                    </button>
-                  </div>
-                  
+                <div className="grid grid-cols-3 gap-2 w-full">
                   <button
                     onClick={() => {
-                      window.dispatchEvent(
-                        new CustomEvent("simulate-camper-location", {
-                          detail: { lat: selectedPlace.lat, lng: selectedPlace.lng },
-                        }),
-                      );
+                      handleOpenNavigatorSelector(selectedPlace);
                     }}
-                    className="w-full py-3 bg-amber-50 text-amber-800 border border-amber-300 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider"
+                    className="py-3.5 px-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md uppercase text-xs sm:text-sm tracking-wider border border-emerald-500 cursor-pointer w-full"
+                    title="Scegli il tuo navigatore (Interno sicuro, Google Maps, Waze, Apple Maps)"
                   >
-                    <span>🚐 Imposta Sosta come Posizione Camper</span>
+                    <Compass className="w-4 h-4 text-white animate-pulse shrink-0" />
+                    <span>Naviga</span>
                   </button>
+
+                  <button
+                    onClick={() => onToggleFavorite?.(selectedPlace.id)}
+                    className={`py-3.5 px-2 border font-black rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs sm:text-sm tracking-wider w-full ${
+                      favoriteIds?.includes(selectedPlace.id)
+                        ? "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800"
+                        : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-rose-600 hover:bg-rose-50/50"
+                    }`}
+                    title={
+                      favoriteIds?.includes(selectedPlace.id)
+                        ? "Rimuovi dai Preferiti"
+                        : "Aggiungi ai Preferiti"
+                    }
+                  >
+                    <Heart
+                      className={`w-4 h-4 shrink-0 ${
+                        favoriteIds?.includes(selectedPlace.id)
+                          ? "fill-current text-rose-600 animate-pulse"
+                          : "text-slate-400"
+                      }`}
+                    />
+                    <span>
+                      {favoriteIds?.includes(selectedPlace.id) ? "Salva ❤️" : "Salva"}
+                    </span>
+                  </button>
+
+                  {isManualCamperLocation &&
+                  selectedPlace &&
+                  (manualCamperPlaceId === selectedPlace.id ||
+                    (userLocation &&
+                      Math.abs(userLocation.lat - selectedPlace.lat) < 0.0001 &&
+                      Math.abs(userLocation.lng - selectedPlace.lng) < 0.0001)) ? (
+                    <button
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent("reset-real-gps"));
+                      }}
+                      className="py-3.5 px-2 border border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 font-extrabold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs sm:text-sm tracking-wider w-full"
+                      title="Posizione camper impostata manualmente su questa sosta. Clicca per disattivare e ripristinare il GPS reale"
+                    >
+                      <span className="shrink-0 text-sm">📍</span>
+                      <span>Sei qui ✅</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent("simulate-camper-location", {
+                            detail: { lat: selectedPlace.lat, lng: selectedPlace.lng, placeId: selectedPlace.id },
+                          }),
+                        );
+                      }}
+                      className="py-3.5 px-2 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 hover:bg-amber-100 font-extrabold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer uppercase text-xs sm:text-sm tracking-wider w-full"
+                      title="Imposta questa sosta come posizione attuale del camper"
+                    >
+                      <span className="shrink-0 text-sm">🚐</span>
+                      <span>Sono qui</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -6704,6 +6773,15 @@ out center;`;
               </div>
             )}
 
+            {/* Real-time Occupancy / Availability Widget */}
+            {selectedPlace.id !== "current_location" && (
+              <PlaceOccupancyWidget
+                placeId={selectedPlace.id}
+                placeName={selectedPlace.name}
+                userNickname={currentUser?.nickname}
+              />
+            )}
+
             {/* Weather Widget */}
             <WeatherWidget
               lat={selectedPlace.lat}
@@ -6713,17 +6791,17 @@ out center;`;
 
             {/* Facilities lists */}
             {selectedPlace.id !== "current_location" && (
-              <div className="space-y-2">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">
-                  Servizi Disponibili
+              <div className="my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs space-y-2">
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-700 dark:text-slate-200 block">
+                  🛠️ Servizi Disponibili
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedPlace.facilities.map((fac) => (
                     <span
                       key={fac}
-                      className="bg-slate-50 text-slate-700 font-bold px-2.5 py-1.5 rounded-xl border border-slate-100 flex items-center gap-1.5 text-[11px]"
+                      className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 text-xs shadow-2xs"
                     >
-                      <span className="w-1.5 h-1.5 bg-[#5A6B4E] rounded-full"></span>
+                      <span className="w-1.5 h-1.5 bg-[#5A6B4E] dark:bg-emerald-400 rounded-full"></span>
                       {fac}
                     </span>
                   ))}
@@ -6732,7 +6810,7 @@ out center;`;
             )}
 
             {/* Nearby Places & Restaurants (Google Places) */}
-            <div className="border-t border-slate-100 pt-5">
+            <div className="my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs">
               <NearbyPlacesWidget
                 lat={selectedPlace.lat}
                 lng={selectedPlace.lng}
@@ -6766,19 +6844,19 @@ out center;`;
 
             {/* Reviews Section */}
             {selectedPlace.id !== "current_location" && (
-              <div className="border-t border-slate-100 pt-5 space-y-4">
+              <div className="space-y-4 my-4">
               
               {/* Photo Album Preview Button */}
               <button
                 type="button"
                 onClick={() => setIsPhotoAlbumOpen(true)}
-                className="w-full text-left bg-slate-50 hover:bg-slate-100/80 active:scale-[0.99] transition-all p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 group shrink-0"
+                className="w-full text-left bg-slate-200 dark:bg-slate-800 hover:bg-slate-300/80 dark:hover:bg-slate-700/80 active:scale-[0.99] transition-all p-4 rounded-2xl border-2 border-slate-300 dark:border-slate-700 flex items-center justify-between gap-3 group shrink-0 shadow-xs"
               >
                 <div className="flex items-center gap-3 overflow-hidden">
                   {allAlbumPhotos.length > 0 ? (
                     <div className="flex -space-x-3 overflow-hidden shrink-0">
                       {allAlbumPhotos.slice(0, 4).map((url, idx) => (
-                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-white shadow-sm shrink-0">
+                        <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
                           <img
                             src={url}
                             alt=""
@@ -6794,17 +6872,17 @@ out center;`;
                       ))}
                     </div>
                   ) : (
-                    <div className="w-12 h-12 rounded-lg bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-450 shrink-0">
+                    <div className="w-12 h-12 rounded-lg bg-slate-300 dark:bg-slate-700 border border-slate-400 dark:border-slate-600 flex items-center justify-center text-slate-500 shrink-0">
                       <Camera className="w-5 h-5" />
                     </div>
                   )}
                   
                   <div className="overflow-hidden min-w-0">
-                    <div className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
-                      <Image className="w-3.5 h-3.5 text-[#5A6B4E]" />
+                    <div className="font-bold text-slate-800 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                      <Image className="w-3.5 h-3.5 text-[#5A6B4E] dark:text-emerald-400" />
                       <span>Album Fotografico ({allAlbumPhotos.length})</span>
                     </div>
-                    <p className="text-slate-400 text-[10px] truncate">
+                    <p className="text-slate-600 dark:text-slate-400 text-[10px] truncate">
                       {allAlbumPhotos.length > 0
                         ? "Clicca per guardare tutte le foto o caricarne di nuove"
                         : "Nessuna foto presente. Condividi la tua prima foto!"}
@@ -6812,121 +6890,123 @@ out center;`;
                   </div>
                 </div>
                 
-                <div className="bg-white group-hover:bg-slate-200 p-1.5 rounded-lg border border-slate-200/60 transition-colors">
-                  <Plus className="w-3.5 h-3.5 text-slate-500" />
+                <div className="bg-white dark:bg-slate-900 group-hover:bg-slate-100 dark:group-hover:bg-slate-800 p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 transition-colors">
+                  <Plus className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />
                 </div>
               </button>
 
-              <div className="flex justify-between items-center">
-                <h4 className="font-black text-slate-800 text-xs uppercase tracking-wider">
-                  Recensioni ({combinedReviews.length})
-                </h4>
-                <div className="flex items-center gap-1 font-bold text-[#3E4A35] bg-[#3E4A35]/5 px-2.5 py-1 rounded-lg">
-                  <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
-                  <span className="text-xs">
-                    {Number(selectedPlace.rating).toFixed(1)} / 5.0
-                  </span>
+              <div className="p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs space-y-3.5">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider">
+                    💬 Recensioni ({combinedReviews.length})
+                  </h4>
+                  <div className="flex items-center gap-1 font-bold text-[#3E4A35] dark:text-emerald-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs shadow-2xs">
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                    <span className="text-xs">
+                      {Number(selectedPlace.rating).toFixed(1)} / 5.0
+                    </span>
+                  </div>
+                </div>
+
+                {/* Reviews List */}
+                <div className="space-y-3">
+                  {combinedReviews.length === 0 ? (
+                    <p className="text-slate-450 italic text-center py-4 text-xs">
+                      Nessuna recensione presente. Sii il primo a scriverne una!
+                    </p>
+                  ) : (
+                    combinedReviews.map((rev) => (
+                      <div
+                        key={rev.id}
+                        className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-1.5"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <span className="font-extrabold text-slate-800 dark:text-slate-200 block text-xs">
+                              {rev.user}
+                            </span>
+                            <span className="text-slate-400 font-bold font-mono text-[9px]">
+                              ({rev.vehicleType || "Camperista"})
+                            </span>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-400 text-[9px]">
+                                {rev.date.split("-").reverse().join("/")}
+                              </span>
+                              {isUserAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (deleteConfirmId === rev.id) {
+                                      handleDeleteReview(rev.id);
+                                      setDeleteConfirmId(null);
+                                    } else {
+                                      setDeleteConfirmId(rev.id);
+                                      setTimeout(() => setDeleteConfirmId(prev => prev === rev.id ? null : prev), 4000);
+                                    }
+                                  }}
+                                  className={`p-1 rounded transition-all cursor-pointer flex items-center gap-1 text-[9px] ${
+                                    deleteConfirmId === rev.id
+                                      ? "bg-rose-600 text-white hover:bg-rose-700 px-1 font-bold"
+                                      : "text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                  }`}
+                                  title={deleteConfirmId === rev.id ? "Clicca di nuovo per eliminare definitivamente" : "Elimina recensione"}
+                                >
+                                  {deleteConfirmId === rev.id ? (
+                                    <>
+                                      <Check className="w-2.5 h-2.5 text-white" />
+                                      <span>Sicuro?</span>
+                                    </>
+                                  ) : (
+                                    <Trash2 className="w-3 h-3" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex text-amber-400">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-2.5 h-2.5 ${i < rev.rating ? "fill-current text-amber-500" : "text-slate-200 dark:text-slate-700"}`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-normal text-xs">
+                          {rev.comment}
+                        </p>
+                        {rev.priceUpdated && (
+                          <span className="inline-block text-[10px] bg-[#5A6B4E]/10 text-[#3E4A35] dark:text-emerald-400 border border-[#5A6B4E]/20 rounded-md px-1.5 py-0.5 font-bold font-mono">
+                            Prezzo confermato: {rev.priceUpdated}
+                          </span>
+                        )}
+                        {rev.imageUrl && !brokenReviewImages[rev.imageUrl] && (
+                          <img
+                            src={rev.imageUrl}
+                            alt="Allegato"
+                            className="rounded-lg object-cover w-full max-h-40 border mt-1.5"
+                            onError={() => {
+                              if (rev.imageUrl) {
+                                setBrokenReviewImages(prev => ({ ...prev, [rev.imageUrl!]: true }));
+                              }
+                            }}
+                            referrerPolicy={
+                              rev.imageUrl?.startsWith("http")
+                                ? "no-referrer"
+                                : undefined
+                            }
+                          />
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
-              {/* Reviews List */}
-              <div className="space-y-3">
-                {combinedReviews.length === 0 ? (
-                  <p className="text-slate-450 italic text-center py-4">
-                    Nessuna recensione presente. Sii il primo a scriverne una!
-                  </p>
-                ) : (
-                  combinedReviews.map((rev) => (
-                    <div
-                      key={rev.id}
-                      className="bg-slate-200 p-4 rounded-xl border border-slate-300 shadow-sm space-y-1.5"
-                    >
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <span className="font-extrabold text-slate-700 block text-xs">
-                            {rev.user}
-                          </span>
-                          <span className="text-slate-400 font-bold font-mono text-[9px]">
-                            ({rev.vehicleType || "Camperista"})
-                          </span>
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <div className="flex items-center gap-1">
-                            <span className="text-slate-400 text-[9px]">
-                              {rev.date.split("-").reverse().join("/")}
-                            </span>
-                            {isUserAdmin && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (deleteConfirmId === rev.id) {
-                                    handleDeleteReview(rev.id);
-                                    setDeleteConfirmId(null);
-                                  } else {
-                                    setDeleteConfirmId(rev.id);
-                                    setTimeout(() => setDeleteConfirmId(prev => prev === rev.id ? null : prev), 4000);
-                                  }
-                                }}
-                                className={`p-1 rounded transition-all cursor-pointer flex items-center gap-1 text-[9px] ${
-                                  deleteConfirmId === rev.id
-                                    ? "bg-rose-600 text-white hover:bg-rose-700 px-1 font-bold"
-                                    : "text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                                }`}
-                                title={deleteConfirmId === rev.id ? "Clicca di nuovo per eliminare definitivamente" : "Elimina recensione"}
-                              >
-                                {deleteConfirmId === rev.id ? (
-                                  <>
-                                    <Check className="w-2.5 h-2.5 text-white" />
-                                    <span>Sicuro?</span>
-                                  </>
-                                ) : (
-                                  <Trash2 className="w-3 h-3" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                          <div className="flex text-amber-400">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-2.5 h-2.5 ${i < rev.rating ? "fill-current text-amber-500" : "text-slate-200"}`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-slate-600 leading-relaxed font-normal text-xs">
-                        {rev.comment}
-                      </p>
-                      {rev.priceUpdated && (
-                        <span className="inline-block text-[10px] bg-[#5A6B4E]/10 text-[#3E4A35] border border-[#5A6B4E]/20 rounded-md px-1.5 py-0.5 font-bold font-mono">
-                          Prezzo confermato: {rev.priceUpdated}
-                        </span>
-                      )}
-                      {rev.imageUrl && !brokenReviewImages[rev.imageUrl] && (
-                        <img
-                          src={rev.imageUrl}
-                          alt="Allegato"
-                          className="rounded-lg object-cover w-full max-h-40 border mt-1.5"
-                          onError={() => {
-                            if (rev.imageUrl) {
-                              setBrokenReviewImages(prev => ({ ...prev, [rev.imageUrl!]: true }));
-                            }
-                          }}
-                          referrerPolicy={
-                            rev.imageUrl?.startsWith("http")
-                              ? "no-referrer"
-                              : undefined
-                          }
-                        />
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
               {/* Add Review Panel */}
-              <div className="bg-slate-200 rounded-2xl p-5 border border-slate-300 shadow-sm space-y-4">
+              <div className="bg-slate-200 dark:bg-slate-800 rounded-2xl p-4 border-2 border-slate-300 dark:border-slate-700 shadow-xs space-y-4">
                 <span className="text-[10px] font-black text-slate-705 block uppercase tracking-wider">
                   Aggiungi la tua recensione
                 </span>
@@ -7170,106 +7250,119 @@ out center;`;
       {/* --- NAVIGATOR SELECTOR MODAL --- */}
       <AnimatePresence>
         {showNavigatorSelector && navigatorTargetPlace && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] flex items-center justify-center p-2 sm:p-4">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="bg-white rounded-2xl border border-slate-150 shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden"
+              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full max-h-[96vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
             >
               {/* Header */}
-              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+              <div className="p-2.5 sm:p-3.5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-100/90 dark:bg-slate-800/90 shrink-0">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
-                    <Compass className="w-5 h-5 animate-spin-slow" />
+                  <div className="p-1.5 sm:p-2 bg-emerald-100 dark:bg-emerald-950 rounded-xl text-emerald-700 dark:text-emerald-300">
+                    <Compass className="w-4 h-4 sm:w-5 sm:h-5 animate-spin-slow" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-800 text-sm">
+                    <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">
                       Scegli il tuo Navigatore
                     </h3>
-                    <p className="text-[10px] text-slate-500 font-medium font-sans">
-                      Seleziona come raggiungere questa destinazione
+                    <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">
+                      Seleziona l'app per raggiungere la destinazione
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowNavigatorSelector(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Body */}
-              <div className="p-5 overflow-y-auto space-y-4">
+              <div className="p-2.5 sm:p-3.5 overflow-y-auto space-y-2">
                 {/* Target place card */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-2.5">
-                  <div className="text-xl mt-0.5">
+                <div className="py-1.5 px-2.5 bg-slate-100 dark:bg-slate-800/90 rounded-xl border border-slate-250 dark:border-slate-700 flex items-center gap-2">
+                  <div className="text-base shrink-0">
                     {navigatorTargetPlace.category?.includes("sosta") ? "📍" :
                      navigatorTargetPlace.category?.includes("campeggio") || navigatorTargetPlace.category?.includes("camping") ? "⛺" :
-                     navigatorTargetPlace.category?.includes("parcheggio") ? "🅿️" : "💧"}
+                     navigatorTargetPlace.category?.includes("parcheggio") ? "PARK" : "💧"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-800 truncate">{navigatorTargetPlace.name}</p>
-                    <p className="text-[10px] text-slate-500 truncate">{navigatorTargetPlace.address || "Coordinate GPS"}</p>
+                    <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">{navigatorTargetPlace.name}</p>
+                    <p className="text-[10px] text-slate-600 dark:text-slate-400 truncate">{navigatorTargetPlace.address || "Coordinate GPS"}</p>
                   </div>
                 </div>
 
                 {/* Camper Dimensions Warning */}
-                <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl text-[11px] text-amber-850 space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Attenzione alle dimensioni del Camper</span>
-                  </div>
-                  <p className="text-slate-600 font-medium">
-                    Il tuo camper misura <strong className="text-slate-850">{vehicleDimensions.height}m di altezza</strong> e pesa <strong className="text-slate-850">{vehicleDimensions.weight}t</strong>. I navigatori standard (come Google Maps o Waze) potrebbero farti passare sotto ponti bassi o strade vietate ai mezzi pesanti.
+                <div className="p-2 bg-amber-100/90 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700 rounded-xl text-[10px] sm:text-xs text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <p className="leading-tight font-medium">
+                    <strong className="font-black text-amber-950 dark:text-amber-100">Camper {vehicleDimensions.height}m / {vehicleDimensions.weight}t:</strong> I navigatori standard non verificano ponti bassi e divieti.
                   </p>
                 </div>
 
                 {/* Options list */}
-                <div className="space-y-2.5">
+                <div className="space-y-1.5 sm:space-y-2">
                   {[
                     {
                       id: "google_maps",
                       name: "Google Maps",
-                      description: "Navigazione stradale classica, traffico in tempo reale e vista satellite.",
-                      icon: <Navigation className="w-5 h-5 text-blue-600" />,
+                      description: "Navigazione stradale classica, traffico live e mappe satellite.",
+                      icon: <Navigation className="w-4 h-4 text-sky-700 dark:text-sky-300" />,
                       action: () => {
                         let url = `https://www.google.com/maps/dir/?api=1&destination=${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}&travelmode=driving`;
                         window.open(url, "_blank");
                       },
                       badge: "Traffico Live",
-                      badgeColor: "bg-blue-50 text-blue-700 border-blue-200"
+                      cardBg: "bg-sky-100/90 dark:bg-sky-950/80 hover:bg-sky-150 border-2 border-sky-300 dark:border-sky-700",
+                      iconBg: "bg-sky-200/90 dark:bg-sky-900",
+                      badgeStyle: "bg-sky-200 dark:bg-sky-900 text-sky-900 dark:text-sky-200 border-sky-300 dark:border-sky-700",
+                      textColor: "text-slate-900 dark:text-slate-100",
+                      descColor: "text-slate-600 dark:text-slate-300"
                     },
                     {
                       id: "google_maps_plus",
                       name: "Google Maps Plus",
-                      description: "Rotte calcolate in base ad altezza, peso e limiti camper con Google Maps.",
-                      icon: <Compass className="w-5 h-5 text-blue-600 animate-pulse" />,
+                      description: "Rotte calcolate in base ad altezza, peso e divieti camper.",
+                      icon: <Compass className="w-4 h-4 text-indigo-700 dark:text-indigo-300 animate-pulse" />,
                       action: () => onNavigateFullscreen(navigatorTargetPlace, 'google'),
                       badge: "Offline & OSM",
-                      badgeColor: "bg-blue-50 text-blue-700 border-blue-200"
+                      cardBg: "bg-indigo-100/90 dark:bg-indigo-950/80 hover:bg-indigo-150 border-2 border-indigo-300 dark:border-indigo-700",
+                      iconBg: "bg-indigo-200/90 dark:bg-indigo-900",
+                      badgeStyle: "bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700",
+                      textColor: "text-slate-900 dark:text-slate-100",
+                      descColor: "text-slate-600 dark:text-slate-300"
                     },
                     {
                       id: "internal",
                       name: "Navigatore Camper Interno",
-                      description: "Rotte calcolate in base ad altezza, peso e limiti camper (utilizza OpenStreetMap)",
-                      icon: <Compass className="w-5 h-5 text-emerald-600 animate-pulse" />,
+                      description: "Mappe OpenStreetMap offline integrate con limiti sagoma camper.",
+                      icon: <Compass className="w-4 h-4 text-emerald-800 dark:text-emerald-200 animate-pulse" />,
                       action: () => onNavigateFullscreen(navigatorTargetPlace, 'internal'),
-                      badge: "Offline & OSM",
-                      badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      badge: "Consigliato 🛡️",
+                      cardBg: "bg-emerald-100 dark:bg-emerald-950/90 hover:bg-emerald-150 border-2 border-emerald-500 dark:border-emerald-500 shadow-sm ring-1 ring-emerald-500/30",
+                      iconBg: "bg-emerald-200 dark:bg-emerald-800",
+                      badgeStyle: "bg-emerald-600 text-white border-emerald-500 font-extrabold",
+                      textColor: "text-slate-900 dark:text-slate-100",
+                      descColor: "text-emerald-950 dark:text-emerald-200"
                     },
                     {
                       id: "other",
-                      name: "Altra App",
-                      description: "Scegli tra le applicazioni di navigazione installate sul tuo dispositivo.",
-                      icon: <ExternalLink className="w-5 h-5 text-slate-600" />,
+                      name: "Altra App (Waze, Apple Maps)",
+                      description: "Apri nella tua app di navigazione esterna preferita.",
+                      icon: <ExternalLink className="w-4 h-4 text-slate-700 dark:text-slate-300" />,
                       action: () => {
                         window.open(`geo:${navigatorTargetPlace.lat},${navigatorTargetPlace.lng}`);
                       },
-                      badge: "App Esterne",
-                      badgeColor: "bg-slate-100 text-slate-700 border-slate-200"
+                      badge: "App Esterna",
+                      cardBg: "bg-slate-200/90 dark:bg-slate-800 hover:bg-slate-250 border-2 border-slate-350 dark:border-slate-600",
+                      iconBg: "bg-slate-300/80 dark:bg-slate-700",
+                      badgeStyle: "bg-slate-300/90 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border-slate-400 dark:border-slate-600",
+                      textColor: "text-slate-900 dark:text-slate-100",
+                      descColor: "text-slate-600 dark:text-slate-300"
                     }
                   ].map((opt) => (
                     <button
@@ -7278,23 +7371,19 @@ out center;`;
                         opt.action();
                         setShowNavigatorSelector(false);
                       }}
-                      className={`w-full p-3 rounded-xl border flex items-start gap-3 transition-all text-left cursor-pointer ${
-                        opt.id === "internal"
-                          ? "bg-emerald-50/20 hover:bg-emerald-50/45 border-emerald-200/80 hover:border-emerald-300"
-                          : "bg-slate-50/30 hover:bg-slate-50/70 border-slate-100 hover:border-slate-200"
-                      }`}
+                      className={`w-full py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl flex items-center gap-2.5 transition-all text-left cursor-pointer active:scale-[0.99] ${opt.cardBg}`}
                     >
-                      <div className={`p-2 rounded-lg ${opt.id === "internal" ? "bg-emerald-50" : "bg-slate-100/80"} shrink-0 mt-0.5`}>
+                      <div className={`p-1.5 sm:p-2 rounded-lg ${opt.iconBg} shrink-0`}>
                         {opt.icon}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                          <span className="font-bold text-xs text-slate-800">{opt.name}</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${opt.badgeColor}`}>
+                        <div className="flex items-center justify-between gap-1 flex-wrap">
+                          <span className={`font-black text-xs sm:text-sm ${opt.textColor}`}>{opt.name}</span>
+                          <span className={`text-[9px] sm:text-[10px] font-extrabold px-1.5 py-0.5 rounded-md border ${opt.badgeStyle}`}>
                             {opt.badge}
                           </span>
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-1 leading-normal font-medium">
+                        <p className={`text-[10px] sm:text-xs leading-tight font-medium mt-0.5 ${opt.descColor}`}>
                           {opt.description}
                         </p>
                       </div>
@@ -7304,10 +7393,10 @@ out center;`;
               </div>
 
               {/* Footer */}
-              <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+              <div className="p-2 sm:p-2.5 bg-slate-100/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-800 flex justify-end shrink-0">
                 <button
                   onClick={() => setShowNavigatorSelector(false)}
-                  className="px-4 py-2 hover:bg-slate-100 text-slate-500 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold rounded-lg text-xs transition-colors cursor-pointer"
                 >
                   Annulla
                 </button>
