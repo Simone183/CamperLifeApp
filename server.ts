@@ -93,10 +93,9 @@ async function uploadDefaultIcons() {
 let firestoreDb: any;
 try {
   firestoreDb = new ClientFirestoreAdapter(firebaseConfig, firebaseDbId);
-  console.log(`[Firebase Client Adapter] Connected successfully using API Key for DatabaseId: ${firebaseDbId}`);
+  console.log(`[REST Firestore Adapter] Connected successfully using API Key for DatabaseId: ${firebaseDbId}`);
 } catch (err) {
-  console.error(`[Firebase Client Adapter] Could not initialize client database adapter.`, err);
-  firestoreDb = getFirestore(app, firebaseDbId);
+  console.error(`[REST Firestore Adapter] Failed to initialize database adapter.`, err);
 }
 
 // Ensure this is called when the server starts
