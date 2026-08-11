@@ -1,7 +1,10 @@
 node_modules/
+dist/
 build/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
+province_cache.json
+user_places.json
