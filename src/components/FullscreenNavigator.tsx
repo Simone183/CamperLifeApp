@@ -2884,10 +2884,11 @@ out center;`;
       const userPos: [number, number] = [effectiveUserLocation.lat, effectiveUserLocation.lng];
       if (routeCoordinates.length > 0) {
         let closestIdx = 0;
+        let minDist = 0;
         if (isTunnelDeadReckoning) {
           closestIdx = tunnelRouteIndexRef.current;
         } else {
-          let minDist = calculateHaversineDistance(userPos, routeCoordinates[0]);
+          minDist = calculateHaversineDistance(userPos, routeCoordinates[0]);
           for (let i = 1; i < routeCoordinates.length; i++) {
             const dist = calculateHaversineDistance(userPos, routeCoordinates[i]);
             if (dist < minDist) {
