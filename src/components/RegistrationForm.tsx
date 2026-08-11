@@ -53,6 +53,57 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
     setError(null);
     setIsLoading(true);
 
+    const isNativeOrExternal = typeof window !== "undefined" && (
+      typeof (window as any).Capacitor !== "undefined" ||
+      window.location.protocol.startsWith("capacitor") ||
+      window.location.protocol.startsWith("file:") ||
+      !window.location.hostname.includes("run.app")
+    );
+
+    const runFirestoreRegistration = async () => {
+      const formattedEmail = email.toLowerCase().trim();
+      const usersRef = firestore.collection("users");
+
+      // Check if email already registered
+      const emailSnap = await usersRef.where("email", "==", formattedEmail).get();
+      if (!emailSnap.empty) {
+        throw new Error("Indirizzo email già registrato.");
+      }
+
+      // Check if nickname already taken
+      const nickSnap = await usersRef.where("nickname", "==", nickname.trim()).get();
+      if (!nickSnap.empty) {
+        throw new Error("Questo nickname è già stato scelto da un altro camperista.");
+      }
+
+      const newUserDoc = {
+        email: formattedEmail,
+        password: password,
+        name: name || "",
+        surname: surname || "",
+        dob: dob || "",
+        nickname: nickname.trim(),
+        profilePhoto: profilePhoto || "",
+        favorites: [],
+        createdAt: new Date().toISOString(),
+        approved: false // accounts created by beta testers need approval by admin
+      };
+
+      await usersRef.doc(formattedEmail).set(newUserDoc);
+      onSuccess(newUserDoc);
+    };
+
+    if (isNativeOrExternal && firestore) {
+      try {
+        await runFirestoreRegistration();
+      } catch (dbErr: any) {
+        setError(dbErr.message || "Errore durante la registrazione diretta sul database.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
@@ -70,36 +121,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       console.warn("Registration API failed, attempting direct Firestore fallback...", err);
       if (firestore) {
         try {
-          const formattedEmail = email.toLowerCase().trim();
-          const usersRef = firestore.collection("users");
-
-          // Check if email already registered
-          const emailSnap = await usersRef.where("email", "==", formattedEmail).get();
-          if (!emailSnap.empty) {
-            throw new Error("Indirizzo email già registrato.");
-          }
-
-          // Check if nickname already taken
-          const nickSnap = await usersRef.where("nickname", "==", nickname.trim()).get();
-          if (!nickSnap.empty) {
-            throw new Error("Questo nickname è già stato scelto da un altro camperista.");
-          }
-
-          const newUserDoc = {
-            email: formattedEmail,
-            password: password,
-            name: name || "",
-            surname: surname || "",
-            dob: dob || "",
-            nickname: nickname.trim(),
-            profilePhoto: profilePhoto || "",
-            favorites: [],
-            createdAt: new Date().toISOString(),
-            approved: false // accounts created by beta testers need approval by admin
-          };
-
-          await usersRef.doc(formattedEmail).set(newUserDoc);
-          onSuccess(newUserDoc);
+          await runFirestoreRegistration();
         } catch (dbErr: any) {
           setError(dbErr.message || "Errore durante la registrazione diretta sul database.");
         }

@@ -83,6 +83,52 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
     const cleanEmail = email.trim();
     const cleanPass = password.trim();
 
+    const isNativeOrExternal = typeof window !== "undefined" && (
+      typeof (window as any).Capacitor !== "undefined" ||
+      window.location.protocol.startsWith("capacitor") ||
+      window.location.protocol.startsWith("file:") ||
+      !window.location.hostname.includes("run.app")
+    );
+
+    const runFirestoreLogin = async () => {
+      const formattedEmail = cleanEmail.toLowerCase().trim();
+      const userDocSnap = await firestore.collection("users").doc(formattedEmail).get();
+      if (!userDocSnap.exists) {
+        throw new Error("Nessun account registrato con questa email.");
+      }
+      const userData = userDocSnap.data();
+      const storedPass = String(userData.password || '').trim();
+      if (storedPass !== cleanPass) {
+        throw new Error("Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'.");
+      }
+      if (userData.approved === false) {
+        throw new Error("Il tuo account è in attesa di approvazione da parte di un moderatore.");
+      }
+      const userObj = {
+        email: userData.email,
+        name: userData.name,
+        nickname: userData.nickname,
+        profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
+        favorites: userData.favorites || [],
+        isModerator: !!userData.isModerator
+      };
+      window.dispatchEvent(new CustomEvent('show-toast', { 
+        detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
+      }));
+      onSuccess(userObj);
+    };
+
+    if (isNativeOrExternal && firestore) {
+      try {
+        await runFirestoreLogin();
+      } catch (dbErr: any) {
+        setError(dbErr.message || "Errore di connessione o password errata.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
@@ -103,31 +149,7 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       console.warn("Login API failed, attempting direct Firestore fallback...", err);
       if (firestore) {
         try {
-          const formattedEmail = cleanEmail.toLowerCase().trim();
-          const userDocSnap = await firestore.collection("users").doc(formattedEmail).get();
-          if (!userDocSnap.exists) {
-            throw new Error("Nessun account registrato con questa email.");
-          }
-          const userData = userDocSnap.data();
-          const storedPass = String(userData.password || '').trim();
-          if (storedPass !== cleanPass) {
-            throw new Error("Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'.");
-          }
-          if (userData.approved === false) {
-            throw new Error("Il tuo account è in attesa di approvazione da parte di un moderatore.");
-          }
-          const userObj = {
-            email: userData.email,
-            name: userData.name,
-            nickname: userData.nickname,
-            profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
-            favorites: userData.favorites || [],
-            isModerator: !!userData.isModerator
-          };
-          window.dispatchEvent(new CustomEvent('show-toast', { 
-            detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
-          }));
-          onSuccess(userObj);
+          await runFirestoreLogin();
         } catch (dbErr: any) {
           setError(dbErr.message || "Errore di connessione o password errata.");
         }

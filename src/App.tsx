@@ -2281,31 +2281,49 @@ out center;`;
       return;
     }
     try {
-      const res = await fetch("/api/public-places");
-      console.log("[App] Fetch public places response status:", res.status);
-      if (res.ok) {
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const approvedPlaces = await res.json();
-          console.log("[App] Fetched approved places count:", approvedPlaces.length);
-          const userPlaces = places.filter((p) => p.id.startsWith("user_place_"));
-            const mergedMap = new globalThis.Map<string, Place>();
-            
-            // Add user places first
-            userPlaces.forEach(p => mergedMap.set(p.id, p));
-            
-            // Add approved places (overwriting if there's a match, though ideally they shouldn't conflict)
-            approvedPlaces.forEach(p => mergedMap.set(p.id, p));
-            
-            const merged = Array.from(mergedMap.values());
-            setPlaces(merged);
-            localStorage.setItem("camper_places", JSON.stringify(merged));
-        } else {
-          console.warn(
-            "Refresh public places returned non-JSON:",
-            await res.text(),
-          );
+      const isNativeOrExternal = typeof window !== "undefined" && (
+        typeof (window as any).Capacitor !== "undefined" ||
+        window.location.protocol.startsWith("capacitor") ||
+        window.location.protocol.startsWith("file:") ||
+        !window.location.hostname.includes("run.app")
+      );
+
+      let approvedPlaces: any[] = [];
+      if (isNativeOrExternal && firestore) {
+        console.log("[App] Direct Firestore fetch for approved places...");
+        const snapshot = await firestore.collection("places").where("status", "==", "approved").get();
+        snapshot.forEach((doc: any) => {
+          approvedPlaces.push({ id: doc.id, ...doc.data() });
+        });
+      } else {
+        const res = await fetch("/api/public-places");
+        console.log("[App] Fetch public places response status:", res.status);
+        if (res.ok) {
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            approvedPlaces = await res.json();
+          } else {
+            console.warn(
+              "Refresh public places returned non-JSON:",
+              await res.text(),
+            );
+          }
         }
+      }
+
+      if (approvedPlaces && approvedPlaces.length > 0) {
+        const userPlaces = places.filter((p) => p.id.startsWith("user_place_"));
+        const mergedMap = new globalThis.Map<string, Place>();
+        
+        // Add user places first
+        userPlaces.forEach(p => mergedMap.set(p.id, p));
+        
+        // Add approved places (overwriting if there's a match, though ideally they shouldn't conflict)
+        approvedPlaces.forEach(p => mergedMap.set(p.id, p));
+        
+        const merged = Array.from(mergedMap.values());
+        setPlaces(merged);
+        localStorage.setItem("camper_places", JSON.stringify(merged));
       }
     } catch (err: any) {
       if (err.message !== "Failed to fetch") {
@@ -2322,22 +2340,39 @@ out center;`;
       return;
     }
     try {
-      const res = await fetch("/api/community-messages");
-      if (res.ok) {
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const data = await res.json();
-          if (data && data.length > 0) {
-            const sanitizedData = sanitizeCommunityMessagesList(data);
-            const fetchedIds = new Set(sanitizedData.map((m: any) => m.id));
-            const missing = sanitizeCommunityMessagesList(
-              INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id))
-            );
-            const combined = [...missing, ...sanitizedData];
-            setCommunityMessages(combined);
-            localStorage.setItem("camper_messages", JSON.stringify(combined));
+      const isNativeOrExternal = typeof window !== "undefined" && (
+        typeof (window as any).Capacitor !== "undefined" ||
+        window.location.protocol.startsWith("capacitor") ||
+        window.location.protocol.startsWith("file:") ||
+        !window.location.hostname.includes("run.app")
+      );
+
+      let data: any[] = [];
+      if (isNativeOrExternal && firestore) {
+        console.log("[App] Direct Firestore fetch for community messages...");
+        const snapshot = await firestore.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
+        snapshot.forEach((doc: any) => {
+          data.push({ id: doc.id, ...doc.data() });
+        });
+      } else {
+        const res = await fetch("/api/community-messages");
+        if (res.ok) {
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            data = await res.json();
           }
         }
+      }
+
+      if (data && data.length > 0) {
+        const sanitizedData = sanitizeCommunityMessagesList(data);
+        const fetchedIds = new Set(sanitizedData.map((m: any) => m.id));
+        const missing = sanitizeCommunityMessagesList(
+          INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id))
+        );
+        const combined = [...missing, ...sanitizedData];
+        setCommunityMessages(combined);
+        localStorage.setItem("camper_messages", JSON.stringify(combined));
       }
     } catch (err: any) {
       if (err.message !== "Failed to fetch") {
@@ -2353,6 +2388,48 @@ out center;`;
 
     // 2. Synchronise change events directly with Firestore DB
     try {
+      const isNativeOrExternal = typeof window !== "undefined" && (
+        typeof (window as any).Capacitor !== "undefined" ||
+        window.location.protocol.startsWith("capacitor") ||
+        window.location.protocol.startsWith("file:") ||
+        !window.location.hostname.includes("run.app")
+      );
+
+      if (isNativeOrExternal && firestore) {
+        console.log("[App] Direct Firestore write for community message change...");
+        if (newMessages.length > communityMessages.length) {
+          const addedMsg = newMessages.find((nm) => !communityMessages.some((om) => om.id === nm.id)) || newMessages[0];
+          await firestore.collection("communityMessages").doc(addedMsg.id).set(addedMsg);
+        } else if (newMessages.length < communityMessages.length) {
+          const deletedMsgId = communityMessages.find((m) => !newMessages.some((nm) => nm.id === m.id))?.id;
+          if (deletedMsgId) {
+            await firestore.collection("communityMessages").doc(deletedMsgId).delete();
+          }
+        } else if (newMessages.length === communityMessages.length) {
+          for (let i = 0; i < newMessages.length; i++) {
+            const oldMsg = communityMessages.find((m) => m.id === newMessages[i].id);
+            const newMsg = newMessages[i];
+            if (!oldMsg) continue;
+
+            if (oldMsg.likes !== newMsg.likes) {
+              await firestore.collection("communityMessages").doc(newMsg.id).update({ likes: newMsg.likes });
+              break;
+            }
+            if (oldMsg.isResolved !== newMsg.isResolved) {
+              await firestore.collection("communityMessages").doc(newMsg.id).update({ isResolved: newMsg.isResolved });
+              break;
+            }
+            const oldReplies = oldMsg.replies || [];
+            const newReplies = newMsg.replies || [];
+            if (newReplies.length !== oldReplies.length) {
+              await firestore.collection("communityMessages").doc(newMsg.id).update({ replies: newReplies });
+              break;
+            }
+          }
+        }
+        return;
+      }
+
       if (newMessages.length > communityMessages.length) {
         // A new post was created - find the added item
         const addedMsg = newMessages.find((nm) => !communityMessages.some((om) => om.id === nm.id)) || newMessages[0];
