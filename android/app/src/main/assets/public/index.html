@@ -3,54 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CamperLife</title>
-    <link rel="manifest" href="./manifest.json" />
-    <link rel="apple-touch-icon" href="./logo.svg" />
-    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <title>ViaCamper</title>
+    <link rel="manifest" href="./manifest.json" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="./logo.png" />
+    <link rel="icon" type="image/png" href="./logo.png" />
     <meta name="theme-color" content="#3E4A35" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <script>
-      // Automatically attempt to map the tab favicon to the custom uploaded logo files
-      const candidates = ['/logo.png', '/logo.svg', '/logo.jpg'];
-      let index = 0;
-      function checkFavicon() {
-        if (index >= candidates.length) return;
-        const img = new Image();
-        img.onload = function() {
-          const favicon = document.querySelector('link[rel="icon"]');
-          if (favicon) {
-            favicon.href = candidates[index];
-            favicon.type = candidates[index].endsWith('.svg') ? 'image/svg+xml' : 'image/png';
-          }
-        };
-        img.onerror = function() {
-          index++;
-          checkFavicon();
-        };
-        img.src = candidates[index];
-      }
-      checkFavicon();
-
       // Register the service worker for Android installability PWA support immediately with strong safety guards
       try {
         if ('serviceWorker' in navigator && window.self === window.top) {
-          navigator.serviceWorker.register('/sw.js?v=2026_v31')
-            .then((registration) => {
-              console.log('ServiceWorker registered with scope:', registration.scope);
-            })
-            .catch((error) => {
-              console.warn('ServiceWorker registration omitted or blocked:', error);
-            });
+          const registerSW = () => {
+            navigator.serviceWorker.register('/sw.js').then(
+              (registration) => {
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+              },
+              (err) => {
+                console.log('ServiceWorker registration failed: ', err);
+              }
+            );
+          };
+          if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            registerSW();
+          } else {
+            window.addEventListener('load', registerSW);
+          }
         }
       } catch (err) {
-        console.warn('ServiceWorker capability check failed:', err);
+        console.warn('ServiceWorker registration failed:', err);
       }
     </script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-    <script type="module" crossorigin src="./assets/index-DIjxvx8Q.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BjI8FSgL.css">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="" />
+    <script type="module" crossorigin src="./assets/main-Cp4CrZ0z.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/main-BQ0OLPls.css">
   </head>
   <body>
     <div id="root"></div>

@@ -29,18 +29,22 @@ var import_sharp = __toESM(require("sharp"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_firebase_admin = __toESM(require("firebase-admin"), 1);
-var import_firestore = require("firebase-admin/firestore");
+var import_firestore2 = require("firebase-admin/firestore");
 var import_storage2 = require("firebase-admin/storage");
 
 // src/client-firestore.ts
 var import_app = require("firebase/app");
-var import_lite = require("firebase/firestore/lite");
+var import_firestore = require("firebase/firestore");
 var import_storage = require("firebase/storage");
+try {
+  (0, import_firestore.setLogLevel)("silent");
+} catch (e) {
+}
 var ClientFirestoreAdapter = class {
   constructor(firebaseConfig2, databaseId) {
     const appName = "client-" + Date.now();
     this.app = (0, import_app.initializeApp)(firebaseConfig2, appName);
-    this.db = (0, import_lite.initializeFirestore)(this.app, { experimentalForceLongPolling: true, preferRest: true }, databaseId);
+    this.db = (0, import_firestore.initializeFirestore)(this.app, { experimentalForceLongPolling: true }, databaseId);
   }
   getStorage() {
     return (0, import_storage.getStorage)(this.app);
@@ -60,26 +64,26 @@ var CollectionQueryWrapper = class _CollectionQueryWrapper {
     return new DocumentWrapper(this.db, this.path, docId);
   }
   where(field, op, val) {
-    const newConstraints = [...this.constraints, (0, import_lite.where)(field, op, val)];
+    const newConstraints = [...this.constraints, (0, import_firestore.where)(field, op, val)];
     return new _CollectionQueryWrapper(this.db, this.path, newConstraints);
   }
   orderBy(field, direction = "asc") {
-    const newConstraints = [...this.constraints, (0, import_lite.orderBy)(field, direction)];
+    const newConstraints = [...this.constraints, (0, import_firestore.orderBy)(field, direction)];
     return new _CollectionQueryWrapper(this.db, this.path, newConstraints);
   }
   limit(n) {
-    const newConstraints = [...this.constraints, (0, import_lite.limit)(n)];
+    const newConstraints = [...this.constraints, (0, import_firestore.limit)(n)];
     return new _CollectionQueryWrapper(this.db, this.path, newConstraints);
   }
   async get() {
-    const colRef = (0, import_lite.collection)(this.db, this.path);
-    const q = (0, import_lite.query)(colRef, ...this.constraints);
-    const snap = await (0, import_lite.getDocs)(q);
+    const colRef = (0, import_firestore.collection)(this.db, this.path);
+    const q = (0, import_firestore.query)(colRef, ...this.constraints);
+    const snap = await (0, import_firestore.getDocs)(q);
     return new QuerySnapshotWrapper(snap);
   }
   async add(data) {
-    const colRef = (0, import_lite.collection)(this.db, this.path);
-    const docRef = await (0, import_lite.addDoc)(colRef, data);
+    const colRef = (0, import_firestore.collection)(this.db, this.path);
+    const docRef = await (0, import_firestore.addDoc)(colRef, data);
     return { id: docRef.id };
   }
 };
@@ -90,21 +94,21 @@ var DocumentWrapper = class {
     this.docId = docId;
   }
   async get() {
-    const dRef = (0, import_lite.doc)(this.db, this.colPath, this.docId);
-    const snap = await (0, import_lite.getDoc)(dRef);
+    const dRef = (0, import_firestore.doc)(this.db, this.colPath, this.docId);
+    const snap = await (0, import_firestore.getDoc)(dRef);
     return new DocumentSnapshotWrapper(snap);
   }
-  async set(data) {
-    const dRef = (0, import_lite.doc)(this.db, this.colPath, this.docId);
-    await (0, import_lite.setDoc)(dRef, data);
+  async set(data, options) {
+    const dRef = (0, import_firestore.doc)(this.db, this.colPath, this.docId);
+    await (0, import_firestore.setDoc)(dRef, data, options);
   }
   async update(data) {
-    const dRef = (0, import_lite.doc)(this.db, this.colPath, this.docId);
-    await (0, import_lite.updateDoc)(dRef, data);
+    const dRef = (0, import_firestore.doc)(this.db, this.colPath, this.docId);
+    await (0, import_firestore.updateDoc)(dRef, data);
   }
   async delete() {
-    const dRef = (0, import_lite.doc)(this.db, this.colPath, this.docId);
-    await (0, import_lite.deleteDoc)(dRef);
+    const dRef = (0, import_firestore.doc)(this.db, this.colPath, this.docId);
+    await (0, import_firestore.deleteDoc)(dRef);
   }
 };
 var QuerySnapshotWrapper = class {
@@ -141,6 +145,281 @@ var DocumentSnapshotWrapper = class {
   }
 };
 
+// src/data/mockData.ts
+var INITIAL_COMMUNITY_MESSAGES = [
+  /* SOCIAL POSTS (Rolly Examples) */
+  {
+    id: "social_post_rolly_welcome",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    text: '\u{1F44B} Benvenuti nella Community Social di ViaCamper! Condividete qui le foto delle vostre soste, paesaggi ed esperienze in camper. Cliccate su "Nuovo Post" per pubblicare il vostro primo scatto! \u{1F690}\u{1F4F8} #viacamper #rolly #community',
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 2).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "social",
+    locationName: "Italia in Camper",
+    mediaUrl: "https://images.unsplash.com/photo-1526772662000-3f88f10405ff?auto=format&fit=crop&w=1200&q=80",
+    mediaType: "image",
+    replies: []
+  },
+  {
+    id: "social_post_rolly_tip",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    text: "\u{1F4F8} Scatto del giorno dalla Community! Vi ricordiamo di verificare la pressione degli pneumatici e il livello dell'olio prima di mettervi in viaggio. Buon viaggio e felice chilometraggio a tutti! \u{1F690}\u{1F4A8} #campertip #rolly #sicurezza",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 12).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Sosta",
+    type: "social",
+    locationName: "Passo Pordoi, Trentino",
+    mediaUrl: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80",
+    mediaType: "image",
+    replies: []
+  },
+  /* FORUM TOPICS (Rolly Examples) */
+  {
+    id: "rolly_topic_1",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F3D4}\uFE0F Consigli per il primo viaggio invernale sulla neve: riscaldamento e catene",
+    text: "Ciao a tutti i camperisti! Con l'arrivo della stagione fredda, molti utenti chiedono consigli su come preparare il camper per la neve e la montagna. Qual \xE8 la vostra esperienza con le stufe Truma/Webasto e le coperte termiche esterne per il parabrezza? Condividiamo qui i migliori trucchi per evitare il congelamento delle acque grigie!",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 2).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Sosta",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_2",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u26A1 Autonomia Energetica in Camper: Pannelli Solari vs Batteria al Litio LiFePO4",
+    text: "L'autonomia elettrica \xE8 uno dei temi pi\xF9 caldi tra chi viaggia in sosta libera. Voi che setup utilizzate? Avete fatto il passaggio alle batterie al litio LiFePO4? Quanti watt di pannelli solari ritenete indispensabili per lavorare o viaggiare anche in autunno ed inverno?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 5).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_3",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F30A} Le migliori Aree Sosta d'Italia vicine al Mare e aperte 365 giorni l'anno",
+    text: "Molti di noi amano il mare d'inverno o durante le mezze stagioni per la pace assoluta. Avete aree sosta o campeggi del cuore direttamente sulla spiaggia con tutti i servizi attivi tutto l'anno da raccomandare alla community?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 8).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Sosta",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_4",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F5FA}\uFE0F Consigli di Guida: Come evitare sottopassi bassi e strettoie nei borghi storici",
+    text: "In Italia i borghi storici sono meravigliosi ma nascondono spesso strettoie insidiose e cavalcavia bassi! Quali accorgimenti usate durante la guida per evitare brutte sorprese con la mansarda del camper?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 12).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_5",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F4E6} Organizzazione Spazi & Storage nel Garage e negli Armadietti",
+    text: "L'ottimizzazione degli spazi e della distribuzione dei pesi in camper \xE8 una vera arte! Scatole trasparenti impilabili, ganci magnetici o sottovuoto per la biancheria: quali sono i vostri trucchi salvaspazio indispensabili?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 18).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_6",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u26FA Raduno e Incontro ViaCamper Primavera 2026: Proposte di Location!",
+    text: "Cari amici camperisti, vi piacerebbe organizzare un incontro informale nei prossimi mesi? Proponete qui la vostra regione preferita (es. Toscana, Umbria, Laghi del Nord o Costa Adriatica) per incontrarci e fare una bella grigliata insieme!",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 22).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Incontro",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_7",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F43E} Viaggiare in Camper con Animali Domestici (Cani e Gatti): I vostri consigli",
+    text: "Chi viaggia con i propri amici a quattro zampe sa quanto sia un'esperienza meravigliosa! Come avete allestito la cuccia durante la marcia? Quali attenzioni usate per garantire il massimo comfort termico in estate?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 26).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_8",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F331} Gestione Cassetta WC Chimico e Additivi Ecologici Bio",
+    text: "Rispettare l'ambiente nelle operazioni di camper service \xE8 fondamentale. Molti camperisti stanno passando ai fluidi disgreganti biodegradabili o al sistema di ventilazione SOG. Qual \xE8 la vostra opinione ed esperienza?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 30).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Sosta",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_9",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F6E0}\uFE0F Cassetta degli Attrezzi d'Emergenza: Cosa tenere sempre a bordo?",
+    text: "I piccoli imprevisti tecnici fanno parte dell'avventura! Oltre a nastro americano multiuso e fascette da elettricista, quali utensili, multimetro, fusibili e ricambi non dovrebbero mai mancare a bordo?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 36).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_10",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F373} Cucina On The Road: Le vostre ricette pratiche e il Fornetto Versilia",
+    text: "Quali sono i vostri piatti forti da preparare sui fornelli del camper? Usate il celebre fornetto Versilia per ciambelloni e focacce senza bisogno del forno tradizionale? Condividiamo le ricette pi\xF9 veloci e gustose!",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 42).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_11",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F4A8} Bollettino Vento e Raffiche sulle Coste: Come orientare la sosta",
+    text: "Il vento forte o le raffiche improvvise possono rendere poco piacevole la notte in mansardato o van. Come verificate le correnti di vento prima di posizionare il camper e da che parte orientate il veicolo?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 48).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Meteo",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_12",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F690} Mansardato vs Semintegrale vs Motorhome vs Van: Esperienze a confronto",
+    text: "Ogni tipologia di veicolo risponde a esigenze di viaggio diverse! Chi ha provato pi\xF9 modelli nel corso degli anni, quali vantaggi e svantaggi ha riscontrato? Vi va di raccontare la vostra evoluzione camperistica?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 54).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_13",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u2744\uFE0F Manutenzione Invernale e Rimessaggio: La Check-list per evitare danni",
+    text: "Quando il camper resta fermo qualche settimana nei mesi freddi, pochi gesti salvano da brutte sorprese alla riapertura! Voi quali accorgimenti usate per proteggere impianti idrici, batterie e guarnizioni dei finestrini?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 60).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_14",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F1EA}\u{1F1FA} Prima Volta all'Estero in Camper: Consigli per la Francia, Spagna e Nord Europa",
+    text: "Organizzare il primo viaggio oltreconfine in camper richiede qualche piccola informazione preventiva su autostrade, bollini ambientali e regolamenti di sosta. Quali paesi ritenete pi\xF9 'camper-friendly' in Europa?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 68).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Sosta",
+    type: "forum",
+    replies: []
+  },
+  {
+    id: "rolly_topic_15",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    title: "\u{1F512} Sicurezza durante le Soste Notturne: Sistemi antifurto e buon senso",
+    text: "Dormire tranquilli e rilassati \xE8 fondamentale per una vacanza indimenticabile. Quali sistemi di sicurezza (es. catene alle portiere cabina, antifurti perimetrali, rilevatori di gas o chiusure supplementari) utilizzate?",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 76).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "forum",
+    replies: []
+  },
+  /* LIVE CHAT MESSAGES (Rolly Examples) */
+  {
+    id: "chat_rolly_welcome",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    text: "\u{1F44B} Benvenuti nella Chat Live di ViaCamper! Scrivete qui per scambiarvi consigli in tempo reale o condividere informazioni pratiche mentre siete in viaggio. \u{1F690}\u{1F4AC}",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 45).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Generale",
+    type: "chat",
+    replies: []
+  },
+  {
+    id: "chat_rolly_tip",
+    user: "Rolly - Assistente ViaCamper",
+    avatar: "\u{1F916}",
+    avatarColor: "bg-[#3E4A35]",
+    text: "\u{1F4A1} La chat live \xE8 uno spazio aperto a tutti i camperisti per scambiarsi saluti e dritte al volo sulla strada! Buona permanenza! \u{1F6E3}\uFE0F",
+    timestamp: new Date(Date.now() - 1e3 * 60 * 15).toISOString(),
+    likes: 0,
+    likedByCurrentUser: false,
+    tag: "Sosta",
+    type: "chat",
+    replies: []
+  }
+];
+
 // server.ts
 var firebaseConfig = {
   apiKey: "",
@@ -164,16 +443,30 @@ try {
 } catch (e) {
   console.error("Error reading firebase config on server:", e);
 }
-var app = import_firebase_admin.default.initializeApp({
+var app = import_firebase_admin.default.getApps().length === 0 ? import_firebase_admin.default.initializeApp({
   projectId: firebaseConfig.projectId
-});
-var bucket = (0, import_storage2.getStorage)(app).bucket(`${firebaseConfig.projectId}.appspot.com`);
+}) : import_firebase_admin.default.getApp();
+var bucketName = firebaseConfig.storageBucket || `${firebaseConfig.projectId}.appspot.com`;
+var bucket = (0, import_storage2.getStorage)(app).bucket(bucketName);
 var defaultIcons = {
   "Area di sosta": "default_icons/area_sosta.svg",
   "Campeggio": "default_icons/campeggio.svg",
   "Camper service": "default_icons/camper_service.svg",
   "Parcheggio": "default_icons/parcheggio_camper.svg"
 };
+function removeUndefined(obj) {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefined);
+  }
+  const cleaned = {};
+  for (const key of Object.keys(obj)) {
+    if (obj[key] !== void 0) {
+      cleaned[key] = removeUndefined(obj[key]);
+    }
+  }
+  return cleaned;
+}
 async function uploadDefaultIcons() {
   try {
     const [bucketExists] = await bucket.exists();
@@ -183,19 +476,16 @@ async function uploadDefaultIcons() {
     }
     for (const [category, filename] of Object.entries(defaultIcons)) {
       const file = bucket.file(filename);
-      const exists = await file.exists();
-      if (!exists[0]) {
-        const localPath = import_path.default.join(process.cwd(), "public", filename.replace("default_icons/", ""));
-        if (import_fs.default.existsSync(localPath)) {
-          await file.save(import_fs.default.readFileSync(localPath), {
-            metadata: {
-              contentType: "image/svg+xml",
-              cacheControl: "public, max-age=3600"
-            }
-          });
-          await file.makePublic();
-          console.log(`Uploaded default icon: ${filename}`);
-        }
+      const localPath = import_path.default.join(process.cwd(), "public", filename.replace("default_icons/", ""));
+      if (import_fs.default.existsSync(localPath)) {
+        await file.save(import_fs.default.readFileSync(localPath), {
+          metadata: {
+            contentType: "image/svg+xml",
+            cacheControl: "public, max-age=3600"
+          }
+        });
+        await file.makePublic();
+        console.log(`Uploaded/Updated default icon: ${filename}`);
       }
     }
   } catch (err) {
@@ -208,7 +498,7 @@ try {
   console.log(`[Firebase Client Adapter] Connected successfully using API Key for DatabaseId: ${firebaseDbId}`);
 } catch (err) {
   console.error(`[Firebase Client Adapter] Could not initialize client database adapter.`, err);
-  firestoreDb = (0, import_firestore.getFirestore)(app, firebaseDbId);
+  firestoreDb = (0, import_firestore2.getFirestore)(app, firebaseDbId);
 }
 uploadDefaultIcons().catch(console.error);
 fixExistingPlaces().catch(console.error);
@@ -218,7 +508,8 @@ async function fixExistingPlaces() {
     const snapshot = await placesRef.get();
     for (const doc2 of snapshot.docs) {
       const data = doc2.data();
-      if (!data.imageUrl || data.imageUrl.startsWith("https://images.unsplash.com/") || data.imageUrl.includes("default_icons/")) {
+      const needsFix = !data.imageUrl || data.imageUrl.startsWith("https://images.unsplash.com/") || data.imageUrl.includes("default_icons/") || data.imageUrl.includes(".jpg");
+      if (needsFix) {
         const cat = data.category ? data.category.toLowerCase() : "";
         let iconPath = "";
         if (cat.includes("sosta")) iconPath = defaultIcons["Area di sosta"];
@@ -226,7 +517,8 @@ async function fixExistingPlaces() {
         else if (cat.includes("service")) iconPath = defaultIcons["Camper service"];
         else if (cat.includes("parcheggio")) iconPath = defaultIcons["Parcheggio"];
         if (iconPath) {
-          const newUrl = `https://storage.googleapis.com/${bucket.name}/${iconPath}`;
+          const iconFilename = iconPath.replace("default_icons/", "");
+          const newUrl = `/${iconFilename}`;
           await firestoreDb.collection("places").doc(doc2.id).update({ imageUrl: newUrl });
           console.log(`Updated place ${doc2.id} with default icon per category ${data.category}`);
         }
@@ -279,21 +571,6 @@ function getFriendlyGeminiError(err) {
   return errMsg;
 }
 var PROVINCE_CACHE_FILE = import_path.default.join(process.cwd(), "province_cache.json");
-function getCachedProvincePlaces(province) {
-  try {
-    if (import_fs.default.existsSync(PROVINCE_CACHE_FILE)) {
-      const data = JSON.parse(import_fs.default.readFileSync(PROVINCE_CACHE_FILE, "utf-8"));
-      const key = province.toLowerCase().trim();
-      if (data[key]) {
-        console.log(`[Cache Hit] Found cached POIs for province: ${province}`);
-        return data[key];
-      }
-    }
-  } catch (err) {
-    console.error("Error reading province cache file:", err);
-  }
-  return null;
-}
 function saveCachedProvincePlaces(province, places) {
   try {
     let data = {};
@@ -586,6 +863,7 @@ async function geocodeAddress(address, name) {
       }
     }
     queryStages.push(`${cleanAddress}, Italy`);
+    let firstFallback = null;
     for (let i = 0; i < queryStages.length; i++) {
       const query2 = queryStages[i];
       console.log(`[Geocoding Stage ${i + 1}] Querying Nominatim for: "${query2}"`);
@@ -608,7 +886,10 @@ async function geocodeAddress(address, name) {
                 console.log(`[Geocoding Success - Stage ${i + 1}] Found HIGH QUALITY coordinates: ${lat}, ${lng} for query: "${query2}"`);
                 return { lat, lng };
               } else {
-                console.log(`[Geocoding Skip - Stage ${i + 1}] Found coordinates, but detected as low-quality city center fallback. Continuing search stages...`);
+                console.log(`[Geocoding Skip - Stage ${i + 1}] Found coordinates, but detected as city center/administrative fallback. Saving as backup...`);
+                if (!firstFallback) {
+                  firstFallback = { lat, lng };
+                }
               }
             }
           }
@@ -617,7 +898,11 @@ async function geocodeAddress(address, name) {
         console.error(`[Geocoding Stage ${i + 1} Error] Failed query "${query2}":`, err.message);
       }
     }
-    console.log(`[Geocoding Status] All specific geocoding stages returned no high-quality coordinates for "${name || address}".`);
+    if (firstFallback) {
+      console.log(`[Geocoding Fallback] Using address-derived city center/administrative fallback coordinates: ${firstFallback.lat}, ${firstFallback.lng} for "${name || address}"`);
+      return firstFallback;
+    }
+    console.log(`[Geocoding Status] All specific geocoding stages returned no coordinates for "${name || address}".`);
   } catch (err) {
     console.error(`[Geocoding Error] Failed to geocode "${address}":`, err.message);
   }
@@ -632,7 +917,7 @@ async function getProvinceCoordinates(province) {
     const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(province + ", Italy")}&limit=1`;
     const response = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "CamperLife/2.0 (sambucci.simone@gmail.com)"
+        "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
       }
     });
     if (response.ok) {
@@ -667,20 +952,26 @@ out center;`;
     "https://lz4.overpass-api.de/api/interpreter",
     "https://z.overpass-api.de/api/interpreter",
     "https://overpass.openstreetmap.fr/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter"
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
   ];
   const shuffledUrls = [...overpassUrls].sort(() => Math.random() - 0.5);
   for (const targetUrl of shuffledUrls) {
     try {
       console.log(`[OSM Fallback] Querying Overpass API for real places near ${province} (${coords.lat}, ${coords.lng}): ${targetUrl}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6e3);
       const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "CamperCompanion/1.0"
+          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; viacamperapp@gmail.com)"
         },
-        body: "data=" + encodeURIComponent(query2)
+        body: "data=" + encodeURIComponent(query2),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (response.ok) {
         const result = await response.json();
         if (result && Array.isArray(result.elements) && result.elements.length > 0) {
@@ -728,6 +1019,7 @@ out center;`;
               priceInfo,
               rating: Number((4.1 + Math.random() * 0.8).toFixed(1)),
               facilities,
+              source: "OpenStreetMap",
               nearestCity: findNearestCity(Number(elLat.toFixed(5)), Number(elLng.toFixed(5)))
             };
           }).filter(Boolean);
@@ -814,7 +1106,7 @@ function saveFeedbacks(feedbacks) {
 }
 async function startServer() {
   const app2 = (0, import_express.default)();
-  const PORT = 3e3;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3;
   (async function optimizeExistingImages() {
     try {
       const publicDir = import_path.default.join(process.cwd(), "public");
@@ -884,7 +1176,7 @@ async function startServer() {
   });
   app2.post("/api/generate-itinerary", async (req, res) => {
     try {
-      const { startLocation, endLocation, duration, interests, travelStyle, vehicleType, vehicleDims } = req.body;
+      const { startLocation, endLocation, waypoints, duration, interests, travelStyle, vehicleType, vehicleDims } = req.body;
       if (!startLocation) {
         return res.status(400).json({ error: "Localit\xE0 di partenza obbligatoria." });
       }
@@ -892,16 +1184,22 @@ async function startServer() {
       const activeInterests = Array.isArray(interests) && interests.length > 0 ? interests.join(", ") : "Natura, Cultura, Enogastronomia";
       const style = travelStyle || "Bilanciato (ritmo medio)";
       const endDestStr = endLocation && endLocation.trim() !== "" ? ` e con destinazione finale a "${endLocation}"` : "";
+      const validWaypoints = Array.isArray(waypoints) ? waypoints.map((w) => typeof w === "string" ? w.trim() : "").filter((w) => w.length > 0) : [];
+      const waypointsStr = validWaypoints.length > 0 ? ` passando obbligatoriamente per le seguenti tappe intermedie: ${validWaypoints.map((w) => `"${w}"`).join(", ")}` : "";
       const vProps = vehicleDims ? `Lunghezza: ${vehicleDims.length}m, Larghezza: ${vehicleDims.width}m, Altezza: ${vehicleDims.height}m` : "Dimensioni standard camper";
       const vType = vehicleType || "Mansardato";
-      const systemInstruction = "Sei 'CamperLife AI', una guida turistica esperta specializzata in viaggi itineranti in camper. Il tuo compito \xE8 generare un itinerario in camper realistico, entusiasmante e sicuro, partendo dalla localit\xE0 richiesta e terminando nella localit\xE0 specificata (se presente, altrimenti proponi un itinerario circolare o aperto). Fornisci consigli specifici per i camperisti (ad esempio strade strette da evitare se il mezzo \xE8 alto, aree sosta consigliate, camper service, facilit\xE0 di manovra). Cerca di stimare delle coordinate lat/lng realistiche in Italia o in Europa per i punti di sosta di ciascun giorno, in modo che possano essere disegnate su una mappa di sosta Leaflet. Compila interamente tutti i campi richiesti in lingua italiana.";
-      const prompt = `Genera un itinerario di viaggio in camper di ${numDays} giorni con partenza da "${startLocation}"${endDestStr}.
+      const systemInstruction = "Sei 'ViaCamperApp AI', una guida turistica esperta specializzata in viaggi itineranti in camper. Il tuo compito \xE8 generare un itinerario in camper realistico, entusiasmante e sicuro, partendo dalla localit\xE0 richiesta, toccando tutte le tappe intermedie inserite dall'utente (se presenti) e terminando nella localit\xE0 specificata (se presente, altrimenti proponi un itinerario circolare o aperto). Fornisci consigli specifici per i camperisti (ad esempio strade strette da evitare se il mezzo \xE8 alto, aree sosta consigliate, camper service, facilit\xE0 di manovra). Qualsiasi stima del tempo di guida/al volante complessivo (campo 'totalDrivingTime') o dei singoli segmenti (campo 'drivingSegment') deve essere calcolata applicando una maggiorazione fissa del 15% rispetto ai tempi standard di un'autovettura (per tenere conto del ritmo ridotto del camper e delle andature pi\xF9 prudenti). Cerca di stimare delle coordinate lat/lng realistiche in Italia o in Europa per i punti di sosta di ciascun giorno, in modo che possano essere disegnate su una mappa di sosta Leaflet. Compila interamente tutti i campi richiesti in lingua italiana.";
+      const prompt = `Genera un itinerario di viaggio in camper di ${numDays} giorni con partenza da "${startLocation}"${waypointsStr}${endDestStr}.
 Dettagli di viaggio richiesti:
-- Interessi principali: ${activeInterests}
+${validWaypoints.length > 0 ? `- Tappe intermedie richieste dall'utente: ${validWaypoints.join(" -> ")}
+` : ""}- Interessi principali: ${activeInterests}
 - Stile di viaggio: ${style}
 - Tipologia Mezzo: ${vType}
 - Dimensioni veicolo: ${vProps}
 - Fonti dati aggiuntive: Utilizza informazioni dal sito https://app.camperpass.it/#/explore per suggerire aree di sosta e attivit\xE0.
+
+CRITICO - CALCOLO TEMPI DI GUIDA (+15%):
+Qualsiasi tempo di guida stimato o tempo al volante (sia nel campo 'totalDrivingTime' dell'itinerario, sia nel campo 'drivingSegment' per ciascun giorno) deve essere calcolato con una maggiorazione obbligatoria del 15% rispetto al tempo standard di percorrenza in auto (per via della velocit\xE0 ridotta e del peso del camper). Inserisci questa stima incrementata del 15% direttamente nei campi di risposta.
 
 Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o campeggio realmente esistente (o credibile) con coordinate decimali (latitudine fra 35.0 e 48.0, longitudine fra 6.0 e 19.0 se in Italia, altrimenti europee corrispondenti) per consentire la visualizzazione su mappa GPS.`;
       console.log(`[Gemini AI] Generating itinerary from ${startLocation} for ${numDays} days...`);
@@ -928,7 +1226,7 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
               },
               totalDrivingTime: {
                 type: import_genai.Type.STRING,
-                description: "Tempo di guida stimato complessivo, es: '4 ore e 15 minuti'"
+                description: "Tempo di guida complessivo stimato con l'aumento del 15% gi\xE0 calcolato, es: '4 ore e 50 minuti'"
               },
               days: {
                 type: import_genai.Type.ARRAY,
@@ -939,7 +1237,7 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
                     title: { type: import_genai.Type.STRING, description: "Focus o tappe del giorno, es: 'Giorno 1: Arrivo a Siena e colli senesi'" },
                     description: { type: import_genai.Type.STRING, description: "Cosa si visiter\xE0 e l'itinerario stradale descrittivo della giornata" },
                     stopPlaceName: { type: import_genai.Type.STRING, description: "Nome dell'Area Sosta Camper o Campeggio consigliato per la notte" },
-                    drivingSegment: { type: import_genai.Type.STRING, description: "Segmento stradale del giorno, es: 'Firenze -> Siena (75km, 1h 10m)'" },
+                    drivingSegment: { type: import_genai.Type.STRING, description: "Segmento stradale del giorno con tempo di guida stimato con l'aumento del 15% gi\xE0 calcolato, es: 'Firenze -> Siena (75km, 1h 20m)'" },
                     activities: {
                       type: import_genai.Type.ARRAY,
                       items: { type: import_genai.Type.STRING },
@@ -1007,7 +1305,7 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
       res.json({ eventsText: response.text });
     } catch (err) {
       console.log("[AI Events Info]: Error generated during AI events search.", err.message);
-      res.status(500).json({ error: getFriendlyGeminiError(err) });
+      res.status(500).json({ error: "Errore durante la ricerca eventi: " + getFriendlyGeminiError(err) });
     }
   });
   app2.post("/api/admin/generate-province-places", async (req, res) => {
@@ -1017,29 +1315,22 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
       if (!province) {
         return res.status(400).json({ error: "Province is required" });
       }
-      const cached = getCachedProvincePlaces(province);
-      if (cached && Array.isArray(cached) && cached.length > 0) {
-        console.log(`[Cache Hit] Returning cached places for ${province}`);
-        const enriched = cached.map((p) => ({
-          ...p,
-          nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
-        }));
-        return res.json({ places: enriched });
-      }
-      const norm = province.toLowerCase().trim();
-      if (VERIFIED_REAL_PLACES[norm]) {
-        console.log(`[Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
-        const enriched = VERIFIED_REAL_PLACES[norm].map((p) => ({
-          ...p,
-          nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
-        }));
-        saveCachedProvincePlaces(province, enriched);
-        return res.json({ places: enriched });
-      }
+      console.log(`[Fresh Search Mandated] Bypassing cache and hardcoded hits to execute real-time search for province: ${province}`);
       console.log(`[Gemini AI with Search Grounding] Discovering POIs for province: ${province}...`);
       try {
         const searchPrompt = `Cerca sul web (usando Google Search Grounding) reali, esistenti, attivi ed ufficiali punti di sosta camper, aree di sosta attrezzate, campeggi o camper service (carico/scarico acque) situati nel territorio di "${province}" (Italia) o nelle immediate vicinanze.
-Focalizza la ricerca su portali dedicati e altamente attendibili come Camperonline (es. "site:camperonline.it ${province}") e Park4night (es. "site:park4night.com ${province}"), oltre a CaraMaps o Campercontact.
+Esegui una ricerca approfondita e ad ampio spettro che interroghi e combini i risultati provenienti sia da Camperpass.it sia da tutti gli altri principali portali specializzati italiani ed europei. Non limitarti ad un solo portale: vogliamo ottenere la massima copertura raccogliendo tutti i punti sosta reali documentati in uno o pi\xF9 di questi siti:
+- Camperpass.it
+- Camperonline.it
+- Park4night.com
+- Campercontact.com
+- area-sosta-camper.it
+- Caramaps / CaraMaps.com
+- Campermaps.com
+- viacamper.app
+- Associazionecamperistiarianna.it (aree sosta Arianna)
+- Siti ufficiali di enti turistici e comuni locali della zona
+
 Elenchi SOLO luoghi che esistono realmente e sono ampiamente documentati su questi siti. 
 ATTENZIONE CRITICA: Non inventare o allucinare NOMI o INDIRIZZI che non esistono sul web. Se per "${province}" esistono solo pochissimi luoghi reali o nessuno, restituisci solo quelli realmente esistenti o non restituirne affatto. Non forzare l'inserimento di luoghi fittizi.`;
         console.log(`[Gemini AI Search] Querying web search for real camper facilities in ${province}...`);
@@ -1062,6 +1353,7 @@ REGOLE DI RIGORE ASSOLUTO:
   2. Identifica la categoria: "sosta" (area sosta attrezzata), "campeggio" (camping), "parcheggio" (parcheggio generico dove \xE8 tollerata la sosta camper), "scarico" (camper service, solo carico/scarico).
   3. Trova le coordinate GPS (latitudine e longitudine) REALI e ACCURATE del luogo. Se non esplicitate nel testo, calcolale in modo accurato e veritiero per la posizione reale dell'indirizzo nel comune di riferimento.
   4. Compila fedelmente i prezzi (priceEuro e priceInfo) e i servizi (facilities) sulla base delle informazioni reali.
+  5. Identifica e compila il campo "source" (fonte) per ciascun luogo reale sulla base del portale o sito da cui sono stati estratti i dati (es. "Camperpass.it", "Camperonline.it", "Park4night", "Campercontact", ecc.).
 La tua risposta deve essere ESATTAMENTE e SOLO l'oggetto JSON richiesto. Nessun commento aggiuntivo.`;
         const parsePrompt = `Dati i seguenti risultati reali di ricerca web:
 """
@@ -1080,7 +1372,8 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
       "priceEuro": 12,
       "priceInfo": "12\u20AC/24h",
       "rating": 4.5,
-      "facilities": ["Acqua", "Scarico", "Elettricit\xE0"]
+      "facilities": ["Acqua", "Scarico", "Elettricit\xE0"],
+      "source": "Camperpass.it"
     }
   ]
 }`;
@@ -1106,9 +1399,10 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
                       priceEuro: { type: import_genai.Type.NUMBER },
                       priceInfo: { type: import_genai.Type.STRING },
                       rating: { type: import_genai.Type.NUMBER },
-                      facilities: { type: import_genai.Type.ARRAY, items: { type: import_genai.Type.STRING } }
+                      facilities: { type: import_genai.Type.ARRAY, items: { type: import_genai.Type.STRING } },
+                      source: { type: import_genai.Type.STRING, description: "La fonte web da cui \xE8 stato estratto il luogo (es. Camperpass.it, Camperonline.it, Park4night, OpenStreetMap)" }
                     },
-                    required: ["name", "category", "lat", "lng", "address", "priceEuro", "priceInfo", "rating", "facilities"]
+                    required: ["name", "category", "lat", "lng", "address", "priceEuro", "priceInfo", "rating", "facilities", "source"]
                   }
                 }
               },
@@ -1145,13 +1439,28 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
         }
         throw new Error("Nessun luogo valido trovato o errore di parsing JSON");
       } catch (geminiErr) {
-        console.log(`[Gemini AI Info] IA o Grounding non disponibile per ${province} (${geminiErr.message || geminiErr}). Carico sosta reali da OpenStreetMap.`);
+        console.log(`[Gemini AI Info] IA o Grounding non disponibile per ${province} (${geminiErr.message || geminiErr}). Carico sosta reali.`);
         try {
+          const norm = province.toLowerCase().trim();
+          if (VERIFIED_REAL_PLACES[norm]) {
+            console.log(`[Fallback Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
+            const enriched = VERIFIED_REAL_PLACES[norm].map((p) => ({
+              ...p,
+              source: "Database Certificato ViaCamper",
+              nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
+            }));
+            saveCachedProvincePlaces(province, enriched);
+            return res.json({ places: enriched, isFallback: true });
+          }
           const coords = await getProvinceCoordinates(province);
           const realPlaces = await fetchActualOSMPlaces(province, coords);
           if (realPlaces && realPlaces.length > 0) {
-            saveCachedProvincePlaces(province, realPlaces);
-            return res.json({ places: realPlaces, isFallback: true, isOSM: true });
+            const mappedPlaces = realPlaces.map((p) => ({
+              ...p,
+              source: p.source || "OpenStreetMap"
+            }));
+            saveCachedProvincePlaces(province, mappedPlaces);
+            return res.json({ places: mappedPlaces, isFallback: true, isOSM: true });
           } else {
             console.log(`[OpenStreetMap Fallback] Nessun risultato sosta reale da OSM per ${province}.`);
             return res.status(404).json({
@@ -1159,7 +1468,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
             });
           }
         } catch (fallbackErr) {
-          console.error("Errore durante il recupero dei POI OpenStreetMap:", fallbackErr);
+          console.error("Errore durante il recupero dei POI:", fallbackErr);
           return res.status(404).json({
             error: `Non \xE8 stato possibile caricare aree reali da OpenStreetMap o tramite ricerca live per "${province}". Riprova pi\xF9 tardi o inserisci l'area manualmente.`
           });
@@ -1168,11 +1477,26 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
     } catch (err) {
       console.log(`[Gemini AI Info] Errore generale ricerca POI per ${province}.`);
       try {
+        const norm = province.toLowerCase().trim();
+        if (VERIFIED_REAL_PLACES[norm]) {
+          console.log(`[Fallback Verified Real Places Hit] Returning 100% verified real places for: ${province}`);
+          const enriched = VERIFIED_REAL_PLACES[norm].map((p) => ({
+            ...p,
+            source: "Database Certificato ViaCamper",
+            nearestCity: p.nearestCity || findNearestCity(p.lat, p.lng)
+          }));
+          saveCachedProvincePlaces(province, enriched);
+          return res.json({ places: enriched, isFallback: true });
+        }
         const coords = await getProvinceCoordinates(province);
         const realPlaces = await fetchActualOSMPlaces(province, coords);
         if (realPlaces && realPlaces.length > 0) {
-          saveCachedProvincePlaces(province, realPlaces);
-          return res.json({ places: realPlaces, isFallback: true, isOSM: true });
+          const mappedPlaces = realPlaces.map((p) => ({
+            ...p,
+            source: p.source || "OpenStreetMap"
+          }));
+          saveCachedProvincePlaces(province, mappedPlaces);
+          return res.json({ places: mappedPlaces, isFallback: true, isOSM: true });
         } else {
           return res.status(404).json({
             error: `Nessuna area di sosta camper reale trovata per la provincia o localit\xE0 "${province}" su OpenStreetMap o tramite ricerca web.`
@@ -1188,7 +1512,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
   app2.post("/api/generate-checklist", async (req, res) => {
     try {
       const { destinationType, season, crew, parkingStyle, additionalNotes } = req.body;
-      const systemInstruction = "Sei 'CamperLife AI', l'assistente camperista intelligente. Il tuo obiettivo \xE8 generare controlli di sicurezza, sosta pre-partenza ed equipaggiamento personalizzati per un viaggio in camper sulla base delle specifiche fornite dall'utente.\nLe categorie possibili in cui dividere e allocare ciascun elemento sono TASSATIVAMENTE le seguenti quattro:\n1. 'Partenza': riguardanti le fasi di preparazione del mezzo immediatamente prima dello sblocco freno a mano e accensione motore (es. chiudere obl\xF2, bloccare sportelli, chiudere gas).\n2. 'Sosta': riguardanti la sosta e l'installazione all'arrivo (es. livellamento con cunei, allacciamento corrente 230V, scarico grigie).\n3. 'Sicurezza': riguardanti strumenti salvavita, documenti, controlli meccanici profondi, kit medici o dotazioni neve/fango.\n4. 'Alimentari & Cucina': per l'approvvigionamento cambusa, bombole gas, rifornimento acqua potabile e utensili specifici per cucinare in camper.\n\nRispondi esclusivamente in formato JSON valido aderente allo schema strutturato.";
+      const systemInstruction = "Sei 'ViaCamperApp AI', l'assistente camperista intelligente. Il tuo obiettivo \xE8 generare controlli di sicurezza, sosta pre-partenza ed equipaggiamento personalizzati per un viaggio in camper sulla base delle specifiche fornite dall'utente.\nLe categorie possibili in cui dividere e allocare ciascun elemento sono TASSATIVAMENTE le seguenti quattro:\n1. 'Partenza': riguardanti le fasi di preparazione del mezzo immediatamente prima dello sblocco freno a mano e accensione motore (es. chiudere obl\xF2, bloccare sportelli, chiudere gas).\n2. 'Sosta': riguardanti la sosta e l'installazione all'arrivo (es. livellamento con cunei, allacciamento corrente 230V, scarico grigie).\n3. 'Sicurezza': riguardanti strumenti salvavita, documenti, controlli meccanici profondi, kit medici o dotazioni neve/fango.\n4. 'Alimentari & Cucina': per l'approvvigionamento cambusa, bombole gas, rifornimento acqua potabile e utensili specifici per cucinare in camper.\n\nRispondi esclusivamente in formato JSON valido aderente allo schema strutturato.";
       const prompt = `Genera una checklist intelligente di controlli e attrezzature per questo viaggio in camper:
 - Destinazione: ${destinationType || "Non specificata"}
 - Stagione: ${season || "Qualsiasi"}
@@ -1362,9 +1686,23 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         const buffer = Buffer.from(base64Data, "base64");
         const filename = `places/${placeId}.jpg`;
         const file = bucket.file(filename);
-        await file.save(buffer, { contentType: "image/jpeg" });
-        await file.makePublic();
-        imageUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+        const { randomUUID } = require("crypto");
+        const downloadToken = randomUUID();
+        await file.save(buffer, {
+          contentType: "image/jpeg",
+          metadata: {
+            metadata: {
+              firebaseStorageDownloadTokens: downloadToken
+            }
+          }
+        });
+        try {
+          await file.makePublic();
+          imageUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+        } catch (e) {
+          console.warn("[Places API] makePublic failed, using authenticated URL with token");
+          imageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filename)}?alt=media&token=${downloadToken}`;
+        }
       }
       const entry = {
         name: newPlace.name,
@@ -1385,16 +1723,48 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         rating: Number(newPlace.rating) || 5,
         reviews: newPlace.reviews || [],
         createdBy: newPlace.createdBy || "",
-        status: "pending",
+        status: newPlace.proposedBy === "AI Gemini" ? "approved" : "pending",
         createdAt: (/* @__PURE__ */ new Date()).toISOString()
       };
-      await firestoreDb.collection("places").doc(placeId).set(entry);
+      await firestoreDb.collection("places").doc(placeId).set(removeUndefined(entry));
       console.log(`[Firestore Sync] Proposed new place: ${entry.name} (${placeId})`);
       try {
         const list = loadUserPlaces();
         list.push({ id: placeId, ...entry });
         saveUserPlaces(list);
       } catch (backErr) {
+      }
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (process.env.RESEND_API_KEY && targetAdminEmail && entry.status === "pending") {
+        try {
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: "ViaCamperApp <onboarding@resend.dev>",
+            to: targetAdminEmail,
+            subject: `\u{1F4CD} Nuova proposta di sosta da approvare: ${entry.name}`,
+            html: `
+              <h2>\u{1F4CD} Nuova Proposta di Sosta Inviata dagli Utenti</h2>
+              <p>Un utente ha proposto una nuova struttura su ViaCamperApp ed \xE8 in attesa di approvazione:</p>
+              <ul>
+                <li><strong>Nome Sosta:</strong> ${entry.name}</li>
+                <li><strong>Categoria:</strong> ${entry.category}</li>
+                <li><strong>Indirizzo:</strong> ${entry.address || "N/D"}</li>
+                <li><strong>Coordinate:</strong> ${entry.lat}, ${entry.lng}</li>
+                <li><strong>Prezzo:</strong> ${entry.priceInfo || "Gratuito"} (${entry.priceEuro}\u20AC)</li>
+                <li><strong>Telefono:</strong> ${entry.phone || "N/D"}</li>
+                <li><strong>Servizi:</strong> ${entry.facilities.length > 0 ? entry.facilities.join(", ") : "Nessuno"}</li>
+                <li><strong>Inviata da (Email/Utente):</strong> ${entry.createdBy || "Anonimo / Non specificato"}</li>
+                <li><strong>Data Invio:</strong> ${entry.createdAt}</li>
+              </ul>
+              <br/>
+              <p>Puoi esaminare e approvare direttamente questa proposta accedendo al pannello amministratore dell'app (sezione <strong>Impostazioni > Amministrazione > Proposte Sosta</strong> o nella tab Mappa).</p>
+            `
+          });
+          console.log(`[Email] Admin proposal notification sent to: ${targetAdminEmail}`);
+        } catch (emailErr) {
+          console.error("Error sending admin proposal email notification:", emailErr);
+        }
       }
       res.json({ success: true, place: { id: placeId, ...entry } });
     } catch (err) {
@@ -1433,7 +1803,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app2.post("/api/admin/reject-place", async (req, res) => {
     try {
       const { id } = req.body;
+      console.log(`[Admin API] Attempting to reject/delete place ID: ${id}`);
       if (!id) {
+        console.error("[Admin API] Missing ID in reject request.");
         return res.status(400).json({ error: "ID mancante." });
       }
       await firestoreDb.collection("places").doc(id).delete();
@@ -1443,6 +1815,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         const filtered = list.filter((p) => p.id !== id);
         saveUserPlaces(filtered);
       } catch (backErr) {
+        console.warn("[Admin API] Failed to sync local backup:", backErr);
       }
       res.json({ success: true });
     } catch (err) {
@@ -1450,11 +1823,52 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.status(500).json({ error: err.message || "Unknown error" });
     }
   });
+  app2.post("/api/admin/update-place", async (req, res) => {
+    try {
+      const { id, updatedData } = req.body;
+      if (!id || !updatedData) {
+        return res.status(400).json({ error: "ID e dati aggiornati sono obbligatori." });
+      }
+      await firestoreDb.collection("places").doc(id).update(updatedData);
+      console.log(`[Firestore Sync] Updated place ID: ${id}`);
+      try {
+        const list = loadUserPlaces();
+        const index = list.findIndex((p) => p.id === id);
+        if (index !== -1) {
+          list[index] = { ...list[index], ...updatedData };
+          saveUserPlaces(list);
+        }
+      } catch (backErr) {
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating place in Firestore:", err);
+      res.status(500).json({ error: err.message || "Unknown error" });
+    }
+  });
+  app2.get("/api/admin/all-places", async (req, res) => {
+    try {
+      const snapshot = await firestoreDb.collection("places").get();
+      const places = [];
+      snapshot.forEach((doc2) => {
+        places.push({ id: doc2.id, ...doc2.data() });
+      });
+      res.json(places);
+    } catch (err) {
+      console.error("Error fetching all places from Firestore:", err);
+      res.status(500).json({ error: err.message || "Unknown error" });
+    }
+  });
   app2.post("/api/register", async (req, res) => {
     try {
-      const { email, password, name, surname, dob, nickname } = req.body;
+      const { email, password, name, surname, dob, nickname, inviteCode, profilePhoto } = req.body;
       if (!email || !password || !nickname) {
         return res.status(400).json({ error: "Email, password e nickname sono richiesti per la registrazione." });
+      }
+      const serverInviteCode = process.env.REGISTRATION_INVITE_CODE;
+      console.log(`[Registration Debug] serverInviteCode from env: '${serverInviteCode}', provided inviteCode: '${inviteCode}'`);
+      if (serverInviteCode && (!inviteCode || inviteCode.trim() !== serverInviteCode.trim())) {
+        return res.status(400).json({ error: "Codice di invito non valido o mancante. Contatta l'amministratore per ottenere l'accesso." });
       }
       const usersRef = firestoreDb.collection("users");
       const snapshot = await usersRef.where("email", "==", email.toLowerCase().trim()).get();
@@ -1465,6 +1879,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!nicknameSnapshot.empty) {
         return res.status(400).json({ error: "Questo nickname \xE8 gi\xE0 stato scelto da un altro camperista." });
       }
+      const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
+      const isRegisteredUserAdmin = email.toLowerCase().trim() === adminEmail;
       const newUserDoc = {
         email: email.toLowerCase().trim(),
         password,
@@ -1472,12 +1888,43 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         surname: surname || "",
         dob: dob || "",
         nickname: nickname.trim(),
+        profilePhoto: profilePhoto || "",
         favorites: [],
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        approved: isRegisteredUserAdmin ? true : false
       };
       await usersRef.doc(email.toLowerCase().trim()).set(newUserDoc);
-      console.log(`[Firestore Auth] User registered successfully: ${email}`);
-      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname } });
+      console.log(`[Firestore Auth] User registered successfully: ${email} (Approved: ${newUserDoc.approved})`);
+      if (process.env.RESEND_API_KEY && process.env.ADMIN_EMAIL) {
+        try {
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: "ViaCamperApp <onboarding@resend.dev>",
+            to: process.env.ADMIN_EMAIL,
+            subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
+            html: `
+              <h2>Richiesta di approvazione nuovo utente registrato</h2>
+              <p>Un nuovo camperista si \xE8 appena iscritto ed \xE8 in attesa di essere approvato per accedere all'app:</p>
+              <ul>
+                <li><strong>Email:</strong> ${newUserDoc.email}</li>
+                <li><strong>Nickname:</strong> ${newUserDoc.nickname}</li>
+                <li><strong>Nome:</strong> ${newUserDoc.name || "N/D"}</li>
+                <li><strong>Cognome:</strong> ${newUserDoc.surname || "N/D"}</li>
+                <li><strong>Data di Nascita:</strong> ${newUserDoc.dob || "N/D"}</li>
+                <li><strong>Data registrazione:</strong> ${newUserDoc.createdAt}</li>
+                <li><strong>Stato approvazione:</strong> IN ATTESA DI APPROVAZIONE</li>
+              </ul>
+              <br/>
+              <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
+            `
+          });
+          console.log(`[Email] Admin notification sent for user: ${email}`);
+        } catch (emailErr) {
+          console.error("Error sending admin notification email:", emailErr);
+        }
+      }
+      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
     } catch (err) {
       console.error("Error in register endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown register error" });
@@ -1497,6 +1944,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (userData.password !== password) {
         return res.status(400).json({ error: "Password non corretta." });
       }
+      if (userData.approved === false) {
+        return res.status(403).json({ error: "Il tuo account \xE8 in attesa di approvazione da parte di un moderatore." });
+      }
       console.log(`[Firestore Auth] User logged in: ${email}`);
       res.json({
         success: true,
@@ -1504,12 +1954,84 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           email: userData.email,
           name: userData.name,
           nickname: userData.nickname,
-          favorites: userData.favorites || []
+          profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
+          favorites: userData.favorites || [],
+          isModerator: !!userData.isModerator
         }
       });
     } catch (err) {
       console.error("Error in login endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown login error" });
+    }
+  });
+  app2.post("/api/user/update-profile", async (req, res) => {
+    try {
+      const { email, profilePhoto, nickname, name } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email mancante." });
+      }
+      const updateData = {};
+      if (profilePhoto !== void 0) updateData.profilePhoto = profilePhoto;
+      if (nickname) updateData.nickname = nickname.trim();
+      if (name) updateData.name = name.trim();
+      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update(updateData);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating user profile:", err);
+      res.status(500).json({ error: err.message || "Errore aggiornamento profilo" });
+    }
+  });
+  app2.post("/api/admin/users/approve", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email mancante." });
+      }
+      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
+        approved: true
+      });
+      console.log(`[Firestore Auth] User ${email} approved by administrator.`);
+      if (process.env.RESEND_API_KEY) {
+        try {
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: "ViaCamperApp <onboarding@resend.dev>",
+            to: email,
+            subject: "Il tuo account ViaCamperApp \xE8 stato approvato! \u{1F389}",
+            html: `
+              <h2>Benvenuto su ViaCamperApp!</h2>
+              <p>Siamo felici di comunicarti che il tuo account \xE8 stato approvato dall'amministratore.</p>
+              <p>Ora puoi effettuare il login con la tua email e password e iniziare ad utilizzare l'applicazione.</p>
+              <br/>
+              <p>Buon viaggio! \u{1F690}\u{1F4A8}</p>
+            `
+          });
+          console.log(`[Email] Approval notification sent to user: ${email}`);
+        } catch (emailErr) {
+          console.error("Error sending approval email to user:", emailErr);
+        }
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error approving user on Firestore:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app2.post("/api/admin/users/toggle-moderator", async (req, res) => {
+    try {
+      const { email, isModerator } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email mancante." });
+      }
+      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
+        isModerator: !!isModerator
+      });
+      console.log(`[Firestore Auth] User ${email} moderator status updated to: ${isModerator}`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating moderator status on Firestore:", err);
+      res.status(500).json({ error: err.message });
     }
   });
   app2.get("/api/admin/users", async (req, res) => {
@@ -1536,6 +2058,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           nickname: data.nickname || "",
           dob: data.dob || "",
           createdAt: data.createdAt || "",
+          isModerator: !!data.isModerator,
+          approved: data.approved !== false,
+          // default to true for existing users
           favoritesCount: (data.favorites || []).length,
           proposalsCount: proposalCounts[email] || 0
         });
@@ -1590,6 +2115,33 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err) {
       console.error("Error deleting user for admin:", err);
       res.status(500).json({ error: err.message || "Errore durante l'eliminazione dell'utente." });
+    }
+  });
+  app2.post("/api/user/delete-account", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email non specificata." });
+      }
+      const cleanEmail = email.toLowerCase().trim();
+      if (firestoreDb) {
+        await firestoreDb.collection("users").doc(cleanEmail).delete();
+        try {
+          const fuelLogs = await firestoreDb.collection(`users/${cleanEmail}/fuelLogs`).get();
+          if (!fuelLogs.empty) {
+            const batch = firestoreDb.batch();
+            fuelLogs.forEach((doc2) => batch.delete(doc2.ref));
+            await batch.commit();
+          }
+        } catch (subErr) {
+          console.warn("[Firestore] Error deleting fuelLogs subcollection:", subErr);
+        }
+      }
+      console.log(`[Firestore Auth] User self-deleted account: ${cleanEmail}`);
+      res.json({ success: true, message: "Account ed i dati personali ad esso associati sono stati eliminati con successo." });
+    } catch (err) {
+      console.error("Error in user self-deletion:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'eliminazione dell'account." });
     }
   });
   app2.get("/api/user/favorites", async (req, res) => {
@@ -1675,17 +2227,119 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.status(500).json({ error: err.message || "Unknown error deleting fuel log" });
     }
   });
+  const FAKE_USERS = /* @__PURE__ */ new Set([
+    "Marco_Van78",
+    "Elena_Camper91",
+    "Simo_FamilyOnRoad",
+    "BeppeVan",
+    "TechCamper_Luca",
+    "Valeria_Coast",
+    "Pietro_Anto",
+    "Stefano_Oasi",
+    "Roberto_Mansardato",
+    "Giada_Van",
+    "Silvia_NORD",
+    "Davide_Giramondo",
+    "Mia_E_CaneToby",
+    "GreenVan_Piero",
+    "MeccanicoFaidate_Giuseppe",
+    "ChefInViaggio_Chiara",
+    "Andrea_Vento",
+    "Giancarlo_Pioneer",
+    "OfficinaCamper_Rino",
+    "NomadFamily_Ilaria",
+    "Bruno_CamperSicuro"
+  ]);
+  const FAKE_POST_IDS = /* @__PURE__ */ new Set([
+    "m1",
+    "m2",
+    "m3",
+    "m4",
+    "social_post_1",
+    "social_post_2",
+    "social_post_3",
+    "social_post_4",
+    "chat_1",
+    "chat_2"
+  ]);
+  function sanitizeServerCommunityMessage(docId, data) {
+    if (!data) return null;
+    const msgUser = data.user || "";
+    if (FAKE_POST_IDS.has(docId) || FAKE_USERS.has(msgUser)) {
+      return null;
+    }
+    const isInitialRolly = msgUser.includes("Rolly") || docId.startsWith("rolly_topic_") || docId.startsWith("social_post_rolly") || docId.startsWith("chat_rolly");
+    const rawReplies = Array.isArray(data.replies) ? data.replies : [];
+    const cleanReplies = rawReplies.filter((r) => {
+      if (!r) return false;
+      if (r.id && (r.id.startsWith("r_r") || r.id.startsWith("r_soc") || r.id.startsWith("r_chat"))) return false;
+      if (r.user && FAKE_USERS.has(r.user)) return false;
+      return true;
+    });
+    let likes = Number(data.likes) || 0;
+    if (isInitialRolly) {
+      likes = data.likedByCurrentUser ? 1 : 0;
+    }
+    let msgType = data.type;
+    if (!msgType) {
+      if (docId.startsWith("chat_") || data.text && (data.text.includes("chat live") || data.text.includes("quattro chiacchiere"))) {
+        msgType = "chat";
+      } else {
+        msgType = "forum";
+      }
+    }
+    return {
+      ...data,
+      id: docId,
+      type: msgType,
+      likes,
+      replies: cleanReplies
+    };
+  }
   app2.get("/api/community-messages", async (req, res) => {
     try {
       const snapshot = await firestoreDb.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
+      const hasRollyTopics = !snapshot.empty && snapshot.docs.some((doc2) => doc2.id && doc2.id.startsWith("rolly_topic_"));
+      if (!hasRollyTopics) {
+        console.log("[Firestore Seed] Triggering background seed for Rolly forum topics into Firestore...");
+        Promise.all(
+          INITIAL_COMMUNITY_MESSAGES.map(
+            (msg) => firestoreDb.collection("communityMessages").doc(msg.id).set(msg, { merge: true }).catch((err) => console.error("Seed error:", err))
+          )
+        ).catch((e) => console.error("Batch seed error:", e));
+      }
       const messages = [];
       snapshot.forEach((doc2) => {
-        messages.push({ id: doc2.id, ...doc2.data() });
+        const rawData = doc2.data() || {};
+        const sanitized = sanitizeServerCommunityMessage(doc2.id, rawData);
+        if (sanitized) {
+          messages.push(sanitized);
+          const hadFakeReplies = (rawData.replies || []).length !== sanitized.replies.length;
+          const hadFakeLikes = rawData.likes !== sanitized.likes;
+          if (hadFakeReplies || hadFakeLikes) {
+            firestoreDb.collection("communityMessages").doc(doc2.id).update({
+              likes: sanitized.likes,
+              replies: sanitized.replies
+            }).catch((err) => console.error("Error updating cleaned Firestore doc:", err));
+          }
+        } else {
+          firestoreDb.collection("communityMessages").doc(doc2.id).delete().catch((err) => console.error("Error deleting fake doc:", err));
+        }
       });
+      const fetchedIds = new Set(messages.map((m) => m.id));
+      for (const initialMsg of INITIAL_COMMUNITY_MESSAGES) {
+        if (!fetchedIds.has(initialMsg.id)) {
+          const sanitizedInitial = sanitizeServerCommunityMessage(initialMsg.id, initialMsg);
+          if (sanitizedInitial) {
+            messages.push(sanitizedInitial);
+          }
+        }
+      }
       res.json(messages);
     } catch (err) {
       console.error("Error loading community messages from Firestore:", err);
-      res.json([]);
+      const fallback = INITIAL_COMMUNITY_MESSAGES.map((m) => sanitizeServerCommunityMessage(m.id, m)).filter(Boolean);
+      res.json(fallback);
     }
   });
   app2.post("/api/community-messages", async (req, res) => {
@@ -1699,19 +2353,40 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         user: msg.user,
         avatar: msg.avatar || "\u{1F468}\u200D\u{1F4BB}",
         avatarColor: msg.avatarColor || "#86C232",
+        title: msg.title || void 0,
         text: msg.text,
         timestamp: msg.timestamp || (/* @__PURE__ */ new Date()).toISOString(),
         likes: Number(msg.likes) || 0,
         likedByCurrentUser: false,
         tag: msg.tag || "Generale",
+        type: msg.type || (msgId.startsWith("chat_") ? "chat" : "forum"),
+        locationName: msg.locationName || void 0,
+        mediaUrl: msg.mediaUrl || void 0,
+        mediaType: msg.mediaType || void 0,
+        isResolved: msg.isResolved || false,
         replies: msg.replies || []
       };
-      await firestoreDb.collection("communityMessages").doc(msgId).set(entry);
-      console.log(`[Firestore Chat] Shared message from ${msg.user}`);
+      await firestoreDb.collection("communityMessages").doc(msgId).set(removeUndefined(entry));
+      console.log(`[Firestore Chat] Shared message from ${msg.user} (Type: ${entry.type})`);
       res.json({ success: true, message: { id: msgId, ...entry } });
     } catch (err) {
       console.error("Error writing community message to Firestore:", err);
       res.status(500).json({ error: err.message || "Unknown chat error" });
+    }
+  });
+  app2.post("/api/community-messages/resolve", async (req, res) => {
+    try {
+      const { id, isResolved } = req.body;
+      if (!id) {
+        return res.status(400).json({ error: "ID mancante." });
+      }
+      await firestoreDb.collection("communityMessages").doc(id).update({
+        isResolved: !!isResolved
+      });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating isResolved on Firestore:", err);
+      res.status(500).json({ error: err.message });
     }
   });
   app2.post("/api/community-messages/like", async (req, res) => {
@@ -1757,6 +2432,36 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.status(500).json({ error: err.message });
     }
   });
+  app2.post("/api/community-messages/delete", async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) {
+        return res.status(400).json({ error: "ID mancante." });
+      }
+      await firestoreDb.collection("communityMessages").doc(id).delete();
+      console.log(`[Firestore Chat] Message ${id} deleted by moderator`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting community message on Firestore:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app2.post("/api/community-messages/reply-delete", async (req, res) => {
+    try {
+      const { id, replies } = req.body;
+      if (!id || !Array.isArray(replies)) {
+        return res.status(400).json({ error: "Dati mancanti o non validi." });
+      }
+      await firestoreDb.collection("communityMessages").doc(id).update({
+        replies
+      });
+      console.log(`[Firestore Chat] Thread replies updated for ${id}`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating replies array on Firestore:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
   app2.get("/api/nominatim", async (req, res) => {
     try {
       const q = req.query.q;
@@ -1766,7 +2471,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`;
       const response = await fetch(targetUrl, {
         headers: {
-          "User-Agent": "CamperLife/2.0 (sambucci.simone@gmail.com)"
+          "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
         }
       });
       if (!response.ok) {
@@ -1779,6 +2484,111 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.status(500).json({ error: err.message || "Unknown error" });
     }
   });
+  app2.get("/api/google-places/search", async (req, res) => {
+    try {
+      const q = req.query.q;
+      const lat = req.query.lat;
+      const lng = req.query.lng;
+      const clientKey = req.query.key;
+      if (!q || !q.trim()) {
+        return res.status(400).json({ error: "Missing parameter q" });
+      }
+      const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || clientKey || "";
+      const calcDistKm = (l1, n1, l2, n2) => {
+        const R = 6371;
+        const dLat = (l2 - l1) * Math.PI / 180;
+        const dLon = (n2 - n1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(l1 * Math.PI / 180) * Math.cos(l2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+      const userLatNum = lat ? parseFloat(lat) : NaN;
+      const userLngNum = lng ? parseFloat(lng) : NaN;
+      const hasUserCoords = !isNaN(userLatNum) && !isNaN(userLngNum);
+      if (googleKey && googleKey !== "YOUR_API_KEY") {
+        let placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${googleKey}&language=it`;
+        if (hasUserCoords) {
+          placesUrl += `&location=${userLatNum},${userLngNum}&radius=50000`;
+        }
+        const googleRes = await fetch(placesUrl);
+        if (googleRes.ok) {
+          const googleData = await googleRes.json();
+          if (googleData.status === "OK" && Array.isArray(googleData.results) && googleData.results.length > 0) {
+            let places = googleData.results.map((p) => {
+              const photoRef = p.photos?.[0]?.photo_reference;
+              const photoUrl = photoRef ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photo_reference=${photoRef}&key=${googleKey}` : null;
+              const pLat = p.geometry?.location?.lat;
+              const pLng = p.geometry?.location?.lng;
+              const distanceKm = hasUserCoords && pLat !== void 0 && pLng !== void 0 ? calcDistKm(userLatNum, userLngNum, pLat, pLng) : void 0;
+              return {
+                id: `google-${p.place_id}`,
+                place_id: p.place_id,
+                name: p.name,
+                address: p.formatted_address || p.vicinity || "",
+                lat: pLat,
+                lng: pLng,
+                rating: p.rating || null,
+                user_ratings_total: p.user_ratings_total || null,
+                types: p.types || [],
+                photoUrl,
+                source: "google_places",
+                distanceKm
+              };
+            });
+            if (hasUserCoords) {
+              places.sort((a, b) => {
+                if (a.distanceKm !== void 0 && b.distanceKm !== void 0) {
+                  return a.distanceKm - b.distanceKm;
+                }
+                return 0;
+              });
+            }
+            return res.json({ source: "google", places });
+          }
+        }
+      }
+      const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10&addressdetails=1`;
+      const nomRes = await fetch(nomUrl, {
+        headers: {
+          "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
+        }
+      });
+      if (nomRes.ok) {
+        const nomData = await nomRes.json();
+        let places = nomData.map((item) => {
+          const pLat = parseFloat(item.lat);
+          const pLng = parseFloat(item.lon);
+          const distanceKm = hasUserCoords && !isNaN(pLat) && !isNaN(pLng) ? calcDistKm(userLatNum, userLngNum, pLat, pLng) : void 0;
+          return {
+            id: `osm-${item.place_id}`,
+            place_id: String(item.place_id),
+            name: item.display_name.split(",")[0] || "Localit\xE0",
+            address: item.display_name,
+            lat: pLat,
+            lng: pLng,
+            rating: null,
+            user_ratings_total: null,
+            types: [item.type, item.class].filter(Boolean),
+            photoUrl: null,
+            source: "nominatim",
+            distanceKm
+          };
+        });
+        if (hasUserCoords) {
+          places.sort((a, b) => {
+            if (a.distanceKm !== void 0 && b.distanceKm !== void 0) {
+              return a.distanceKm - b.distanceKm;
+            }
+            return 0;
+          });
+        }
+        return res.json({ source: "nominatim", places });
+      }
+      res.json({ source: "empty", places: [] });
+    } catch (err) {
+      console.error("Google Places proxy search error:", err);
+      res.status(500).json({ error: err.message || "Search failed" });
+    }
+  });
   app2.get("/api/nominatim-reverse", async (req, res) => {
     try {
       const lat = req.query.lat;
@@ -1787,23 +2597,81 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Missing parameter lat or lon" });
       }
       const targetUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&addressdetails=1`;
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "CamperLife/2.0 (sambucci.simone@gmail.com)"
+      try {
+        const response = await fetch(targetUrl, {
+          headers: {
+            "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)"
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          return res.json(data);
+        } else {
+          console.warn(`[Proxy] Nominatim returned status ${response.status}. Using fallback.`);
+        }
+      } catch (e) {
+        console.warn("[Proxy] Nominatim fetch failed, using fallback:", e);
+      }
+      const latNum = parseFloat(lat);
+      const lonNum = parseFloat(lon);
+      const resolvedLat = isNaN(latNum) ? 0 : latNum;
+      const resolvedLon = isNaN(lonNum) ? 0 : lonNum;
+      return res.json({
+        display_name: `Punto (${resolvedLat.toFixed(5)}, ${resolvedLon.toFixed(5)})`,
+        address: {
+          amenity: "Punto sulla mappa",
+          road: "Coordinate",
+          suburb: `${resolvedLat.toFixed(4)}, ${resolvedLon.toFixed(4)}`
         }
       });
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to reverse geocode from Nominatim" });
-      }
-      const data = await response.json();
-      res.json(data);
     } catch (err) {
       console.error("Nominatim reverse proxy error:", err);
       res.status(500).json({ error: err.message || "Unknown error" });
     }
   });
-  const overpassCache = /* @__PURE__ */ new Map();
-  const OVERPASS_CACHE_TTL = 60 * 60 * 1e3;
+  const overpassCache = new globalThis.Map();
+  const OVERPASS_CACHE_TTL = 24 * 60 * 60 * 1e3;
+  const OVERPASS_SERVERS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://z.overpass-api.de/api/interpreter",
+    "https://overpass.openstreetmap.fr/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
+  ];
+  async function fetchSingleOverpass(url, bodyStr, timeoutMs = 6e3) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "CamperCompanion/2.2 (github.com/google/ai-studio; viacamperapp@gmail.com)"
+        },
+        body: `data=${encodeURIComponent(bodyStr)}`,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const text = await response.text();
+      const trimmedText = text.trim();
+      if (trimmedText.startsWith("<?xml") || trimmedText.startsWith("<!DOCTYPE") || trimmedText.startsWith("<html")) {
+        throw new Error("Returned HTML/XML instead of JSON");
+      }
+      const data = JSON.parse(text);
+      if (data && Array.isArray(data.elements)) {
+        return data;
+      }
+      throw new Error("Invalid elements structure");
+    } catch (e) {
+      clearTimeout(timeoutId);
+      throw e;
+    }
+  }
   app2.post("/api/map-data-proxy", async (req, res) => {
     try {
       const bodyStr = req.body.data || "";
@@ -1820,81 +2688,34 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (overpassCache.has(bodyStr)) {
         const cached = overpassCache.get(bodyStr);
         if (now - cached.timestamp < OVERPASS_CACHE_TTL) {
-          console.log(`[Overpass Proxy] Serving matching query from cache. Saves a live API call! \u{1F389}`);
+          console.log(`[Overpass Proxy] Serving matching query from 24h cache \u{1F389}`);
           return res.json(cached.data);
-        } else {
-          overpassCache.delete(bodyStr);
         }
       }
-      const bboxMatch = bodyStr.match(/([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)/);
-      const fallbackData = { elements: [] };
-      const overpassUrls = [
-        "https://overpass-api.de/api/interpreter",
-        "https://lz4.overpass-api.de/api/interpreter",
-        "https://z.overpass-api.de/api/interpreter",
-        "https://overpass.openstreetmap.fr/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter"
-      ];
-      const shuffledUrls = [...overpassUrls].sort(() => Math.random() - 0.5);
-      let lastError = null;
+      const shuffled = [...OVERPASS_SERVERS].sort(() => Math.random() - 0.5);
       let responseData = null;
-      let success = false;
-      let attempts = 0;
-      for (const targetUrl of shuffledUrls) {
-        if (attempts >= 2) {
-          console.log(`[Overpass Proxy] Limit of 2 attempts reached. Stopping fallback lookups to avoid gateway timeout.`);
-          break;
-        }
-        attempts++;
+      const batches = [
+        [shuffled[0], shuffled[1]],
+        [shuffled[2], shuffled[3]],
+        [shuffled[4], shuffled[5]]
+      ];
+      for (const batch of batches) {
         try {
-          console.log(`[Overpass Proxy] Trying API interpreter: ${targetUrl}`);
-          await new Promise((r) => setTimeout(r, Math.random() * 200));
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => {
-            controller.abort();
-          }, 1e4);
-          const response = await fetch(targetUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-              "User-Agent": "CamperCompanion/2.1 (github.com/google/ai-studio; sambucci.simone@gmail.com)"
-            },
-            body: `data=${encodeURIComponent(bodyStr)}`,
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-          const text = await response.text();
-          if (!response.ok) {
-            console.log(`[Overpass Proxy] ${targetUrl} returned status ${response.status} (retrying with fallback...)`);
-            lastError = new Error(`Status ${response.status}: ${text.substring(0, 100)}`);
-            continue;
-          }
-          const trimmedText = text.trim();
-          if (trimmedText.startsWith("<?xml") || trimmedText.startsWith("<!DOCTYPE html") || trimmedText.startsWith("<html")) {
-            lastError = new Error(`Server returned XML/HTML error body: ${trimmedText.substring(0, 100)}`);
-            continue;
-          }
-          try {
-            responseData = JSON.parse(text);
-            success = true;
-            overpassCache.set(bodyStr, { data: responseData, timestamp: Date.now() });
-            break;
-          } catch (parseErr) {
-            lastError = parseErr;
-          }
-        } catch (fetchErr) {
-          lastError = fetchErr;
-          console.log(`[Overpass Proxy] ${targetUrl} was slow or reached timeout (retrying with fallback...)`);
+          responseData = await Promise.any(batch.map((url) => fetchSingleOverpass(url, bodyStr, 7e3)));
+          if (responseData) break;
+        } catch (_) {
         }
       }
-      if (success && responseData) {
+      if (responseData) {
+        overpassCache.set(bodyStr, { data: responseData, timestamp: Date.now() });
         return res.json(responseData);
-      } else {
-        const errorDetail = lastError?.message || "All fallback instances were non-responsive.";
-        console.log(`[Overpass Proxy] OSM servers were busy (${errorDetail}).`);
-        fallbackData.notice = `Server OSM temporaneamente sovraccarichi, riprova tra poco. (${errorDetail})`;
-        return res.json(fallbackData);
       }
+      if (overpassCache.has(bodyStr)) {
+        console.log(`[Overpass Proxy] All mirrors busy, serving stale cache gracefully!`);
+        return res.json(overpassCache.get(bodyStr).data);
+      }
+      console.log(`[Overpass Proxy] All Overpass mirrors busy and no cache available.`);
+      return res.json({ elements: [] });
     } catch (err) {
       res.status(500).json({ error: err.message || "Unknown proxy error" });
     }
@@ -1902,17 +2723,33 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app2.get("/api/map-tile/:z/:x/:y", async (req, res) => {
     try {
       const { z, x, y } = req.params;
-      const targetUrl = `https://mt1.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}`;
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-        },
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (!response.ok) {
-        console.warn(`[Map Tile Proxy] Failed to fetch tile ${z}/${x}/${y} from CartoDB: ${response.status}`);
-        return res.status(response.status).end();
+      const lyrs = req.query.lyrs || "m";
+      const subdomains = ["mt0", "mt1", "mt2", "mt3"];
+      let response = null;
+      let lastError = null;
+      const shuffledSubdomains = [...subdomains].sort(() => Math.random() - 0.5);
+      for (const subdomain of shuffledSubdomains) {
+        try {
+          const targetUrl = `https://${subdomain}.google.com/vt/lyrs=${lyrs}&x=${x}&y=${y}&z=${z}`;
+          response = await fetch(targetUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+            },
+            signal: AbortSignal.timeout(4e3)
+            // 4 seconds timeout per attempt
+          });
+          if (response && response.ok) {
+            break;
+          } else {
+            lastError = new Error(response ? `Status ${response.status}` : "No response");
+          }
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      if (!response || !response.ok) {
+        throw lastError || new Error("Failed to fetch map tile after retrying all subdomains");
       }
       const contentType = response.headers.get("content-type") || "image/png";
       res.setHeader("Content-Type", contentType);
@@ -1920,57 +2757,204 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const buffer = Buffer.from(await response.arrayBuffer());
       res.send(buffer);
     } catch (err) {
-      console.error("[Map Tile Proxy] Error:", err);
-      res.status(500).end();
+      console.warn("[Map Tile Proxy] Falling back to 1x1 transparent PNG due to fetch error:", err.message || err);
+      const transparentPngBase64 = "iVBOR0w0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+      const buffer = Buffer.from(transparentPngBase64, "base64");
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.status(200).send(buffer);
     }
   });
+  const osrmCache = /* @__PURE__ */ new Map();
+  const brouterCache = /* @__PURE__ */ new Map();
+  async function snapToRoad(coord, heading) {
+    const bearingsQuery = heading !== void 0 && heading !== null && heading !== "" && !isNaN(Number(heading)) ? `&bearings=${Math.round((Number(heading) % 360 + 360) % 360)},45` : "";
+    const servers = [
+      `https://routing.openstreetmap.de/routed-car/nearest/v1/driving/${coord}?number=1${bearingsQuery}`,
+      `https://router.project-osrm.org/nearest/v1/driving/${coord}?number=1${bearingsQuery}`
+    ];
+    try {
+      const fetchPromises = servers.map(async (url) => {
+        const res = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          },
+          signal: AbortSignal.timeout(3e3)
+          // 3.0s timeout for high performance but reliable snapping
+        });
+        if (!res.ok) throw new Error("Fetch failed");
+        const data = await res.json();
+        if (data.code === "Ok" && data.waypoints && data.waypoints[0]) {
+          const loc = data.waypoints[0].location;
+          return `${loc[0]},${loc[1]}`;
+        }
+        throw new Error("Invalid format");
+      });
+      return await Promise.any(fetchPromises);
+    } catch (e) {
+      if (bearingsQuery !== "") {
+        return snapToRoad(coord, void 0);
+      }
+      console.log(`[OSRM Proxy] All parallel snapping servers returned busy/timeout for coord ${coord}. Using original.`);
+      return coord;
+    }
+  }
+  async function fetchBRouter(s, e, avoidHighways = "false", avoidTolls = "false", nogos) {
+    const params = new URLSearchParams();
+    params.append("lonlats", `${s}|${e}`);
+    params.append("profile", "car-eco");
+    params.append("format", "geojson");
+    if (avoidHighways === "true") {
+      params.append("avoid_motorways", "1");
+    }
+    if (avoidTolls === "true") {
+      params.append("avoid_toll", "1");
+    }
+    if (nogos) {
+      params.append("nogos", nogos);
+    }
+    const url = `https://brouter.de/brouter?${params.toString()}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      },
+      signal: AbortSignal.timeout(3e4)
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[BRouter Proxy] BRouter error ${response.status}: ${errorText}`);
+      throw new Error(`Failed to fetch from Brouter: status ${response.status}`);
+    }
+    const rawText = await response.text();
+    try {
+      return JSON.parse(rawText);
+    } catch (e2) {
+      console.error("[BRouter Proxy] Failed to parse BRouter JSON. Raw:", rawText.substring(0, 500));
+      throw new Error("Failed to parse BRouter response as JSON");
+    }
+  }
   app2.get("/api/brouter", async (req, res) => {
     try {
-      const { start, end, nogos } = req.query;
+      const { start, end, avoidHighways, avoidTolls, nogos } = req.query;
       if (!start || !end) {
         return res.status(400).json({ error: "Missing parameters start and/or end" });
       }
-      let targetUrl = `https://brouter.de/brouter?lonlats=${start}|${end}&profile=car-eco&format=geojson`;
-      if (nogos && typeof nogos === "string" && nogos.length > 0) {
-        targetUrl += `&nogos=${encodeURIComponent(nogos)}`;
+      const cacheKey = `${start}-${end}-${avoidHighways}-${avoidTolls}-${nogos || ""}`;
+      if (brouterCache.has(cacheKey)) {
+        console.log(`[BRouter Proxy] Returning cached route for ${cacheKey}`);
+        return res.json(brouterCache.get(cacheKey));
       }
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "CamperLife/2.0 (sambucci.simone@gmail.com)"
-        },
-        signal: AbortSignal.timeout(1e4)
-      });
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to fetch from Brouter" });
-      }
-      const data = await response.json();
+      const [s, e] = [start, end];
+      const data = await fetchBRouter(s, e, avoidHighways, avoidTolls, nogos);
+      brouterCache.set(cacheKey, data);
       res.json(data);
     } catch (err) {
       console.error("Brouter proxy error:", err);
-      res.status(500).json({ error: err.message || "Unknown error" });
+      res.status(502).json({ error: err.message || "Failed to fetch from Brouter" });
     }
   });
   app2.get("/api/osrm", async (req, res) => {
     try {
-      const { start, end } = req.query;
+      const { start, end, heading, avoidHighways, avoidTolls } = req.query;
       if (!start || !end) {
         return res.status(400).json({ error: "Missing parameters start and/or end" });
       }
-      const targetUrl = `https://router.project-osrm.org/route/v1/driving/${start};${end}?overview=full&geometries=geojson&steps=true`;
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "CamperLife/2.0 (sambucci.simone@gmail.com)"
-        },
-        signal: AbortSignal.timeout(1e4)
-      });
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to fetch from OSRM" });
+      const cacheKey = `${start}-${end}-${heading || ""}-${avoidHighways}-${avoidTolls}`;
+      if (osrmCache.has(cacheKey)) {
+        console.log(`[OSRM Proxy] Returning cached route for ${cacheKey}`);
+        return res.json(osrmCache.get(cacheKey));
       }
-      const data = await response.json();
+      const convertBRouterToOSRM = (brouterData) => {
+        if (!brouterData || !brouterData.features || !brouterData.features[0]) {
+          throw new Error("Invalid BRouter response format for conversion");
+        }
+        const feature = brouterData.features[0];
+        const coordinates = feature.geometry?.coordinates || [];
+        const trackLength = parseFloat(feature.properties?.["track-length"] || "0");
+        return {
+          code: "Ok",
+          routes: [
+            {
+              geometry: {
+                coordinates,
+                type: "LineString"
+              },
+              legs: [
+                {
+                  steps: [],
+                  distance: trackLength,
+                  duration: trackLength / 13
+                  // approx 13 m/s (~50 km/h)
+                }
+              ],
+              distance: trackLength,
+              duration: trackLength / 13
+            }
+          ]
+        };
+      };
+      const getRoute = async (s, e, h) => {
+        const bearingsParam = h !== void 0 && h !== null && h !== "" && !isNaN(Number(h)) ? `&bearings=${Math.round((Number(h) % 360 + 360) % 360)},45;` : "";
+        const servers = [
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`,
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`
+        ];
+        for (const url of servers) {
+          try {
+            const resObj = await fetch(url, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              },
+              signal: AbortSignal.timeout(5e3)
+              // Generous 5s timeout
+            });
+            if (resObj.ok) {
+              const resData = await resObj.json();
+              if (resData.code === "Ok") {
+                return resData;
+              }
+            }
+          } catch (err) {
+            console.log(`[OSRM Proxy] Server response was busy for ${url}, trying next...`);
+          }
+        }
+        if (bearingsParam !== "") {
+          console.log("[OSRM Proxy] Retrying route request without bearings constraint...");
+          return getRoute(s, e, void 0);
+        }
+        throw new Error("All OSRM routing servers were busy");
+      };
+      console.log(`[OSRM Proxy] Snapping coordinates in parallel (heading: ${heading || "none"}): ${start} and ${end}`);
+      const [snappedStart, snappedEnd] = await Promise.all([
+        snapToRoad(start, heading),
+        snapToRoad(end)
+      ]);
+      console.log(`[OSRM Proxy] Snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
+      let data;
+      try {
+        console.log(`[OSRM Proxy] Routing with snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
+        data = await getRoute(snappedStart, snappedEnd, heading);
+      } catch (err) {
+        console.log("[OSRM Proxy] Routing with snapped coordinates was unsuccessful. Retrying with original coordinates...");
+        try {
+          data = await getRoute(start, end, heading);
+        } catch (retryErr) {
+          console.log("[OSRM Proxy] All OSRM routing servers were busy. Fetching BRouter backup...");
+          try {
+            const brouterData = await fetchBRouter(start, end, avoidHighways, avoidTolls);
+            data = convertBRouterToOSRM(brouterData);
+            console.log("[OSRM Proxy] Successfully fell back to backend BRouter and converted to OSRM format.");
+          } catch (brouterErr) {
+            throw new Error("Failed to fetch route from both OSRM and BRouter");
+          }
+        }
+      }
+      osrmCache.set(cacheKey, data);
       res.json(data);
     } catch (err) {
-      console.error("OSRM proxy error:", err);
-      res.status(500).json({ error: err.message || "Unknown error" });
+      console.error("[OSRM Proxy] Final catch error:", err);
+      res.status(502).json({ error: err.message || "Failed to fetch route" });
     }
   });
   const UPLOADS_DIR = import_path.default.join(process.cwd(), "uploads");
@@ -2041,13 +3025,190 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       } catch (sharpErr) {
         console.error("[Upload API] Sharp optimization failed for upload. Saving original:", sharpErr);
       }
-      import_fs.default.writeFileSync(filePath, processedBuffer);
-      const fileUrl = `/uploads/${fileName}`;
-      console.log(`[Upload API] Real photo saved successfully at: ${fileUrl}`);
+      let fileUrl = "";
+      try {
+        const [bucketExists] = await bucket.exists();
+        if (bucketExists) {
+          const gcsFileName = `diary_photos/${fileName}`;
+          const file = bucket.file(gcsFileName);
+          const { randomUUID } = require("crypto");
+          const downloadToken = randomUUID();
+          await file.save(processedBuffer, {
+            contentType: `image/${fileExt}`,
+            metadata: {
+              metadata: {
+                firebaseStorageDownloadTokens: downloadToken
+              }
+            }
+          });
+          try {
+            await file.makePublic();
+            fileUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFileName}`;
+          } catch (e) {
+            console.warn("[Upload API] makePublic failed, using authenticated URL with token", e);
+            fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(gcsFileName)}?alt=media&token=${downloadToken}`;
+          }
+          console.log(`[Upload API] Real photo saved successfully to GCS at: ${fileUrl}`);
+        } else {
+          throw new Error("Bucket does not exist");
+        }
+      } catch (uploadErr) {
+        console.warn("[Upload API] Failed to upload to GCS, saving Base64 to Firestore instead", uploadErr);
+        const photoId = `photo_${Date.now()}_${Math.floor(Math.random() * 1e5)}`;
+        const base64Data = processedBuffer.toString("base64");
+        await firestoreDb.collection("shared_photos").doc(photoId).set({
+          base64: base64Data,
+          mimeType: `image/${fileExt}`
+        });
+        fileUrl = `/api/photos/${photoId}`;
+        console.log(`[Upload API] Photo saved successfully to Firestore at: ${fileUrl}`);
+      }
       res.json({ success: true, url: fileUrl });
     } catch (err) {
       console.error("Error in /api/upload:", err);
       res.status(500).json({ error: err.message || "Errore durante il salvataggio." });
+    }
+  });
+  app2.get("/api/photos/:photoId", async (req, res) => {
+    try {
+      const doc2 = await firestoreDb.collection("shared_photos").doc(req.params.photoId).get();
+      if (!doc2.exists) {
+        return res.status(404).send("Image not found");
+      }
+      const data = doc2.data();
+      const buffer = Buffer.from(data.base64, "base64");
+      res.setHeader("Content-Type", data.mimeType || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      res.send(buffer);
+    } catch (err) {
+      console.error("Error in /api/photos GET:", err);
+      res.status(500).send("Server Error");
+    }
+  });
+  async function sendAdminNotificationEmail(subject, htmlContent) {
+    const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+    console.log(`[Email Service] Preparing to send email to ${targetAdminEmail}: "${subject}"`);
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const { Resend } = await import("resend");
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const data = await resend.emails.send({
+          from: "ViaCamperApp <onboarding@resend.dev>",
+          to: targetAdminEmail,
+          subject,
+          html: htmlContent
+        });
+        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, data);
+        return { success: true, data };
+      } catch (err) {
+        console.error(`[Email Service] Failed to send email via Resend to ${targetAdminEmail}:`, err);
+        return { success: false, error: err };
+      }
+    } else {
+      console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email a ${targetAdminEmail} per: "${subject}". Imposta RESEND_API_KEY nelle variabili d'ambiente.`);
+      return { success: false, reason: "RESEND_API_KEY missing" };
+    }
+  }
+  app2.post("/api/notify-photo-submission", async (req, res) => {
+    try {
+      const {
+        type = "concorso",
+        // "concorso" | "area_sosta" | "proposta_sosta" | "generico"
+        userName = "Utente ViaCamperApp",
+        userEmail = "",
+        title = "",
+        placeName = "",
+        location = "",
+        imageUrl = "",
+        caption = "",
+        details = {}
+      } = req.body;
+      const labelType = type === "concorso" ? "\u{1F3C6} Concorso Foto Aree Sosta / Sfide" : type === "area_sosta" ? "\u{1F4CD} Nuova Foto Area di Sosta" : type === "proposta_sosta" ? "\u{1F195} Nuova Proposta Sosta con Foto" : "\u{1F4F8} Invio Foto Utente";
+      const displayTitle = placeName || title || "Foto ViaCamperApp";
+      const subject = `\u{1F4F8} Nuova foto ricevuta [${labelType}]: ${displayTitle}`;
+      const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+      try {
+        await firestoreDb.collection("adminNotifications").add({
+          type: "photo_submission",
+          category: type,
+          userName,
+          userEmail,
+          title: displayTitle,
+          location,
+          imageUrl,
+          caption,
+          details,
+          timestamp,
+          read: false
+        });
+      } catch (fsErr) {
+        console.warn("[Photo Notification API] Could not write to adminNotifications:", fsErr);
+      }
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      const isBase64 = imageUrl?.startsWith("data:");
+      const imagePreviewHtml = imageUrl ? isBase64 ? `<div style="margin-top: 16px; text-align: center; background: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+               <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: bold; color: #475569;">Foto caricata dall'utente:</p>
+               <img src="${imageUrl}" alt="Foto Utente" style="max-width: 100%; max-height: 420px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); object-fit: cover;" />
+             </div>` : `<div style="margin-top: 16px; text-align: center; background: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+               <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: bold; color: #475569;">Foto caricata dall'utente:</p>
+               <img src="${imageUrl}" alt="Foto Utente" style="max-width: 100%; max-height: 420px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); object-fit: cover;" />
+               <p style="margin-top: 10px;"><a href="${imageUrl}" target="_blank" style="display: inline-block; padding: 8px 16px; background: #059669; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: bold;">Visualizza o scarica foto originale &rarr;</a></p>
+             </div>` : `<p style="font-style: italic; color: #94a3b8;">(Nessun file immagine allegato)</p>`;
+      const htmlContent = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; background: #f1f5f9; padding: 24px; border-radius: 18px;">
+          <div style="background: linear-gradient(135deg, #1C3D2B 0%, #2D5A40 100%); padding: 20px 24px; border-radius: 14px; color: #ffffff; box-shadow: 0 4px 14px rgba(0,0,0,0.15);">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp \u2022 Notifica Amministratore</div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">${labelType}</h2>
+          </div>
+
+          <div style="background: #ffffff; padding: 24px; border-radius: 14px; margin-top: 16px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+            <h3 style="margin-top: 0; margin-bottom: 16px; color: #0f172a; font-size: 18px; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">
+              ${displayTitle}
+            </h3>
+
+            <table style="width: 100%; font-size: 13.5px; color: #334155; border-collapse: collapse;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; width: 140px; color: #64748b;">Tipologia:</td>
+                <td style="padding: 8px 0; font-weight: 700; color: #0f172a;">${labelType}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Inviato da:</td>
+                <td style="padding: 8px 0;"><strong>${userName}</strong> ${userEmail ? `<span style="color: #64748b;">(&lt;${userEmail}&gt;)</span>` : ""}</td>
+              </tr>
+              ${location ? `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Localit\xE0 / Luogo:</td>
+                <td style="padding: 8px 0;">${location}</td>
+              </tr>` : ""}
+              ${caption ? `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Note / Descrizione:</td>
+                <td style="padding: 8px 0; font-style: italic; color: #1e293b;">"${caption}"</td>
+              </tr>` : ""}
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Data di invio:</td>
+                <td style="padding: 8px 0;">${(/* @__PURE__ */ new Date()).toLocaleString("it-IT")}</td>
+              </tr>
+            </table>
+
+            ${imagePreviewHtml}
+          </div>
+
+          <p style="font-size: 11.5px; color: #94a3b8; text-align: center; margin-top: 20px; line-height: 1.5;">
+            Email di notifica per l'amministratore di ViaCamperApp (${targetAdminEmail}).<br/>
+            I contributi inviati sono consultabili e gestibili anche nell'applicazione.
+          </p>
+        </div>
+      `;
+      const emailRes = await sendAdminNotificationEmail(subject, htmlContent);
+      return res.json({
+        success: true,
+        message: "Notifica foto elaborata ed email inviata all'amministratore.",
+        emailSent: emailRes.success
+      });
+    } catch (err) {
+      console.error("Error in /api/notify-photo-submission:", err);
+      return res.status(500).json({ error: err.message || "Errore durante l'invio della notifica foto." });
     }
   });
   app2.post("/api/feedback", (req, res) => {
@@ -2107,6 +3268,107 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.json([]);
     }
   });
+  app2.post("/api/report-crash", async (req, res) => {
+    try {
+      const { message, stack, componentStack, userEmail, url, userAgent, appVersion } = req.body || {};
+      if (!message) {
+        return res.status(400).json({ error: "Messaggio errore obbligatorio" });
+      }
+      const report = {
+        message: String(message).slice(0, 1e3),
+        stack: stack ? String(stack).slice(0, 4e3) : "",
+        componentStack: componentStack ? String(componentStack).slice(0, 4e3) : "",
+        userEmail: userEmail ? String(userEmail).slice(0, 100) : "Anonimo",
+        url: url ? String(url).slice(0, 300) : "",
+        userAgent: userAgent ? String(userAgent).slice(0, 300) : "",
+        appVersion: appVersion || "1.0.0",
+        status: "open",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      console.error("[CRASH REPORT RECEIVED]", report.message, "| User:", report.userEmail);
+      let docId = "crash-" + Date.now();
+      try {
+        const added = await firestoreDb.collection("crashReports").add(report);
+        docId = added.id;
+      } catch (fsErr) {
+        console.warn("[Crash API] Firestore write failed, logged to console:", fsErr);
+      }
+      if (process.env.RESEND_API_KEY) {
+        try {
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+          await resend.emails.send({
+            from: "ViaCamperApp <onboarding@resend.dev>",
+            to: targetAdminEmail,
+            subject: `\u{1F6A8} ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
+            html: `
+              <div style="font-family: sans-serif; padding: 20px; background: #fff1f2; border-radius: 12px; border: 1px solid #fecdd3;">
+                <h2 style="color: #9f1239; margin-top: 0;">\u{1F6A8} Segnalazione Crash / Errore Runtime</h2>
+                <p><strong>Utente:</strong> ${report.userEmail}</p>
+                <p><strong>Errore:</strong> ${report.message}</p>
+                <p><strong>Pagina/URL:</strong> ${report.url}</p>
+                <p><strong>Data/Ora:</strong> ${report.timestamp}</p>
+                <pre style="background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 8px; font-size: 11px; overflow-x: auto;">${report.stack || "Nessuno stack trace"}</pre>
+                <p style="font-size: 12px; color: #475569;">Puoi gestire questo crash log direttamente dal Pannello Moderatore in ViaCamperApp sotto <strong>Crash & Logs</strong>.</p>
+              </div>
+            `
+          });
+        } catch (e) {
+          console.warn("[Crash API] Failed to send email alert:", e);
+        }
+      }
+      res.json({ success: true, id: docId });
+    } catch (err) {
+      console.error("Error saving crash report:", err);
+      res.status(500).json({ error: "Errore durante il salvataggio del report." });
+    }
+  });
+  app2.get("/api/admin/crash-reports", async (req, res) => {
+    try {
+      let snapshot;
+      try {
+        snapshot = await firestoreDb.collection("crashReports").orderBy("timestamp", "desc").get();
+      } catch (e) {
+        snapshot = await firestoreDb.collection("crashReports").get();
+      }
+      const reports = [];
+      snapshot.forEach((doc2) => {
+        reports.push({ id: doc2.id, ...doc2.data() });
+      });
+      reports.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+      res.json(reports);
+    } catch (err) {
+      console.error("Error fetching crash reports:", err);
+      res.json([]);
+    }
+  });
+  app2.delete("/api/admin/crash-reports/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (id) {
+        await firestoreDb.collection("crashReports").doc(id).delete();
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting crash report:", err);
+      res.status(500).json({ error: "Errore eliminazione." });
+    }
+  });
+  app2.post("/api/admin/crash-reports/clear-all", async (req, res) => {
+    try {
+      const snapshot = await firestoreDb.collection("crashReports").get();
+      const batch = firestoreDb.batch();
+      snapshot.forEach((doc2) => {
+        batch.delete(doc2.ref);
+      });
+      await batch.commit();
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error clearing all crash reports:", err);
+      res.status(500).json({ error: "Errore pulizia crash log." });
+    }
+  });
   app2.post("/api/admin/reply-feedback", (req, res) => {
     try {
       const { id, reply } = req.body;
@@ -2126,6 +3388,142 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err) {
       console.error("Error replying to feedback:", err);
       res.status(500).json({ error: err.message || "Errore interno." });
+    }
+  });
+  app2.post("/api/propose-community-itinerary", async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        authorName = "Camperista Community",
+        authorEmail = "",
+        durationDays = 3,
+        startLocation = "",
+        endLocation = "",
+        waypoints = [],
+        travelStyle = "Generico",
+        interests = [],
+        totalKm = "",
+        days = []
+      } = req.body;
+      if (!title || !description) {
+        return res.status(400).json({ error: "Titolo e descrizione sono obbligatori." });
+      }
+      const itineraryId = `community_itin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+      const newItinerary = {
+        id: itineraryId,
+        title,
+        description,
+        authorName,
+        authorEmail,
+        createdAt: timestamp,
+        durationDays: Number(durationDays) || 3,
+        startLocation,
+        endLocation,
+        waypoints,
+        travelStyle,
+        interests,
+        totalKm,
+        status: "pending",
+        source: "community",
+        days: days || []
+      };
+      try {
+        await firestoreDb.collection("community_itineraries").doc(itineraryId).set(removeUndefined(newItinerary));
+      } catch (fsErr) {
+        console.warn("[Community Itineraries API] Firestore write warning:", fsErr);
+      }
+      try {
+        await firestoreDb.collection("adminNotifications").add({
+          type: "community_itinerary",
+          itineraryId,
+          title,
+          authorName,
+          authorEmail,
+          timestamp,
+          read: false
+        });
+      } catch (err) {
+        console.warn("[Community Itineraries API] Could not write admin notification:", err);
+      }
+      const subject = `\u{1F5FA}\uFE0F Nuovo Itinerario Proposto da ${authorName}: "${title}"`;
+      const htmlEmail = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
+          <div style="background: linear-gradient(135deg, #1C3D2B 0%, #3E4A35 100%); padding: 20px 24px; border-radius: 12px; color: #ffffff;">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp \u2022 Moderazione Itinerari</div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">\u{1F5FA}\uFE0F Nuovo Itinerario Proposto dalla Community</h2>
+          </div>
+          <div style="background: #ffffff; padding: 24px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #0f172a; font-size: 18px; font-weight: 800;">${title}</h3>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">${description}</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+            <table style="width: 100%; font-size: 13px; color: #334155;">
+              <tr><td style="padding: 4px 0; font-weight: bold; width: 130px;">Inviato da:</td><td>${authorName} ${authorEmail ? `(&lt;${authorEmail}&gt;)` : ""}</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Durata:</td><td>${durationDays} Giorni</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Partenza & Arrivo:</td><td>${startLocation || "N/D"} \u2794 ${endLocation || "N/D"}</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Tappe principali:</td><td>${Array.isArray(waypoints) ? waypoints.join(", ") : "N/D"}</td></tr>
+            </table>
+            <div style="margin-top: 20px; padding: 14px; background: #f1f5f9; border-radius: 10px; text-align: center;">
+              <p style="margin: 0; font-size: 13px; font-weight: bold; color: #1e293b;">Apri il Pannello Moderatore in ViaCamperApp per approvare o rifiutare questo itinerario.</p>
+            </div>
+          </div>
+        </div>
+      `;
+      try {
+        await sendAdminNotificationEmail(subject, htmlEmail);
+      } catch (emailErr) {
+        console.warn("[Community Itineraries API] Warning sending notification email:", emailErr);
+      }
+      res.json({ success: true, id: itineraryId, message: "Itinerario inviato per la moderazione con successo!" });
+    } catch (err) {
+      console.error("Error proposing community itinerary:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'invio dell'itinerario." });
+    }
+  });
+  app2.get("/api/community-itineraries", async (req, res) => {
+    try {
+      const includePending = req.query.includePending === "true";
+      const snapshot = await firestoreDb.collection("community_itineraries").get();
+      const list = [];
+      snapshot.forEach((doc2) => {
+        const data = doc2.data();
+        if (includePending || data.status === "approved") {
+          list.push(data);
+        }
+      });
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json({ success: true, itineraries: list });
+    } catch (err) {
+      console.error("Error fetching community itineraries:", err);
+      res.status(500).json({ error: err.message || "Errore durante il recupero degli itinerari." });
+    }
+  });
+  app2.post("/api/admin/approve-community-itinerary", async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "ID itinerario mancante." });
+      await firestoreDb.collection("community_itineraries").doc(id).update({
+        status: "approved",
+        approvedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      console.log(`[Community Itineraries API] Approved itinerary: ${id}`);
+      res.json({ success: true, message: "Itinerario approvato e pubblicato nella Community!" });
+    } catch (err) {
+      console.error("Error approving itinerary:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'approvazione dell'itinerario." });
+    }
+  });
+  app2.post("/api/admin/reject-community-itinerary", async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "ID itinerario mancante." });
+      await firestoreDb.collection("community_itineraries").doc(id).delete();
+      console.log(`[Community Itineraries API] Rejected and deleted itinerary: ${id}`);
+      res.json({ success: true, message: "Itinerario rifiutato ed eliminato." });
+    } catch (err) {
+      console.error("Error rejecting itinerary:", err);
+      res.status(500).json({ error: err.message || "Errore durante il rifiuto dell'itinerario." });
     }
   });
   try {
@@ -2167,7 +3565,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   }
   if (process.env.NODE_ENV !== "production") {
     const vite = await (0, import_vite.createServer)({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa"
     });
     app2.use(vite.middlewares);
@@ -2204,10 +3602,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       console.error("[Cleanup] Error deleting fake places:", e);
     }
   }
-  cleanupFakePlaces();
   app2.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
+    cleanupFakePlaces().catch(console.error);
   });
 }
 startServer();
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 //# sourceMappingURL=server.cjs.map
