@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">ViaCamper</string>
     <string name="title_activity_main">ViaCamper</string>
-    <string name="package_name">com.viacamper.app</string>
-    <string name="custom_url_scheme">com.viacamper.app</string>
+    <string name="package_name">com.ViaCamper.myapp</string>
+    <string name="custom_url_scheme">com.ViaCamper.myapp</string>
 </resources>

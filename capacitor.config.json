@@ -1,5 +1,5 @@
 {
-  "appId": "com.viacamper.app",
+  "appId": "com.ViaCamper.myapp",
   "appName": "ViaCamper",
   "webDir": "dist",
   "bundledWebRuntime": false
