@@ -119,8 +119,18 @@ class ServerRESTFirestoreAdapter {
     return new ServerRESTCollectionQueryWrapper(this, collectionPath);
   }
 
-  async runQuery(collectionId: string, constraints: any[], orderByField?: string, orderDirection?: 'asc' | 'desc', limitCount?: number) {
+  async runQuery(collectionPath: string, constraints: any[], orderByField?: string, orderDirection?: 'asc' | 'desc', limitCount?: number) {
     const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents:runQuery?key=${this.apiKey}`;
+    
+    const parts = collectionPath.split("/");
+    const collectionId = parts[parts.length - 1];
+    
+    const requestBody: any = {};
+    
+    if (parts.length > 1) {
+      const parentPath = parts.slice(0, parts.length - 1).join("/");
+      requestBody.parent = `projects/${this.projectId}/databases/${this.databaseId}/documents/${parentPath}`;
+    }
     
     const filters = constraints.map(c => ({
       fieldFilter: {
@@ -156,10 +166,12 @@ class ServerRESTFirestoreAdapter {
       structuredQuery.limit = limitCount;
     }
 
+    requestBody.structuredQuery = structuredQuery;
+
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ structuredQuery })
+      body: JSON.stringify(requestBody)
     });
 
     if (!res.ok) {
