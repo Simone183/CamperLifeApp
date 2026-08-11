@@ -4753,6 +4753,7 @@ out center;`;
                       }}
                       onSwitchToLogin={() => setSettingsSubTab("login")}
                       hideBack={!currentUser}
+                      firestore={firestore}
                     />
                   )}
                   {settingsSubTab === "login" && (
@@ -4782,6 +4783,7 @@ out center;`;
                         setSettingsSubTab("registration")
                       }
                       hideBack={!currentUser}
+                      firestore={firestore}
                     />
                   )}
                   {settingsSubTab === "community" && (

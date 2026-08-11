@@ -8,9 +8,10 @@ interface RegistrationFormProps {
   onSuccess: (user: { nickname: string; email: string; name: string; profilePhoto?: string; approved?: boolean }) => void;
   onSwitchToLogin?: () => void;
   hideBack?: boolean;
+  firestore?: any;
 }
 
-export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, hideBack }: RegistrationFormProps) {
+export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, hideBack, firestore }: RegistrationFormProps) {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
@@ -66,8 +67,45 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
 
       onSuccess(data.user);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Errore di connessione con il server.');
+      console.warn("Registration API failed, attempting direct Firestore fallback...", err);
+      if (firestore) {
+        try {
+          const formattedEmail = email.toLowerCase().trim();
+          const usersRef = firestore.collection("users");
+
+          // Check if email already registered
+          const emailSnap = await usersRef.where("email", "==", formattedEmail).get();
+          if (!emailSnap.empty) {
+            throw new Error("Indirizzo email già registrato.");
+          }
+
+          // Check if nickname already taken
+          const nickSnap = await usersRef.where("nickname", "==", nickname.trim()).get();
+          if (!nickSnap.empty) {
+            throw new Error("Questo nickname è già stato scelto da un altro camperista.");
+          }
+
+          const newUserDoc = {
+            email: formattedEmail,
+            password: password,
+            name: name || "",
+            surname: surname || "",
+            dob: dob || "",
+            nickname: nickname.trim(),
+            profilePhoto: profilePhoto || "",
+            favorites: [],
+            createdAt: new Date().toISOString(),
+            approved: false // accounts created by beta testers need approval by admin
+          };
+
+          await usersRef.doc(formattedEmail).set(newUserDoc);
+          onSuccess(newUserDoc);
+        } catch (dbErr: any) {
+          setError(dbErr.message || "Errore durante la registrazione diretta sul database.");
+        }
+      } else {
+        setError(err.message || 'Errore di connessione con il server.');
+      }
     } finally {
       setIsLoading(false);
     }

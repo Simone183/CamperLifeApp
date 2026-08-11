@@ -62,13 +62,17 @@ try {
           }
 
           if (isApiCall && apiPath) {
-            // Definiamo i backend disponibili (sia pre-produzione che sviluppo)
+            // SE HAI UN URL DI PRODUZIONE PUBBLICO (es. Cloud Run pubblico, Railway, Render), inseriscilo qui.
+            // Se questo URL è configurato, l'app sul telefono dei beta tester proverà prima questo, bypassando i blocchi di Google AI Studio!
+            const productionBase = ""; 
+
+            // Definiamo i backend di sandbox predefiniti (richiedono autenticazione sviluppatore Google se aperti fuori dall'editor)
             const preBase =
               "https://ais-pre-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
             const devBase =
               "https://ais-dev-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
 
-            // Proviamo a contattare i server. Se uno fallisce (es. offline, cold start o CORS), proviamo l'altro.
+            // Proviamo a contattare i server.
             const tryFetch = async (base: string): Promise<Response> => {
               const cleanBase = base.replace(/\/$/, "");
               const targetUrl = `${cleanBase}${apiPath}`;
@@ -93,8 +97,17 @@ try {
               }
             };
 
-            // Eseguiamo con fallback automatico bidirezionale:
-            // Proviamo prima il pre-production; se fallisce o non risponde, passiamo al dev server
+            // Se l'utente ha impostato una URL di produzione pubblica, proviamo prima quella!
+            if (productionBase) {
+              return tryFetch(productionBase).catch((err) => {
+                console.warn(
+                  `[Capacitor API Proxy] Production server failed (${err.message || err}), falling back to Pre-production...`,
+                );
+                return tryFetch(preBase).catch(() => tryFetch(devBase));
+              });
+            }
+
+            // Altrimenti eseguiamo con fallback automatico sui server di test sandbox
             return tryFetch(preBase).catch((err) => {
               console.warn(
                 `[Capacitor API Proxy] Pre-production server failed (${err.message || err}), falling back to Development server...`,

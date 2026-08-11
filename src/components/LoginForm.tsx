@@ -6,9 +6,10 @@ interface LoginFormProps {
   onSuccess: (user: { nickname: string; email: string; name: string; favorites: string[]; isModerator?: boolean; profilePhoto?: string }) => void;
   onSwitchToRegistration?: () => void;
   hideBack?: boolean;
+  firestore?: any;
 }
 
-export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, hideBack }: LoginFormProps) {
+export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, hideBack, firestore }: LoginFormProps) {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
@@ -47,7 +48,28 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
         }
       }, 2000);
     } catch (err: any) {
-      setResetMsg(`⚠️ ${err.message || 'Errore imprevisto.'}`);
+      console.warn("Reset password API failed, attempting direct Firestore fallback...", err);
+      if (firestore) {
+        try {
+          const formattedEmail = resetEmail.toLowerCase().trim();
+          const userRef = firestore.collection("users").doc(formattedEmail);
+          const userDoc = await userRef.get();
+          if (!userDoc.exists) {
+            throw new Error("Nessun utente trovato con questo indirizzo email.");
+          }
+          await userRef.update({ password: newPassword });
+          setResetMsg('✅ Password aggiornata con successo! Ora puoi accedere.');
+          setTimeout(() => {
+            setEmail(resetEmail);
+            if (newPassword) setPassword(newPassword);
+            setShowResetModal(false);
+          }, 2000);
+        } catch (dbErr: any) {
+          setResetMsg(`⚠️ ${dbErr.message || 'Errore nel ripristino password.'}`);
+        }
+      } else {
+        setResetMsg(`⚠️ ${err.message || 'Errore di connessione.'}`);
+      }
     } finally {
       setIsResetting(false);
     }
@@ -78,8 +100,40 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       }));
       onSuccess(data.user);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Errore di connessione o password errata.');
+      console.warn("Login API failed, attempting direct Firestore fallback...", err);
+      if (firestore) {
+        try {
+          const formattedEmail = cleanEmail.toLowerCase().trim();
+          const userDocSnap = await firestore.collection("users").doc(formattedEmail).get();
+          if (!userDocSnap.exists) {
+            throw new Error("Nessun account registrato con questa email.");
+          }
+          const userData = userDocSnap.data();
+          const storedPass = String(userData.password || '').trim();
+          if (storedPass !== cleanPass) {
+            throw new Error("Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'.");
+          }
+          if (userData.approved === false) {
+            throw new Error("Il tuo account è in attesa di approvazione da parte di un moderatore.");
+          }
+          const userObj = {
+            email: userData.email,
+            name: userData.name,
+            nickname: userData.nickname,
+            profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
+            favorites: userData.favorites || [],
+            isModerator: !!userData.isModerator
+          };
+          window.dispatchEvent(new CustomEvent('show-toast', { 
+            detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
+          }));
+          onSuccess(userObj);
+        } catch (dbErr: any) {
+          setError(dbErr.message || "Errore di connessione o password errata.");
+        }
+      } else {
+        setError(err.message || 'Errore di connessione.');
+      }
     } finally {
       setIsLoading(false);
     }
