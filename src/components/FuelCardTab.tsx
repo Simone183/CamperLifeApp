@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { formatCurrency, getCurrencySymbol, getDistanceUnit, convertDistance, getFuelEfficiencyUnit, formatFuelEfficiency, getFuelEfficiencyValue } from '../unit-helpers';
 import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 
@@ -44,10 +44,15 @@ export default function FuelCardTab({ currentUser }: FuelCardTabProps) {
     if (!currentUser?.email) return;
     try {
       setLoading(true);
-      const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`);
-      if (!res.ok) throw new Error("Errore fetch " + res.status);
-      const data = await res.json();
-      setLogs(data);
+      const emailLower = currentUser.email.toLowerCase().trim();
+      const logsRef = collection(db, `users/${emailLower}/fuelLogs`);
+      const q = query(logsRef, orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+      const fetchedLogs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as FuelLog[];
+      setLogs(fetchedLogs);
       setError(null);
     } catch (err) {
       console.error(err);
@@ -76,23 +81,24 @@ export default function FuelCardTab({ currentUser }: FuelCardTabProps) {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date,
-          liters: lit,
-          pricePerLiter: price,
-          totalCost: lit * price,
-          odometer: odo,
-          isFullTank,
-          fuelCompany
-        })
-      });
-      if (!res.ok) throw new Error("Errore post");
+      const newLogId = `fuel_${Date.now()}`;
+      const emailLower = currentUser.email.toLowerCase().trim();
+      const newLog = {
+        date,
+        liters: lit,
+        pricePerLiter: price,
+        totalCost: lit * price,
+        odometer: odo,
+        isFullTank,
+        fuelCompany,
+        createdAt: new Date().toISOString()
+      };
+
+      const docRef = doc(db, `users/${emailLower}/fuelLogs`, newLogId);
+      await setDoc(docRef, newLog);
       
-      const newLogData = await res.json();
-      setLogs(prev => [newLogData.log, ...prev]);
+      const newLogWithId = { id: newLogId, ...newLog };
+      setLogs(prev => [newLogWithId, ...prev]);
 
       // Sync Viceversa into active local trip
       try {
@@ -107,7 +113,7 @@ export default function FuelCardTab({ currentUser }: FuelCardTabProps) {
                 ...t,
                 endOdometer: odo > (t.endOdometer||0) ? odo : t.endOdometer,
                 expenses: [...(t.expenses || []), {
-                  id: newLogData.log.id,
+                  id: newLogWithId.id,
                   title: `Rifornimento ${fuelCompany} ${lit}L @ ${price}${getCurrencySymbol(settings)}/L${isFullTank ? ' [Pieno ✓]' : ''}`,
                   amount: Number((lit * price).toFixed(2)),
                   category: 'Carburante',
@@ -142,13 +148,13 @@ export default function FuelCardTab({ currentUser }: FuelCardTabProps) {
                 if (t.status === 'Attivo' || t.status === 'In Corso') {
                   updated = true;
                   const expensesList = t.expenses || [];
-                  const hasExp = expensesList.some((e: any) => e.id === newLogData.log.id);
+                  const hasExp = expensesList.some((e: any) => e.id === newLogId);
                   if (!hasExp) {
                     return {
                       ...t,
                       endOdometer: odo > (t.endOdometer || 0) ? odo : t.endOdometer,
                       expenses: [...expensesList, {
-                        id: newLogData.log.id,
+                        id: newLogId,
                         title: `Rifornimento ${fuelCompany} ${lit}L @ ${price}${getCurrencySymbol(settings)}/L${isFullTank ? ' [Pieno ✓]' : ''}`,
                         amount: Number((lit * price).toFixed(2)),
                         category: 'Carburante',
@@ -207,14 +213,9 @@ export default function FuelCardTab({ currentUser }: FuelCardTabProps) {
     if (!deletingLogId || !currentUser?.email) return;
 
     try {
-      const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}/${deletingLogId}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Delete failed. Status:", res.status, "Response:", errorText);
-        throw new Error(`Errore cancellazione: ${res.status} - ${errorText}`);
-      }
+      const emailLower = currentUser.email.toLowerCase().trim();
+      const docRef = doc(db, `users/${emailLower}/fuelLogs`, deletingLogId);
+      await deleteDoc(docRef);
 
       console.log("Delete successful for:", deletingLogId);
       setLogs(prev => prev.filter(l => l.id !== deletingLogId));

@@ -7,6 +7,7 @@ import React from 'react';
 import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
 import { sanitizeCommunityMessagesList } from '../utils/communitySanitizer';
 import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+import { CamperImage } from './CamperImage';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';

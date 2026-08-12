@@ -4804,6 +4804,9 @@ out center;`;
                         onClick={() => {
                           fetchPendingPlaces();
                           fetchFeedbacks();
+                          fetchAdminUsers();
+                          fetchPendingCommunityItineraries();
+                          fetchAdminNotifications();
                           setShowAdminPanel(true);
                         }}
                         className="px-3 py-2.5 bg-slate-50 hover:bg-slate-200/60 text-slate-700 border border-slate-250/50 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1"
@@ -6079,6 +6082,11 @@ out center;`;
                   >
                     <Users className="w-3.5 h-3.5 text-rose-500" />
                     <span>👥 Iscritti ({adminUsers.length})</span>
+                    {adminUsers.filter(u => u.approved === false).length > 0 && (
+                      <span className="bg-amber-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded-full select-none ml-1 animate-pulse" title={`${adminUsers.filter(u => u.approved === false).length} in attesa di approvazione`}>
+                        {adminUsers.filter(u => u.approved === false).length}
+                      </span>
+                    )}
                   </button>
 
                   <button

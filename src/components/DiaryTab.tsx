@@ -4,6 +4,7 @@ import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUn
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
 import { compressImage } from "../utils/photoCompressor";
 import { resolveMediaUrl } from "../utils/resolveMediaUrl";
+import { CamperImage } from "./CamperImage";
 import { TripRouteMap } from "./TripRouteMap";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
@@ -1353,10 +1354,9 @@ export default function DiaryTab({
                 >
                   {/* Photo Container */}
                   <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
-                    <img
-                      src={resolveMediaUrl(photo.url)}
+                    <CamperImage
+                      src={photo.url}
                       alt={photo.description}
-                      referrerPolicy={photo.url?.startsWith("http") ? "no-referrer" : undefined}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                     />
@@ -2381,14 +2381,9 @@ export default function DiaryTab({
                                 onClick={() => setSelectedLightboxPhotoIndex(idx)}
                               >
                                 <div className="relative w-full h-24 overflow-hidden bg-stone-100">
-                                  <img
-                                    src={resolveMediaUrl(photo.url)}
+                                  <CamperImage
+                                    src={photo.url}
                                     alt={photo.description}
-                                    referrerPolicy={
-                                      photo.url?.startsWith("http")
-                                        ? "no-referrer"
-                                        : undefined
-                                    }
                                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                   />
 
@@ -3359,17 +3354,10 @@ export default function DiaryTab({
 
               {/* Main Picture content and navigation */}
               <div className="relative w-full aspect-video md:aspect-[4/3] bg-black flex items-center justify-center group overflow-hidden">
-                <img
-                  src={resolveMediaUrl(activeTrip.photos[selectedLightboxPhotoIndex].url)}
+                <CamperImage
+                  src={activeTrip.photos[selectedLightboxPhotoIndex].url}
                   alt={
                     activeTrip.photos[selectedLightboxPhotoIndex].description
-                  }
-                  referrerPolicy={
-                    activeTrip.photos[
-                      selectedLightboxPhotoIndex
-                    ].url?.startsWith("http")
-                      ? "no-referrer"
-                      : undefined
                   }
                   className="max-w-full max-h-[75vh] object-contain select-none"
                 />

@@ -1761,7 +1761,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: 'ViaCamperApp <onboarding@resend.dev>',
             to: targetAdminEmail,
             subject: `📍 Nuova proposta di sosta da approvare: ${entry.name}`,
@@ -1782,10 +1782,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi esaminare e approvare direttamente questa proposta accedendo al pannello amministratore dell'app (sezione <strong>Impostazioni > Amministrazione > Proposte Sosta</strong> o nella tab Mappa).</p>
             `
+          }).then(emailRes => {
+            console.log(`[Email] Admin proposal notification sent successfully:`, emailRes);
+          }).catch(emailSendErr => {
+            console.error("Error sending admin proposal email inside promise:", emailSendErr);
           });
-          console.log(`[Email] Admin proposal notification sent to: ${targetAdminEmail}`);
+          console.log(`[Email] Admin proposal notification triggered in background to: ${targetAdminEmail}`);
         } catch (emailErr) {
-          console.error("Error sending admin proposal email notification:", emailErr);
+          console.error("Error setting up admin proposal email notification:", emailErr);
         }
       }
 
@@ -1978,7 +1982,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: 'ViaCamperApp <onboarding@resend.dev>',
             to: process.env.ADMIN_EMAIL,
             subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
@@ -1997,10 +2001,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
             `
+          }).then(emailRes => {
+            console.log(`[Email] Admin notification sent successfully for user: ${email}`, emailRes);
+          }).catch(emailSendErr => {
+            console.error("Error sending admin notification email inside promise:", emailSendErr);
           });
-          console.log(`[Email] Admin notification sent for user: ${email}`);
+          console.log(`[Email] Admin notification triggered in background for user: ${email}`);
         } catch (emailErr) {
-          console.error("Error sending admin notification email:", emailErr);
+          console.error("Error setting up admin notification email:", emailErr);
           // Non blocchiamo la registrazione in caso di errore di invio email
         }
       }
@@ -2086,7 +2094,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: 'ViaCamperApp <onboarding@resend.dev>',
             to: formattedEmail,
             subject: '🔑 Ripristino Password ViaCamper',
@@ -2097,9 +2105,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <p style="font-size: 18px; font-weight: bold; background: #f1f5f9; padding: 10px; border-radius: 8px;">${updatedPass}</p>
               <p>Puoi accedere all'app utilizzando questa password.</p>
             </div>`
+          }).then(res => {
+            console.log("[Reset Password] Email sent successfully to:", formattedEmail);
+          }).catch(e => {
+            console.warn("[Reset Password] Errore invio email resend in promise:", e);
           });
         } catch (e) {
-          console.warn("[Reset Password] Errore invio email resend:", e);
+          console.warn("[Reset Password] Errore configurazione email resend:", e);
         }
       }
 
@@ -2175,7 +2187,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: 'ViaCamperApp <onboarding@resend.dev>',
             to: email,
             subject: 'Il tuo account ViaCamperApp è stato approvato! 🎉',
@@ -2186,10 +2198,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Buon viaggio! 🚐💨</p>
             `
+          }).then(emailRes => {
+            console.log(`[Email] Approval notification sent successfully to user: ${email}`, emailRes);
+          }).catch(emailErr => {
+            console.error("Error sending approval email inside promise to user:", emailErr);
           });
-          console.log(`[Email] Approval notification sent to user: ${email}`);
-        } catch (emailErr) {
-          console.error("Error sending approval email to user:", emailErr);
+          console.log(`[Email] Approval notification triggered in background for user: ${email}`);
+        } catch (setupErr) {
+          console.error("Error setting up approval email to user:", setupErr);
         }
       }
 
@@ -3748,7 +3764,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
           const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-          await resend.emails.send({
+          resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
             to: targetAdminEmail,
             subject: `🚨 ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
@@ -3763,9 +3779,13 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
                 <p style="font-size: 12px; color: #475569;">Puoi gestire questo crash log direttamente dal Pannello Moderatore in ViaCamperApp sotto <strong>Crash & Logs</strong>.</p>
               </div>
             `
+          }).then(res => {
+            console.log("[Crash API] Email alert sent successfully to:", targetAdminEmail);
+          }).catch(e => {
+            console.warn("[Crash API] Failed to send email alert in promise:", e);
           });
         } catch (e) {
-          console.warn("[Crash API] Failed to send email alert:", e);
+          console.warn("[Crash API] Failed to setup email alert:", e);
         }
       }
 
