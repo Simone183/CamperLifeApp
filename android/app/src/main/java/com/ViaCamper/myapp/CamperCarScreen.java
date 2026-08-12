@@ -143,13 +143,9 @@ public class CamperCarScreen extends Screen {
             }
         }
 
-        Header header = new Header.Builder()
-                .setTitle(isLoading ? "ViaCamper (Caricamento...)" : "ViaCamper - Aree Sosta")
-                .setStartHeaderAction(Action.APP_ICON)
-                .build();
-
         return new PlaceListMapTemplate.Builder()
-                .setHeader(header)
+                .setTitle(isLoading ? "ViaCamper (Caricamento...)" : "ViaCamper - Aree Sosta")
+                .setHeaderAction(Action.APP_ICON)
                 .setItemList(listBuilder.build())
                 .build();
     }
