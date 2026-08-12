@@ -3483,6 +3483,19 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               <button
                 type="button"
                 onClick={() => {
+                  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+                    try {
+                      window.speechSynthesis.cancel();
+                      window.speechSynthesis.resume();
+                      const warmUp = new SpeechSynthesisUtterance("Navigazione pronta");
+                      warmUp.lang = "it-IT";
+                      warmUp.volume = 0.8;
+                      applyTtsVoiceAndPitch(warmUp, settings?.ttsGender || "auto");
+                      window.speechSynthesis.speak(warmUp);
+                    } catch (e) {
+                      console.warn("[TTS] Failed to warm up speech synthesis on user interaction:", e);
+                    }
+                  }
                   setIsPreview(false);
                   setIsDriving(true);
                 }}

@@ -71,6 +71,7 @@ import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
+import { registerPushNotifications } from "./utils/pushNotifications";
 
 // Guard to prevent multiple welcome toast/speech invocations
 let welcomeSpeechTriggered = false;
@@ -264,6 +265,12 @@ export default function App() {
       return undefined;
     }
   });
+
+  React.useEffect(() => {
+    if (currentUser?.email) {
+      registerPushNotifications(currentUser.email);
+    }
+  }, [currentUser?.email]);
 
   React.useEffect(() => {
     if (challenges) {

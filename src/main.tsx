@@ -134,6 +134,131 @@ try {
               }
             }
 
+            if (apiPath.startsWith("/api/brouter")) {
+              try {
+                const urlObj = new URL(urlStr, window.location.href);
+                const start = urlObj.searchParams.get("start") || "";
+                const end = urlObj.searchParams.get("end") || "";
+                const avoidHighways = urlObj.searchParams.get("avoidHighways") || "false";
+                const avoidTolls = urlObj.searchParams.get("avoidTolls") || "false";
+                const nogos = urlObj.searchParams.get("nogos") || "";
+
+                const params = new URLSearchParams();
+                params.append("lonlats", `${start}|${end}`);
+                params.append("profile", "car-eco");
+                params.append("format", "geojson");
+                if (avoidHighways === 'true') {
+                  params.append("avoid_motorways", "1");
+                }
+                if (avoidTolls === 'true') {
+                  params.append("avoid_toll", "1");
+                }
+                if (nogos) {
+                  params.append("nogos", nogos);
+                }
+
+                const targetUrl = `https://brouter.de/brouter?${params.toString()}`;
+                return originalFetch.call(window, targetUrl, {
+                  headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                  }
+                });
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct BRouter routing:", err);
+              }
+            }
+
+            if (apiPath.startsWith("/api/osrm")) {
+              try {
+                const urlObj = new URL(urlStr, window.location.href);
+                const start = urlObj.searchParams.get("start") || "";
+                const end = urlObj.searchParams.get("end") || "";
+                const heading = urlObj.searchParams.get("heading") || "";
+                const avoidHighways = urlObj.searchParams.get("avoidHighways") || "false";
+                const avoidTolls = urlObj.searchParams.get("avoidTolls") || "false";
+
+                const bearingsParam = (heading !== undefined && heading !== null && heading !== "" && !isNaN(Number(heading)))
+                  ? `&bearings=${Math.round((Number(heading) % 360 + 360) % 360)},45;`
+                  : "";
+
+                const getRouteFromOSM = async (): Promise<Response> => {
+                  const servers = [
+                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${start};${end}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`,
+                    `https://router.project-osrm.org/route/v1/driving/${start};${end}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`
+                  ];
+                  for (const url of servers) {
+                    try {
+                      const res = await originalFetch.call(window, url, {
+                        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }
+                      });
+                      if (res.ok) {
+                        const clone = res.clone();
+                        const json = await clone.json();
+                        if (json && json.code === "Ok") {
+                          return res;
+                        }
+                      }
+                    } catch (e) {}
+                  }
+
+                  const bparams = new URLSearchParams();
+                  bparams.append("lonlats", `${start}|${end}`);
+                  bparams.append("profile", "car-eco");
+                  bparams.append("format", "geojson");
+                  if (avoidHighways === 'true') {
+                    bparams.append("avoid_motorways", "1");
+                  }
+                  if (avoidTolls === 'true') {
+                    bparams.append("avoid_toll", "1");
+                  }
+                  const brouterUrl = `https://brouter.de/brouter?${bparams.toString()}`;
+                  const bres = await originalFetch.call(window, brouterUrl, {
+                    headers: { "User-Agent": "Mozilla/5.0" }
+                  });
+                  if (bres.ok) {
+                    const bdata = await bres.json();
+                    if (bdata && bdata.features && bdata.features[0]) {
+                      const feature = bdata.features[0];
+                      const coordinates = feature.geometry?.coordinates || [];
+                      const trackLength = parseFloat(feature.properties?.["track-length"] || "0");
+                      const converted = {
+                        code: "Ok",
+                        routes: [
+                          {
+                            geometry: {
+                              coordinates: coordinates,
+                              type: "LineString"
+                            },
+                            legs: [
+                              {
+                                steps: [],
+                                distance: trackLength,
+                                duration: trackLength / 13
+                              }
+                            ],
+                            distance: trackLength,
+                            duration: trackLength / 13
+                          }
+                        ]
+                      };
+                      return new Response(JSON.stringify(converted), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" }
+                      });
+                    }
+                  }
+                  throw new Error("Routing failed");
+                };
+
+                return getRouteFromOSM().catch(err => {
+                  console.error("[Capacitor Proxy] Failed direct OSRM routing:", err);
+                  return originalFetch.call(window, urlStr);
+                });
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct OSRM routing:", err);
+              }
+            }
+
             // SE HAI UN URL DI PRODUZIONE PUBBLICO (es. Cloud Run pubblico, Railway, Render), inseriscilo qui.
             // Se questo URL è configurato, l'app sul telefono dei beta tester proverà prima questo, bypassando i blocchi di Google AI Studio!
             const productionBase = ""; 

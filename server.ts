@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { getMessaging } from "firebase-admin/messaging";
 import { ClientFirestoreAdapter } from "./src/client-firestore.ts";
 import { INITIAL_COMMUNITY_MESSAGES } from "./src/data/mockData.ts";
 
@@ -133,6 +134,95 @@ async function fixExistingPlaces() {
     }
   } catch (err) {
     console.error(`[Firebase Client Adapter] Error in fixExistingPlaces (DatabaseId: ${firebaseDbId}):`, err);
+  }
+}
+
+async function sendPushNotification(
+  emails: string | string[],
+  title: string,
+  body: string,
+  data?: Record<string, string>
+) {
+  try {
+    const emailList = Array.isArray(emails) ? emails : [emails];
+    if (emailList.length === 0) return;
+
+    const lowercaseEmails = emailList.map(e => e.toLowerCase().trim());
+    console.log(`[FCM Push] Preparing to send push notification to users:`, lowercaseEmails);
+
+    const tokensRef = firestoreDb.collection("push_tokens");
+    const tokens: string[] = [];
+    const tokensToClean: string[] = [];
+
+    for (const email of lowercaseEmails) {
+      try {
+        const doc = await tokensRef.doc(email).get();
+        if (doc.exists && doc.data()?.token) {
+          tokens.push(doc.data().token);
+        }
+      } catch (err) {
+        console.error(`[FCM Push] Error reading push token for user ${email}:`, err);
+      }
+    }
+
+    if (tokens.length === 0) {
+      console.log(`[FCM Push] No push tokens found for users:`, lowercaseEmails);
+      return;
+    }
+
+    console.log(`[FCM Push] Sending notification to ${tokens.length} devices...`);
+
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      data: data || {},
+      tokens: tokens,
+    };
+
+    const response = await getMessaging(app).sendEachForMulticast(message);
+    console.log(`[FCM Push] Multicast send summary: ${response.successCount} succeeded, ${response.failureCount} failed.`);
+
+    response.responses.forEach((resp, idx) => {
+      if (!resp.success) {
+        const error = resp.error;
+        if (error && (error.code === 'messaging/invalid-registration-token' || error.code === 'messaging/registration-token-not-registered')) {
+          const badToken = tokens[idx];
+          console.log(`[FCM Push] Token is invalid/expired. Scheduling deletion of token:`, badToken);
+          tokensToClean.push(badToken);
+        }
+      }
+    });
+
+    if (tokensToClean.length > 0) {
+      const snapshot = await tokensRef.get();
+      for (const doc of snapshot.docs) {
+        if (tokensToClean.includes(doc.data()?.token)) {
+          console.log(`[FCM Push] Cleaning up stale token doc for email:`, doc.id);
+          await tokensRef.doc(doc.id).delete();
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[FCM Push] Error sending multicast notification:`, err);
+  }
+}
+
+async function sendPushNotificationToAll(
+  title: string,
+  body: string,
+  data?: Record<string, string>
+) {
+  try {
+    const tokensRef = firestoreDb.collection("push_tokens");
+    const snapshot = await tokensRef.get();
+    const emails = snapshot.docs.map(doc => doc.id);
+    if (emails.length > 0) {
+      await sendPushNotification(emails, title, body, data);
+    }
+  } catch (err) {
+    console.error("[FCM Push] Error sending notification to all users:", err);
   }
 }
 
@@ -1554,6 +1644,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       // Send email notification to admin if Resend is configured
+      // Send email notification to admin if Resend is configured
       const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
       if (process.env.RESEND_API_KEY && targetAdminEmail && entry.status === "pending") {
         try {
@@ -1585,6 +1676,16 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         } catch (emailErr) {
           console.error("Error sending admin proposal email notification:", emailErr);
         }
+      }
+
+      // Send push notification to admin about new proposed place
+      if (entry.status === "pending" && targetAdminEmail) {
+        sendPushNotification(
+          targetAdminEmail,
+          `📍 Nuova sosta proposta!`,
+          `L'utente ${entry.createdBy || 'Anonimo'} ha proposto la sosta "${entry.name}".`,
+          { type: "new_proposal", placeId }
+        ).catch(err => console.error("[FCM Push] Failed to notify admin of new proposal:", err));
       }
 
       res.json({ success: true, place: { id: placeId, ...entry } });
@@ -1621,6 +1722,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         }
       } catch (backErr) {
         // Safe to ignore
+      }
+
+      // Notify proposer of approval
+      const placeData = docSnap.data();
+      if (placeData && placeData.createdBy) {
+        sendPushNotification(
+          placeData.createdBy,
+          `✅ Sosta approvata!`,
+          `La tua sosta proposta "${placeData.name}" è stata approvata ed è ora visibile sulla mappa!`,
+          { type: "proposal_approved", placeId: id }
+        ).catch(err => console.error("[FCM Push] Failed to notify user of proposal approval:", err));
       }
 
       res.json({ success: true, place: { id, ...docSnap.data(), status: "approved" } });
@@ -1888,6 +2000,29 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err: any) {
       console.error("Error in reset-password endpoint:", err);
       res.status(500).json({ error: err.message || "Errore durante il ripristino password." });
+    }
+  });
+
+  app.post("/api/user/push-token", async (req, res) => {
+    try {
+      const { email, token, platform } = req.body;
+      if (!email || !token) {
+        return res.status(400).json({ error: "Email e token sono richiesti." });
+      }
+
+      const tokensRef = firestoreDb.collection("push_tokens");
+      await tokensRef.doc(email.toLowerCase().trim()).set({
+        email: email.toLowerCase().trim(),
+        token: token,
+        platform: platform || "unknown",
+        updatedAt: new Date().toISOString()
+      });
+
+      console.log(`[FCM Push] Token registered in Firestore for ${email}: ${token}`);
+      res.json({ success: true, message: "Token push registrato con successo." });
+    } catch (err: any) {
+      console.error("Error storing push token:", err);
+      res.status(500).json({ error: err.message || "Unknown error inside server" });
     }
   });
 
@@ -2335,6 +2470,22 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       await firestoreDb.collection("communityMessages").doc(msgId).set(removeUndefined(entry));
       console.log(`[Firestore Chat] Shared message from ${msg.user} (Type: ${entry.type})`);
+
+      // Trigger automatic push notifications for new community message or SOS
+      if (entry.tag === "SOS" || entry.tag === "S.O.S.") {
+        sendPushNotificationToAll(
+          `🚨 S.O.S. Camper Life!`,
+          `${entry.user}: ${entry.text}`,
+          { type: "sos_message", msgId }
+        ).catch(err => console.error("[FCM Push] Error sending SOS notification:", err));
+      } else {
+        sendPushNotificationToAll(
+          `💬 Nuovo post in bacheca da ${entry.user}`,
+          entry.text.length > 60 ? `${entry.text.substring(0, 60)}...` : entry.text,
+          { type: "community_message", msgId }
+        ).catch(err => console.error("[FCM Push] Error sending post notification:", err));
+      }
+
       res.json({ success: true, message: { id: msgId, ...entry } });
     } catch (err: any) {
       console.error("Error writing community message to Firestore:", err);
@@ -2405,6 +2556,26 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       await docRef.update({ replies });
 
       console.log(`[Firestore Chat] Thread reply in ${id} by ${newReply.user}`);
+
+      // Notify the original message author via Push notification if they have registered a token
+      try {
+        const usersRef = firestoreDb.collection("users");
+        const userSnap = await usersRef.where("nickname", "==", data.user).get();
+        if (!userSnap.empty) {
+          const userDoc = userSnap.docs[0].data();
+          if (userDoc && userDoc.email && userDoc.email.toLowerCase().trim() !== (newReply.user || "").toLowerCase().trim()) {
+            sendPushNotification(
+              userDoc.email,
+              `💬 ${newReply.user} ha risposto al tuo post`,
+              newReply.text.length > 60 ? `${newReply.text.substring(0, 60)}...` : newReply.text,
+              { type: "reply", parentId: id }
+            ).catch(err => console.error("[FCM Push] Error sending reply push:", err));
+          }
+        }
+      } catch (fcmErr) {
+        console.error("[FCM Push] Failed reply push notification logic:", fcmErr);
+      }
+
       res.json({ success: true, reply: newReply });
     } catch (err: any) {
       console.error("Error posting chat reply in Firestore:", err);
@@ -3658,6 +3829,17 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
         console.warn("[Community Itineraries API] Warning sending notification email:", emailErr);
       }
 
+      // Send push notification to admin about new proposed itinerary
+      const adminEmailForItin = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (adminEmailForItin) {
+        sendPushNotification(
+          adminEmailForItin,
+          `🗺️ Nuovo itinerario proposto!`,
+          `L'utente ${authorName} ha proposto l'itinerario "${title}".`,
+          { type: "new_itinerary", itineraryId }
+        ).catch(err => console.error("[FCM Push] Failed to notify admin of new itinerary:", err));
+      }
+
       res.json({ success: true, id: itineraryId, message: "Itinerario inviato per la moderazione con successo!" });
     } catch (err: any) {
       console.error("Error proposing community itinerary:", err);
@@ -3692,12 +3874,29 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       const { id } = req.body;
       if (!id) return res.status(400).json({ error: "ID itinerario mancante." });
 
-      await firestoreDb.collection("community_itineraries").doc(id).update({
+      const docRef = firestoreDb.collection("community_itineraries").doc(id);
+      const docSnap = await docRef.get();
+      
+      await docRef.update({
         status: "approved",
         approvedAt: new Date().toISOString()
       });
 
       console.log(`[Community Itineraries API] Approved itinerary: ${id}`);
+
+      // Notify the author of approval
+      if (docSnap.exists) {
+        const authorEmail = docSnap.data()?.authorEmail;
+        if (authorEmail) {
+          sendPushNotification(
+            authorEmail,
+            `🗺️ Itinerario Approvato!`,
+            `Il tuo itinerario "${docSnap.data().title}" è stato approvato ed è ora pubblicato nella Community!`,
+            { type: "itinerary_approved", itineraryId: id }
+          ).catch(err => console.error("[FCM Push] Failed to notify user of itinerary approval:", err));
+        }
+      }
+
       res.json({ success: true, message: "Itinerario approvato e pubblicato nella Community!" });
     } catch (err: any) {
       console.error("Error approving itinerary:", err);
