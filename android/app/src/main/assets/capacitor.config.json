@@ -2,5 +2,10 @@
 	"appId": "com.ViaCamper.myapp",
 	"appName": "ViaCamper",
 	"webDir": "dist",
-	"bundledWebRuntime": false
+	"bundledWebRuntime": false,
+	"plugins": {
+		"PushNotifications": {
+			"presentationOptions": ["badge", "sound", "alert"]
+		}
+	}
 }
