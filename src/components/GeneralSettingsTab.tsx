@@ -675,6 +675,8 @@ export default function GeneralSettingsTab({
             <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${vibrations ? 'translate-x-6' : ''}`} />
           </button>
         </div>
+
+
       </div>
     </section>
   );

@@ -10,6 +10,7 @@ import { getStorage } from "firebase-admin/storage";
 import { getMessaging } from "firebase-admin/messaging";
 import { ClientFirestoreAdapter } from "./src/client-firestore.ts";
 import { INITIAL_COMMUNITY_MESSAGES } from "./src/data/mockData.ts";
+import { PROMO_MESSAGES } from "./src/data/promoMessages.ts";
 
 // Use dynamic Firebase Project configuration from our provisioned workspace
 let firebaseConfig = {
@@ -223,6 +224,63 @@ async function sendPushNotificationToAll(
     }
   } catch (err) {
     console.error("[FCM Push] Error sending notification to all users:", err);
+  }
+}
+
+let lastCheckedPromoFirestoreTime = 0;
+
+async function checkAndSendPromotionalPush() {
+  const now = Date.now();
+  // Don't query Firestore for promo push check more than once every 15 minutes
+  if (now - lastCheckedPromoFirestoreTime < 15 * 60 * 1000) {
+    console.log("[Promo Push] Skipped Firestore query to avoid rate limits (throttling active).");
+    return;
+  }
+  lastCheckedPromoFirestoreTime = now;
+
+  try {
+    const metaRef = firestoreDb.collection("system_metadata").doc("push_scheduler");
+    const doc = await metaRef.get();
+    
+    let lastSent = 0;
+    if (doc.exists && doc.data()?.lastSentAt) {
+      lastSent = new Date(doc.data().lastSentAt).getTime();
+    }
+    
+    // 48 hours frequency (every 2 days)
+    const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+    
+    if (now - lastSent >= fortyEightHoursMs) {
+      console.log("[Promo Push] 48 hours have passed since last promo push. Sending new one...");
+      
+      const randomIndex = Math.floor(Math.random() * PROMO_MESSAGES.length);
+      const promo = PROMO_MESSAGES[randomIndex];
+      
+      await sendPushNotificationToAll(promo.title, promo.body, { type: "promo_push", promoIndex: String(randomIndex) });
+      
+      try {
+        await metaRef.set({
+          lastSentAt: new Date().toISOString(),
+          lastPromoTitle: promo.title
+        }, { merge: true });
+        console.log(`[Promo Push] Sent promo: "${promo.title}" and saved state to Firestore.`);
+      } catch (setErr: any) {
+        if (setErr.message?.includes("Too Many Requests") || setErr.message?.includes("Quota exceeded")) {
+          console.warn("[Promo Push] Warning: Firestore write limit hit, could not save scheduler state (will retry later).");
+        } else {
+          console.error("[Promo Push] Error saving scheduler state:", setErr);
+        }
+      }
+    } else {
+      const hoursLeft = ((fortyEightHoursMs - (now - lastSent)) / (1000 * 60 * 60)).toFixed(1);
+      console.log(`[Promo Push] Next promo push scheduled in ${hoursLeft} hours.`);
+    }
+  } catch (err: any) {
+    if (err.message?.includes("Too Many Requests") || err.message?.includes("Quota exceeded")) {
+      console.warn("[Promo Push] Warning: Firestore read limit hit during scheduler check (will retry later).");
+    } else {
+      console.error("[Promo Push] Error in checkAndSendPromotionalPush:", err);
+    }
   }
 }
 
@@ -3970,6 +4028,32 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     console.error("[Self-Correction] Failed scanning for misplaced backslash files:", err);
   }
 
+  // Manual promo push test trigger for administrators/developers
+  app.post("/api/admin/trigger-promo-test", async (req, res) => {
+    try {
+      if (PROMO_MESSAGES.length === 0) {
+        return res.status(400).json({ error: "Nessun messaggio promozionale configurato." });
+      }
+      const randomIndex = Math.floor(Math.random() * PROMO_MESSAGES.length);
+      const promo = PROMO_MESSAGES[randomIndex];
+      
+      console.log(`[Promo Push Test] Manually triggering test push: "${promo.title}"`);
+      await sendPushNotificationToAll(promo.title, promo.body, { 
+        type: "promo_push_test", 
+        promoIndex: String(randomIndex) 
+      });
+      
+      res.json({ 
+        success: true, 
+        message: `Push di test inviato con successo a tutti gli utenti registrati!`, 
+        promo 
+      });
+    } catch (err: any) {
+      console.error("[Promo Push Test] Error sending manual test:", err);
+      res.status(500).json({ error: "Errore durante l'invio del push di test.", details: err.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -4016,6 +4100,20 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
     cleanupFakePlaces().catch(console.error);
+
+    // Start background scheduler for promotional push notifications
+    console.log("[Promo Push] Initializing automatic promotional push scheduler...");
+    // 15 seconds delay after boot
+    setTimeout(() => {
+      console.log("[Promo Push] Running initial boot-time promo push check...");
+      checkAndSendPromotionalPush().catch(console.error);
+    }, 15000);
+
+    // Repeat every 1 hour (3600000 ms)
+    setInterval(() => {
+      console.log("[Promo Push] Running periodic hourly promo push check...");
+      checkAndSendPromotionalPush().catch(console.error);
+    }, 3600000);
   });
 }
 
