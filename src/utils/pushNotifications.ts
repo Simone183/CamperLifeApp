@@ -9,11 +9,71 @@ export async function registerPushNotifications(userEmail: string) {
 
   try {
     console.log('[Push] Initializing push notifications setup for:', userEmail);
-    let permStatus = await PushNotifications.checkPermissions();
+    
+    // 1. Remove any existing listeners to prevent duplicates
+    try {
+      await PushNotifications.removeAllListeners();
+    } catch (e) {
+      console.warn('[Push] Failed to remove listeners:', e);
+    }
+
+    // 2. Setup listeners BEFORE registering (Best Practice)
+    try {
+      await PushNotifications.addListener('registration', async (token) => {
+        console.log('[Push] Token registered successfully:', token.value);
+        try {
+          const response = await fetch('/api/user/push-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: userEmail,
+              token: token.value,
+              platform: Capacitor.getPlatform()
+            })
+          });
+          if (response.ok) {
+            console.log('[Push] Token sent to backend and stored in Firestore.');
+          } else {
+            console.error('[Push] Backend rejected push token registration:', response.statusText);
+          }
+        } catch (err) {
+          console.error('[Push] Failed to register token with backend:', err);
+        }
+      });
+
+      await PushNotifications.addListener('registrationError', (error) => {
+        console.error('[Push] Registration error:', error);
+      });
+
+      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        console.log('[Push] Notification received:', notification);
+      });
+
+      await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        console.log('[Push] Notification action performed:', action);
+      });
+      console.log('[Push] Listeners added successfully.');
+    } catch (listenerErr) {
+      console.error('[Push] Failed to add listeners:', listenerErr);
+    }
+
+    // 3. Check current permission status
+    let permStatus;
+    try {
+      permStatus = await PushNotifications.checkPermissions();
+    } catch (err) {
+      console.error('[Push] Failed to check permissions:', err);
+      return;
+    }
 
     if (permStatus.receive === 'prompt') {
       console.log('[Push] Permission is prompt, requesting from user...');
-      permStatus = await PushNotifications.requestPermissions();
+      try {
+        permStatus = await PushNotifications.requestPermissions();
+      } catch (err) {
+        console.error('[Push] Failed to request permissions:', err);
+        return;
+      }
     }
 
     if (permStatus.receive !== 'granted') {
@@ -23,7 +83,7 @@ export async function registerPushNotifications(userEmail: string) {
 
     console.log('[Push] Permission granted, registering device...');
 
-    // Create the default High Importance notification channel for Android 8.0+
+    // 4. Create the default High Importance notification channel for Android 8.0+
     if (Capacitor.getPlatform() === 'android') {
       try {
         await PushNotifications.createChannel({
@@ -41,48 +101,15 @@ export async function registerPushNotifications(userEmail: string) {
       }
     }
 
-    // Register with APNs / FCM for push notifications
-    await PushNotifications.register();
-
-    // Remove any existing listeners to prevent duplication
-    await PushNotifications.removeAllListeners();
-
-    // On success, we will get a registration token
-    PushNotifications.addListener('registration', async (token) => {
-      console.log('[Push] Token registered successfully:', token.value);
-      try {
-        const response = await fetch('/api/user/push-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: userEmail,
-            token: token.value,
-            platform: Capacitor.getPlatform()
-          })
-        });
-        if (response.ok) {
-          console.log('[Push] Token sent to backend and stored in Firestore.');
-        } else {
-          console.error('[Push] Backend rejected push token registration:', response.statusText);
-        }
-      } catch (err) {
-        console.error('[Push] Failed to register token with backend:', err);
-      }
-    });
-
-    PushNotifications.addListener('registrationError', (error) => {
-      console.error('[Push] Registration error:', error);
-    });
-
-    PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      console.log('[Push] Notification received:', notification);
-    });
-
-    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-      console.log('[Push] Notification action performed:', action);
-    });
+    // 5. Register with APNs / FCM for push notifications
+    try {
+      await PushNotifications.register();
+      console.log('[Push] PushNotifications.register() called successfully');
+    } catch (regErr) {
+      console.error('[Push] Failed to register with push service:', regErr);
+    }
 
   } catch (err) {
-    console.error('[Push] Error in push notification registration:', err);
+    console.error('[Push] Critical error in push notification registration flow:', err);
   }
 }
