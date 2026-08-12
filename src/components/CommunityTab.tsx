@@ -6,6 +6,7 @@
 import React from 'react';
 import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
 import { sanitizeCommunityMessagesList } from '../utils/communitySanitizer';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
@@ -243,7 +244,7 @@ function UserAvatar({
   if (photo) {
     return (
       <div className={`${size} rounded-full overflow-hidden shrink-0 shadow-xs border border-slate-200/80 dark:border-slate-700 bg-slate-100 dark:bg-slate-800`}>
-        <img src={photo} alt={safeUser} className="w-full h-full object-cover" />
+        <img src={resolveMediaUrl(photo)} alt={safeUser} className="w-full h-full object-cover" />
       </div>
     );
   }
@@ -1661,11 +1662,11 @@ export default function CommunityTab({
                           setDoubleTapLikedId(msg.id);
                           setTimeout(() => setDoubleTapLikedId(null), 1000);
                         }}
-                        onClick={() => setMediaModal({ url: msg.mediaUrl!, type: msg.mediaType || 'image' })}
+                        onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
                       >
                         {msg.mediaType === 'video' ? (
                           <div className="relative aspect-video flex items-center justify-center bg-black">
-                            <video src={msg.mediaUrl} className="w-full h-full object-cover max-h-[380px]" />
+                            <video src={resolveMediaUrl(msg.mediaUrl)} className="w-full h-full object-cover max-h-[380px]" />
                             <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center group-hover:bg-slate-950/20 transition-all">
                               <div className="w-12 h-12 rounded-full bg-white/90 text-slate-900 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                                 <Play className="w-6 h-6 ml-1 fill-current" />
@@ -1674,7 +1675,7 @@ export default function CommunityTab({
                           </div>
                         ) : (
                           <img
-                            src={msg.mediaUrl}
+                            src={resolveMediaUrl(msg.mediaUrl)}
                             alt="Scatto social camper"
                             className="w-full h-auto max-h-[420px] object-cover hover:scale-[1.01] transition-transform duration-300"
                             referrerPolicy="no-referrer"
@@ -1799,10 +1800,10 @@ export default function CommunityTab({
                                 {reply.mediaUrl && (
                                   <div className="pl-8 pt-1">
                                     <img
-                                      src={reply.mediaUrl}
+                                      src={resolveMediaUrl(reply.mediaUrl)}
                                       alt="Allegato commento"
                                       className="w-24 h-24 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
-                                      onClick={() => setMediaModal({ url: reply.mediaUrl!, type: reply.mediaType || 'image' })}
+                                      onClick={() => setMediaModal({ url: resolveMediaUrl(reply.mediaUrl!), type: reply.mediaType || 'image' })}
                                     />
                                   </div>
                                 )}
@@ -1990,13 +1991,13 @@ export default function CommunityTab({
                       {msg.mediaUrl && (
                         <div className="mt-2 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 max-w-full">
                           {msg.mediaType === 'video' ? (
-                            <video src={msg.mediaUrl} controls className="w-full max-h-60 object-contain rounded-xl bg-black" />
+                            <video src={resolveMediaUrl(msg.mediaUrl)} controls className="w-full max-h-60 object-contain rounded-xl bg-black" />
                           ) : (
                             <div
                               className="relative group cursor-pointer"
-                              onClick={() => setMediaModal({ url: msg.mediaUrl!, type: 'image' })}
+                              onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: 'image' })}
                             >
-                              <img src={msg.mediaUrl} alt="Foto allegata" className="w-full max-h-60 object-cover rounded-xl" />
+                              <img src={resolveMediaUrl(msg.mediaUrl)} alt="Foto allegata" className="w-full max-h-60 object-cover rounded-xl" />
                               <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                 <span className="text-[10px] text-white bg-black/60 px-2 py-0.5 rounded-full font-bold">Ingrandisci</span>
                               </div>
@@ -2069,13 +2070,13 @@ export default function CommunityTab({
                                 {r.mediaUrl && (
                                   <div className="mt-1 max-w-full">
                                     {r.mediaType === 'video' ? (
-                                      <video src={r.mediaUrl} controls className="max-h-36 rounded-lg object-contain bg-black" />
+                                      <video src={resolveMediaUrl(r.mediaUrl)} controls className="max-h-36 rounded-lg object-contain bg-black" />
                                     ) : (
                                       <img
-                                        src={r.mediaUrl}
+                                        src={resolveMediaUrl(r.mediaUrl)}
                                         alt="Allegato"
                                         className="max-h-36 rounded-lg object-cover cursor-pointer hover:opacity-95"
-                                        onClick={() => setMediaModal({ url: r.mediaUrl!, type: 'image' })}
+                                        onClick={() => setMediaModal({ url: resolveMediaUrl(r.mediaUrl!), type: 'image' })}
                                       />
                                     )}
                                   </div>
@@ -2294,12 +2295,12 @@ export default function CommunityTab({
                     {msg.mediaUrl && (
                       <div
                         className="mx-4 rounded-xl overflow-hidden bg-slate-950 cursor-pointer"
-                        onClick={() => setMediaModal({ url: msg.mediaUrl!, type: msg.mediaType || 'image' })}
+                        onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
                       >
                         {msg.mediaType === 'video' ? (
-                          <video src={msg.mediaUrl} controls className="w-full max-h-72 object-cover" />
+                          <video src={resolveMediaUrl(msg.mediaUrl)} controls className="w-full max-h-72 object-cover" />
                         ) : (
-                          <img src={msg.mediaUrl} alt="Foto SOS" className="w-full max-h-72 object-cover hover:scale-[1.01] transition-transform" />
+                          <img src={resolveMediaUrl(msg.mediaUrl)} alt="Foto SOS" className="w-full max-h-72 object-cover hover:scale-[1.01] transition-transform" />
                         )}
                       </div>
                     )}
@@ -2733,13 +2734,13 @@ export default function CommunityTab({
                     {msg.mediaUrl && (
                       <div className="my-3 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900">
                         {msg.mediaType === 'video' ? (
-                          <video src={msg.mediaUrl} controls className="w-full max-h-96 object-contain" />
+                          <video src={resolveMediaUrl(msg.mediaUrl)} controls className="w-full max-h-96 object-contain" />
                         ) : (
                           <div
                             className="relative group cursor-pointer"
-                            onClick={() => setMediaModal({ url: msg.mediaUrl!, type: 'image' })}
+                            onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: 'image' })}
                           >
-                            <img src={msg.mediaUrl} alt="Foto allegata" className="w-full max-h-96 object-cover" />
+                            <img src={resolveMediaUrl(msg.mediaUrl)} alt="Foto allegata" className="w-full max-h-96 object-cover" />
                             <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <span className="text-xs text-white bg-black/70 px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 backdrop-blur-xs">
                                 <ImageIcon className="w-4 h-4" /> Ingrandisci immagine
@@ -2826,13 +2827,13 @@ export default function CommunityTab({
                               {reply.mediaUrl && (
                                 <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 max-w-md">
                                   {reply.mediaType === 'video' ? (
-                                    <video src={reply.mediaUrl} controls className="w-full max-h-60 object-contain bg-black" />
+                                    <video src={resolveMediaUrl(reply.mediaUrl)} controls className="w-full max-h-60 object-contain bg-black" />
                                   ) : (
                                     <img
-                                      src={reply.mediaUrl}
+                                      src={resolveMediaUrl(reply.mediaUrl)}
                                       alt="Foto allegata"
                                       className="w-full max-h-60 object-cover cursor-pointer hover:opacity-95"
-                                      onClick={() => setMediaModal({ url: reply.mediaUrl!, type: 'image' })}
+                                      onClick={() => setMediaModal({ url: resolveMediaUrl(reply.mediaUrl!), type: 'image' })}
                                     />
                                   )}
                                 </div>
@@ -3199,9 +3200,9 @@ export default function CommunityTab({
               <X className="w-5 h-5" />
             </button>
             {mediaModal.type === 'video' ? (
-              <video src={mediaModal.url} controls autoPlay className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
+              <video src={resolveMediaUrl(mediaModal.url)} controls autoPlay className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
             ) : (
-              <img src={mediaModal.url} alt="Media ingrandito" className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
+              <img src={resolveMediaUrl(mediaModal.url)} alt="Media ingrandito" className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
             )}
           </div>
         </div>

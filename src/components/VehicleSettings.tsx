@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { convertDimensionToDisplay, convertWeightTonnesToDisplay, getWeightUnitTonnes, getDimensionUnit, parseDimToNumber } from '../unit-helpers';
 import { VehicleDimensions, CamperGalleryPhoto, CamperMembership } from '../types';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
 import {
   Truck,
@@ -1459,7 +1460,7 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
                     className="group relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 aspect-video sm:aspect-square flex flex-col justify-end shadow-sm"
                   >
                     <img
-                      src={photo.url}
+                      src={resolveMediaUrl(photo.url)}
                       alt={photo.title || 'Foto'}
                       className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />

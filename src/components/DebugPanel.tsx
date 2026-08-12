@@ -49,8 +49,8 @@ export const DebugPanelContent = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-black/90 text-white rounded-xl p-4 shadow-inner min-h-[350px]">
-      <div className="flex justify-between items-center mb-3 border-b border-white/20 pb-2">
+    <div className="flex-1 flex flex-col h-full bg-black/90 text-white rounded-xl p-4 shadow-inner min-h-0 overflow-hidden">
+      <div className="flex justify-between items-center mb-3 border-b border-white/20 pb-2 shrink-0">
         <h2 className="text-sm font-mono flex items-center gap-2 text-slate-200">
           <Terminal size={16} className="text-[#A5C396]" />
           <span>Console Moderatore & Debug</span>
@@ -69,7 +69,7 @@ export const DebugPanelContent = () => {
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto font-mono text-[11px] space-y-1 bg-black/30 p-2.5 rounded-lg border border-white/10 min-h-[200px]">
+      <div className="flex-1 overflow-y-auto font-mono text-[11px] space-y-1 bg-black/30 p-2.5 rounded-lg border border-white/10 min-h-0">
         {logs.length === 0 ? (
           <div className="text-gray-500 italic text-center py-6">Nessun log in console...</div>
         ) : (

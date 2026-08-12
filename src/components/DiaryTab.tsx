@@ -3,6 +3,7 @@ import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue, formatCurrency } from "../unit-helpers";
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
 import { compressImage } from "../utils/photoCompressor";
+import { resolveMediaUrl } from "../utils/resolveMediaUrl";
 import { TripRouteMap } from "./TripRouteMap";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
@@ -1353,7 +1354,7 @@ export default function DiaryTab({
                   {/* Photo Container */}
                   <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
                     <img
-                      src={photo.url}
+                      src={resolveMediaUrl(photo.url)}
                       alt={photo.description}
                       referrerPolicy={photo.url?.startsWith("http") ? "no-referrer" : undefined}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -2381,7 +2382,7 @@ export default function DiaryTab({
                               >
                                 <div className="relative w-full h-24 overflow-hidden bg-stone-100">
                                   <img
-                                    src={photo.url}
+                                    src={resolveMediaUrl(photo.url)}
                                     alt={photo.description}
                                     referrerPolicy={
                                       photo.url?.startsWith("http")
@@ -2477,7 +2478,7 @@ export default function DiaryTab({
                               <option value="Autostrada">🛣️ Autostrada</option>
                               <option value="Cibo">🛒 Alimentari/Spesa</option>
                               <option value="Sosta">
-                                ⛺ Area di Sosta / Camping
+                                ⛺ Area Sosta / Camping / Parcheggio
                               </option>
                               <option value="Altro">🏷️ Altro / Extra</option>
                             </select>
@@ -2538,7 +2539,7 @@ export default function DiaryTab({
                                         {exp.category === "Cibo"
                                           ? "Cibo"
                                           : exp.category === "Sosta"
-                                            ? "Sosta"
+                                            ? "Sosta/Parcheggio"
                                             : exp.category}
                                       </span>
                                       <p className="text-xs font-bold text-slate-800 line-clamp-1">
@@ -3272,7 +3273,7 @@ export default function DiaryTab({
                                     <span
                                       className={`w-2 h-2 rounded-full ${bgColor}`}
                                     />
-                                    {cat}
+                                    {cat === "Sosta" ? "Sosta / Camping / Parcheggio" : cat}
                                   </span>
                                   <span className="font-mono">
                                     {spent.toFixed(2)} {getCurrencySymbol(settings)} (
@@ -3359,7 +3360,7 @@ export default function DiaryTab({
               {/* Main Picture content and navigation */}
               <div className="relative w-full aspect-video md:aspect-[4/3] bg-black flex items-center justify-center group overflow-hidden">
                 <img
-                  src={activeTrip.photos[selectedLightboxPhotoIndex].url}
+                  src={resolveMediaUrl(activeTrip.photos[selectedLightboxPhotoIndex].url)}
                   alt={
                     activeTrip.photos[selectedLightboxPhotoIndex].description
                   }

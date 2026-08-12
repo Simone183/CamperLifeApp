@@ -178,6 +178,25 @@ async function sendPushNotification(
         title: title,
         body: body,
       },
+      android: {
+        priority: "high" as const,
+        notification: {
+          sound: "default",
+          channelId: "fcm_default_channel",
+          notificationPriority: "PRIORITY_MAX" as const,
+          visibility: "PUBLIC" as const,
+          icon: "ic_launcher",
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            badge: 1,
+            contentAvailable: true,
+          }
+        }
+      },
       data: data || {},
       tokens: tokens,
     };
@@ -210,12 +229,46 @@ async function sendPushNotification(
   }
 }
 
+// In-memory holder for simulating web push notifications to bypass Firestore rate limits & quotas
+let latestPromoPushInMemory = {
+  title: "",
+  body: "",
+  data: {} as Record<string, string>,
+  sentAt: ""
+};
+
 async function sendPushNotificationToAll(
   title: string,
   body: string,
   data?: Record<string, string>
 ) {
   try {
+    // Always update local in-memory state for ultra-fast, zero-quota web polling fallback
+    latestPromoPushInMemory = {
+      title,
+      body,
+      data: data || {},
+      sentAt: new Date().toISOString()
+    };
+
+    // Write to Firestore system_metadata/last_promo_push for Web client real-time simulation
+    try {
+      await firestoreDb.collection("system_metadata").doc("last_promo_push").set({
+        title,
+        body,
+        data: data || {},
+        sentAt: new Date().toISOString()
+      });
+      console.log(`[FCM Push Simulation] Saved to system_metadata/last_promo_push for web clients.`);
+    } catch (saveErr: any) {
+      const errStr = saveErr.message || String(saveErr);
+      if (errStr.includes("Too Many Requests") || errStr.includes("Quota exceeded") || errStr.includes("429") || errStr.includes("ResourceExhausted")) {
+        console.warn("[FCM Push Simulation] Warning: Firestore rate limit/quota reached (429/ResourceExhausted). Falling back to internal in-memory pub-sub sync.");
+      } else {
+        console.error("[FCM Push Simulation] Error saving to Firestore:", saveErr);
+      }
+    }
+
     const tokensRef = firestoreDb.collection("push_tokens");
     const snapshot = await tokensRef.get();
     const emails = snapshot.docs.map(doc => doc.id);
@@ -2434,11 +2487,20 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
     }
 
+    let timestamp = data.timestamp;
+    if (isInitialRolly) {
+      const match = INITIAL_COMMUNITY_MESSAGES.find(m => m.id === docId);
+      if (match) {
+        timestamp = match.timestamp;
+      }
+    }
+
     return {
       ...data,
       id: docId,
       type: msgType,
       likes,
+      timestamp,
       replies: cleanReplies
     };
   }
@@ -2465,13 +2527,15 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         const sanitized = sanitizeServerCommunityMessage(doc.id, rawData);
         if (sanitized) {
           messages.push(sanitized);
-          // Clean Firestore document if it contained fake replies or fake likes
+          // Clean Firestore document if it contained fake replies, fake likes or mismatched timestamps (like seeded Rolly posts)
           const hadFakeReplies = (rawData.replies || []).length !== sanitized.replies.length;
           const hadFakeLikes = rawData.likes !== sanitized.likes;
-          if (hadFakeReplies || hadFakeLikes) {
+          const hadMismatchedTimestamp = rawData.timestamp !== sanitized.timestamp;
+          if (hadFakeReplies || hadFakeLikes || hadMismatchedTimestamp) {
             firestoreDb.collection("communityMessages").doc(doc.id).update({
               likes: sanitized.likes,
-              replies: sanitized.replies
+              replies: sanitized.replies,
+              timestamp: sanitized.timestamp
             }).catch(err => console.error("Error updating cleaned Firestore doc:", err));
           }
         } else {
@@ -4052,6 +4116,11 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       console.error("[Promo Push Test] Error sending manual test:", err);
       res.status(500).json({ error: "Errore durante l'invio del push di test.", details: err.message });
     }
+  });
+
+  // GET route for web client real-time simulated push notifications polling fallback
+  app.get("/api/push-simulation/latest", (req, res) => {
+    res.json(latestPromoPushInMemory);
   });
 
   // Vite middleware for development

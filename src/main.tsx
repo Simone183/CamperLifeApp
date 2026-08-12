@@ -79,10 +79,20 @@ try {
                   const servers = [
                     "https://overpass-api.de/api/interpreter",
                     "https://lz4.overpass-api.de/api/interpreter",
-                    "https://overpass.openstreetmap.fr/api/interpreter"
+                    "https://z.overpass-api.de/api/interpreter",
+                    "https://overpass.openstreetmap.fr/api/interpreter",
+                    "https://overpass.kumi.systems/api/interpreter",
+                    "https://overpass.nchc.org.tw/api/interpreter",
+                    "https://overpass.private.coffee/api/interpreter"
                   ];
                   const tryOverpass = async (index: number): Promise<Response> => {
-                    if (index >= servers.length) throw new Error("All overpass servers busy");
+                    if (index >= servers.length) {
+                      console.warn("[Capacitor Proxy] All Overpass servers busy/offline. Returning silent empty fallback.");
+                      return new Response(JSON.stringify({ elements: [] }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" }
+                      });
+                    }
                     const controller = new AbortController();
                     const tId = setTimeout(() => controller.abort(), 6000);
                     try {

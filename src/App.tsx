@@ -1254,6 +1254,85 @@ export default function App() {
     }
   };
 
+  // Listen to system_metadata/last_promo_push for real-time web/iframe push notification simulation
+  React.useEffect(() => {
+    let lastDisplayedTime = 0;
+
+    const handleNewPushNotification = (title: string, body: string, sentAtStr: string) => {
+      const sentAt = sentAtStr ? new Date(sentAtStr).getTime() : 0;
+      if (sentAt <= lastDisplayedTime) return; // Already displayed
+
+      const timeDiff = Date.now() - sentAt;
+      // Only display if sent in the last 45 seconds (to cover potential minor delays)
+      if (timeDiff > 0 && timeDiff < 45 * 1000) {
+        lastDisplayedTime = sentAt;
+        console.log("[Push Simulation] Real-time push notification received and displaying:", { title, body, sentAtStr });
+        
+        // Dispatch custom event to show a beautiful simulated push toast
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: `📢 NOTIFICA PUSH DI PROVA\n\nTitolo: ${title}\nMessaggio: ${body}`,
+            },
+          })
+        );
+      }
+    };
+
+    // 1. Try Firestore onSnapshot listener first
+    let unsubscribeFirestore: (() => void) | null = null;
+    try {
+      const docRef = doc(db, "system_metadata", "last_promo_push");
+      let isInitialLoad = true;
+
+      unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
+        if (isInitialLoad) {
+          isInitialLoad = false;
+          // Capture initial load timestamp to prevent displaying historic push notifications
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data?.sentAt) {
+              lastDisplayedTime = new Date(data.sentAt).getTime();
+            }
+          }
+          return;
+        }
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.title && data.body && data.sentAt) {
+            handleNewPushNotification(data.title, data.body, data.sentAt);
+          }
+        }
+      }, (error) => {
+        console.warn("[Push Simulation] Firestore onSnapshot simulation listener failed (quota/limits):", error);
+      });
+    } catch (err) {
+      console.warn("[Push Simulation] Failed initializing Firestore listener:", err);
+    }
+
+    // 2. Setup safe Local Polling fallback that bypasses all Firestore quotas/limits (runs every 4 seconds)
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch("/api/push-simulation/latest");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.title && data.body && data.sentAt) {
+          handleNewPushNotification(data.title, data.body, data.sentAt);
+        }
+      } catch (pollErr) {
+        // Silent catch for network or dev server restart situations
+      }
+    }, 4000);
+
+    return () => {
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+      clearInterval(intervalId);
+    };
+  }, []);
+
   const [isRegistered, setIsRegistered] = React.useState<boolean>(() => {
     try {
       if (localStorage.getItem("camper_user")) return true;
@@ -7351,7 +7430,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                 )}
 
                 {adminSubTab === "debug" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 bg-slate-50">
+                  <div className="p-4 flex-1 flex flex-col min-h-0 bg-slate-50 overflow-hidden">
                     <DebugPanelContent />
                   </div>
                 )}

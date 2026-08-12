@@ -2474,13 +2474,7 @@ out center;`;
       }
     } catch (e) {
       console.warn("OSM warning in MapTab - Details:", e);
-      window.dispatchEvent(
-        new CustomEvent("show-toast", {
-          detail: {
-            message: `⚠️ Errore durante il caricamento dei dati dalle mappe (OSM): ${e instanceof Error ? e.message : "Errore sconosciuto"}`,
-          },
-        }),
-      );
+      // Silently log and handle map details/obstacles fetch issues to avoid popping up disruptive warning cards to the user
     } finally {
       setLoadingOsmObstacles(false);
     }

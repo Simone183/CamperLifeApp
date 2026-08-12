@@ -22,6 +22,25 @@ export async function registerPushNotifications(userEmail: string) {
     }
 
     console.log('[Push] Permission granted, registering device...');
+
+    // Create the default High Importance notification channel for Android 8.0+
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        await PushNotifications.createChannel({
+          id: 'fcm_default_channel',
+          name: 'Notifiche Generali',
+          description: 'Notifiche push promozionali e di servizio',
+          importance: 5, // IMPORTANCE_HIGH (5 is max)
+          visibility: 1, // VISIBILITY_PUBLIC (1 is public)
+          sound: 'default',
+          vibration: true,
+        });
+        console.log('[Push] Notification channel "fcm_default_channel" created/verified successfully');
+      } catch (channelErr) {
+        console.error('[Push] Failed to create Android notification channel:', channelErr);
+      }
+    }
+
     // Register with APNs / FCM for push notifications
     await PushNotifications.register();
 
