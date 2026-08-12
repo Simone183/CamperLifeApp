@@ -184,7 +184,7 @@ async function sendPushNotification(
           sound: "default",
           channelId: "fcm_default_channel",
           notificationPriority: "PRIORITY_MAX" as const,
-          visibility: "PUBLIC" as const,
+          visibility: "public" as const,
           icon: "ic_launcher",
         }
       },
