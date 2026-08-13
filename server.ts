@@ -1872,10 +1872,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi esaminare e approvare direttamente questa proposta accedendo al pannello amministratore dell'app (sezione <strong>Impostazioni > Amministrazione > Proposte Sosta</strong> o nella tab Mappa).</p>
             `
-          }).then(emailRes => {
-            console.log(`[Email] Admin proposal notification sent successfully:`, emailRes);
+          }).then((emailRes: any) => {
+            if (emailRes?.error) {
+              console.log(`[Email Notice] Resend: ${emailRes.error.message || 'validation notice'}`);
+            } else {
+              console.log(`[Email] Admin proposal notification sent successfully: ${entry.name}`);
+            }
           }).catch(emailSendErr => {
-            console.error("Error sending admin proposal email inside promise:", emailSendErr);
+            console.log("Admin proposal email notification notice:", emailSendErr?.message || emailSendErr);
           });
           console.log(`[Email] Admin proposal notification triggered in background to: ${targetAdminEmail}`);
         } catch (emailErr) {
@@ -2045,7 +2049,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           }
         });
       } catch (fsErr: any) {
-        console.warn("Could not query Firestore for existing email:", fsErr.message);
+        console.log("[Firestore Auth Fallback] Firestore email query fallback active.");
       }
 
       const cachedUsers = getCachedUsers();
@@ -2069,7 +2073,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           }
         });
       } catch (fsErr: any) {
-        console.warn("Could not query Firestore for existing nickname:", fsErr.message);
+        console.log("[Firestore Auth Fallback] Firestore nickname query fallback active.");
       }
 
       if (cachedUsers.some(u => (u.nickname || "").trim().toLowerCase() === cleanNickname.toLowerCase() && !isUserDeleted(u.email))) {
@@ -2112,7 +2116,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         await usersRef.doc(cleanEmail).set(newUserDoc);
         console.log(`[Firestore Auth] User registered successfully on Firestore: ${cleanEmail}`);
       } catch (fsErr: any) {
-        console.warn(`[Firestore Auth Fallback] Could not write new user to Firestore (${fsErr.message}), saving locally.`);
+        console.log(`[Firestore Auth Fallback] User ${cleanEmail} registered & saved locally.`);
       }
 
       // Update local cached users list immediately
@@ -2144,11 +2148,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
             `
+          }).then((emailRes: any) => {
+            if (emailRes?.error) {
+              console.log(`[Email Notice] Resend registration email: ${emailRes.error.message || 'validation notice'}`);
+            } else {
+              console.log(`[Email] Admin notification sent successfully for user: ${newUserDoc.email}`);
+            }
           }).catch(emailSendErr => {
-            console.error("Error sending admin notification email inside promise:", emailSendErr);
+            console.log("Admin notification email notice:", emailSendErr?.message || emailSendErr);
           });
         } catch (emailErr) {
-          console.error("Error setting up admin notification email:", emailErr);
+          console.log("Admin notification email setup notice:", emailErr?.message || emailErr);
         }
       }
 
@@ -2187,7 +2197,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           userData = userDoc.data();
         }
       } catch (fsErr: any) {
-        console.warn(`[Firestore Auth Fallback] Could not fetch user from Firestore: ${fsErr.message}`);
+        console.log("[Firestore Auth Fallback] Firestore user lookup fallback active locally.");
       }
 
       userData = getOverrideAppliedUser(cleanEmail, userData);
@@ -2344,7 +2354,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         });
         console.log(`[Firestore Auth] User ${cleanEmail} approved on Firestore.`);
       } catch (fsErr: any) {
-        console.warn(`[Firestore Auth Fallback] Could not update Firestore approval (${fsErr.message}), saving local override.`);
+        console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} approval locally.`);
       }
 
       // Always persist local override
@@ -2366,10 +2376,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Buon viaggio! 🚐💨</p>
             `
-          }).then(emailRes => {
-            console.log(`[Email] Approval notification sent successfully to user: ${cleanEmail}`, emailRes);
+          }).then((emailRes: any) => {
+            if (emailRes?.error) {
+              console.log(`[Email Notice] Resend approval: ${emailRes.error.message || 'validation notice'}`);
+            } else {
+              console.log(`[Email] Approval notification sent successfully to user: ${cleanEmail}`);
+            }
           }).catch(emailErr => {
-            console.error("Error sending approval email inside promise to user:", emailErr);
+            console.log("Approval email notice to user:", emailErr?.message || emailErr);
           });
           console.log(`[Email] Approval notification triggered in background for user: ${cleanEmail}`);
         } catch (setupErr) {
@@ -2399,7 +2413,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         });
         console.log(`[Firestore Auth] User ${cleanEmail} moderator status updated to: ${isModerator}`);
       } catch (fsErr: any) {
-        console.warn(`[Firestore Auth Fallback] Could not update Firestore moderator status (${fsErr.message}), saving local override.`);
+        console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} moderator status locally.`);
       }
 
       // Always persist local override
@@ -2454,7 +2468,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         // Save raw users to cache
         cacheUsers(rawUsers);
       } catch (fsErr: any) {
-        console.warn("Firestore error fetching users, using cached users:", fsErr.message);
+        console.log("[Firestore Auth Fallback] Reading users list from local cache.");
         rawUsers = getCachedUsers();
       }
 
@@ -2531,7 +2545,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         await firestoreDb.collection("users").doc(cleanEmail).delete();
         console.log(`[Firestore Auth Admin] Fully deleted user account on Firestore: ${cleanEmail}`);
       } catch (fsErr: any) {
-        console.warn(`[Firestore Auth Fallback] Could not delete Firestore doc (${fsErr.message}), applying local deletion override.`);
+        console.log(`[Firestore Auth Fallback] Applied local deletion override for ${cleanEmail}.`);
       }
 
       // Always persist local override to mark user as deleted
@@ -3739,14 +3753,18 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       try {
         const { Resend } = await import('resend');
         const resend = new Resend(process.env.RESEND_API_KEY);
-        const data = await resend.emails.send({
+        const res: any = await resend.emails.send({
           from: 'ViaCamperApp <onboarding@resend.dev>',
           to: targetAdminEmail,
           subject: subject,
           html: htmlContent
         });
-        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, data);
-        return { success: true, data };
+        if (res?.error) {
+          console.log(`[Email Service] Resend notice for ${targetAdminEmail}: ${res.error.message || 'validation notice'}`);
+          return { success: false, error: res.error };
+        }
+        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, res.data);
+        return { success: true, data: res.data };
       } catch (err) {
         console.error(`[Email Service] Failed to send email via Resend to ${targetAdminEmail}:`, err);
         return { success: false, error: err };

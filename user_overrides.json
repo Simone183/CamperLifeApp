@@ -6,5 +6,10 @@
   "nuovo.test.camper@gmail.com": {
     "email": "nuovo.test.camper@gmail.com",
     "deleted": true
+  },
+  "nuovo.camper.attesa@gmail.com": {
+    "email": "nuovo.camper.attesa@gmail.com",
+    "approved": true,
+    "deleted": true
   }
 }

@@ -8112,7 +8112,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
               onClick={(e) => e.stopPropagation()}
             >
               <img
-                src={fullImageModal}
+                src={fullImageModal || undefined}
                 alt="Allegato Fullscreen"
                 className="max-w-full max-h-[85vh] object-contain rounded-t-2xl"
               />

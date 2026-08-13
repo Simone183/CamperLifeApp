@@ -79,5 +79,6 @@ interface CamperImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 
 export const CamperImage: React.FC<CamperImageProps> = ({ src, ...props }) => {
   const resolvedSrc = useResolvedPhotoUrl(src);
+  if (!resolvedSrc) return null;
   return <img src={resolvedSrc} {...props} referrerPolicy="no-referrer" />;
 };

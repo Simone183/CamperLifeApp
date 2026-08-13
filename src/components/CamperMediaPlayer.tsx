@@ -1091,14 +1091,14 @@ export default function CamperMediaPlayer({
                     >
                       {/* Album Art Cover */}
                       <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-800 flex-shrink-0 shadow-lg">
-                        {currentTrack && (
+                        {currentTrack && currentTrack.cover ? (
                           <img 
                             src={currentTrack.cover} 
                             alt={currentTrack.title} 
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
                           />
-                        )}
+                        ) : null}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                         
                         {/* Active equalizer overlay over album cover */}
@@ -1169,12 +1169,14 @@ export default function CamperMediaPlayer({
                         }`}
                       >
                         <div className="flex items-center gap-2 truncate">
-                          <img 
-                            src={track.cover} 
-                            alt="" 
-                            className="w-4 h-4 rounded object-cover flex-shrink-0"
-                            referrerPolicy="no-referrer"
-                          />
+                          {track.cover ? (
+                            <img 
+                              src={track.cover} 
+                              alt="" 
+                              className="w-4 h-4 rounded object-cover flex-shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : null}
                           <span className="truncate">{track.title}</span>
                         </div>
                         <span className="text-[9px] text-slate-500 font-normal truncate max-w-[120px]">
