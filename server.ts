@@ -100,6 +100,96 @@ try {
   console.error(`[REST Firestore Adapter] Failed to initialize database adapter.`, err);
 }
 
+// --- USER DATABASE OVERRIDES AND CACHING SYSTEM FOR RESILIENCY ---
+interface UserOverride {
+  email: string;
+  approved?: boolean;
+  isModerator?: boolean;
+  deleted?: boolean;
+}
+
+const OVERRIDES_FILE = path.join(process.cwd(), "user_overrides.json");
+const USERS_CACHE_FILE = path.join(process.cwd(), "users_cache.json");
+
+function getUserOverrides(): Record<string, UserOverride> {
+  try {
+    if (fs.existsSync(OVERRIDES_FILE)) {
+      return JSON.parse(fs.readFileSync(OVERRIDES_FILE, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Error reading user overrides file:", err);
+  }
+  return {};
+}
+
+function saveUserOverride(email: string, update: Partial<UserOverride>) {
+  try {
+    const overrides = getUserOverrides();
+    const cleanEmail = email.toLowerCase().trim();
+    if (!overrides[cleanEmail]) {
+      overrides[cleanEmail] = { email: cleanEmail };
+    }
+    overrides[cleanEmail] = { ...overrides[cleanEmail], ...update };
+    fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error saving user override:", err);
+  }
+}
+
+function cacheUsers(users: any[]) {
+  try {
+    fs.writeFileSync(USERS_CACHE_FILE, JSON.stringify(users, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error caching users:", err);
+  }
+}
+
+function getCachedUsers(): any[] {
+  try {
+    if (fs.existsSync(USERS_CACHE_FILE)) {
+      return JSON.parse(fs.readFileSync(USERS_CACHE_FILE, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Error reading users cache:", err);
+  }
+  return [];
+}
+
+function isUserDeleted(email: string): boolean {
+  if (!email) return false;
+  const cleanEmail = email.toLowerCase().trim();
+  const overrides = getUserOverrides();
+  return !!overrides[cleanEmail]?.deleted;
+}
+
+function getOverrideAppliedUser(email: string, userData: any): any {
+  if (!email) return null;
+  const cleanEmail = email.toLowerCase().trim();
+  const overrides = getUserOverrides();
+
+  // If marked deleted in overrides, user is completely deleted
+  if (overrides[cleanEmail]?.deleted) {
+    return null;
+  }
+
+  let baseUser = userData;
+  if (!baseUser) {
+    const cached = getCachedUsers();
+    baseUser = cached.find(u => (u.email || "").toLowerCase().trim() === cleanEmail);
+  }
+  if (!baseUser) return null;
+
+  if (overrides[cleanEmail]) {
+    const o = overrides[cleanEmail];
+    return {
+      ...baseUser,
+      ...(o.approved !== undefined ? { approved: o.approved } : {}),
+      ...(o.isModerator !== undefined ? { isModerator: o.isModerator } : {})
+    };
+  }
+  return baseUser;
+}
+
 // Ensure this is called when the server starts
 uploadDefaultIcons().catch(console.error);
 fixExistingPlaces().catch(console.error);
@@ -1939,36 +2029,96 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Email, password e nickname sono richiesti per la registrazione." });
       }
 
-      // Check if user exists
+      const cleanEmail = email.toLowerCase().trim();
+      const cleanNickname = nickname.trim();
       const usersRef = firestoreDb.collection("users");
-      const snapshot = await usersRef.where("email", "==", email.toLowerCase().trim()).get();
-      if (!snapshot.empty) {
+
+      // Check if user exists (ignoring deleted accounts)
+      let emailTaken = false;
+      try {
+        const snapshot = await usersRef.where("email", "==", cleanEmail).get();
+        snapshot.forEach((doc: any) => {
+          const data = doc.data();
+          const docEmail = (data.email || doc.id).toLowerCase().trim();
+          if (!isUserDeleted(docEmail)) {
+            emailTaken = true;
+          }
+        });
+      } catch (fsErr: any) {
+        console.warn("Could not query Firestore for existing email:", fsErr.message);
+      }
+
+      const cachedUsers = getCachedUsers();
+      if (cachedUsers.some(u => (u.email || "").toLowerCase().trim() === cleanEmail && !isUserDeleted(cleanEmail))) {
+        emailTaken = true;
+      }
+
+      if (emailTaken) {
         return res.status(400).json({ error: "Indirizzo email già registrato." });
       }
 
-      const nicknameSnapshot = await usersRef.where("nickname", "==", nickname.trim()).get();
-      if (!nicknameSnapshot.empty) {
+      // Check if nickname exists (ignoring deleted accounts)
+      let nicknameTaken = false;
+      try {
+        const nicknameSnapshot = await usersRef.where("nickname", "==", cleanNickname).get();
+        nicknameSnapshot.forEach((doc: any) => {
+          const data = doc.data();
+          const docEmail = (data.email || doc.id).toLowerCase().trim();
+          if (!isUserDeleted(docEmail)) {
+            nicknameTaken = true;
+          }
+        });
+      } catch (fsErr: any) {
+        console.warn("Could not query Firestore for existing nickname:", fsErr.message);
+      }
+
+      if (cachedUsers.some(u => (u.nickname || "").trim().toLowerCase() === cleanNickname.toLowerCase() && !isUserDeleted(u.email))) {
+        nicknameTaken = true;
+      }
+
+      if (nicknameTaken) {
         return res.status(400).json({ error: "Questo nickname è già stato scelto da un altro camperista." });
       }
 
       const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
-      const isRegisteredUserAdmin = email.toLowerCase().trim() === adminEmail;
+      const isRegisteredUserAdmin = cleanEmail === adminEmail;
 
       const newUserDoc = {
-        email: email.toLowerCase().trim(),
+        email: cleanEmail,
         password: password,
         name: name || "",
         surname: surname || "",
         dob: dob || "",
-        nickname: nickname.trim(),
+        nickname: cleanNickname,
         profilePhoto: profilePhoto || "",
         favorites: [],
         createdAt: new Date().toISOString(),
         approved: isRegisteredUserAdmin ? true : false
       };
 
-      await usersRef.doc(email.toLowerCase().trim()).set(newUserDoc);
-      console.log(`[Firestore Auth] User registered successfully: ${email} (Approved: ${newUserDoc.approved})`);
+      // Clear any previous "deleted" override if re-registering
+      const overrides = getUserOverrides();
+      if (overrides[cleanEmail]?.deleted) {
+        delete overrides[cleanEmail].deleted;
+        try {
+          fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2), "utf-8");
+        } catch (err) {
+          console.error("Error updating overrides file:", err);
+        }
+      }
+
+      // Try saving to Firestore
+      try {
+        await usersRef.doc(cleanEmail).set(newUserDoc);
+        console.log(`[Firestore Auth] User registered successfully on Firestore: ${cleanEmail}`);
+      } catch (fsErr: any) {
+        console.warn(`[Firestore Auth Fallback] Could not write new user to Firestore (${fsErr.message}), saving locally.`);
+      }
+
+      // Update local cached users list immediately
+      const updatedCached = cachedUsers.filter(u => (u.email || "").toLowerCase().trim() !== cleanEmail);
+      updatedCached.push(newUserDoc);
+      cacheUsers(updatedCached);
 
       // Send email notification to admin if Resend is configured
       if (process.env.RESEND_API_KEY && process.env.ADMIN_EMAIL) {
@@ -1994,19 +2144,26 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
             `
-          }).then(emailRes => {
-            console.log(`[Email] Admin notification sent successfully for user: ${email}`, emailRes);
           }).catch(emailSendErr => {
             console.error("Error sending admin notification email inside promise:", emailSendErr);
           });
-          console.log(`[Email] Admin notification triggered in background for user: ${email}`);
         } catch (emailErr) {
           console.error("Error setting up admin notification email:", emailErr);
-          // Non blocchiamo la registrazione in caso di errore di invio email
         }
       }
 
-      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
+      // Send instant push notification to admin about new user registration
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (targetAdminEmail) {
+        sendPushNotification(
+          targetAdminEmail,
+          `👥 Nuovo camperista iscritto!`,
+          `L'utente ${newUserDoc.nickname} (${newUserDoc.name} ${newUserDoc.surname}) si è registrato ed è in attesa di approvazione.`,
+          { type: "new_registration", userEmail: newUserDoc.email }
+        ).catch(err => console.error("[FCM Push] Failed to notify admin of new registration:", err));
+      }
+
+      return res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
     } catch (err: any) {
       console.error("Error in register endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown register error" });
@@ -2023,12 +2180,21 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Email e password sono richiesti per accedere." });
       }
 
-      const userDoc = await firestoreDb.collection("users").doc(cleanEmail).get();
-      if (!userDoc.exists) {
+      let userData: any = null;
+      try {
+        const userDoc = await firestoreDb.collection("users").doc(cleanEmail).get();
+        if (userDoc.exists) {
+          userData = userDoc.data();
+        }
+      } catch (fsErr: any) {
+        console.warn(`[Firestore Auth Fallback] Could not fetch user from Firestore: ${fsErr.message}`);
+      }
+
+      userData = getOverrideAppliedUser(cleanEmail, userData);
+      if (!userData) {
         return res.status(400).json({ error: "Nessun account registrato con questa email." });
       }
 
-      const userData = userDoc.data();
       const storedPass = String(userData.password || '').trim();
 
       if (storedPass !== cleanPass) {
@@ -2170,10 +2336,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) {
         return res.status(400).json({ error: "Email mancante." });
       }
-      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
-        approved: true
-      });
-      console.log(`[Firestore Auth] User ${email} approved by administrator.`);
+      const cleanEmail = email.toLowerCase().trim();
+
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).update({
+          approved: true
+        });
+        console.log(`[Firestore Auth] User ${cleanEmail} approved on Firestore.`);
+      } catch (fsErr: any) {
+        console.warn(`[Firestore Auth Fallback] Could not update Firestore approval (${fsErr.message}), saving local override.`);
+      }
+
+      // Always persist local override
+      saveUserOverride(cleanEmail, { approved: true });
 
       // Send email to the user letting them know they are approved! (If Resend is configured)
       if (process.env.RESEND_API_KEY) {
@@ -2182,7 +2357,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const resend = new Resend(process.env.RESEND_API_KEY);
           resend.emails.send({
             from: 'ViaCamperApp <onboarding@resend.dev>',
-            to: email,
+            to: cleanEmail,
             subject: 'Il tuo account ViaCamperApp è stato approvato! 🎉',
             html: `
               <h2>Benvenuto su ViaCamperApp!</h2>
@@ -2192,20 +2367,20 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <p>Buon viaggio! 🚐💨</p>
             `
           }).then(emailRes => {
-            console.log(`[Email] Approval notification sent successfully to user: ${email}`, emailRes);
+            console.log(`[Email] Approval notification sent successfully to user: ${cleanEmail}`, emailRes);
           }).catch(emailErr => {
             console.error("Error sending approval email inside promise to user:", emailErr);
           });
-          console.log(`[Email] Approval notification triggered in background for user: ${email}`);
+          console.log(`[Email] Approval notification triggered in background for user: ${cleanEmail}`);
         } catch (setupErr) {
           console.error("Error setting up approval email to user:", setupErr);
         }
       }
 
-      res.json({ success: true });
+      res.json({ success: true, message: `Utente ${cleanEmail} approvato con successo.` });
     } catch (err: any) {
-      console.error("Error approving user on Firestore:", err);
-      res.status(500).json({ error: err.message });
+      console.error("Error approving user:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'approvazione." });
     }
   });
 
@@ -2216,13 +2391,23 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) {
         return res.status(400).json({ error: "Email mancante." });
       }
-      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
-        isModerator: !!isModerator
-      });
-      console.log(`[Firestore Auth] User ${email} moderator status updated to: ${isModerator}`);
+      const cleanEmail = email.toLowerCase().trim();
+
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).update({
+          isModerator: !!isModerator
+        });
+        console.log(`[Firestore Auth] User ${cleanEmail} moderator status updated to: ${isModerator}`);
+      } catch (fsErr: any) {
+        console.warn(`[Firestore Auth Fallback] Could not update Firestore moderator status (${fsErr.message}), saving local override.`);
+      }
+
+      // Always persist local override
+      saveUserOverride(cleanEmail, { isModerator: !!isModerator });
+
       res.json({ success: true });
     } catch (err: any) {
-      console.error("Error updating moderator status on Firestore:", err);
+      console.error("Error updating moderator status:", err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -2230,40 +2415,65 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // Get all registered users
   app.get("/api/admin/users", async (req, res) => {
     try {
-      const usersRef = firestoreDb.collection("users");
-      const snapshot = await usersRef.get();
+      let rawUsers: any[] = [];
+      let proposalCounts: { [key: string]: number } = {};
 
-      // Fetch all proposed places to map counts by user email
-      const placesSnapshot = await firestoreDb.collection("places").get();
-      const proposalCounts: { [key: string]: number } = {};
-      placesSnapshot.forEach((doc: any) => {
-        const placeData = doc.data();
-        const creator = (placeData.createdBy || "").toLowerCase().trim();
-        if (creator) {
-          proposalCounts[creator] = (proposalCounts[creator] || 0) + 1;
-        }
-      });
+      try {
+        const usersRef = firestoreDb.collection("users");
+        const snapshot = await usersRef.get();
 
-      const users: any[] = [];
-      snapshot.forEach((doc: any) => {
-        const data = doc.data();
-        const email = (data.email || doc.id).toLowerCase().trim();
-        users.push({
-          email: data.email || doc.id,
-          name: data.name || "",
-          surname: data.surname || "",
-          nickname: data.nickname || "",
-          dob: data.dob || "",
-          createdAt: data.createdAt || "",
-          isModerator: !!data.isModerator,
-          approved: data.approved !== false, // default to true for existing users
-          favoritesCount: (data.favorites || []).length,
-          proposalsCount: proposalCounts[email] || 0
+        snapshot.forEach((doc: any) => {
+          const data = doc.data();
+          rawUsers.push({
+            email: data.email || doc.id,
+            name: data.name || "",
+            surname: data.surname || "",
+            nickname: data.nickname || "",
+            dob: data.dob || "",
+            createdAt: data.createdAt || "",
+            isModerator: !!data.isModerator,
+            approved: data.approved !== false,
+            favoritesCount: (data.favorites || []).length
+          });
         });
-      });
-      // Sort users by registration date descending, so newest are at the top
-      users.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      res.json(users);
+
+        // Try getting proposal counts
+        try {
+          const placesSnapshot = await firestoreDb.collection("places").get();
+          placesSnapshot.forEach((doc: any) => {
+            const placeData = doc.data();
+            const creator = (placeData.createdBy || "").toLowerCase().trim();
+            if (creator) {
+              proposalCounts[creator] = (proposalCounts[creator] || 0) + 1;
+            }
+          });
+        } catch (placeErr) {
+          console.warn("Could not fetch place proposals for user counts:", placeErr);
+        }
+
+        // Save raw users to cache
+        cacheUsers(rawUsers);
+      } catch (fsErr: any) {
+        console.warn("Firestore error fetching users, using cached users:", fsErr.message);
+        rawUsers = getCachedUsers();
+      }
+
+      // Apply overrides and filter out deleted users
+      const processedUsers: any[] = [];
+      for (const u of rawUsers) {
+        const cleanEmail = (u.email || "").toLowerCase().trim();
+        const updatedUser = getOverrideAppliedUser(cleanEmail, u);
+        if (updatedUser) {
+          processedUsers.push({
+            ...updatedUser,
+            proposalsCount: proposalCounts[cleanEmail] || updatedUser.proposalsCount || 0
+          });
+        }
+      }
+
+      // Sort users by registration date descending
+      processedUsers.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json(processedUsers);
     } catch (err: any) {
       console.error("Error loading users for admin:", err);
       res.status(500).json({ error: err.message || "Errore nel recupero degli utenti." });
@@ -2274,27 +2484,31 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app.get("/api/admin/users/:email/proposals", async (req, res) => {
     try {
       const email = req.params.email.toLowerCase().trim();
-      const snapshot = await firestoreDb.collection("places").get();
       const proposals: any[] = [];
-      snapshot.forEach((doc: any) => {
-        const data = doc.data();
-        const creator = (data.createdBy || "").toLowerCase().trim();
-        if (creator === email) {
-          proposals.push({
-            id: doc.id,
-            name: data.name || "",
-            category: data.category || "",
-            lat: data.lat,
-            lng: data.lng,
-            address: data.address || "",
-            status: data.status || "pending",
-            createdAt: data.createdAt || "",
-            priceInfo: data.priceInfo || "Gratuito",
-            priceEuro: data.priceEuro || 0,
-            imageUrl: data.imageUrl || ""
-          });
-        }
-      });
+      try {
+        const snapshot = await firestoreDb.collection("places").get();
+        snapshot.forEach((doc: any) => {
+          const data = doc.data();
+          const creator = (data.createdBy || "").toLowerCase().trim();
+          if (creator === email) {
+            proposals.push({
+              id: doc.id,
+              name: data.name || "",
+              category: data.category || "",
+              lat: data.lat,
+              lng: data.lng,
+              address: data.address || "",
+              status: data.status || "pending",
+              createdAt: data.createdAt || "",
+              priceInfo: data.priceInfo || "Gratuito",
+              priceEuro: data.priceEuro || 0,
+              imageUrl: data.imageUrl || ""
+            });
+          }
+        });
+      } catch (fsErr: any) {
+        console.warn("Could not fetch user proposals from Firestore:", fsErr.message);
+      }
       // Sort by design creation date descending
       proposals.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       res.json(proposals);
@@ -2311,8 +2525,22 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) {
         return res.status(400).json({ error: "Email non specificata." });
       }
-      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).delete();
-      console.log(`[Firestore Auth Admin] Fully deleted user account: ${email}`);
+      const cleanEmail = email.toLowerCase().trim();
+
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).delete();
+        console.log(`[Firestore Auth Admin] Fully deleted user account on Firestore: ${cleanEmail}`);
+      } catch (fsErr: any) {
+        console.warn(`[Firestore Auth Fallback] Could not delete Firestore doc (${fsErr.message}), applying local deletion override.`);
+      }
+
+      // Always persist local override to mark user as deleted
+      saveUserOverride(cleanEmail, { deleted: true });
+
+      // Update cached users list by removing deleted user
+      const cached = getCachedUsers().filter(u => (u.email || "").toLowerCase().trim() !== cleanEmail);
+      cacheUsers(cached);
+
       res.json({ success: true, message: `Utente ${email} rimosso con successo.` });
     } catch (err: any) {
       console.error("Error deleting user for admin:", err);

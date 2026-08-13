@@ -1057,6 +1057,7 @@ export default function App() {
   const [adminUsers, setAdminUsers] = React.useState<any[]>([]);
   const [adminUsersSearch, setAdminUsersSearch] = React.useState("");
   const [adminUsersLoading, setAdminUsersLoading] = React.useState(false);
+  const [adminUsersError, setAdminUsersError] = React.useState<string | null>(null);
 
   // AI POI Discovery States
   const [aiProvince, setAiProvince] = React.useState("");
@@ -1076,6 +1077,15 @@ export default function App() {
   const [userProposalsLoading, setUserProposalsLoading] = React.useState(false);
   const [showUserProposalsModal, setShowUserProposalsModal] =
     React.useState(false);
+
+  // Custom confirmation and loading state for Admin actions to avoid native confirm() blocking/iframe issues
+  const [adminPendingAction, setAdminPendingAction] = React.useState<{
+    type: "approve" | "toggle-moderator" | "delete";
+    email: string;
+    isModerator?: boolean;
+    nickname?: string;
+  } | null>(null);
+  const [adminActionExecuting, setAdminActionExecuting] = React.useState<string | null>(null);
 
   // --- USER FEEDBACK STATES ---
   const [feedbackName, setFeedbackName] = React.useState("");
@@ -1791,14 +1801,65 @@ export default function App() {
 
   const fetchAdminUsers = async () => {
     setAdminUsersLoading(true);
+    setAdminUsersError(null);
+    let apiErrorMsg = "";
     try {
       const res = await fetch("/api/admin/users");
       if (res.ok) {
         const data = await res.json();
         setAdminUsers(data);
+        return;
       }
-    } catch (err) {
-      console.error("Fetch admin users error:", err);
+      throw new Error("HTTP error " + res.status);
+    } catch (err: any) {
+      apiErrorMsg = err.message || String(err);
+      console.error("Fetch admin users error, trying direct Firestore fallback:", err);
+      if (firestore) {
+        try {
+          console.log("[fetchAdminUsers Fallback] Fetching users directly from Firestore...");
+          const usersRef = firestore.collection("users");
+          const snapshot = await usersRef.get();
+          
+          let proposalCounts: { [key: string]: number } = {};
+          try {
+            const placesSnap = await firestore.collection("places").get();
+            placesSnap.forEach(doc => {
+              const d = doc.data() || {};
+              const creator = (d.createdBy || "").toLowerCase().trim();
+              if (creator) {
+                proposalCounts[creator] = (proposalCounts[creator] || 0) + 1;
+              }
+            });
+          } catch (pe) {
+            console.warn("[fetchAdminUsers Fallback] places count error:", pe);
+          }
+
+          const fallbackUsers: any[] = [];
+          snapshot.forEach(doc => {
+            const data = doc.data() || {};
+            const email = (data.email || doc.id).toLowerCase().trim();
+            fallbackUsers.push({
+              email: data.email || doc.id,
+              name: data.name || "",
+              surname: data.surname || "",
+              nickname: data.nickname || "",
+              dob: data.dob || "",
+              createdAt: data.createdAt || "",
+              isModerator: !!data.isModerator,
+              approved: data.approved !== false,
+              favoritesCount: (data.favorites || []).length,
+              proposalsCount: proposalCounts[email] || 0
+            });
+          });
+          fallbackUsers.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          setAdminUsers(fallbackUsers);
+        } catch (fsErr: any) {
+          console.error("[fetchAdminUsers Fallback] Firestore query failed:", fsErr);
+          setAdminUsersError(`Errore API: ${apiErrorMsg} | Errore Firestore Fallback: ${fsErr.message || String(fsErr)}`);
+        }
+      } else {
+        setAdminUsersError(`Errore API: ${apiErrorMsg} | Firestore non inizializzato`);
+      }
     } finally {
       setAdminUsersLoading(false);
     }
@@ -1826,14 +1887,30 @@ export default function App() {
     }
   };
 
-  const handleDeleteAdminUser = async (email: string) => {
-    if (
-      !confirm(
-        `Sei sicuro di voler eliminare definitivamente l'utente ${email}? Questa azione non è reversibile.`,
-      )
-    ) {
-      return;
-    }
+  const handleDeleteAdminUser = (email: string) => {
+    setAdminPendingAction({
+      type: "delete",
+      email: email,
+    });
+  };
+
+  const handleApproveUser = (email: string) => {
+    setAdminPendingAction({
+      type: "approve",
+      email: email,
+    });
+  };
+
+  const handleToggleModerator = (email: string, currentStatus: boolean) => {
+    setAdminPendingAction({
+      type: "toggle-moderator",
+      email: email,
+      isModerator: !currentStatus,
+    });
+  };
+
+  const executeDeleteUser = async (email: string) => {
+    setAdminActionExecuting("delete-" + email);
     try {
       const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}`, {
         method: "DELETE",
@@ -1844,21 +1921,55 @@ export default function App() {
             detail: { message: `Utente rimosso con successo.` },
           }),
         );
+        setAdminPendingAction(null);
         fetchAdminUsers();
       } else {
-        const errorData = await res.json();
-        alert(errorData.error || "Errore durante l'eliminazione.");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Risposta API non valida");
       }
-    } catch (err) {
-      console.error("Error deleting user:", err);
-      alert("Impossibile rimuovere l'utente in questo momento.");
+    } catch (err: any) {
+      console.error("Error deleting user via API:", err);
+      const isNetworkError = err.message === "Failed to fetch" || err.message?.includes("NetworkError");
+      if (isNetworkError && firestore) {
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout di connessione a Firestore")), 5000)
+          );
+          await Promise.race([
+            firestore.collection("users").doc(email.toLowerCase().trim()).delete(),
+            timeoutPromise
+          ]);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `Utente rimosso con successo direttamente da Firestore.` },
+            }),
+          );
+          setAdminPendingAction(null);
+          fetchAdminUsers();
+        } catch (fsErr: any) {
+          console.error("Firestore delete fallback failed:", fsErr);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `❌ Errore durante la rimozione: ${fsErr.message || fsErr}` },
+            }),
+          );
+          setAdminPendingAction(null);
+        }
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: `❌ Errore di rimozione: ${err.message || err}` },
+          }),
+        );
+        setAdminPendingAction(null);
+      }
+    } finally {
+      setAdminActionExecuting(null);
     }
   };
 
-  const handleApproveUser = async (email: string) => {
-    if (!confirm(`Sei sicuro di voler approvare l'utente ${email}?`)) {
-      return;
-    }
+  const executeApproveUser = async (email: string) => {
+    setAdminActionExecuting("approve-" + email);
     try {
       const res = await fetch("/api/admin/users/approve", {
         method: "POST",
@@ -1871,31 +1982,60 @@ export default function App() {
             detail: { message: `Utente approvato con successo e notificato via email.` },
           }),
         );
+        setAdminPendingAction(null);
         fetchAdminUsers();
       } else {
-        const errorData = await res.json();
-        alert(errorData.error || "Errore durante l'approvazione.");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Risposta API non valida");
       }
-    } catch (err) {
-      console.error("Error approving user:", err);
-      alert("Impossibile approvare l'utente in questo momento.");
+    } catch (err: any) {
+      console.error("Error approving user via API:", err);
+      const isNetworkError = err.message === "Failed to fetch" || err.message?.includes("NetworkError");
+      if (isNetworkError && firestore) {
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout di connessione a Firestore")), 5000)
+          );
+          await Promise.race([
+            firestore.collection("users").doc(email.toLowerCase().trim()).update({ approved: true }),
+            timeoutPromise
+          ]);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `Utente approvato con successo direttamente da Firestore.` },
+            }),
+          );
+          setAdminPendingAction(null);
+          fetchAdminUsers();
+        } catch (fsErr: any) {
+          console.error("Firestore approval fallback failed:", fsErr);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `❌ Errore di approvazione Firestore: ${fsErr.message || fsErr}` },
+            }),
+          );
+          setAdminPendingAction(null);
+        }
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: `❌ Errore durante l'approvazione: ${err.message || err}` },
+          }),
+        );
+        setAdminPendingAction(null);
+      }
+    } finally {
+      setAdminActionExecuting(null);
     }
   };
 
-  const handleToggleModerator = async (email: string, currentStatus: boolean) => {
-    const actionText = currentStatus ? "rimuovere il ruolo di moderatore a" : "nominare moderatore della chat";
-    if (
-      !confirm(
-        `Sei sicuro di voler ${actionText} l'utente ${email}?`,
-      )
-    ) {
-      return;
-    }
+  const executeToggleModerator = async (email: string, targetStatus: boolean) => {
+    setAdminActionExecuting("toggle-" + email);
     try {
       const res = await fetch("/api/admin/users/toggle-moderator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, isModerator: !currentStatus }),
+        body: JSON.stringify({ email, isModerator: targetStatus }),
       });
       if (res.ok) {
         window.dispatchEvent(
@@ -1903,14 +2043,50 @@ export default function App() {
             detail: { message: `Ruolo moderatore aggiornato con successo.` },
           }),
         );
+        setAdminPendingAction(null);
         fetchAdminUsers();
       } else {
-        const errorData = await res.json();
-        alert(errorData.error || "Errore durante l'aggiornamento del ruolo.");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Risposta API non valida");
       }
-    } catch (err) {
-      console.error("Error updating moderator role:", err);
-      alert("Impossibile aggiornare il ruolo in questo momento.");
+    } catch (err: any) {
+      console.error("Error updating moderator role via API:", err);
+      const isNetworkError = err.message === "Failed to fetch" || err.message?.includes("NetworkError");
+      if (isNetworkError && firestore) {
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout di connessione a Firestore")), 5000)
+          );
+          await Promise.race([
+            firestore.collection("users").doc(email.toLowerCase().trim()).update({ isModerator: targetStatus }),
+            timeoutPromise
+          ]);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `Ruolo moderatore aggiornato con successo direttamente da Firestore.` },
+            }),
+          );
+          setAdminPendingAction(null);
+          fetchAdminUsers();
+        } catch (fsErr: any) {
+          console.error("Firestore toggle moderator fallback failed:", fsErr);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `❌ Errore aggiornamento ruolo Firestore: ${fsErr.message || fsErr}` },
+            }),
+          );
+          setAdminPendingAction(null);
+        }
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: `❌ Errore durante l'aggiornamento: ${err.message || err}` },
+          }),
+        );
+          setAdminPendingAction(null);
+      }
+    } finally {
+      setAdminActionExecuting(null);
     }
   };
 
@@ -6283,6 +6459,31 @@ out center;`;
                 )}
                 {adminSubTab === "pending" && (
                   <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0">
+                    {/* Visual warning banner if there are new registered users pending approval */}
+                    {adminUsers.filter((u) => u.approved === false).length > 0 && (
+                      <div 
+                        onClick={() => setAdminSubTab("users")}
+                        className="bg-amber-50 border border-amber-200 hover:border-amber-300 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-amber-100/60 transition-all select-none animate-pulse shrink-0 mb-2"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                            <Users className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold text-amber-900 text-xs">
+                              Richieste di iscrizione camperisti in attesa!
+                            </h4>
+                            <p className="text-[10.5px] text-amber-700 font-semibold mt-0.5">
+                              Ci sono {adminUsers.filter((u) => u.approved === false).length} nuovi camperisti in attesa di approvazione. Clicca qui per approvarli subito!
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] bg-amber-600 hover:bg-amber-700 text-white font-extrabold px-3 py-1.5 rounded-xl uppercase tracking-wider shrink-0 transition-colors">
+                          APPROVA
+                        </span>
+                      </div>
+                    )}
+
                     {pendingPlaces.length === 0 ? (
                       <div className="text-center py-16 flex flex-col items-center justify-center space-y-3">
                         <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xl">
@@ -6958,6 +7159,19 @@ out center;`;
                           </span>
                         )}
                       </div>
+                      
+                      {/* Detailed Connection/Error Diagnostic Panel if fetching fails */}
+                      {adminUsersError && (
+                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs text-red-800 shrink-0 select-text">
+                          <p className="font-extrabold mb-1">⚠️ Errore di connessione / diagnostica:</p>
+                          <p className="font-mono text-[10px] break-all leading-relaxed bg-white/60 p-2 rounded-xl border border-red-100">
+                            {adminUsersError}
+                          </p>
+                          <p className="mt-2 text-[10.5px] font-semibold text-red-700">
+                            Consiglio: Se riscontri questo errore, controlla la connessione internet o prova ad effettuare un logout e un nuovo login amministratore.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Users list / grid */}
                       {adminUsersLoading ? (
@@ -7102,22 +7316,31 @@ out center;`;
                                     </div>
 
                                     {/* Action Buttons */}
-                                    <div className="flex justify-between items-center pt-2 border-t border-slate-100/80 mt-1">
+                                    <div className="flex justify-between items-center pt-2 border-t border-slate-100/80 mt-1 flex-wrap gap-2">
                                       {u.approved === false && (
                                         <button
                                           type="button"
+                                          disabled={!!adminActionExecuting}
                                           onClick={() => handleApproveUser(u.email)}
-                                          className="text-[10px] bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer mr-2 inline-flex items-center"
+                                          className="text-[10px] bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer mr-2 inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                          ✅ Approva
+                                          {adminActionExecuting === "approve-" + u.email ? (
+                                            <span className="flex items-center gap-1">
+                                              <span className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                              Approvazione...
+                                            </span>
+                                          ) : (
+                                            "✅ Approva"
+                                          )}
                                         </button>
                                       )}
                                       <button
                                         type="button"
+                                        disabled={!!adminActionExecuting}
                                         onClick={() =>
                                           handleToggleModerator(u.email, !!u.isModerator)
                                         }
-                                        className={`text-[10px] font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                                        className={`text-[10px] font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                           u.isModerator
                                             ? "text-amber-700 hover:text-amber-850 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/20"
                                             : "text-emerald-700 hover:text-emerald-850 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/20"
@@ -7125,21 +7348,38 @@ out center;`;
                                       >
                                         <Shield className="w-3 h-3" />
                                         <span>
-                                          {u.isModerator
-                                            ? "Rimuovi Ruolo Moderatore"
-                                            : "Nomina Moderatore Chat"}
+                                          {adminActionExecuting === "toggle-" + u.email ? (
+                                            <span className="flex items-center gap-1">
+                                              <span className="w-2.5 h-2.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></span>
+                                              Aggiornamento...
+                                            </span>
+                                          ) : u.isModerator ? (
+                                            "Rimuovi Ruolo Moderatore"
+                                          ) : (
+                                            "Nomina Moderatore Chat"
+                                          )}
                                         </span>
                                       </button>
 
                                       <button
                                         type="button"
+                                        disabled={!!adminActionExecuting}
                                         onClick={() =>
                                           handleDeleteAdminUser(u.email)
                                         }
-                                        className="text-[10px] text-rose-650 hover:text-rose-800 font-bold flex items-center gap-1 px-2.5 py-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                        className="text-[10px] text-rose-650 hover:text-rose-800 font-bold flex items-center gap-1 px-2.5 py-1.5 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
                                       >
                                         <Trash2 className="w-3" />
-                                        <span>Rimuovi Camperista</span>
+                                        <span>
+                                          {adminActionExecuting === "delete-" + u.email ? (
+                                            <span className="flex items-center gap-1">
+                                              <span className="w-2.5 h-2.5 border-2 border-rose-600 border-t-transparent rounded-full animate-spin"></span>
+                                              Rimozione...
+                                            </span>
+                                          ) : (
+                                            "Rimuovi Camperista"
+                                          )}
+                                        </span>
                                       </button>
                                     </div>
                                   </div>
@@ -7148,6 +7388,110 @@ out center;`;
                             })}
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {adminPendingAction && (
+                  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 border border-slate-100 font-sans text-center relative animate-in fade-in zoom-in duration-200">
+                      {/* Icon */}
+                      <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-slate-50">
+                        {adminPendingAction.type === "approve" && (
+                          <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                            ✓
+                          </div>
+                        )}
+                        {adminPendingAction.type === "toggle-moderator" && (
+                          <Shield className="w-6 h-6 text-amber-500" />
+                        )}
+                        {adminPendingAction.type === "delete" && (
+                          <Trash2 className="w-6 h-6 text-rose-500" />
+                        )}
+                      </div>
+
+                      {/* Header */}
+                      <h4 className="font-extrabold text-base text-slate-900 mb-2">
+                        {adminPendingAction.type === "approve" && "Conferma Approvazione"}
+                        {adminPendingAction.type === "toggle-moderator" && "Modifica Ruolo Moderatore"}
+                        {adminPendingAction.type === "delete" && "Elimina Camperista"}
+                      </h4>
+
+                      {/* Body Description */}
+                      <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                        {adminPendingAction.type === "approve" && (
+                          <>
+                            Sei sicuro di voler approvare l'utente{" "}
+                            <strong className="text-slate-800 break-all block mt-1">
+                              {adminPendingAction.email}
+                            </strong>
+                            ? Questo gli permetterà di accedere a tutte le funzionalità dell'app e riceverà una notifica via email.
+                          </>
+                        )}
+                        {adminPendingAction.type === "toggle-moderator" && (
+                          <>
+                            Vuoi impostare il ruolo di moderatore chat su{" "}
+                            <strong className="text-amber-700">
+                              {adminPendingAction.isModerator ? "ATTIVO" : "DISATTIVATO"}
+                            </strong>{" "}
+                            per l'utente{" "}
+                            <strong className="text-slate-800 break-all block mt-1">
+                              {adminPendingAction.email}
+                            </strong>
+                            ?
+                          </>
+                        )}
+                        {adminPendingAction.type === "delete" && (
+                          <>
+                            Sei sicuro di voler eliminare definitivamente l'utente{" "}
+                            <strong className="text-slate-800 break-all block mt-1">
+                              {adminPendingAction.email}
+                            </strong>
+                            ? <span className="text-rose-600 font-bold">Questa azione è irreversibile</span> e rimuoverà l'account in modo permanente.
+                          </>
+                        )}
+                      </p>
+
+                      {/* Action buttons */}
+                      <div className="flex gap-3 justify-center">
+                        <button
+                          type="button"
+                          disabled={!!adminActionExecuting}
+                          onClick={() => setAdminPendingAction(null)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          Annulla
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!!adminActionExecuting}
+                          onClick={() => {
+                            if (adminPendingAction.type === "approve") {
+                              executeApproveUser(adminPendingAction.email);
+                            } else if (adminPendingAction.type === "toggle-moderator") {
+                              executeToggleModerator(adminPendingAction.email, !!adminPendingAction.isModerator);
+                            } else if (adminPendingAction.type === "delete") {
+                              executeDeleteUser(adminPendingAction.email);
+                            }
+                          }}
+                          className={`px-5 py-2 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer flex items-center gap-1.5 ${
+                            adminPendingAction.type === "delete"
+                              ? "bg-rose-600 hover:bg-rose-700"
+                              : adminPendingAction.type === "toggle-moderator"
+                                ? "bg-amber-600 hover:bg-amber-700"
+                                : "bg-[#3E4A35] hover:bg-[#5A6B4E]"
+                          }`}
+                        >
+                          {adminActionExecuting ? (
+                            <>
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                              Elaborazione...
+                            </>
+                          ) : (
+                            "Sì, procedi"
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

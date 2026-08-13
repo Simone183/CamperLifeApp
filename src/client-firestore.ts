@@ -1,6 +1,7 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   initializeFirestore,
+  getFirestore,
   collection,
   doc,
   getDoc,
@@ -373,9 +374,24 @@ class BrowserFirestoreAdapter {
   public app: any;
 
   constructor(firebaseConfig: any, databaseId: string) {
-    const appName = "client-" + Date.now();
-    this.app = initializeApp(firebaseConfig, appName);
-    this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true }, databaseId);
+    try {
+      if (getApps().length > 0) {
+        this.app = getApp();
+        this.db = getFirestore(this.app, databaseId);
+      } else {
+        const appName = "client-" + Date.now();
+        this.app = initializeApp(firebaseConfig, appName);
+        this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true }, databaseId);
+      }
+    } catch (err) {
+      console.error("[BrowserFirestoreAdapter] Safe init failed, using default fallback:", err);
+      try {
+        this.app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+        this.db = getFirestore(this.app, databaseId);
+      } catch (innerErr) {
+        console.error("[BrowserFirestoreAdapter] Safe fallback failed:", innerErr);
+      }
+    }
   }
 
   getStorage() {
