@@ -1,5 +1,16 @@
 [
   {
+    "email": "sambucci.simone@gmail.com",
+    "name": "Simone",
+    "surname": "Sambucci",
+    "nickname": "Sam83",
+    "dob": "1983-06-19",
+    "createdAt": "2026-06-28T19:05:51.537Z",
+    "isModerator": false,
+    "approved": true,
+    "favoritesCount": 0
+  },
+  {
     "email": "claudia.rossetti1988@gmail.com",
     "name": "Claudia",
     "surname": "Rossetti",
@@ -11,14 +22,27 @@
     "favoritesCount": 0
   },
   {
-    "email": "sambucci.simone@gmail.com",
-    "name": "Simone",
-    "surname": "Sambucci",
-    "nickname": "Sam83",
-    "dob": "1983-06-19",
-    "createdAt": "2026-06-28T19:05:51.537Z",
-    "isModerator": false,
-    "approved": true,
-    "favoritesCount": 0
+    "email": "claudia.rossetti1987@gmail.com",
+    "password": "santorini",
+    "name": "Claudia",
+    "surname": "Rossetti",
+    "dob": "1987-01-17",
+    "nickname": "Cluchy",
+    "profilePhoto": "",
+    "favorites": [],
+    "createdAt": "2026-08-13T13:20:56.374Z",
+    "approved": false
+  },
+  {
+    "email": "test.verifica.nuova.mail@gmail.com",
+    "password": "PasswordTest123!",
+    "name": "Test",
+    "surname": "Mail",
+    "dob": "1995-01-01",
+    "nickname": "TestMailNuova",
+    "profilePhoto": "",
+    "favorites": [],
+    "createdAt": "2026-08-13T13:56:23.899Z",
+    "approved": false
   }
 ]

@@ -2084,8 +2084,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Questo nickname è già stato scelto da un altro camperista." });
       }
 
-      const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
-      const isRegisteredUserAdmin = cleanEmail === adminEmail;
+      const adminEmail = (process.env.ADMIN_EMAIL || "viacamperapp@gmail.com").toLowerCase().trim();
+      const isRegisteredUserAdmin = cleanEmail === adminEmail || cleanEmail === "viacamperapp@gmail.com" || cleanEmail === "sambucci.simone@gmail.com";
 
       const newUserDoc = {
         email: cleanEmail,
@@ -2125,13 +2125,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       cacheUsers(updatedCached);
 
       // Send email notification to admin if Resend is configured
-      if (process.env.RESEND_API_KEY && process.env.ADMIN_EMAIL) {
+      const targetAdminEmailForReg = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (process.env.RESEND_API_KEY && targetAdminEmailForReg) {
         try {
           const { Resend } = await import('resend');
           const resend = new Resend(process.env.RESEND_API_KEY);
           resend.emails.send({
             from: 'ViaCamperApp <onboarding@resend.dev>',
-            to: process.env.ADMIN_EMAIL,
+            to: targetAdminEmailForReg,
             subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
             html: `
               <h2>Richiesta di approvazione nuovo utente registrato</h2>
@@ -2360,6 +2361,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       // Always persist local override
       saveUserOverride(cleanEmail, { approved: true });
 
+      // Update cached user entry as well
+      const cached = getCachedUsers();
+      const uIdx = cached.findIndex(u => (u.email || "").toLowerCase().trim() === cleanEmail);
+      if (uIdx !== -1) {
+        cached[uIdx].approved = true;
+        cacheUsers(cached);
+      }
+
       // Send email to the user letting them know they are approved! (If Resend is configured)
       if (process.env.RESEND_API_KEY) {
         try {
@@ -2419,6 +2428,14 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       // Always persist local override
       saveUserOverride(cleanEmail, { isModerator: !!isModerator });
 
+      // Update cached user entry as well
+      const cached = getCachedUsers();
+      const uIdx = cached.findIndex(u => (u.email || "").toLowerCase().trim() === cleanEmail);
+      if (uIdx !== -1) {
+        cached[uIdx].isModerator = !!isModerator;
+        cacheUsers(cached);
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error updating moderator status:", err);
@@ -2429,25 +2446,38 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // Get all registered users
   app.get("/api/admin/users", async (req, res) => {
     try {
-      let rawUsers: any[] = [];
+      const userMap = new Map<string, any>();
       let proposalCounts: { [key: string]: number } = {};
 
+      // 1. Load locally cached users first so no pending registrations are lost
+      const cached = getCachedUsers();
+      for (const u of cached) {
+        if (u && u.email) {
+          const clean = u.email.toLowerCase().trim();
+          userMap.set(clean, { ...u, email: clean });
+        }
+      }
+
+      // 2. Fetch from Firestore and merge
       try {
         const usersRef = firestoreDb.collection("users");
         const snapshot = await usersRef.get();
 
         snapshot.forEach((doc: any) => {
-          const data = doc.data();
-          rawUsers.push({
-            email: data.email || doc.id,
-            name: data.name || "",
-            surname: data.surname || "",
-            nickname: data.nickname || "",
-            dob: data.dob || "",
-            createdAt: data.createdAt || "",
-            isModerator: !!data.isModerator,
-            approved: data.approved !== false,
-            favoritesCount: (data.favorites || []).length
+          const data = doc.data() || {};
+          const clean = (data.email || doc.id).toLowerCase().trim();
+          const existing = userMap.get(clean) || {};
+          userMap.set(clean, {
+            ...existing,
+            email: clean,
+            name: data.name || existing.name || "",
+            surname: data.surname || existing.surname || "",
+            nickname: data.nickname || existing.nickname || "",
+            dob: data.dob || existing.dob || "",
+            createdAt: data.createdAt || existing.createdAt || new Date().toISOString(),
+            isModerator: data.isModerator !== undefined ? !!data.isModerator : !!existing.isModerator,
+            approved: data.approved !== undefined ? data.approved : (existing.approved !== undefined ? existing.approved : false),
+            favoritesCount: (data.favorites || existing.favorites || []).length
           });
         });
 
@@ -2455,7 +2485,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const placesSnapshot = await firestoreDb.collection("places").get();
           placesSnapshot.forEach((doc: any) => {
-            const placeData = doc.data();
+            const placeData = doc.data() || {};
             const creator = (placeData.createdBy || "").toLowerCase().trim();
             if (creator) {
               proposalCounts[creator] = (proposalCounts[creator] || 0) + 1;
@@ -2464,13 +2494,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         } catch (placeErr) {
           console.warn("Could not fetch place proposals for user counts:", placeErr);
         }
-
-        // Save raw users to cache
-        cacheUsers(rawUsers);
       } catch (fsErr: any) {
-        console.log("[Firestore Auth Fallback] Reading users list from local cache.");
-        rawUsers = getCachedUsers();
+        console.log("[Firestore Auth Fallback] Reading users list from local cache due to Firestore notice.");
       }
+
+      const rawUsers = Array.from(userMap.values());
+      // Save combined list to cache so no newly registered user is wiped
+      cacheUsers(rawUsers);
 
       // Apply overrides and filter out deleted users
       const processedUsers: any[] = [];
@@ -4066,7 +4096,11 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error deleting crash report:", err);
-      res.status(500).json({ error: "Errore eliminazione." });
+      if (err.message && err.message.includes("RESOURCE_EXHAUSTED")) {
+        res.status(429).json({ error: "Limite quota giornaliera raggiunto. Riprova domani." });
+      } else {
+        res.status(500).json({ error: "Errore eliminazione." });
+      }
     }
   });
 
@@ -4082,7 +4116,11 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error clearing all crash reports:", err);
-      res.status(500).json({ error: "Errore pulizia crash log." });
+      if (err.message && err.message.includes("RESOURCE_EXHAUSTED")) {
+        res.status(429).json({ error: "Limite quota giornaliera raggiunto. Riprova domani." });
+      } else {
+        res.status(500).json({ error: "Errore pulizia crash log." });
+      }
     }
   });
 
