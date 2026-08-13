@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Key, Camera, X } from 'lucide-react';
+import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Camera, X } from 'lucide-react';
 import { compressImage } from '../utils/photoCompressor';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
 
@@ -21,7 +21,6 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
   const [surname, setSurname] = React.useState('');
   const [dob, setDob] = React.useState('');
   const [nickname, setNickname] = React.useState('');
-  const [inviteCode, setInviteCode] = React.useState('');
   const [profilePhoto, setProfilePhoto] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -72,6 +71,8 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       const formattedEmail = email.toLowerCase().trim();
       const usersRef = firestore.collection("users");
 
+
+
       // Check if email already registered
       const emailSnap = await usersRef.where("email", "==", formattedEmail).get();
       if (!emailSnap.empty) {
@@ -112,29 +113,35 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       return;
     }
 
+    let isApiError = false;
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, surname, dob, nickname, inviteCode, profilePhoto })
+        body: JSON.stringify({ email, password, name, surname, dob, nickname, profilePhoto })
       });
 
       const data = await res.json();
       if (!res.ok) {
+        isApiError = true;
         throw new Error(data.error || 'Impossibile completare la registrazione.');
       }
 
       onSuccess(data.user);
     } catch (err: any) {
-      console.warn("Registration API failed, attempting direct Firestore fallback...", err);
-      if (firestore) {
-        try {
-          await runFirestoreRegistration();
-        } catch (dbErr: any) {
-          setError(dbErr.message || "Errore durante la registrazione diretta sul database.");
-        }
+      if (isApiError) {
+        setError(err.message);
       } else {
-        setError(err.message || 'Errore di connessione con il server.');
+        console.warn("Registration API failed, attempting direct Firestore fallback...", err);
+        if (firestore) {
+          try {
+            await runFirestoreRegistration();
+          } catch (dbErr: any) {
+            setError(dbErr.message || "Errore durante la registrazione diretta sul database.");
+          }
+        } else {
+          setError(err.message || 'Errore di connessione con il server.');
+        }
       }
     } finally {
       setIsLoading(false);
@@ -326,16 +333,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
             </button>
           </div>
 
-          <div className="relative">
-            <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Codice Invito (opzionale se non richiesto)"
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20"
-            />
-          </div>
+
           
           <button 
             type="submit"

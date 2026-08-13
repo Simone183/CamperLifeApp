@@ -1939,13 +1939,6 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Email, password e nickname sono richiesti per la registrazione." });
       }
 
-      // Check if server is configured with a registration invite/beta code
-      const serverInviteCode = process.env.REGISTRATION_INVITE_CODE;
-      console.log(`[Registration Debug] serverInviteCode from env: '${serverInviteCode}', provided inviteCode: '${inviteCode}'`);
-      if (serverInviteCode && (!inviteCode || inviteCode.trim() !== serverInviteCode.trim())) {
-        return res.status(400).json({ error: "Codice di invito non valido o mancante. Contatta l'amministratore per ottenere l'accesso." });
-      }
-
       // Check if user exists
       const usersRef = firestoreDb.collection("users");
       const snapshot = await usersRef.where("email", "==", email.toLowerCase().trim()).get();
