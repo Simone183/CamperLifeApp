@@ -29,8 +29,8 @@ var import_sharp = __toESM(require("sharp"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_firebase_admin = __toESM(require("firebase-admin"), 1);
-var import_firestore2 = require("firebase-admin/firestore");
 var import_storage2 = require("firebase-admin/storage");
+var import_messaging = require("firebase-admin/messaging");
 
 // src/client-firestore.ts
 var import_app = require("firebase/app");
@@ -40,20 +40,319 @@ try {
   (0, import_firestore.setLogLevel)("silent");
 } catch (e) {
 }
-var ClientFirestoreAdapter = class {
+function toFirestoreValue(val) {
+  if (val === null || val === void 0) {
+    return { nullValue: null };
+  }
+  if (typeof val === "boolean") {
+    return { booleanValue: val };
+  }
+  if (typeof val === "number") {
+    if (Number.isInteger(val)) {
+      return { integerValue: val.toString() };
+    }
+    return { doubleValue: val };
+  }
+  if (typeof val === "string") {
+    return { stringValue: val };
+  }
+  if (Array.isArray(val)) {
+    return {
+      arrayValue: {
+        values: val.map(toFirestoreValue)
+      }
+    };
+  }
+  if (typeof val === "object") {
+    const fields = {};
+    for (const key of Object.keys(val)) {
+      if (val[key] !== void 0) {
+        fields[key] = toFirestoreValue(val[key]);
+      }
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+function toFirestoreFields(obj) {
+  const fields = {};
+  for (const key of Object.keys(obj)) {
+    if (obj[key] !== void 0) {
+      fields[key] = toFirestoreValue(obj[key]);
+    }
+  }
+  return fields;
+}
+function fromFirestoreValue(val) {
+  if (!val) return null;
+  if ("nullValue" in val) return null;
+  if ("booleanValue" in val) return val.booleanValue;
+  if ("integerValue" in val) return parseInt(val.integerValue, 10);
+  if ("doubleValue" in val) return parseFloat(val.doubleValue);
+  if ("stringValue" in val) return val.stringValue;
+  if ("arrayValue" in val) {
+    const values = val.arrayValue.values || [];
+    return values.map(fromFirestoreValue);
+  }
+  if ("mapValue" in val) {
+    const fields = val.mapValue.fields || {};
+    const obj = {};
+    for (const key of Object.keys(fields)) {
+      obj[key] = fromFirestoreValue(fields[key]);
+    }
+    return obj;
+  }
+  return val;
+}
+function fromFirestoreFields(fields) {
+  if (!fields) return {};
+  const obj = {};
+  for (const key of Object.keys(fields)) {
+    obj[key] = fromFirestoreValue(fields[key]);
+  }
+  return obj;
+}
+var ServerRESTFirestoreAdapter = class {
   constructor(firebaseConfig2, databaseId) {
-    const appName = "client-" + Date.now();
-    this.app = (0, import_app.initializeApp)(firebaseConfig2, appName);
-    this.db = (0, import_firestore.initializeFirestore)(this.app, { experimentalForceLongPolling: true }, databaseId);
+    this.projectId = firebaseConfig2.projectId;
+    this.apiKey = firebaseConfig2.apiKey;
+    this.databaseId = databaseId || "(default)";
+  }
+  getStorage() {
+    return null;
+  }
+  collection(collectionPath) {
+    return new ServerRESTCollectionQueryWrapper(this, collectionPath);
+  }
+  async runQuery(collectionPath, constraints, orderByField, orderDirection, limitCount) {
+    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents:runQuery?key=${this.apiKey}`;
+    const parts = collectionPath.split("/");
+    const collectionId = parts[parts.length - 1];
+    const requestBody = {};
+    if (parts.length > 1) {
+      const parentPath = parts.slice(0, parts.length - 1).join("/");
+      requestBody.parent = `projects/${this.projectId}/databases/${this.databaseId}/documents/${parentPath}`;
+    }
+    const filters = constraints.map((c) => ({
+      fieldFilter: {
+        field: { fieldPath: c.field },
+        op: c.op === "==" ? "EQUAL" : c.op,
+        value: toFirestoreValue(c.value)
+      }
+    }));
+    const structuredQuery = {
+      from: [{ collectionId }]
+    };
+    if (filters.length > 0) {
+      structuredQuery.where = {
+        compositeFilter: {
+          op: "AND",
+          filters
+        }
+      };
+    }
+    if (orderByField) {
+      structuredQuery.orderBy = [
+        {
+          field: { fieldPath: orderByField },
+          direction: orderDirection === "desc" ? "DESCENDING" : "ASCENDING"
+        }
+      ];
+    }
+    if (limitCount !== void 0) {
+      structuredQuery.limit = limitCount;
+    }
+    requestBody.structuredQuery = structuredQuery;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`REST Firestore runQuery failed: ${res.statusText} - ${errText}`);
+    }
+    const results = await res.json();
+    return (results || []).filter((r) => r && r.document).map((r) => {
+      const docData = r.document;
+      const id = docData.name.split("/").pop();
+      const fields = fromFirestoreFields(docData.fields);
+      return new DocumentSnapshotWrapper(id, true, fields);
+    });
+  }
+  async getDoc(docPath) {
+    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents/${docPath}?key=${this.apiKey}`;
+    const res = await fetch(url);
+    if (res.status === 404) {
+      return new DocumentSnapshotWrapper(docPath.split("/").pop() || "", false, null);
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`REST Firestore getDoc failed: ${res.statusText} - ${text}`);
+    }
+    const data = await res.json();
+    const fields = fromFirestoreFields(data.fields);
+    return new DocumentSnapshotWrapper(docPath.split("/").pop() || "", true, fields);
+  }
+  async setDoc(docPath, data, merge = true) {
+    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents/${docPath}?key=${this.apiKey}`;
+    const fields = toFirestoreFields(data);
+    let targetUrl = url;
+    if (merge) {
+      const keys = Object.keys(data);
+      if (keys.length > 0) {
+        const fieldPaths = keys.map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+        targetUrl += `&${fieldPaths}`;
+      }
+    }
+    const res = await fetch(targetUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`REST Firestore setDoc failed: ${res.statusText} - ${text}`);
+    }
+    return await res.json();
+  }
+  async deleteDoc(docPath) {
+    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents/${docPath}?key=${this.apiKey}`;
+    const res = await fetch(url, { method: "DELETE" });
+    if (res.status === 404) return;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`REST Firestore deleteDoc failed: ${res.statusText} - ${text}`);
+    }
+  }
+  async addDoc(colPath, data) {
+    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents/${colPath}?key=${this.apiKey}`;
+    const fields = toFirestoreFields(data);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`REST Firestore addDoc failed: ${res.statusText} - ${text}`);
+    }
+    const result = await res.json();
+    const id = result.name.split("/").pop();
+    return { id };
+  }
+};
+var ServerRESTCollectionQueryWrapper = class _ServerRESTCollectionQueryWrapper {
+  constructor(adapter, path2, constraints = [], orderByField, orderDirection, limitCount) {
+    this.constraints = [];
+    this.adapter = adapter;
+    this.path = path2;
+    this.constraints = constraints;
+    this.orderByField = orderByField;
+    this.orderDirection = orderDirection;
+    this.limitCount = limitCount;
+  }
+  doc(docId) {
+    return new ServerRESTDocumentWrapper(this.adapter, this.path, docId);
+  }
+  where(field, op, val) {
+    const newConstraints = [...this.constraints, { field, op, value: val }];
+    return new _ServerRESTCollectionQueryWrapper(
+      this.adapter,
+      this.path,
+      newConstraints,
+      this.orderByField,
+      this.orderDirection,
+      this.limitCount
+    );
+  }
+  orderBy(field, direction = "asc") {
+    return new _ServerRESTCollectionQueryWrapper(
+      this.adapter,
+      this.path,
+      this.constraints,
+      field,
+      direction,
+      this.limitCount
+    );
+  }
+  limit(n) {
+    return new _ServerRESTCollectionQueryWrapper(
+      this.adapter,
+      this.path,
+      this.constraints,
+      this.orderByField,
+      this.orderDirection,
+      n
+    );
+  }
+  async get() {
+    const docs = await this.adapter.runQuery(
+      this.path,
+      this.constraints,
+      this.orderByField,
+      this.orderDirection,
+      this.limitCount
+    );
+    return new QuerySnapshotWrapper(docs);
+  }
+  async add(data) {
+    return await this.adapter.addDoc(this.path, data);
+  }
+};
+var ServerRESTDocumentWrapper = class {
+  constructor(adapter, colPath, docId) {
+    this.adapter = adapter;
+    this.colPath = colPath;
+    this.docId = docId;
+  }
+  async get() {
+    const fullPath = `${this.colPath}/${this.docId}`;
+    return await this.adapter.getDoc(fullPath);
+  }
+  async set(data, options) {
+    const fullPath = `${this.colPath}/${this.docId}`;
+    const merge = options?.merge !== false;
+    await this.adapter.setDoc(fullPath, data, merge);
+  }
+  async update(data) {
+    const fullPath = `${this.colPath}/${this.docId}`;
+    await this.adapter.setDoc(fullPath, data, true);
+  }
+  async delete() {
+    const fullPath = `${this.colPath}/${this.docId}`;
+    await this.adapter.deleteDoc(fullPath);
+  }
+};
+var BrowserFirestoreAdapter = class {
+  constructor(firebaseConfig2, databaseId) {
+    try {
+      if ((0, import_app.getApps)().length > 0) {
+        this.app = (0, import_app.getApp)();
+        this.db = (0, import_firestore.getFirestore)(this.app, databaseId);
+      } else {
+        const appName = "client-" + Date.now();
+        this.app = (0, import_app.initializeApp)(firebaseConfig2, appName);
+        this.db = (0, import_firestore.initializeFirestore)(this.app, { experimentalForceLongPolling: true }, databaseId);
+      }
+    } catch (err) {
+      console.error("[BrowserFirestoreAdapter] Safe init failed, using default fallback:", err);
+      try {
+        this.app = (0, import_app.getApps)().length > 0 ? (0, import_app.getApp)() : (0, import_app.initializeApp)(firebaseConfig2);
+        this.db = (0, import_firestore.getFirestore)(this.app, databaseId);
+      } catch (innerErr) {
+        console.error("[BrowserFirestoreAdapter] Safe fallback failed:", innerErr);
+      }
+    }
   }
   getStorage() {
     return (0, import_storage.getStorage)(this.app);
   }
   collection(collectionPath) {
-    return new CollectionQueryWrapper(this.db, collectionPath);
+    return new BrowserCollectionQueryWrapper(this.db, collectionPath);
   }
 };
-var CollectionQueryWrapper = class _CollectionQueryWrapper {
+var BrowserCollectionQueryWrapper = class _BrowserCollectionQueryWrapper {
   constructor(db, path2, constraints = []) {
     this.constraints = [];
     this.db = db;
@@ -61,25 +360,26 @@ var CollectionQueryWrapper = class _CollectionQueryWrapper {
     this.constraints = constraints;
   }
   doc(docId) {
-    return new DocumentWrapper(this.db, this.path, docId);
+    return new BrowserDocumentWrapper(this.db, this.path, docId);
   }
   where(field, op, val) {
     const newConstraints = [...this.constraints, (0, import_firestore.where)(field, op, val)];
-    return new _CollectionQueryWrapper(this.db, this.path, newConstraints);
+    return new _BrowserCollectionQueryWrapper(this.db, this.path, newConstraints);
   }
   orderBy(field, direction = "asc") {
     const newConstraints = [...this.constraints, (0, import_firestore.orderBy)(field, direction)];
-    return new _CollectionQueryWrapper(this.db, this.path, newConstraints);
+    return new _BrowserCollectionQueryWrapper(this.db, this.path, newConstraints);
   }
   limit(n) {
     const newConstraints = [...this.constraints, (0, import_firestore.limit)(n)];
-    return new _CollectionQueryWrapper(this.db, this.path, newConstraints);
+    return new _BrowserCollectionQueryWrapper(this.db, this.path, newConstraints);
   }
   async get() {
     const colRef = (0, import_firestore.collection)(this.db, this.path);
     const q = (0, import_firestore.query)(colRef, ...this.constraints);
     const snap = await (0, import_firestore.getDocs)(q);
-    return new QuerySnapshotWrapper(snap);
+    const docs = snap.docs.map((d) => new DocumentSnapshotWrapper(d.id, true, d.data()));
+    return new QuerySnapshotWrapper(docs);
   }
   async add(data) {
     const colRef = (0, import_firestore.collection)(this.db, this.path);
@@ -87,7 +387,7 @@ var CollectionQueryWrapper = class _CollectionQueryWrapper {
     return { id: docRef.id };
   }
 };
-var DocumentWrapper = class {
+var BrowserDocumentWrapper = class {
   constructor(db, colPath, docId) {
     this.db = db;
     this.colPath = colPath;
@@ -96,7 +396,7 @@ var DocumentWrapper = class {
   async get() {
     const dRef = (0, import_firestore.doc)(this.db, this.colPath, this.docId);
     const snap = await (0, import_firestore.getDoc)(dRef);
-    return new DocumentSnapshotWrapper(snap);
+    return new DocumentSnapshotWrapper(snap.id, snap.exists(), snap.exists() ? snap.data() : null);
   }
   async set(data, options) {
     const dRef = (0, import_firestore.doc)(this.db, this.colPath, this.docId);
@@ -112,36 +412,43 @@ var DocumentWrapper = class {
   }
 };
 var QuerySnapshotWrapper = class {
-  constructor(snap) {
-    this.snap = snap;
+  constructor(docs) {
+    this.docs = docs;
   }
   get size() {
-    return this.snap.size;
+    return this.docs.length;
   }
   get empty() {
-    return this.snap.empty;
-  }
-  get docs() {
-    return this.snap.docs.map((d) => new DocumentSnapshotWrapper(d));
+    return this.docs.length === 0;
   }
   forEach(callback) {
-    this.snap.forEach((d) => {
-      callback(new DocumentSnapshotWrapper(d));
-    });
+    this.docs.forEach(callback);
   }
 };
 var DocumentSnapshotWrapper = class {
-  constructor(docSnap) {
-    this.docSnap = docSnap;
-  }
-  get id() {
-    return this.docSnap.id;
-  }
-  get exists() {
-    return this.docSnap.exists();
+  constructor(id, exists, fieldsData) {
+    this.id = id;
+    this.exists = exists;
+    this.fieldsData = fieldsData;
   }
   data() {
-    return this.docSnap.data();
+    return this.fieldsData;
+  }
+};
+var ClientFirestoreAdapter = class {
+  constructor(firebaseConfig2, databaseId) {
+    if (typeof window === "undefined") {
+      this.impl = new ServerRESTFirestoreAdapter(firebaseConfig2, databaseId);
+    } else {
+      this.impl = new BrowserFirestoreAdapter(firebaseConfig2, databaseId);
+      this.app = this.impl.app;
+    }
+  }
+  getStorage() {
+    return this.impl.getStorage();
+  }
+  collection(collectionPath) {
+    return this.impl.collection(collectionPath);
   }
 };
 
@@ -154,7 +461,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
     text: '\u{1F44B} Benvenuti nella Community Social di ViaCamper! Condividete qui le foto delle vostre soste, paesaggi ed esperienze in camper. Cliccate su "Nuovo Post" per pubblicare il vostro primo scatto! \u{1F690}\u{1F4F8} #viacamper #rolly #community',
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 2).toISOString(),
+    timestamp: "2026-07-15T10:00:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -170,7 +477,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
     text: "\u{1F4F8} Scatto del giorno dalla Community! Vi ricordiamo di verificare la pressione degli pneumatici e il livello dell'olio prima di mettervi in viaggio. Buon viaggio e felice chilometraggio a tutti! \u{1F690}\u{1F4A8} #campertip #rolly #sicurezza",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 12).toISOString(),
+    timestamp: "2026-07-15T11:00:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Sosta",
@@ -188,7 +495,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F3D4}\uFE0F Consigli per il primo viaggio invernale sulla neve: riscaldamento e catene",
     text: "Ciao a tutti i camperisti! Con l'arrivo della stagione fredda, molti utenti chiedono consigli su come preparare il camper per la neve e la montagna. Qual \xE8 la vostra esperienza con le stufe Truma/Webasto e le coperte termiche esterne per il parabrezza? Condividiamo qui i migliori trucchi per evitare il congelamento delle acque grigie!",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 2).toISOString(),
+    timestamp: "2026-07-15T12:01:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Sosta",
@@ -201,8 +508,8 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
     title: "\u26A1 Autonomia Energetica in Camper: Pannelli Solari vs Batteria al Litio LiFePO4",
-    text: "L'autonomia elettrica \xE8 uno dei temi pi\xF9 caldi tra chi viaggia in sosta libera. Voi che setup utilizzate? Avete fatto il passaggio alle batterie al litio LiFePO4? Quanti watt di pannelli solari ritenete indispensabili per lavorare o viaggiare anche in autunno ed inverno?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 5).toISOString(),
+    text: "L'autonomia elettrica \xE8 uno dei temi pi\xF9 caldi tra chi viaggia in sosta libera. Voi que setup utilizzate? Avete fatto il passaggio alle batterie al litio LiFePO4? Quanti watt di pannelli solari ritenete indispensabili per lavorare o viaggiare anche in autunno ed inverno?",
+    timestamp: "2026-07-15T12:02:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -216,7 +523,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F30A} Le migliori Aree Sosta d'Italia vicine al Mare e aperte 365 giorni l'anno",
     text: "Molti di noi amano il mare d'inverno o durante le mezze stagioni per la pace assoluta. Avete aree sosta o campeggi del cuore direttamente sulla spiaggia con tutti i servizi attivi tutto l'anno da raccomandare alla community?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 8).toISOString(),
+    timestamp: "2026-07-15T12:03:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Sosta",
@@ -230,7 +537,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F5FA}\uFE0F Consigli di Guida: Come evitare sottopassi bassi e strettoie nei borghi storici",
     text: "In Italia i borghi storici sono meravigliosi ma nascondono spesso strettoie insidiose e cavalcavia bassi! Quali accorgimenti usate durante la guida per evitare brutte sorprese con la mansarda del camper?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 12).toISOString(),
+    timestamp: "2026-07-15T12:04:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -244,7 +551,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F4E6} Organizzazione Spazi & Storage nel Garage e negli Armadietti",
     text: "L'ottimizzazione degli spazi e della distribuzione dei pesi in camper \xE8 una vera arte! Scatole trasparenti impilabili, ganci magnetici o sottovuoto per la biancheria: quali sono i vostri trucchi salvaspazio indispensabili?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 18).toISOString(),
+    timestamp: "2026-07-15T12:05:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -258,7 +565,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u26FA Raduno e Incontro ViaCamper Primavera 2026: Proposte di Location!",
     text: "Cari amici camperisti, vi piacerebbe organizzare un incontro informale nei prossimi mesi? Proponete qui la vostra regione preferita (es. Toscana, Umbria, Laghi del Nord o Costa Adriatica) per incontrarci e fare una bella grigliata insieme!",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 22).toISOString(),
+    timestamp: "2026-07-15T12:06:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Incontro",
@@ -272,7 +579,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F43E} Viaggiare in Camper con Animali Domestici (Cani e Gatti): I vostri consigli",
     text: "Chi viaggia con i propri amici a quattro zampe sa quanto sia un'esperienza meravigliosa! Come avete allestito la cuccia durante la marcia? Quali attenzioni usate per garantire il massimo comfort termico in estate?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 26).toISOString(),
+    timestamp: "2026-07-15T12:07:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -286,7 +593,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F331} Gestione Cassetta WC Chimico e Additivi Ecologici Bio",
     text: "Rispettare l'ambiente nelle operazioni di camper service \xE8 fondamentale. Molti camperisti stanno passando ai fluidi disgreganti biodegradabili o al sistema di ventilazione SOG. Qual \xE8 la vostra opinione ed esperienza?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 30).toISOString(),
+    timestamp: "2026-07-15T12:08:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Sosta",
@@ -299,8 +606,8 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F6E0}\uFE0F Cassetta degli Attrezzi d'Emergenza: Cosa tenere sempre a bordo?",
-    text: "I piccoli imprevisti tecnici fanno parte dell'avventura! Oltre a nastro americano multiuso e fascette da elettricista, quali utensili, multimetro, fusibili e ricambi non dovrebbero mai mancare a bordo?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 36).toISOString(),
+    text: "I piccoli imprevisti tecnici fanno parte dell'avventura! Oltre a nastro americano multiuso e fascette da elettricista, quali utensili, multimetro, fusibili and ricambi non dovrebbero mai mancare a bordo?",
+    timestamp: "2026-07-15T12:09:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -314,7 +621,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F373} Cucina On The Road: Le vostre ricette pratiche e il Fornetto Versilia",
     text: "Quali sono i vostri piatti forti da preparare sui fornelli del camper? Usate il celebre fornetto Versilia per ciambelloni e focacce senza bisogno del forno tradizionale? Condividiamo le ricette pi\xF9 veloci e gustose!",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 42).toISOString(),
+    timestamp: "2026-07-15T12:10:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -328,7 +635,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F4A8} Bollettino Vento e Raffiche sulle Coste: Come orientare la sosta",
     text: "Il vento forte o le raffiche improvvise possono rendere poco piacevole la notte in mansardato o van. Come verificate le correnti di vento prima di posizionare il camper e da che parte orientate il veicolo?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 48).toISOString(),
+    timestamp: "2026-07-15T12:11:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Meteo",
@@ -342,7 +649,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F690} Mansardato vs Semintegrale vs Motorhome vs Van: Esperienze a confronto",
     text: "Ogni tipologia di veicolo risponde a esigenze di viaggio diverse! Chi ha provato pi\xF9 modelli nel corso degli anni, quali vantaggi e svantaggi ha riscontrato? Vi va di raccontare la vostra evoluzione camperistica?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 54).toISOString(),
+    timestamp: "2026-07-15T12:12:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -354,9 +661,9 @@ var INITIAL_COMMUNITY_MESSAGES = [
     user: "Rolly - Assistente ViaCamper",
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
-    title: "\u2744\uFE0F Manutenzione Invernale e Rimessaggio: La Check-list per evitare danni",
+    title: "\u2744\uFE0F Manutenzione Invernale and Rimessaggio: La Check-list per evitare danni",
     text: "Quando il camper resta fermo qualche settimana nei mesi freddi, pochi gesti salvano da brutte sorprese alla riapertura! Voi quali accorgimenti usate per proteggere impianti idrici, batterie e guarnizioni dei finestrini?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 60).toISOString(),
+    timestamp: "2026-07-15T12:13:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -370,7 +677,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F1EA}\u{1F1FA} Prima Volta all'Estero in Camper: Consigli per la Francia, Spagna e Nord Europa",
     text: "Organizzare il primo viaggio oltreconfine in camper richiede qualche piccola informazione preventiva su autostrade, bollini ambientali e regolamenti di sosta. Quali paesi ritenete pi\xF9 'camper-friendly' in Europa?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 68).toISOString(),
+    timestamp: "2026-07-15T12:14:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Sosta",
@@ -384,7 +691,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatarColor: "bg-[#3E4A35]",
     title: "\u{1F512} Sicurezza durante le Soste Notturne: Sistemi antifurto e buon senso",
     text: "Dormire tranquilli e rilassati \xE8 fondamentale per una vacanza indimenticabile. Quali sistemi di sicurezza (es. catene alle portiere cabina, antifurti perimetrali, rilevatori di gas o chiusure supplementari) utilizzate?",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 60 * 76).toISOString(),
+    timestamp: "2026-07-15T12:15:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -398,7 +705,7 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
     text: "\u{1F44B} Benvenuti nella Chat Live di ViaCamper! Scrivete qui per scambiarvi consigli in tempo reale o condividere informazioni pratiche mentre siete in viaggio. \u{1F690}\u{1F4AC}",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 45).toISOString(),
+    timestamp: "2026-07-15T13:01:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Generale",
@@ -411,12 +718,216 @@ var INITIAL_COMMUNITY_MESSAGES = [
     avatar: "\u{1F916}",
     avatarColor: "bg-[#3E4A35]",
     text: "\u{1F4A1} La chat live \xE8 uno spazio aperto a tutti i camperisti per scambiarsi saluti e dritte al volo sulla strada! Buona permanenza! \u{1F6E3}\uFE0F",
-    timestamp: new Date(Date.now() - 1e3 * 60 * 15).toISOString(),
+    timestamp: "2026-07-15T13:02:00.000Z",
     likes: 0,
     likedByCurrentUser: false,
     tag: "Sosta",
     type: "chat",
     replies: []
+  }
+];
+
+// src/data/promoMessages.ts
+var PROMO_MESSAGES = [
+  {
+    title: "\u{1F5FA}\uFE0F Evita ponti bassi e strettoie!",
+    body: "Calcola percorsi sicuri adatti alle dimensioni del tuo camper con il nostro navigatore speciale!"
+  },
+  {
+    title: "\u{1F6A8} Richiesta S.O.S. in tempo reale",
+    body: "Hai un guasto o un'emergenza in viaggio? Lancia un S.O.S. per avvisare all'istante i camperisti vicini!"
+  },
+  {
+    title: "\u2696\uFE0F Troppo carico? Evita le multe!",
+    body: "Usa il Calcolatore dei Pesi prima di partire per verificare di essere entro i limiti consentiti."
+  },
+  {
+    title: "\u{1F690} Scopri nuove aree sosta nella Community",
+    body: "Centinaia di punti sosta approvati e recensiti da veri camperisti per te. Trova la tua prossima meta!"
+  },
+  {
+    title: "\u{1F4C5} Scadenze sotto controllo!",
+    body: "Registra bollo, assicurazione e revisione nello Scadenziario e ricevi avvisi automatici prima della scadenza!"
+  },
+  {
+    title: "\u{1F6E0}\uFE0F Registro di Manutenzione del Camper",
+    body: "Tieni traccia dei tagliandi, del cambio filtri e dei lavori eseguiti sul tuo veicolo ricreazionale."
+  },
+  {
+    title: "\u{1F4D6} Diario di Bordo: Scrivi le tue avventure!",
+    body: "Immortala i tuoi viaggi con tappe, foto e note nel tuo diario di viaggio digitale personale."
+  },
+  {
+    title: "\u{1F916} Itinerario personalizzato con l'AI!",
+    body: "Lasciati ispirare! Chiedi alla nostra Intelligenza Artificiale di creare la tua prossima vacanza ideale."
+  },
+  {
+    title: "\u26FD Monitora le spese di carburante",
+    body: "Segna ogni rifornimento e analizza l'andamento dei consumi del tuo camper nel tempo."
+  },
+  {
+    title: "\u{1F9FA} Cambia marcia alla tua dispensa!",
+    body: "Usa l'organizzatore della dispensa e della lista spesa per non dimenticare mai nulla prima della partenza."
+  },
+  {
+    title: "\u{1F5FA}\uFE0F ViaCamper \xE8 ora su Android Auto!",
+    body: "Trova aree sosta e avvia la navigazione protetta direttamente dallo schermo della tua autoradio!"
+  },
+  {
+    title: "\u{1F4AC} Chiacchiera con altri camperisti!",
+    body: "Entra nella sezione Community, scambia consigli in bacheca e scopri trucchi per il fai-da-te."
+  },
+  {
+    title: "\u{1F326}\uFE0F Meteo in tempo reale sulle soste",
+    body: "Prima di partire, controlla le previsioni meteo aggiornate direttamente sulla scheda del punto sosta."
+  },
+  {
+    title: "\u{1F4CD} Proponi un nuovo punto sosta!",
+    body: "Hai trovato un posto da sogno? Condividilo con la community proponendo una nuova sosta sulla mappa."
+  },
+  {
+    title: "\u{1F6A6} Traffico e info stradali",
+    body: "Visualizza in tempo reale le condizioni del traffico sul navigatore per pianificare al meglio i tuoi tempi."
+  },
+  {
+    title: "\u{1F50B} Camper Service: dove scaricare?",
+    body: "Filtra la mappa per trovare subito i punti con acqua potabile e scarico acque grigie/nere pi\xF9 vicini."
+  },
+  {
+    title: "\u{1F332} Campeggi immersi nella natura",
+    body: "Cerca strutture attrezzate e campeggi sul nostro database per soste in totale comfort e relax."
+  },
+  {
+    title: "\u{1F35D} Ricette salvavita da camper",
+    body: "Scopri nella bacheca della community le ricette preferite dai viaggiatori, veloci e gustose!"
+  },
+  {
+    title: "\u{1F512} Soste sicure e videosorvegliate",
+    body: "Leggi le recensioni dei camperisti per scoprire quali aree offrono sbarra automatica o telecamere."
+  },
+  {
+    title: "\u{1F50C} Allaccio elettrico 220V disponibile?",
+    body: "Verifica con un clic i servizi inclusi in ogni sosta: elettricit\xE0, docce calde, barbecue o area cani."
+  },
+  {
+    title: "\u{1F4C8} Statistiche di viaggio",
+    body: "Scopri quanti chilometri hai percorso quest'anno e qual \xE8 la tua spesa media per chilometro."
+  },
+  {
+    title: "\u{1F392} Checklist di partenza rapida",
+    body: "Cunei messi? Finestre chiuse? Gradino rientrato? Segui la checklist interattiva prima di girare la chiave!"
+  },
+  {
+    title: "\u{1F9AE} In viaggio con i tuoi amici a 4 zampe?",
+    body: "Filtra le aree sosta e i campeggi che accolgono gli animali per vacanze senza pensieri con il tuo cane."
+  },
+  {
+    title: "\u{1F5FA}\uFE0F Cambia lo stile della mappa!",
+    body: "Passa alla visualizzazione satellitare, topografica o stradale classica per esplorare ogni dettaglio del territorio."
+  },
+  {
+    title: "\u{1F6B2} Porta con te le bici!",
+    body: "Cerca aree sosta adiacenti a piste ciclabili leggendo i tag descrittivi inseriti dalla nostra community."
+  },
+  {
+    title: "\u{1F41A} Idee weekend: le spiagge pi\xF9 belle",
+    body: "Filtra i punti sosta situati a meno di 100 metri dal mare per svegliarti guardando le onde!"
+  },
+  {
+    title: "\u2744\uFE0F Sosta invernale? Nessun timore!",
+    body: "Trova le aree ideali per il campeggio sulla neve, vicino agli impianti di risalita e con servizi riscaldati."
+  },
+  {
+    title: "\u{1F3F0} Borghi d'Italia in camper",
+    body: "Segui gli itinerari storici proposti nella sezione Community per esplorare piccoli tesori nascosti."
+  },
+  {
+    title: "\u{1F4BB} Lavorare in camper in Smart Working",
+    body: "Leggi le recensioni degli utenti sulla copertura 4G/5G o sulla presenza del Wi-Fi in piazzola."
+  },
+  {
+    title: "\u{1F527} Pronto Soccorso Camper: Guide Utile",
+    body: "Consulta la sezione tecnica per consigli su come sbloccare una pompa dell'acqua o ricaricare le bombole."
+  },
+  {
+    title: "\u{1F30D} Condividi la tua posizione in sicurezza",
+    body: "Invia ad amici o parenti le coordinate esatte di dove hai parcheggiato la notte con la condivisione rapida."
+  },
+  {
+    title: "\u{1F6D2} Non restare senza bombola del gas!",
+    body: "Trova i punti vendita o di ricarica di propano pi\xF9 vicini segnalati dai nostri utenti."
+  },
+  {
+    title: "\u{1F31F} Diventa un Utente Top della Community!",
+    body: "Condividi foto, recensioni e rispondi ai forum per guadagnare punti reputazione e scalare la classifica!"
+  },
+  {
+    title: "\u{1F5FA}\uFE0F Navigazione Offline integrata",
+    body: "Salva i tuoi itinerari preferiti per consultarli anche quando il segnale cellulare \xE8 assente in montagna."
+  },
+  {
+    title: "\u{1F4A1} Trucchi per risparmiare energia",
+    body: "Scopri come massimizzare la durata delle tue batterie dei servizi con i post tecnici della community."
+  },
+  {
+    title: "\u{1F96A} Dispensa vuota? Spesa al volo!",
+    body: "Aggiungi al volo gli ingredienti mancanti alla tua lista della spesa smart interna di ViaCamper."
+  },
+  {
+    title: "\u{1F342} Autunno in camper: i colori del foliage",
+    body: "Lasciati guidare dagli itinerari autunnali consigliati per percorsi panoramici mozzafiato."
+  },
+  {
+    title: "\u{1F9FC} Come pulire i serbatoi delle acque grigie",
+    body: "Trova guide e discussioni sulla sanificazione dei serbatoi per eliminare i cattivi odori."
+  },
+  {
+    title: "\u26FA Sosta libera o Area Attrezzata?",
+    body: "Leggi i regolamenti locali e le esperienze degli altri camperisti per evitare sanzioni sulla sosta libera."
+  },
+  {
+    title: "\u{1F377} Itinerari Enogastronomici",
+    body: "Abbina la passione del camper alle eccellenze del territorio: scopri aree sosta vicino ad agriturismi e cantine!"
+  },
+  {
+    title: "\u{1F50B} Manutenzione Pannello Solare",
+    body: "Il tuo pannello carica al massimo? Leggi i suggerimenti dei nostri esperti per tenerlo sempre pulito ed efficiente."
+  },
+  {
+    title: "\u{1F392} Sfide e Obiettivi di Viaggio",
+    body: "Completa le sfide di ViaCamper, visita nuovi borghi e sblocca i badge esclusivi nel tuo profilo!"
+  },
+  {
+    title: "\u{1F690} Pronto per il prossimo ponte festivo?",
+    body: "Pianifica in anticipo tappe ed aree di sosta per non rischiare di trovare tutto esaurito."
+  },
+  {
+    title: '\u{1F5FA}\uFE0F "Google Maps Plus" \xE8 eccezionale!',
+    body: "Esporta l'itinerario sicuro calcolato da ViaCamper direttamente nell'app di Google Maps con un semplice clic."
+  },
+  {
+    title: "\u2696\uFE0F Peso del camper sotto controllo?",
+    body: "Inserisci stoviglie, serbatoi d'acqua, bombole e passeggeri per stimare il peso totale prima di partire."
+  },
+  {
+    title: "\u{1F6A8} Segnala un ostacolo sulla strada",
+    body: "Aiuta gli altri camperisti segnalando ponti bassi o divieti non presenti in mappa direttamente dall'app."
+  },
+  {
+    title: "\u{1F9FC} Lavanderia self-service vicina?",
+    body: "Cerca i punti sosta che dispongono di lavatrici ed asciugatrici interne per i viaggi a lungo raggio."
+  },
+  {
+    title: "\u{1F3DE}\uFE0F Soste camper panoramiche",
+    body: "Trova piazzole con viste spettacolari su laghi, montagne o scogliere per risvegli da favola."
+  },
+  {
+    title: "\u{1F476} Viaggiare in camper con i bambini",
+    body: "Scopri le aree sosta con parco giochi, piscine e animazione recensite dalle altre famiglie."
+  },
+  {
+    title: "\u{1F5FA}\uFE0F ViaCamper: Il tuo copilota perfetto",
+    body: "Sfrutta al massimo tutte le funzioni: l'app all-in-one creata appositamente da camperisti per camperisti!"
   }
 ];
 
@@ -495,10 +1006,80 @@ async function uploadDefaultIcons() {
 var firestoreDb;
 try {
   firestoreDb = new ClientFirestoreAdapter(firebaseConfig, firebaseDbId);
-  console.log(`[Firebase Client Adapter] Connected successfully using API Key for DatabaseId: ${firebaseDbId}`);
+  console.log(`[REST Firestore Adapter] Connected successfully using API Key for DatabaseId: ${firebaseDbId}`);
 } catch (err) {
-  console.error(`[Firebase Client Adapter] Could not initialize client database adapter.`, err);
-  firestoreDb = (0, import_firestore2.getFirestore)(app, firebaseDbId);
+  console.error(`[REST Firestore Adapter] Failed to initialize database adapter.`, err);
+}
+var OVERRIDES_FILE = import_path.default.join(process.cwd(), "user_overrides.json");
+var USERS_CACHE_FILE = import_path.default.join(process.cwd(), "users_cache.json");
+function getUserOverrides() {
+  try {
+    if (import_fs.default.existsSync(OVERRIDES_FILE)) {
+      return JSON.parse(import_fs.default.readFileSync(OVERRIDES_FILE, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Error reading user overrides file:", err);
+  }
+  return {};
+}
+function saveUserOverride(email, update) {
+  try {
+    const overrides = getUserOverrides();
+    const cleanEmail = email.toLowerCase().trim();
+    if (!overrides[cleanEmail]) {
+      overrides[cleanEmail] = { email: cleanEmail };
+    }
+    overrides[cleanEmail] = { ...overrides[cleanEmail], ...update };
+    import_fs.default.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error saving user override:", err);
+  }
+}
+function cacheUsers(users) {
+  try {
+    import_fs.default.writeFileSync(USERS_CACHE_FILE, JSON.stringify(users, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error caching users:", err);
+  }
+}
+function getCachedUsers() {
+  try {
+    if (import_fs.default.existsSync(USERS_CACHE_FILE)) {
+      return JSON.parse(import_fs.default.readFileSync(USERS_CACHE_FILE, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Error reading users cache:", err);
+  }
+  return [];
+}
+function isUserDeleted(email) {
+  if (!email) return false;
+  const cleanEmail = email.toLowerCase().trim();
+  const overrides = getUserOverrides();
+  return !!overrides[cleanEmail]?.deleted;
+}
+function getOverrideAppliedUser(email, userData) {
+  if (!email) return null;
+  const cleanEmail = email.toLowerCase().trim();
+  const overrides = getUserOverrides();
+  if (overrides[cleanEmail]?.deleted) {
+    return null;
+  }
+  let baseUser = userData;
+  if (!baseUser) {
+    const cached = getCachedUsers();
+    baseUser = cached.find((u) => (u.email || "").toLowerCase().trim() === cleanEmail);
+  }
+  if (!baseUser) return null;
+  if (overrides[cleanEmail]) {
+    const o = overrides[cleanEmail];
+    return {
+      ...baseUser,
+      ...o.approved !== void 0 ? { approved: o.approved } : {},
+      ...o.isModerator !== void 0 ? { isModerator: o.isModerator } : {}
+    };
+  }
+  return baseUser;
 }
 uploadDefaultIcons().catch(console.error);
 fixExistingPlaces().catch(console.error);
@@ -526,6 +1107,168 @@ async function fixExistingPlaces() {
     }
   } catch (err) {
     console.error(`[Firebase Client Adapter] Error in fixExistingPlaces (DatabaseId: ${firebaseDbId}):`, err);
+  }
+}
+async function sendPushNotification(emails, title, body, data) {
+  try {
+    const emailList = Array.isArray(emails) ? emails : [emails];
+    if (emailList.length === 0) return;
+    const lowercaseEmails = emailList.map((e) => e.toLowerCase().trim());
+    console.log(`[FCM Push] Preparing to send push notification to users:`, lowercaseEmails);
+    const tokensRef = firestoreDb.collection("push_tokens");
+    const tokens = [];
+    const tokensToClean = [];
+    for (const email of lowercaseEmails) {
+      try {
+        const doc2 = await tokensRef.doc(email).get();
+        if (doc2.exists && doc2.data()?.token) {
+          tokens.push(doc2.data().token);
+        }
+      } catch (err) {
+        console.error(`[FCM Push] Error reading push token for user ${email}:`, err);
+      }
+    }
+    if (tokens.length === 0) {
+      console.log(`[FCM Push] No push tokens found for users:`, lowercaseEmails);
+      return;
+    }
+    console.log(`[FCM Push] Sending notification to ${tokens.length} devices...`);
+    const message = {
+      notification: {
+        title,
+        body
+      },
+      android: {
+        priority: "high",
+        notification: {
+          sound: "default",
+          channelId: "fcm_default_channel",
+          notificationPriority: "PRIORITY_MAX",
+          visibility: "public",
+          icon: "ic_launcher"
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            badge: 1,
+            contentAvailable: true
+          }
+        }
+      },
+      data: data || {},
+      tokens
+    };
+    const response = await (0, import_messaging.getMessaging)(app).sendEachForMulticast(message);
+    console.log(`[FCM Push] Multicast send summary: ${response.successCount} succeeded, ${response.failureCount} failed.`);
+    response.responses.forEach((resp, idx) => {
+      if (!resp.success) {
+        const error = resp.error;
+        if (error && (error.code === "messaging/invalid-registration-token" || error.code === "messaging/registration-token-not-registered")) {
+          const badToken = tokens[idx];
+          console.log(`[FCM Push] Token is invalid/expired. Scheduling deletion of token:`, badToken);
+          tokensToClean.push(badToken);
+        }
+      }
+    });
+    if (tokensToClean.length > 0) {
+      const snapshot = await tokensRef.get();
+      for (const doc2 of snapshot.docs) {
+        if (tokensToClean.includes(doc2.data()?.token)) {
+          console.log(`[FCM Push] Cleaning up stale token doc for email:`, doc2.id);
+          await tokensRef.doc(doc2.id).delete();
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[FCM Push] Error sending multicast notification:`, err);
+  }
+}
+var latestPromoPushInMemory = {
+  title: "",
+  body: "",
+  data: {},
+  sentAt: ""
+};
+async function sendPushNotificationToAll(title, body, data) {
+  try {
+    latestPromoPushInMemory = {
+      title,
+      body,
+      data: data || {},
+      sentAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    try {
+      await firestoreDb.collection("system_metadata").doc("last_promo_push").set({
+        title,
+        body,
+        data: data || {},
+        sentAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      console.log(`[FCM Push Simulation] Saved to system_metadata/last_promo_push for web clients.`);
+    } catch (saveErr) {
+      const errStr = saveErr.message || String(saveErr);
+      if (errStr.includes("Too Many Requests") || errStr.includes("Quota exceeded") || errStr.includes("429") || errStr.includes("ResourceExhausted")) {
+        console.warn("[FCM Push Simulation] Warning: Firestore rate limit/quota reached (429/ResourceExhausted). Falling back to internal in-memory pub-sub sync.");
+      } else {
+        console.error("[FCM Push Simulation] Error saving to Firestore:", saveErr);
+      }
+    }
+    const tokensRef = firestoreDb.collection("push_tokens");
+    const snapshot = await tokensRef.get();
+    const emails = snapshot.docs.map((doc2) => doc2.id);
+    if (emails.length > 0) {
+      await sendPushNotification(emails, title, body, data);
+    }
+  } catch (err) {
+    console.error("[FCM Push] Error sending notification to all users:", err);
+  }
+}
+var lastCheckedPromoFirestoreTime = 0;
+async function checkAndSendPromotionalPush() {
+  const now = Date.now();
+  if (now - lastCheckedPromoFirestoreTime < 15 * 60 * 1e3) {
+    console.log("[Promo Push] Skipped Firestore query to avoid rate limits (throttling active).");
+    return;
+  }
+  lastCheckedPromoFirestoreTime = now;
+  try {
+    const metaRef = firestoreDb.collection("system_metadata").doc("push_scheduler");
+    const doc2 = await metaRef.get();
+    let lastSent = 0;
+    if (doc2.exists && doc2.data()?.lastSentAt) {
+      lastSent = new Date(doc2.data().lastSentAt).getTime();
+    }
+    const fortyEightHoursMs = 48 * 60 * 60 * 1e3;
+    if (now - lastSent >= fortyEightHoursMs) {
+      console.log("[Promo Push] 48 hours have passed since last promo push. Sending new one...");
+      const randomIndex = Math.floor(Math.random() * PROMO_MESSAGES.length);
+      const promo = PROMO_MESSAGES[randomIndex];
+      await sendPushNotificationToAll(promo.title, promo.body, { type: "promo_push", promoIndex: String(randomIndex) });
+      try {
+        await metaRef.set({
+          lastSentAt: (/* @__PURE__ */ new Date()).toISOString(),
+          lastPromoTitle: promo.title
+        }, { merge: true });
+        console.log(`[Promo Push] Sent promo: "${promo.title}" and saved state to Firestore.`);
+      } catch (setErr) {
+        if (setErr.message?.includes("Too Many Requests") || setErr.message?.includes("Quota exceeded")) {
+          console.warn("[Promo Push] Warning: Firestore write limit hit, could not save scheduler state (will retry later).");
+        } else {
+          console.error("[Promo Push] Error saving scheduler state:", setErr);
+        }
+      }
+    } else {
+      const hoursLeft = ((fortyEightHoursMs - (now - lastSent)) / (1e3 * 60 * 60)).toFixed(1);
+      console.log(`[Promo Push] Next promo push scheduled in ${hoursLeft} hours.`);
+    }
+  } catch (err) {
+    if (err.message?.includes("Too Many Requests") || err.message?.includes("Quota exceeded")) {
+      console.warn("[Promo Push] Warning: Firestore read limit hit during scheduler check (will retry later).");
+    } else {
+      console.error("[Promo Push] Error in checkAndSendPromotionalPush:", err);
+    }
   }
 }
 var ai = new import_genai.GoogleGenAI({
@@ -1739,7 +2482,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
             to: targetAdminEmail,
             subject: `\u{1F4CD} Nuova proposta di sosta da approvare: ${entry.name}`,
@@ -1760,11 +2503,27 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi esaminare e approvare direttamente questa proposta accedendo al pannello amministratore dell'app (sezione <strong>Impostazioni > Amministrazione > Proposte Sosta</strong> o nella tab Mappa).</p>
             `
+          }).then((emailRes) => {
+            if (emailRes?.error) {
+              console.log(`[Email Notice] Resend: ${emailRes.error.message || "validation notice"}`);
+            } else {
+              console.log(`[Email] Admin proposal notification sent successfully: ${entry.name}`);
+            }
+          }).catch((emailSendErr) => {
+            console.log("Admin proposal email notification notice:", emailSendErr?.message || emailSendErr);
           });
-          console.log(`[Email] Admin proposal notification sent to: ${targetAdminEmail}`);
+          console.log(`[Email] Admin proposal notification triggered in background to: ${targetAdminEmail}`);
         } catch (emailErr) {
-          console.error("Error sending admin proposal email notification:", emailErr);
+          console.error("Error setting up admin proposal email notification:", emailErr);
         }
+      }
+      if (entry.status === "pending" && targetAdminEmail) {
+        sendPushNotification(
+          targetAdminEmail,
+          `\u{1F4CD} Nuova sosta proposta!`,
+          `L'utente ${entry.createdBy || "Anonimo"} ha proposto la sosta "${entry.name}".`,
+          { type: "new_proposal", placeId }
+        ).catch((err) => console.error("[FCM Push] Failed to notify admin of new proposal:", err));
       }
       res.json({ success: true, place: { id: placeId, ...entry } });
     } catch (err) {
@@ -1793,6 +2552,15 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           saveUserPlaces(list);
         }
       } catch (backErr) {
+      }
+      const placeData = docSnap.data();
+      if (placeData && placeData.createdBy) {
+        sendPushNotification(
+          placeData.createdBy,
+          `\u2705 Sosta approvata!`,
+          `La tua sosta proposta "${placeData.name}" \xE8 stata approvata ed \xE8 ora visibile sulla mappa!`,
+          { type: "proposal_approved", placeId: id }
+        ).catch((err) => console.error("[FCM Push] Failed to notify user of proposal approval:", err));
       }
       res.json({ success: true, place: { id, ...docSnap.data(), status: "approved" } });
     } catch (err) {
@@ -1865,43 +2633,88 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email || !password || !nickname) {
         return res.status(400).json({ error: "Email, password e nickname sono richiesti per la registrazione." });
       }
-      const serverInviteCode = process.env.REGISTRATION_INVITE_CODE;
-      console.log(`[Registration Debug] serverInviteCode from env: '${serverInviteCode}', provided inviteCode: '${inviteCode}'`);
-      if (serverInviteCode && (!inviteCode || inviteCode.trim() !== serverInviteCode.trim())) {
-        return res.status(400).json({ error: "Codice di invito non valido o mancante. Contatta l'amministratore per ottenere l'accesso." });
-      }
+      const cleanEmail = email.toLowerCase().trim();
+      const cleanNickname = nickname.trim();
       const usersRef = firestoreDb.collection("users");
-      const snapshot = await usersRef.where("email", "==", email.toLowerCase().trim()).get();
-      if (!snapshot.empty) {
+      let emailTaken = false;
+      try {
+        const snapshot = await usersRef.where("email", "==", cleanEmail).get();
+        snapshot.forEach((doc2) => {
+          const data = doc2.data();
+          const docEmail = (data.email || doc2.id).toLowerCase().trim();
+          if (!isUserDeleted(docEmail)) {
+            emailTaken = true;
+          }
+        });
+      } catch (fsErr) {
+        console.log("[Firestore Auth Fallback] Firestore email query fallback active.");
+      }
+      const cachedUsers = getCachedUsers();
+      if (cachedUsers.some((u) => (u.email || "").toLowerCase().trim() === cleanEmail && !isUserDeleted(cleanEmail))) {
+        emailTaken = true;
+      }
+      if (emailTaken) {
         return res.status(400).json({ error: "Indirizzo email gi\xE0 registrato." });
       }
-      const nicknameSnapshot = await usersRef.where("nickname", "==", nickname.trim()).get();
-      if (!nicknameSnapshot.empty) {
+      let nicknameTaken = false;
+      try {
+        const nicknameSnapshot = await usersRef.where("nickname", "==", cleanNickname).get();
+        nicknameSnapshot.forEach((doc2) => {
+          const data = doc2.data();
+          const docEmail = (data.email || doc2.id).toLowerCase().trim();
+          if (!isUserDeleted(docEmail)) {
+            nicknameTaken = true;
+          }
+        });
+      } catch (fsErr) {
+        console.log("[Firestore Auth Fallback] Firestore nickname query fallback active.");
+      }
+      if (cachedUsers.some((u) => (u.nickname || "").trim().toLowerCase() === cleanNickname.toLowerCase() && !isUserDeleted(u.email))) {
+        nicknameTaken = true;
+      }
+      if (nicknameTaken) {
         return res.status(400).json({ error: "Questo nickname \xE8 gi\xE0 stato scelto da un altro camperista." });
       }
-      const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
-      const isRegisteredUserAdmin = email.toLowerCase().trim() === adminEmail;
+      const adminEmail = (process.env.ADMIN_EMAIL || "viacamperapp@gmail.com").toLowerCase().trim();
+      const isRegisteredUserAdmin = cleanEmail === adminEmail || cleanEmail === "viacamperapp@gmail.com" || cleanEmail === "sambucci.simone@gmail.com";
       const newUserDoc = {
-        email: email.toLowerCase().trim(),
+        email: cleanEmail,
         password,
         name: name || "",
         surname: surname || "",
         dob: dob || "",
-        nickname: nickname.trim(),
+        nickname: cleanNickname,
         profilePhoto: profilePhoto || "",
         favorites: [],
         createdAt: (/* @__PURE__ */ new Date()).toISOString(),
         approved: isRegisteredUserAdmin ? true : false
       };
-      await usersRef.doc(email.toLowerCase().trim()).set(newUserDoc);
-      console.log(`[Firestore Auth] User registered successfully: ${email} (Approved: ${newUserDoc.approved})`);
-      if (process.env.RESEND_API_KEY && process.env.ADMIN_EMAIL) {
+      const overrides = getUserOverrides();
+      if (overrides[cleanEmail]?.deleted) {
+        delete overrides[cleanEmail].deleted;
+        try {
+          import_fs.default.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2), "utf-8");
+        } catch (err) {
+          console.error("Error updating overrides file:", err);
+        }
+      }
+      try {
+        await usersRef.doc(cleanEmail).set(newUserDoc);
+        console.log(`[Firestore Auth] User registered successfully on Firestore: ${cleanEmail}`);
+      } catch (fsErr) {
+        console.log(`[Firestore Auth Fallback] User ${cleanEmail} registered & saved locally.`);
+      }
+      const updatedCached = cachedUsers.filter((u) => (u.email || "").toLowerCase().trim() !== cleanEmail);
+      updatedCached.push(newUserDoc);
+      cacheUsers(updatedCached);
+      const targetAdminEmailForReg = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (process.env.RESEND_API_KEY && targetAdminEmailForReg) {
         try {
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
-            to: process.env.ADMIN_EMAIL,
+            to: targetAdminEmailForReg,
             subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
             html: `
               <h2>Richiesta di approvazione nuovo utente registrato</h2>
@@ -1918,13 +2731,29 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
             `
+          }).then((emailRes) => {
+            if (emailRes?.error) {
+              console.log(`[Email Notice] Resend registration email: ${emailRes.error.message || "validation notice"}`);
+            } else {
+              console.log(`[Email] Admin notification sent successfully for user: ${newUserDoc.email}`);
+            }
+          }).catch((emailSendErr) => {
+            console.log("Admin notification email notice:", emailSendErr?.message || emailSendErr);
           });
-          console.log(`[Email] Admin notification sent for user: ${email}`);
         } catch (emailErr) {
-          console.error("Error sending admin notification email:", emailErr);
+          console.log("Admin notification email setup notice:", emailErr?.message || emailErr);
         }
       }
-      res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
+      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (targetAdminEmail) {
+        sendPushNotification(
+          targetAdminEmail,
+          `\u{1F465} Nuovo camperista iscritto!`,
+          `L'utente ${newUserDoc.nickname} (${newUserDoc.name} ${newUserDoc.surname}) si \xE8 registrato ed \xE8 in attesa di approvazione.`,
+          { type: "new_registration", userEmail: newUserDoc.email }
+        ).catch((err) => console.error("[FCM Push] Failed to notify admin of new registration:", err));
+      }
+      return res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
     } catch (err) {
       console.error("Error in register endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown register error" });
@@ -1938,11 +2767,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!cleanEmail || !cleanPass) {
         return res.status(400).json({ error: "Email e password sono richiesti per accedere." });
       }
-      const userDoc = await firestoreDb.collection("users").doc(cleanEmail).get();
-      if (!userDoc.exists) {
+      let userData = null;
+      try {
+        const userDoc = await firestoreDb.collection("users").doc(cleanEmail).get();
+        if (userDoc.exists) {
+          userData = userDoc.data();
+        }
+      } catch (fsErr) {
+        console.log("[Firestore Auth Fallback] Firestore user lookup fallback active locally.");
+      }
+      userData = getOverrideAppliedUser(cleanEmail, userData);
+      if (!userData) {
         return res.status(400).json({ error: "Nessun account registrato con questa email." });
       }
-      const userData = userDoc.data();
       const storedPass = String(userData.password || "").trim();
       if (storedPass !== cleanPass) {
         return res.status(400).json({ error: "Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'." });
@@ -1990,7 +2827,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         try {
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
             to: formattedEmail,
             subject: "\u{1F511} Ripristino Password ViaCamper",
@@ -2001,9 +2838,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <p style="font-size: 18px; font-weight: bold; background: #f1f5f9; padding: 10px; border-radius: 8px;">${updatedPass}</p>
               <p>Puoi accedere all'app utilizzando questa password.</p>
             </div>`
+          }).then((res2) => {
+            console.log("[Reset Password] Email sent successfully to:", formattedEmail);
+          }).catch((e) => {
+            console.warn("[Reset Password] Errore invio email resend in promise:", e);
           });
         } catch (e) {
-          console.warn("[Reset Password] Errore invio email resend:", e);
+          console.warn("[Reset Password] Errore configurazione email resend:", e);
         }
       }
       res.json({
@@ -2014,6 +2855,26 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err) {
       console.error("Error in reset-password endpoint:", err);
       res.status(500).json({ error: err.message || "Errore durante il ripristino password." });
+    }
+  });
+  app2.post("/api/user/push-token", async (req, res) => {
+    try {
+      const { email, token, platform } = req.body;
+      if (!email || !token) {
+        return res.status(400).json({ error: "Email e token sono richiesti." });
+      }
+      const tokensRef = firestoreDb.collection("push_tokens");
+      await tokensRef.doc(email.toLowerCase().trim()).set({
+        email: email.toLowerCase().trim(),
+        token,
+        platform: platform || "unknown",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      console.log(`[FCM Push] Token registered in Firestore for ${email}: ${token}`);
+      res.json({ success: true, message: "Token push registrato con successo." });
+    } catch (err) {
+      console.error("Error storing push token:", err);
+      res.status(500).json({ error: err.message || "Unknown error inside server" });
     }
   });
   app2.post("/api/user/update-profile", async (req, res) => {
@@ -2039,17 +2900,29 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) {
         return res.status(400).json({ error: "Email mancante." });
       }
-      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
-        approved: true
-      });
-      console.log(`[Firestore Auth] User ${email} approved by administrator.`);
+      const cleanEmail = email.toLowerCase().trim();
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).update({
+          approved: true
+        });
+        console.log(`[Firestore Auth] User ${cleanEmail} approved on Firestore.`);
+      } catch (fsErr) {
+        console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} approval locally.`);
+      }
+      saveUserOverride(cleanEmail, { approved: true });
+      const cached = getCachedUsers();
+      const uIdx = cached.findIndex((u) => (u.email || "").toLowerCase().trim() === cleanEmail);
+      if (uIdx !== -1) {
+        cached[uIdx].approved = true;
+        cacheUsers(cached);
+      }
       if (process.env.RESEND_API_KEY) {
         try {
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
+          resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
-            to: email,
+            to: cleanEmail,
             subject: "Il tuo account ViaCamperApp \xE8 stato approvato! \u{1F389}",
             html: `
               <h2>Benvenuto su ViaCamperApp!</h2>
@@ -2058,16 +2931,24 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               <br/>
               <p>Buon viaggio! \u{1F690}\u{1F4A8}</p>
             `
+          }).then((emailRes) => {
+            if (emailRes?.error) {
+              console.log(`[Email Notice] Resend approval: ${emailRes.error.message || "validation notice"}`);
+            } else {
+              console.log(`[Email] Approval notification sent successfully to user: ${cleanEmail}`);
+            }
+          }).catch((emailErr) => {
+            console.log("Approval email notice to user:", emailErr?.message || emailErr);
           });
-          console.log(`[Email] Approval notification sent to user: ${email}`);
-        } catch (emailErr) {
-          console.error("Error sending approval email to user:", emailErr);
+          console.log(`[Email] Approval notification triggered in background for user: ${cleanEmail}`);
+        } catch (setupErr) {
+          console.error("Error setting up approval email to user:", setupErr);
         }
       }
-      res.json({ success: true });
+      res.json({ success: true, message: `Utente ${cleanEmail} approvato con successo.` });
     } catch (err) {
-      console.error("Error approving user on Firestore:", err);
-      res.status(500).json({ error: err.message });
+      console.error("Error approving user:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'approvazione." });
     }
   });
   app2.post("/api/admin/users/toggle-moderator", async (req, res) => {
@@ -2076,49 +2957,89 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) {
         return res.status(400).json({ error: "Email mancante." });
       }
-      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).update({
-        isModerator: !!isModerator
-      });
-      console.log(`[Firestore Auth] User ${email} moderator status updated to: ${isModerator}`);
+      const cleanEmail = email.toLowerCase().trim();
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).update({
+          isModerator: !!isModerator
+        });
+        console.log(`[Firestore Auth] User ${cleanEmail} moderator status updated to: ${isModerator}`);
+      } catch (fsErr) {
+        console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} moderator status locally.`);
+      }
+      saveUserOverride(cleanEmail, { isModerator: !!isModerator });
+      const cached = getCachedUsers();
+      const uIdx = cached.findIndex((u) => (u.email || "").toLowerCase().trim() === cleanEmail);
+      if (uIdx !== -1) {
+        cached[uIdx].isModerator = !!isModerator;
+        cacheUsers(cached);
+      }
       res.json({ success: true });
     } catch (err) {
-      console.error("Error updating moderator status on Firestore:", err);
+      console.error("Error updating moderator status:", err);
       res.status(500).json({ error: err.message });
     }
   });
   app2.get("/api/admin/users", async (req, res) => {
     try {
-      const usersRef = firestoreDb.collection("users");
-      const snapshot = await usersRef.get();
-      const placesSnapshot = await firestoreDb.collection("places").get();
-      const proposalCounts = {};
-      placesSnapshot.forEach((doc2) => {
-        const placeData = doc2.data();
-        const creator = (placeData.createdBy || "").toLowerCase().trim();
-        if (creator) {
-          proposalCounts[creator] = (proposalCounts[creator] || 0) + 1;
+      const userMap = /* @__PURE__ */ new Map();
+      let proposalCounts = {};
+      const cached = getCachedUsers();
+      for (const u of cached) {
+        if (u && u.email) {
+          const clean = u.email.toLowerCase().trim();
+          userMap.set(clean, { ...u, email: clean });
         }
-      });
-      const users = [];
-      snapshot.forEach((doc2) => {
-        const data = doc2.data();
-        const email = (data.email || doc2.id).toLowerCase().trim();
-        users.push({
-          email: data.email || doc2.id,
-          name: data.name || "",
-          surname: data.surname || "",
-          nickname: data.nickname || "",
-          dob: data.dob || "",
-          createdAt: data.createdAt || "",
-          isModerator: !!data.isModerator,
-          approved: data.approved !== false,
-          // default to true for existing users
-          favoritesCount: (data.favorites || []).length,
-          proposalsCount: proposalCounts[email] || 0
+      }
+      try {
+        const usersRef = firestoreDb.collection("users");
+        const snapshot = await usersRef.get();
+        snapshot.forEach((doc2) => {
+          const data = doc2.data() || {};
+          const clean = (data.email || doc2.id).toLowerCase().trim();
+          const existing = userMap.get(clean) || {};
+          userMap.set(clean, {
+            ...existing,
+            email: clean,
+            name: data.name || existing.name || "",
+            surname: data.surname || existing.surname || "",
+            nickname: data.nickname || existing.nickname || "",
+            dob: data.dob || existing.dob || "",
+            createdAt: data.createdAt || existing.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+            isModerator: data.isModerator !== void 0 ? !!data.isModerator : !!existing.isModerator,
+            approved: data.approved !== void 0 ? data.approved : existing.approved !== void 0 ? existing.approved : false,
+            favoritesCount: (data.favorites || existing.favorites || []).length
+          });
         });
-      });
-      users.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      res.json(users);
+        try {
+          const placesSnapshot = await firestoreDb.collection("places").get();
+          placesSnapshot.forEach((doc2) => {
+            const placeData = doc2.data() || {};
+            const creator = (placeData.createdBy || "").toLowerCase().trim();
+            if (creator) {
+              proposalCounts[creator] = (proposalCounts[creator] || 0) + 1;
+            }
+          });
+        } catch (placeErr) {
+          console.warn("Could not fetch place proposals for user counts:", placeErr);
+        }
+      } catch (fsErr) {
+        console.log("[Firestore Auth Fallback] Reading users list from local cache due to Firestore notice.");
+      }
+      const rawUsers = Array.from(userMap.values());
+      cacheUsers(rawUsers);
+      const processedUsers = [];
+      for (const u of rawUsers) {
+        const cleanEmail = (u.email || "").toLowerCase().trim();
+        const updatedUser = getOverrideAppliedUser(cleanEmail, u);
+        if (updatedUser) {
+          processedUsers.push({
+            ...updatedUser,
+            proposalsCount: proposalCounts[cleanEmail] || updatedUser.proposalsCount || 0
+          });
+        }
+      }
+      processedUsers.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json(processedUsers);
     } catch (err) {
       console.error("Error loading users for admin:", err);
       res.status(500).json({ error: err.message || "Errore nel recupero degli utenti." });
@@ -2127,27 +3048,31 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app2.get("/api/admin/users/:email/proposals", async (req, res) => {
     try {
       const email = req.params.email.toLowerCase().trim();
-      const snapshot = await firestoreDb.collection("places").get();
       const proposals = [];
-      snapshot.forEach((doc2) => {
-        const data = doc2.data();
-        const creator = (data.createdBy || "").toLowerCase().trim();
-        if (creator === email) {
-          proposals.push({
-            id: doc2.id,
-            name: data.name || "",
-            category: data.category || "",
-            lat: data.lat,
-            lng: data.lng,
-            address: data.address || "",
-            status: data.status || "pending",
-            createdAt: data.createdAt || "",
-            priceInfo: data.priceInfo || "Gratuito",
-            priceEuro: data.priceEuro || 0,
-            imageUrl: data.imageUrl || ""
-          });
-        }
-      });
+      try {
+        const snapshot = await firestoreDb.collection("places").get();
+        snapshot.forEach((doc2) => {
+          const data = doc2.data();
+          const creator = (data.createdBy || "").toLowerCase().trim();
+          if (creator === email) {
+            proposals.push({
+              id: doc2.id,
+              name: data.name || "",
+              category: data.category || "",
+              lat: data.lat,
+              lng: data.lng,
+              address: data.address || "",
+              status: data.status || "pending",
+              createdAt: data.createdAt || "",
+              priceInfo: data.priceInfo || "Gratuito",
+              priceEuro: data.priceEuro || 0,
+              imageUrl: data.imageUrl || ""
+            });
+          }
+        });
+      } catch (fsErr) {
+        console.warn("Could not fetch user proposals from Firestore:", fsErr.message);
+      }
       proposals.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       res.json(proposals);
     } catch (err) {
@@ -2161,8 +3086,16 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) {
         return res.status(400).json({ error: "Email non specificata." });
       }
-      await firestoreDb.collection("users").doc(email.toLowerCase().trim()).delete();
-      console.log(`[Firestore Auth Admin] Fully deleted user account: ${email}`);
+      const cleanEmail = email.toLowerCase().trim();
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).delete();
+        console.log(`[Firestore Auth Admin] Fully deleted user account on Firestore: ${cleanEmail}`);
+      } catch (fsErr) {
+        console.log(`[Firestore Auth Fallback] Applied local deletion override for ${cleanEmail}.`);
+      }
+      saveUserOverride(cleanEmail, { deleted: true });
+      const cached = getCachedUsers().filter((u) => (u.email || "").toLowerCase().trim() !== cleanEmail);
+      cacheUsers(cached);
       res.json({ success: true, message: `Utente ${email} rimosso con successo.` });
     } catch (err) {
       console.error("Error deleting user for admin:", err);
@@ -2340,11 +3273,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         msgType = "forum";
       }
     }
+    let timestamp = data.timestamp;
+    if (isInitialRolly) {
+      const match = INITIAL_COMMUNITY_MESSAGES.find((m) => m.id === docId);
+      if (match) {
+        timestamp = match.timestamp;
+      }
+    }
     return {
       ...data,
       id: docId,
       type: msgType,
       likes,
+      timestamp,
       replies: cleanReplies
     };
   }
@@ -2368,10 +3309,12 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           messages.push(sanitized);
           const hadFakeReplies = (rawData.replies || []).length !== sanitized.replies.length;
           const hadFakeLikes = rawData.likes !== sanitized.likes;
-          if (hadFakeReplies || hadFakeLikes) {
+          const hadMismatchedTimestamp = rawData.timestamp !== sanitized.timestamp;
+          if (hadFakeReplies || hadFakeLikes || hadMismatchedTimestamp) {
             firestoreDb.collection("communityMessages").doc(doc2.id).update({
               likes: sanitized.likes,
-              replies: sanitized.replies
+              replies: sanitized.replies,
+              timestamp: sanitized.timestamp
             }).catch((err) => console.error("Error updating cleaned Firestore doc:", err));
           }
         } else {
@@ -2420,6 +3363,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       };
       await firestoreDb.collection("communityMessages").doc(msgId).set(removeUndefined(entry));
       console.log(`[Firestore Chat] Shared message from ${msg.user} (Type: ${entry.type})`);
+      if (entry.tag === "SOS" || entry.tag === "S.O.S.") {
+        sendPushNotificationToAll(
+          `\u{1F6A8} S.O.S. Camper Life!`,
+          `${entry.user}: ${entry.text}`,
+          { type: "sos_message", msgId }
+        ).catch((err) => console.error("[FCM Push] Error sending SOS notification:", err));
+      } else {
+        sendPushNotificationToAll(
+          `\u{1F4AC} Nuovo post in bacheca da ${entry.user}`,
+          entry.text.length > 60 ? `${entry.text.substring(0, 60)}...` : entry.text,
+          { type: "community_message", msgId }
+        ).catch((err) => console.error("[FCM Push] Error sending post notification:", err));
+      }
       res.json({ success: true, message: { id: msgId, ...entry } });
     } catch (err) {
       console.error("Error writing community message to Firestore:", err);
@@ -2478,6 +3434,23 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       replies.push(newReply);
       await docRef.update({ replies });
       console.log(`[Firestore Chat] Thread reply in ${id} by ${newReply.user}`);
+      try {
+        const usersRef = firestoreDb.collection("users");
+        const userSnap = await usersRef.where("nickname", "==", data.user).get();
+        if (!userSnap.empty) {
+          const userDoc = userSnap.docs[0].data();
+          if (userDoc && userDoc.email && userDoc.email.toLowerCase().trim() !== (newReply.user || "").toLowerCase().trim()) {
+            sendPushNotification(
+              userDoc.email,
+              `\u{1F4AC} ${newReply.user} ha risposto al tuo post`,
+              newReply.text.length > 60 ? `${newReply.text.substring(0, 60)}...` : newReply.text,
+              { type: "reply", parentId: id }
+            ).catch((err) => console.error("[FCM Push] Error sending reply push:", err));
+          }
+        }
+      } catch (fcmErr) {
+        console.error("[FCM Push] Failed reply push notification logic:", fcmErr);
+      }
       res.json({ success: true, reply: newReply });
     } catch (err) {
       console.error("Error posting chat reply in Firestore:", err);
@@ -3144,14 +4117,18 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       try {
         const { Resend } = await import("resend");
         const resend = new Resend(process.env.RESEND_API_KEY);
-        const data = await resend.emails.send({
+        const res = await resend.emails.send({
           from: "ViaCamperApp <onboarding@resend.dev>",
           to: targetAdminEmail,
           subject,
           html: htmlContent
         });
-        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, data);
-        return { success: true, data };
+        if (res?.error) {
+          console.log(`[Email Service] Resend notice for ${targetAdminEmail}: ${res.error.message || "validation notice"}`);
+          return { success: false, error: res.error };
+        }
+        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, res.data);
+        return { success: true, data: res.data };
       } catch (err) {
         console.error(`[Email Service] Failed to send email via Resend to ${targetAdminEmail}:`, err);
         return { success: false, error: err };
@@ -3350,7 +4327,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
           const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-          await resend.emails.send({
+          resend.emails.send({
             from: "ViaCamperApp <onboarding@resend.dev>",
             to: targetAdminEmail,
             subject: `\u{1F6A8} ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
@@ -3365,9 +4342,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 <p style="font-size: 12px; color: #475569;">Puoi gestire questo crash log direttamente dal Pannello Moderatore in ViaCamperApp sotto <strong>Crash & Logs</strong>.</p>
               </div>
             `
+          }).then((res2) => {
+            console.log("[Crash API] Email alert sent successfully to:", targetAdminEmail);
+          }).catch((e) => {
+            console.warn("[Crash API] Failed to send email alert in promise:", e);
           });
         } catch (e) {
-          console.warn("[Crash API] Failed to send email alert:", e);
+          console.warn("[Crash API] Failed to setup email alert:", e);
         }
       }
       res.json({ success: true, id: docId });
@@ -3404,7 +4385,11 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.json({ success: true });
     } catch (err) {
       console.error("Error deleting crash report:", err);
-      res.status(500).json({ error: "Errore eliminazione." });
+      if (err.message && err.message.includes("RESOURCE_EXHAUSTED")) {
+        res.status(429).json({ error: "Limite quota giornaliera raggiunto. Riprova domani." });
+      } else {
+        res.status(500).json({ error: "Errore eliminazione." });
+      }
     }
   });
   app2.post("/api/admin/crash-reports/clear-all", async (req, res) => {
@@ -3418,7 +4403,11 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.json({ success: true });
     } catch (err) {
       console.error("Error clearing all crash reports:", err);
-      res.status(500).json({ error: "Errore pulizia crash log." });
+      if (err.message && err.message.includes("RESOURCE_EXHAUSTED")) {
+        res.status(429).json({ error: "Limite quota giornaliera raggiunto. Riprova domani." });
+      } else {
+        res.status(500).json({ error: "Errore pulizia crash log." });
+      }
     }
   });
   app2.post("/api/admin/reply-feedback", (req, res) => {
@@ -3527,6 +4516,15 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       } catch (emailErr) {
         console.warn("[Community Itineraries API] Warning sending notification email:", emailErr);
       }
+      const adminEmailForItin = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+      if (adminEmailForItin) {
+        sendPushNotification(
+          adminEmailForItin,
+          `\u{1F5FA}\uFE0F Nuovo itinerario proposto!`,
+          `L'utente ${authorName} ha proposto l'itinerario "${title}".`,
+          { type: "new_itinerary", itineraryId }
+        ).catch((err) => console.error("[FCM Push] Failed to notify admin of new itinerary:", err));
+      }
       res.json({ success: true, id: itineraryId, message: "Itinerario inviato per la moderazione con successo!" });
     } catch (err) {
       console.error("Error proposing community itinerary:", err);
@@ -3555,11 +4553,24 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     try {
       const { id } = req.body;
       if (!id) return res.status(400).json({ error: "ID itinerario mancante." });
-      await firestoreDb.collection("community_itineraries").doc(id).update({
+      const docRef = firestoreDb.collection("community_itineraries").doc(id);
+      const docSnap = await docRef.get();
+      await docRef.update({
         status: "approved",
         approvedAt: (/* @__PURE__ */ new Date()).toISOString()
       });
       console.log(`[Community Itineraries API] Approved itinerary: ${id}`);
+      if (docSnap.exists) {
+        const authorEmail = docSnap.data()?.authorEmail;
+        if (authorEmail) {
+          sendPushNotification(
+            authorEmail,
+            `\u{1F5FA}\uFE0F Itinerario Approvato!`,
+            `Il tuo itinerario "${docSnap.data().title}" \xE8 stato approvato ed \xE8 ora pubblicato nella Community!`,
+            { type: "itinerary_approved", itineraryId: id }
+          ).catch((err) => console.error("[FCM Push] Failed to notify user of itinerary approval:", err));
+        }
+      }
       res.json({ success: true, message: "Itinerario approvato e pubblicato nella Community!" });
     } catch (err) {
       console.error("Error approving itinerary:", err);
@@ -3615,6 +4626,31 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   } catch (err) {
     console.error("[Self-Correction] Failed scanning for misplaced backslash files:", err);
   }
+  app2.post("/api/admin/trigger-promo-test", async (req, res) => {
+    try {
+      if (PROMO_MESSAGES.length === 0) {
+        return res.status(400).json({ error: "Nessun messaggio promozionale configurato." });
+      }
+      const randomIndex = Math.floor(Math.random() * PROMO_MESSAGES.length);
+      const promo = PROMO_MESSAGES[randomIndex];
+      console.log(`[Promo Push Test] Manually triggering test push: "${promo.title}"`);
+      await sendPushNotificationToAll(promo.title, promo.body, {
+        type: "promo_push_test",
+        promoIndex: String(randomIndex)
+      });
+      res.json({
+        success: true,
+        message: `Push di test inviato con successo a tutti gli utenti registrati!`,
+        promo
+      });
+    } catch (err) {
+      console.error("[Promo Push Test] Error sending manual test:", err);
+      res.status(500).json({ error: "Errore durante l'invio del push di test.", details: err.message });
+    }
+  });
+  app2.get("/api/push-simulation/latest", (req, res) => {
+    res.json(latestPromoPushInMemory);
+  });
   if (process.env.NODE_ENV !== "production") {
     const vite = await (0, import_vite.createServer)({
       server: { middlewareMode: true, hmr: false },
@@ -3657,6 +4693,15 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app2.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
     cleanupFakePlaces().catch(console.error);
+    console.log("[Promo Push] Initializing automatic promotional push scheduler...");
+    setTimeout(() => {
+      console.log("[Promo Push] Running initial boot-time promo push check...");
+      checkAndSendPromotionalPush().catch(console.error);
+    }, 15e3);
+    setInterval(() => {
+      console.log("[Promo Push] Running periodic hourly promo push check...");
+      checkAndSendPromotionalPush().catch(console.error);
+    }, 36e5);
   });
 }
 startServer();

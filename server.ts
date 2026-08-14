@@ -228,6 +228,35 @@ async function fixExistingPlaces() {
   }
 }
 
+    async function notifyModerators(role: "community" | "places" | "itineraries", title: string, body: string, data: any) {
+      console.log(`[Notification] Notifying moderators for role: ${role}`);
+      try {
+        const usersSnapshot = await firestoreDb.collection("users")
+          .where(`moderatorRoles.${role}`, "==", true)
+          .get();
+        
+        const moderatorEmails: string[] = [];
+        usersSnapshot.forEach((doc: any) => {
+          moderatorEmails.push(doc.id);
+          firestoreDb.collection("notifications").add({
+            userId: doc.id,
+            title,
+            body,
+            type: role,
+            createdAt: new Date().toISOString(),
+            read: false,
+            data
+          });
+        });
+
+        if (moderatorEmails.length > 0) {
+          await sendPushNotification(moderatorEmails, title, body, data);
+        }
+      } catch (err) {
+        console.error(`[Notification] Error notifying moderators:`, err);
+      }
+    }
+
 async function sendPushNotification(
   emails: string | string[],
   title: string,
@@ -237,17 +266,15 @@ async function sendPushNotification(
   try {
     const emailList = Array.isArray(emails) ? emails : [emails];
     if (emailList.length === 0) return;
-
-    const lowercaseEmails = emailList.map(e => e.toLowerCase().trim());
-    console.log(`[FCM Push] Preparing to send push notification to users:`, lowercaseEmails);
+    console.log(`[FCM Push] Preparing to send push notification to users:`, emailList);
 
     const tokensRef = firestoreDb.collection("push_tokens");
     const tokens: string[] = [];
     const tokensToClean: string[] = [];
 
-    for (const email of lowercaseEmails) {
+    for (const email of emailList) {
       try {
-        const doc = await tokensRef.doc(email).get();
+        const doc = await tokensRef.doc(email.toLowerCase().trim()).get();
         if (doc.exists && doc.data()?.token) {
           tokens.push(doc.data().token);
         }
@@ -1834,6 +1861,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       await firestoreDb.collection("places").doc(placeId).set(removeUndefined(entry));
       console.log(`[Firestore Sync] Proposed new place: ${entry.name} (${placeId})`);
+      
+      if (entry.status === "pending") {
+          await notifyModerators("places", "Nuova Sosta Proposta", `Una nuova sosta è in attesa di approvazione: ${entry.name}`, { placeId });
+      }
 
       // Write into local user_places.json as a backup
       try {
@@ -2115,6 +2146,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       try {
         await usersRef.doc(cleanEmail).set(newUserDoc);
         console.log(`[Firestore Auth] User registered successfully on Firestore: ${cleanEmail}`);
+        await notifyModerators("community", "Nuovo Utente", `Un nuovo utente si è iscritto: ${cleanNickname}`, { email: cleanEmail });
       } catch (fsErr: any) {
         console.log(`[Firestore Auth Fallback] User ${cleanEmail} registered & saved locally.`);
       }
@@ -2410,29 +2442,35 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // Toggle moderator status (admin action)
   app.post("/api/admin/users/toggle-moderator", async (req, res) => {
     try {
-      const { email, isModerator } = req.body;
+      const { email, roles } = req.body;
       if (!email) {
         return res.status(400).json({ error: "Email mancante." });
       }
       const cleanEmail = email.toLowerCase().trim();
+      // Handle legacy boolean isModerator if passed
+      const moderatorRoles = roles || {
+        community: !!req.body.isModerator,
+        places: !!req.body.isModerator,
+        itineraries: !!req.body.isModerator
+      };
 
       try {
         await firestoreDb.collection("users").doc(cleanEmail).update({
-          isModerator: !!isModerator
+          moderatorRoles
         });
-        console.log(`[Firestore Auth] User ${cleanEmail} moderator status updated to: ${isModerator}`);
+        console.log(`[Firestore Auth] User ${cleanEmail} moderator roles updated to:`, moderatorRoles);
       } catch (fsErr: any) {
-        console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} moderator status locally.`);
+        console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} moderator roles locally.`);
       }
 
       // Always persist local override
-      saveUserOverride(cleanEmail, { isModerator: !!isModerator });
+      saveUserOverride(cleanEmail, { moderatorRoles });
 
       // Update cached user entry as well
       const cached = getCachedUsers();
       const uIdx = cached.findIndex(u => (u.email || "").toLowerCase().trim() === cleanEmail);
       if (uIdx !== -1) {
-        cached[uIdx].isModerator = !!isModerator;
+        cached[uIdx].moderatorRoles = moderatorRoles;
         cacheUsers(cached);
       }
 
@@ -4213,6 +4251,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           timestamp,
           read: false
         });
+        await notifyModerators("itineraries", "Nuovo Itinerario Proposto", `Un nuovo itinerario è in attesa di approvazione: ${title}`, { itineraryId });
       } catch (err) {
         console.warn("[Community Itineraries API] Could not write admin notification:", err);
       }

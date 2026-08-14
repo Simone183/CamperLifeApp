@@ -141,7 +141,7 @@ import {
 
 import { ClientFirestoreAdapter } from "./client-firestore";
 import { useFirestoreSync } from "./lib/firestoreSync";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, query, collection, where } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import firebaseConfig from "../firebase-applet-config.json";
 const firestore = new ClientFirestoreAdapter(
@@ -1082,7 +1082,7 @@ export default function App() {
   const [adminPendingAction, setAdminPendingAction] = React.useState<{
     type: "approve" | "toggle-moderator" | "delete";
     email: string;
-    isModerator?: boolean;
+    roles?: { community: boolean, places: boolean, itineraries: boolean };
     nickname?: string;
   } | null>(null);
   const [adminActionExecuting, setAdminActionExecuting] = React.useState<string | null>(null);
@@ -1696,6 +1696,48 @@ export default function App() {
     }
   };
 
+
+  React.useEffect(() => {
+    if (currentUser && (currentUser.email === "sambucci.simone@gmail.com" || currentUser.email === "viacamperapp@gmail.com" || (currentUser.moderatorRoles && (currentUser.moderatorRoles.community || currentUser.moderatorRoles.places || currentUser.moderatorRoles.itineraries)))) {
+      setIsAdminLoggedIn(true);
+      fetchPendingPlaces();
+      fetchAdminUsers();
+      fetchAdminNotifications();
+    }
+  }, [currentUser]);
+
+  // Listen for real-time notifications for moderators
+  React.useEffect(() => {
+    if (!currentUser || !currentUser.email) return;
+    
+    // Check if user is a moderator for any role
+    const isModerator = currentUser.moderatorRoles && 
+      (currentUser.moderatorRoles.community || currentUser.moderatorRoles.places || currentUser.moderatorRoles.itineraries);
+      
+    if (!isModerator) return;
+
+    const q = query(
+      collection(db, "notifications"),
+      where("userId", "==", currentUser.email),
+      where("read", "==", false)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added") {
+          const notification = change.doc.data();
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `${notification.title}: ${notification.body}` },
+            }),
+          );
+        }
+      });
+    });
+    
+    return () => unsubscribe();
+  }, [currentUser]);
+
   const fetchPendingPlaces = async () => {
     try {
       const res = await fetch("/api/admin/pending-places");
@@ -1901,11 +1943,11 @@ export default function App() {
     });
   };
 
-  const handleToggleModerator = (email: string, currentStatus: boolean) => {
+  const handleToggleModerator = (email: string, currentRoles: any) => {
     setAdminPendingAction({
       type: "toggle-moderator",
       email: email,
-      isModerator: !currentStatus,
+      roles: currentRoles || { community: false, places: false, itineraries: false },
     });
   };
 
@@ -2029,18 +2071,18 @@ export default function App() {
     }
   };
 
-  const executeToggleModerator = async (email: string, targetStatus: boolean) => {
+  const executeToggleModerator = async (email: string, roles: { community: boolean, places: boolean, itineraries: boolean }) => {
     setAdminActionExecuting("toggle-" + email);
     try {
       const res = await fetch("/api/admin/users/toggle-moderator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, isModerator: targetStatus }),
+        body: JSON.stringify({ email, roles }),
       });
       if (res.ok) {
         window.dispatchEvent(
           new CustomEvent("show-toast", {
-            detail: { message: `Ruolo moderatore aggiornato con successo.` },
+            detail: { message: `Ruoli moderatore aggiornati con successo.` },
           }),
         );
         setAdminPendingAction(null);
@@ -2058,12 +2100,12 @@ export default function App() {
             setTimeout(() => reject(new Error("Timeout di connessione a Firestore")), 5000)
           );
           await Promise.race([
-            firestore.collection("users").doc(email.toLowerCase().trim()).update({ isModerator: targetStatus }),
+            firestore.collection("users").doc(email.toLowerCase().trim()).update({ moderatorRoles: roles }),
             timeoutPromise
           ]);
           window.dispatchEvent(
             new CustomEvent("show-toast", {
-              detail: { message: `Ruolo moderatore aggiornato con successo direttamente da Firestore.` },
+              detail: { message: `Ruoli moderatore aggiornati con successo direttamente da Firestore.` },
             }),
           );
           setAdminPendingAction(null);
@@ -7338,10 +7380,10 @@ out center;`;
                                         type="button"
                                         disabled={!!adminActionExecuting}
                                         onClick={() =>
-                                          handleToggleModerator(u.email, !!u.isModerator)
+                                          handleToggleModerator(u.email, u.moderatorRoles)
                                         }
                                         className={`text-[10px] font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                                          u.isModerator
+                                          u.moderatorRoles && (u.moderatorRoles.community || u.moderatorRoles.places || u.moderatorRoles.itineraries)
                                             ? "text-amber-700 hover:text-amber-850 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/20"
                                             : "text-emerald-700 hover:text-emerald-850 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/20"
                                         }`}
@@ -7353,10 +7395,10 @@ out center;`;
                                               <span className="w-2.5 h-2.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></span>
                                               Aggiornamento...
                                             </span>
-                                          ) : u.isModerator ? (
-                                            "Rimuovi Ruolo Moderatore"
+                                          ) : u.moderatorRoles && (u.moderatorRoles.community || u.moderatorRoles.places || u.moderatorRoles.itineraries) ? (
+                                            "Modifica Ruoli Moderatore"
                                           ) : (
-                                            "Nomina Moderatore Chat"
+                                            "Nomina Moderatore"
                                           )}
                                         </span>
                                       </button>
@@ -7429,17 +7471,25 @@ out center;`;
                           </>
                         )}
                         {adminPendingAction.type === "toggle-moderator" && (
-                          <>
-                            Vuoi impostare il ruolo di moderatore chat su{" "}
-                            <strong className="text-amber-700">
-                              {adminPendingAction.isModerator ? "ATTIVO" : "DISATTIVATO"}
-                            </strong>{" "}
-                            per l'utente{" "}
-                            <strong className="text-slate-800 break-all block mt-1">
-                              {adminPendingAction.email}
-                            </strong>
-                            ?
-                          </>
+                          <div className="text-left space-y-3 mb-6">
+                            <p className="text-xs text-slate-500">Seleziona i ruoli per l'utente <strong className="text-slate-800">{adminPendingAction.email}</strong>:</p>
+                            <div className="space-y-2">
+                              {["community", "places", "itineraries"].map((role) => (
+                                <label key={role} className="flex items-center gap-2 cursor-pointer p-2 border border-slate-100 rounded-lg hover:bg-slate-50">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={!!adminPendingAction.roles?.[role as keyof typeof adminPendingAction.roles]}
+                                    onChange={(e) => {
+                                      const newRoles = { ...adminPendingAction.roles, [role]: e.target.checked };
+                                      setAdminPendingAction({ ...adminPendingAction, roles: newRoles as any });
+                                    }}
+                                    className="w-4 h-4 text-amber-600 rounded"
+                                  />
+                                  <span className="text-xs font-semibold text-slate-700 capitalize">{role === "community" ? "Community (Chat, Social)" : role === "places" ? "Accettazione Soste" : "Itinerari"}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
                         )}
                         {adminPendingAction.type === "delete" && (
                           <>
@@ -7469,7 +7519,7 @@ out center;`;
                             if (adminPendingAction.type === "approve") {
                               executeApproveUser(adminPendingAction.email);
                             } else if (adminPendingAction.type === "toggle-moderator") {
-                              executeToggleModerator(adminPendingAction.email, !!adminPendingAction.isModerator);
+                              executeToggleModerator(adminPendingAction.email, adminPendingAction.roles);
                             } else if (adminPendingAction.type === "delete") {
                               executeDeleteUser(adminPendingAction.email);
                             }
