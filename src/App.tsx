@@ -157,6 +157,12 @@ export default function App() {
     name: string;
     profilePhoto?: string;
     isModerator?: boolean;
+    moderatorRoles?: {
+      community?: boolean;
+      places?: boolean;
+      itineraries?: boolean;
+    };
+    approved?: boolean;
   } | null>(() => {
     try {
       const saved = localStorage.getItem("camper_user");
@@ -8291,12 +8297,12 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
 
               <div className="space-y-1.5 mb-5 text-xs font-sans">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Chilometri Contachilometri (km) - Opzionale
+                  KM - Opzionale
                 </label>
                 <input
                   type="number"
                   step="0.1"
-                  placeholder="Inserisci i km manualmente (es. 124500)"
+                  placeholder="KM (es. 124500)"
                   value={popupOdometer}
                   onChange={(e) => setPopupOdometer(e.target.value)}
                   className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white focus:border-indigo-500 outline-none font-semibold text-slate-800 text-xs shadow-inner"

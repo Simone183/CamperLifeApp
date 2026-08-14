@@ -932,43 +932,25 @@ export default function DiaryTab({
       validFiles.push(file);
     }
 
-    // Process each file in parallel
+    // Process each file in parallel using high-performance client-side compression
     const uploadPromises = validFiles.map((file) => {
-      return new Promise<{ url: string; name: string }>((resolve, reject) => {
+      return new Promise<{ url: string; name: string }>(async (resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = async () => {
           try {
             const base64 = reader.result as string;
 
-            // Apply compression quality from settings
+            // Apply compression quality from settings (defaults to medium for optimal speed and memory)
+            const quality = settings?.photoQuality || "medium";
             let finalBase64 = base64;
-            if (settings?.photoQuality) {
-              finalBase64 = await compressImage(base64, settings.photoQuality);
+            try {
+              finalBase64 = await compressImage(base64, quality);
+            } catch (cErr) {
+              console.warn("Compressione immagine non riuscita, uso originale:", cErr);
             }
 
-            // POST to our backend upload API
-            const response = await fetch("/api/upload", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                name: file.name,
-                base64: finalBase64,
-              }),
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              if (data.success && data.url) {
-                resolve({ url: data.url, name: file.name });
-              } else {
-                reject(new Error(data.error || "Errore sconosciuto sul server."));
-              }
-            } else {
-              const errData = await response.json();
-              reject(new Error(errData.error || `Codice di errore: ${response.status}`));
-            }
+            // Immediately resolve with the compressed base64 Data URL so it is 100% offline-ready & instant
+            resolve({ url: finalBase64, name: file.name });
           } catch (err: any) {
             reject(err);
           }
@@ -1177,6 +1159,77 @@ export default function DiaryTab({
 
   const odometerDiff = activeTrip ? getTripDistance(activeTrip) : 0;
 
+  // Helper to parse dates in various formats (YYYY-MM-DD, DD/MM/YYYY, ISO, etc.)
+  const parseDateToTimestamp = (dateStr?: string | number | null): number => {
+    if (!dateStr) return 0;
+    if (typeof dateStr === "number") return isNaN(dateStr) ? 0 : dateStr;
+    const trimmed = String(dateStr).trim();
+    if (!trimmed) return 0;
+
+    const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      const parsed = new Date(year, month, day).getTime();
+      if (!isNaN(parsed)) return parsed;
+    }
+
+    const parsed = new Date(trimmed).getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const getTripEffectiveDate = (trip: Trip): number => {
+    const timestamps: number[] = [];
+
+    if (trip.startDate) {
+      const t = parseDateToTimestamp(trip.startDate);
+      if (t > 0) timestamps.push(t);
+    }
+    if (trip.endDate) {
+      const t = parseDateToTimestamp(trip.endDate);
+      if (t > 0) timestamps.push(t);
+    }
+    (trip.movements || []).forEach((m) => {
+      if (m.date) {
+        const t = parseDateToTimestamp(m.date);
+        if (t > 0) timestamps.push(t);
+      }
+    });
+    (trip.expenses || []).forEach((e) => {
+      if (e.date) {
+        const t = parseDateToTimestamp(e.date);
+        if (t > 0) timestamps.push(t);
+      }
+    });
+    (trip.photos || []).forEach((p) => {
+      if (p.date) {
+        const t = parseDateToTimestamp(p.date);
+        if (t > 0) timestamps.push(t);
+      }
+    });
+
+    if (timestamps.length > 0) {
+      return Math.min(...timestamps);
+    }
+
+    if (trip.id && trip.id.startsWith("trip_")) {
+      const ts = parseInt(trip.id.replace("trip_", ""), 10);
+      if (!isNaN(ts) && ts > 0) return ts;
+    }
+
+    return 0;
+  };
+
+  // Saved trips sorted chronologically: from newest (top) to oldest (bottom)
+  const sortedTrips = React.useMemo(() => {
+    return [...trips].sort((a, b) => {
+      const dateA = getTripEffectiveDate(a);
+      const dateB = getTripEffectiveDate(b);
+      return dateB - dateA;
+    });
+  }, [trips]);
+
   const getDisplayDates = (trip: Trip) => {
     const allDates: string[] = [];
     if (trip.startDate) allDates.push(trip.startDate);
@@ -1293,7 +1346,7 @@ export default function DiaryTab({
                 className="text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white font-semibold text-slate-700 outline-none focus:border-[#3E4A35] w-full sm:w-[220px] cursor-pointer"
               >
                 <option value="">Tutti i viaggi ({trips.length})</option>
-                {trips.map((trip) => (
+                {sortedTrips.map((trip) => (
                   <option key={trip.id} value={trip.id}>
                     {trip.title} ({trip.photos?.length || 0})
                   </option>
@@ -1590,11 +1643,11 @@ export default function DiaryTab({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                      Km Start (Odo)
+                      KM Partenza
                     </label>
                     <input
                       type="number"
-                      placeholder="Km alla partenza"
+                      placeholder="KM alla partenza"
                       value={newStartOdo}
                       onChange={(e) => setNewStartOdo(e.target.value)}
                       className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-250 outline-none bg-white text-slate-700 font-semibold"
@@ -1602,11 +1655,11 @@ export default function DiaryTab({
                   </div>
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                      Km End (Odo)
+                      KM Arrivo
                     </label>
                     <input
                       type="number"
-                      placeholder="Km all'arrivo"
+                      placeholder="KM all'arrivo"
                       value={newEndOdo}
                       onChange={(e) => setNewEndOdo(e.target.value)}
                       className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-250 outline-none bg-white text-slate-700 font-semibold"
@@ -1686,7 +1739,7 @@ export default function DiaryTab({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-sans">
-                  {trips.map((trip) => {
+                  {sortedTrips.map((trip) => {
                     const isSelected = selectedTripId === trip.id;
                     const totalSpent = trip.includeExpenses !== false
                       ? trip.expenses.reduce((sum, e) => sum + e.amount, 0)
@@ -1885,10 +1938,11 @@ export default function DiaryTab({
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                              Km Start (Odo)
+                              KM Partenza
                             </label>
                             <input
                               type="number"
+                              placeholder="KM alla partenza"
                               value={editStartOdo}
                               onChange={(e) => setEditStartOdo(e.target.value)}
                               className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white"
@@ -1896,10 +1950,11 @@ export default function DiaryTab({
                           </div>
                           <div>
                             <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                              Km End (Odo)
+                              KM Arrivo
                             </label>
                             <input
                               type="number"
+                              placeholder="KM all'arrivo"
                               value={editEndOdo}
                               onChange={(e) => setEditEndOdo(e.target.value)}
                               className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white"
@@ -2479,6 +2534,9 @@ export default function DiaryTab({
                             </select>
                           </div>
                           <div className="space-y-1">
+                            <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                              Data
+                            </label>
                             <input
                               type="date"
                               value={expenseDate}
@@ -2927,33 +2985,53 @@ export default function DiaryTab({
                           <h3 className="text-xs font-black text-[#3E4A35] uppercase tracking-wider mb-2">
                             {editingMovementId ? "Modifica Spostamento" : "Nuovo Spostamento"}
                           </h3>
-                          <input
-                            type="text"
-                            placeholder="Luogo (es. Roma)"
-                            value={movementLocation}
-                            onChange={(e) => setMovementLocation(e.target.value)}
-                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
-                          />
-                          <input
-                            type="number"
-                            placeholder="Km Odometro"
-                            value={movementOdometer}
-                            onChange={(e) => setMovementOdometer(e.target.value)}
-                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
-                          />
-                          <input
-                            type="date"
-                            value={movementDate ? new Date(movementDate).toISOString().split('T')[0] : ""}
-                            onChange={(e) => setMovementDate(e.target.value)}
-                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Note (opzionale)"
-                            value={movementNotes}
-                            onChange={(e) => setMovementNotes(e.target.value)}
-                            className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
-                          />
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              Luogo
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Luogo (es. Roma)"
+                              value={movementLocation}
+                              onChange={(e) => setMovementLocation(e.target.value)}
+                              className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold bg-white text-slate-800"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              KM
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="KM"
+                              value={movementOdometer}
+                              onChange={(e) => setMovementOdometer(e.target.value)}
+                              className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold bg-white text-slate-800"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              Data
+                            </label>
+                            <input
+                              type="date"
+                              value={movementDate ? new Date(movementDate).toISOString().split('T')[0] : ""}
+                              onChange={(e) => setMovementDate(e.target.value)}
+                              className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold bg-white text-slate-800"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              Note (opzionale)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Note (opzionale)"
+                              value={movementNotes}
+                              onChange={(e) => setMovementNotes(e.target.value)}
+                              className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold bg-white text-slate-800"
+                            />
+                          </div>
                           <button
                             type="submit"
                             className="w-full py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-sm"

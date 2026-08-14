@@ -430,3 +430,20 @@ export interface NavigationStep {
   hasTrafficLight?: boolean;
 }
 
+export interface ModeratorRoles {
+  community?: boolean;
+  places?: boolean;
+  itineraries?: boolean;
+}
+
+export interface User {
+  nickname: string;
+  email: string;
+  name: string;
+  profilePhoto?: string;
+  isModerator?: boolean;
+  moderatorRoles?: ModeratorRoles;
+  approved?: boolean;
+  createdAt?: string;
+}
+

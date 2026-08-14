@@ -105,6 +105,11 @@ interface UserOverride {
   email: string;
   approved?: boolean;
   isModerator?: boolean;
+  moderatorRoles?: {
+    community?: boolean;
+    places?: boolean;
+    itineraries?: boolean;
+  };
   deleted?: boolean;
 }
 
@@ -184,7 +189,8 @@ function getOverrideAppliedUser(email: string, userData: any): any {
     return {
       ...baseUser,
       ...(o.approved !== undefined ? { approved: o.approved } : {}),
-      ...(o.isModerator !== undefined ? { isModerator: o.isModerator } : {})
+      ...(o.isModerator !== undefined ? { isModerator: o.isModerator } : {}),
+      ...(o.moderatorRoles !== undefined ? { moderatorRoles: o.moderatorRoles } : {})
     };
   }
   return baseUser;
@@ -284,7 +290,7 @@ async function sendPushNotification(
     }
 
     if (tokens.length === 0) {
-      console.log(`[FCM Push] No push tokens found for users:`, lowercaseEmails);
+      console.log(`[FCM Push] No push tokens found for users:`, emailList);
       return;
     }
 
