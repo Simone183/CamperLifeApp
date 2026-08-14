@@ -1995,9 +1995,6 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setAdminNotifications(data);
-        window.dispatchEvent(new CustomEvent("show-toast", {
-          detail: { message: "Contenuti rifiutati aggiornati!" }
-        }));
       }
     } catch (err) {
       console.error("Fetch admin notifications error:", err);
@@ -2013,9 +2010,6 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setCrashReports(data);
-        window.dispatchEvent(new CustomEvent("show-toast", {
-          detail: { message: "Log di crash aggiornati!" }
-        }));
       }
     } catch (err) {
       console.error("Fetch crash reports error:", err);
