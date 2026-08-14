@@ -698,7 +698,24 @@ export default function App() {
 
   const [trips, setTrips] = React.useState<Trip[]>(() => {
     const saved = localStorage.getItem("camper_trips");
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error("Error reading camper_trips:", e);
+      }
+    }
+    const backup = localStorage.getItem("camper_trips_backup");
+    if (backup) {
+      try {
+        const parsed = JSON.parse(backup);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error("Error reading camper_trips_backup:", e);
+      }
+    }
+    return [];
   });
 
   const [selectedDiaryTripId, setSelectedDiaryTripId] = React.useState<
@@ -1055,7 +1072,9 @@ export default function App() {
   >("pending");
   const [feedbacks, setFeedbacks] = React.useState<any[]>([]);
   const [adminNotifications, setAdminNotifications] = React.useState<any[]>([]);
+  const [adminNotificationsLoading, setAdminNotificationsLoading] = React.useState(false);
   const [crashReports, setCrashReports] = React.useState<any[]>([]);
+  const [crashReportsLoading, setCrashReportsLoading] = React.useState(false);
   const [copiedReportId, setCopiedReportId] = React.useState<string | null>(null);
   const [adminReplies, setAdminReplies] = React.useState<{
     [key: string]: string;
@@ -1151,6 +1170,18 @@ export default function App() {
     return () => window.removeEventListener("app-settings-changed", handleSettingsChanged);
   }, [currentUser?.email]);
 
+  // Save trips to Firestore
+  const saveTripsToFirestore = React.useCallback(async (newTrips: Trip[]) => {
+    if (!currentUser?.email) return;
+    try {
+      const docRef = doc(db, "users", currentUser.email, "data", "trips");
+      const cleanedTrips = JSON.parse(JSON.stringify(newTrips));
+      await setDoc(docRef, { trips: cleanedTrips, lastUpdated: Date.now() }, { merge: true });
+    } catch (err) {
+      console.error("Errore salvataggio viaggi su Firestore:", err);
+    }
+  }, [currentUser?.email]);
+
   // Sync trips with Firestore if currentUser is logged in
   React.useEffect(() => {
     if (!currentUser?.email) {
@@ -1162,15 +1193,57 @@ export default function App() {
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data && data.trips) {
+        if (data && Array.isArray(data.trips)) {
           setTrips((prevTrips) => {
-            const newStr = JSON.stringify(data.trips);
-            const curStr = JSON.stringify(prevTrips);
-            if (newStr !== curStr) {
-              return data.trips;
+            const cloudTrips: Trip[] = data.trips;
+            const currentList = prevTrips || [];
+
+            // If cloud is empty but local has trips, do not wipe local trips; sync them to cloud instead!
+            if (cloudTrips.length === 0 && currentList.length > 0) {
+              saveTripsToFirestore(currentList);
+              return currentList;
             }
-            return prevTrips;
+
+            // Create map of cloud trips
+            const cloudMap: Record<string, Trip> = {};
+            cloudTrips.forEach((t) => {
+              if (t && t.id) cloudMap[t.id] = t;
+            });
+
+            // Keep any locally created trip not yet in cloud
+            const localOnlyTrips = currentList.filter(
+              (lt) => lt && lt.id && !cloudMap[lt.id]
+            );
+
+            // Merge trips existing in both, keeping the version with the highest detail
+            const mergedCloudTrips = cloudTrips.map((ct) => {
+              const localMatch = currentList.find((lt) => lt && lt.id === ct.id);
+              if (!localMatch) return ct;
+              const localScore =
+                (localMatch.movements?.length || 0) +
+                (localMatch.expenses?.length || 0) +
+                (localMatch.photos?.length || 0);
+              const cloudScore =
+                (ct.movements?.length || 0) +
+                (ct.expenses?.length || 0) +
+                (ct.photos?.length || 0);
+              return localScore > cloudScore ? localMatch : ct;
+            });
+
+            const merged = [...localOnlyTrips, ...mergedCloudTrips];
+
+            // If there were local trips missing from cloud, save them to cloud
+            if (localOnlyTrips.length > 0) {
+              setTimeout(() => saveTripsToFirestore(merged), 300);
+            }
+
+            return merged;
           });
+        }
+      } else {
+        // First time initialization in cloud: if we have local trips, initialize cloud document
+        if (trips.length > 0) {
+          saveTripsToFirestore(trips);
         }
       }
       setLoadedFromFirestore(true);
@@ -1184,20 +1257,27 @@ export default function App() {
       setLoadedFromFirestore(true);
     });
     return unsubscribe;
-  }, [currentUser?.email]);
+  }, [currentUser?.email, saveTripsToFirestore]);
 
-  const saveTripsToFirestore = (newTrips: Trip[]) => {
-    if (!currentUser?.email) return;
-    const docRef = doc(db, "users", currentUser.email, "data", "trips");
-    const cleanedTrips = JSON.parse(JSON.stringify(newTrips));
-    setDoc(docRef, { trips: cleanedTrips }, { merge: true });
-  };
-
+  // Persist trips to localStorage, backup, and sync to Firestore
   React.useEffect(() => {
-    if (!currentUser?.email) return;
-    if (!loadedFromFirestore) return; // Prevent overwriting cloud data on initial load
-    saveTripsToFirestore(trips);
-  }, [trips, currentUser?.email, loadedFromFirestore]);
+    try {
+      localStorage.setItem("camper_trips", JSON.stringify(trips));
+      if (trips.length > 0) {
+        localStorage.setItem("camper_trips_backup", JSON.stringify(trips));
+      }
+    } catch (e) {
+      console.error("Error saving trips locally:", e);
+    }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips },
+      }),
+    );
+    if (currentUser?.email && loadedFromFirestore) {
+      saveTripsToFirestore(trips);
+    }
+  }, [trips, currentUser?.email, loadedFromFirestore, saveTripsToFirestore]);
 
   // Refresh settings when navigating to settings tools
   React.useEffect(() => {
@@ -1801,26 +1881,38 @@ export default function App() {
   };
 
   const fetchAdminNotifications = async () => {
+    setAdminNotificationsLoading(true);
     try {
       const res = await fetch("/api/admin/notifications");
       if (res.ok) {
         const data = await res.json();
         setAdminNotifications(data);
+        window.dispatchEvent(new CustomEvent("show-toast", {
+          detail: { message: "Contenuti rifiutati aggiornati!" }
+        }));
       }
     } catch (err) {
       console.error("Fetch admin notifications error:", err);
+    } finally {
+      setAdminNotificationsLoading(false);
     }
   };
 
   const fetchCrashReports = async () => {
+    setCrashReportsLoading(true);
     try {
       const res = await fetch("/api/admin/crash-reports");
       if (res.ok) {
         const data = await res.json();
         setCrashReports(data);
+        window.dispatchEvent(new CustomEvent("show-toast", {
+          detail: { message: "Log di crash aggiornati!" }
+        }));
       }
     } catch (err) {
       console.error("Fetch crash reports error:", err);
+    } finally {
+      setCrashReportsLoading(false);
     }
   };
 
@@ -6386,11 +6478,13 @@ out center;`;
                         </p>
                       </div>
                       <button
+                        type="button"
                         onClick={fetchAdminNotifications}
-                        className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
+                        disabled={adminNotificationsLoading}
+                        className="px-3 py-1.5 bg-white active:scale-95 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-bold hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer shadow-xs transition-all disabled:opacity-50"
                       >
-                        <RefreshCw className="w-3 h-3" />
-                        Ricarica
+                        <RefreshCw className={`w-3 h-3 text-slate-600 ${adminNotificationsLoading ? "animate-spin text-[#3E4A35]" : ""}`} />
+                        <span>{adminNotificationsLoading ? "Aggiornamento..." : "Ricarica"}</span>
                       </button>
                     </div>
 
@@ -7692,10 +7786,11 @@ out center;`;
                           <button
                             type="button"
                             onClick={fetchCrashReports}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                            disabled={crashReportsLoading}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
                           >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            <span>Aggiorna</span>
+                            <RefreshCw className={`w-3.5 h-3.5 ${crashReportsLoading ? "animate-spin text-rose-600" : ""}`} />
+                            <span>{crashReportsLoading ? "Aggiornamento..." : "Aggiorna"}</span>
                           </button>
 
                           {crashReports.length > 0 && (

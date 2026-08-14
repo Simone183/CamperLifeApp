@@ -246,7 +246,14 @@ export default function DiaryTab({
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
 
   React.useEffect(() => {
-    localStorage.setItem("camper_trips", JSON.stringify(trips));
+    try {
+      localStorage.setItem("camper_trips", JSON.stringify(trips));
+      if (trips.length > 0) {
+        localStorage.setItem("camper_trips_backup", JSON.stringify(trips));
+      }
+    } catch (e) {
+      console.error("Error writing trips in DiaryTab:", e);
+    }
   }, [trips]);
 
   React.useEffect(() => {
