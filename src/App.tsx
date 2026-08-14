@@ -733,6 +733,9 @@ export default function App() {
     "list",
   );
 
+  const isSyncingFromFirestoreRef = React.useRef(false);
+  const lastSavedTripsJsonRef = React.useRef<string>("");
+
   React.useEffect(() => {
     localStorage.setItem(
       "camper_dashboard_settings",
@@ -740,19 +743,10 @@ export default function App() {
     );
   }, [dashboardSettings]);
 
-  React.useEffect(() => {
-    localStorage.setItem("camper_trips", JSON.stringify(trips));
-    window.dispatchEvent(
-      new CustomEvent("trip-updated", {
-        detail: { trips },
-      }),
-    );
-  }, [trips]);
-
   // Listen to trip updates from external components (like DiaryTab.tsx)
   React.useEffect(() => {
     const handleTripUpdated = (e: any) => {
-      if (e.detail && e.detail.trips) {
+      if (e.detail && Array.isArray(e.detail.trips)) {
         const newStr = JSON.stringify(e.detail.trips);
         const curStr = JSON.stringify(trips);
         if (newStr !== curStr) {
@@ -1050,9 +1044,44 @@ export default function App() {
     | "settings"
   >("all");
 
+  // Determine if the current user is an authorized admin/moderator
+  const isSuperAdminOrModerator = Boolean(
+    currentUser && (
+      currentUser.email?.toLowerCase() === "sambucci.simone@gmail.com" ||
+      currentUser.email?.toLowerCase() === "viacamperapp@gmail.com" ||
+      currentUser.isModerator ||
+      (currentUser.moderatorRoles && (
+        currentUser.moderatorRoles.community ||
+        currentUser.moderatorRoles.places ||
+        currentUser.moderatorRoles.itineraries
+      ))
+    )
+  );
+
   // --- ADMIN MODERATION STATES ---
   const [showAdminPanel, setShowAdminPanel] = React.useState(false);
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState<boolean>(() => {
+    try {
+      const savedUser = localStorage.getItem("camper_user");
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        const email = u?.email?.toLowerCase();
+        if (
+          email === "sambucci.simone@gmail.com" ||
+          email === "viacamperapp@gmail.com" ||
+          u?.isModerator ||
+          u?.moderatorRoles?.community ||
+          u?.moderatorRoles?.places ||
+          u?.moderatorRoles?.itineraries
+        ) {
+          return true;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return false;
+  });
   const [adminPassword, setAdminPassword] = React.useState("");
   const [showAdminPassword, setShowAdminPassword] = React.useState(false);
   const [pendingPlaces, setPendingPlaces] = React.useState<Place[]>([]);
@@ -1173,12 +1202,20 @@ export default function App() {
   // Save trips to Firestore
   const saveTripsToFirestore = React.useCallback(async (newTrips: Trip[]) => {
     if (!currentUser?.email) return;
+    const tripsJson = JSON.stringify(newTrips);
+    if (tripsJson === lastSavedTripsJsonRef.current && isSyncingFromFirestoreRef.current) {
+      isSyncingFromFirestoreRef.current = false;
+      return;
+    }
     try {
+      lastSavedTripsJsonRef.current = tripsJson;
       const docRef = doc(db, "users", currentUser.email, "data", "trips");
-      const cleanedTrips = JSON.parse(JSON.stringify(newTrips));
-      await setDoc(docRef, { trips: cleanedTrips, lastUpdated: Date.now() }, { merge: true });
+      const cleanedTrips = JSON.parse(tripsJson);
+      await setDoc(docRef, { trips: cleanedTrips }, { merge: true });
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);
+    } finally {
+      isSyncingFromFirestoreRef.current = false;
     }
   }, [currentUser?.email]);
 
@@ -1194,12 +1231,20 @@ export default function App() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && Array.isArray(data.trips)) {
+          const cloudTrips: Trip[] = data.trips;
+          const cloudTripsJson = JSON.stringify(cloudTrips);
+
+          if (cloudTripsJson === lastSavedTripsJsonRef.current) {
+            setLoadedFromFirestore(true);
+            return;
+          }
+
           setTrips((prevTrips) => {
-            const cloudTrips: Trip[] = data.trips;
             const currentList = prevTrips || [];
 
             // If cloud is empty but local has trips, do not wipe local trips; sync them to cloud instead!
             if (cloudTrips.length === 0 && currentList.length > 0) {
+              lastSavedTripsJsonRef.current = JSON.stringify(currentList);
               saveTripsToFirestore(currentList);
               return currentList;
             }
@@ -1231,6 +1276,16 @@ export default function App() {
             });
 
             const merged = [...localOnlyTrips, ...mergedCloudTrips];
+            const mergedJson = JSON.stringify(merged);
+            const prevJson = JSON.stringify(prevTrips);
+
+            if (mergedJson === prevJson) {
+              lastSavedTripsJsonRef.current = mergedJson;
+              return prevTrips;
+            }
+
+            isSyncingFromFirestoreRef.current = true;
+            lastSavedTripsJsonRef.current = mergedJson;
 
             // If there were local trips missing from cloud, save them to cloud
             if (localOnlyTrips.length > 0) {
@@ -1262,20 +1317,25 @@ export default function App() {
   // Persist trips to localStorage, backup, and sync to Firestore
   React.useEffect(() => {
     try {
-      localStorage.setItem("camper_trips", JSON.stringify(trips));
+      const serialized = JSON.stringify(trips);
+      localStorage.setItem("camper_trips", serialized);
       if (trips.length > 0) {
-        localStorage.setItem("camper_trips_backup", JSON.stringify(trips));
+        localStorage.setItem("camper_trips_backup", serialized);
       }
     } catch (e) {
       console.error("Error saving trips locally:", e);
     }
-    window.dispatchEvent(
-      new CustomEvent("trip-updated", {
-        detail: { trips },
-      }),
-    );
+    
+    if (isSyncingFromFirestoreRef.current) {
+      isSyncingFromFirestoreRef.current = false;
+      return;
+    }
+
     if (currentUser?.email && loadedFromFirestore) {
-      saveTripsToFirestore(trips);
+      const tripsJson = JSON.stringify(trips);
+      if (tripsJson !== lastSavedTripsJsonRef.current) {
+        saveTripsToFirestore(trips);
+      }
     }
   }, [trips, currentUser?.email, loadedFromFirestore, saveTripsToFirestore]);
 
@@ -4075,7 +4135,7 @@ out center;`;
                   isManualCamperLocation={isManualCamperLocation}
                   manualCamperPlaceId={manualCamperPlaceId}
                   hasSafetyBanner={incompleteChecklistCount > 0}
-                  isAdmin={isAdminLoggedIn}
+                  isAdmin={isAdminLoggedIn || isSuperAdminOrModerator}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={handleToggleFavorite}
                   focusedPlaceId={focusedPlaceId}
@@ -5272,7 +5332,7 @@ out center;`;
                     <CommunityTab
                       messages={communityMessages}
                       onChange={handleCommunityChange}
-                      isAdmin={isAdminLoggedIn}
+                      isAdmin={isAdminLoggedIn || isSuperAdminOrModerator}
                       onOpenChallenges={() => setSettingsSubTab("challenges")}
                       currentUser={currentUser}
                       challengeSubmissions={challengeSubmissions}
@@ -6259,7 +6319,7 @@ out center;`;
             </div>
 
             {/* Admin Login Box if not authenticated */}
-            {!isAdminLoggedIn ? (
+            {!isAdminLoggedIn && !isSuperAdminOrModerator ? (
               <div className="p-8 text-center flex flex-col items-center justify-center space-y-4 my-6 font-sans">
                 <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center">
                   <Lock className="w-6 h-6 animate-pulse" />
