@@ -1,9 +1,10 @@
 import React from 'react';
 import { ArrowLeft, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
 interface LoginFormProps {
   onBack: () => void;
-  onSuccess: (user: { nickname: string; email: string; name: string; favorites: string[]; isModerator?: boolean; profilePhoto?: string }) => void;
+  onSuccess: (user: { nickname: string; email: string; name: string; favorites: string[]; isModerator?: boolean; moderatorRoles?: any; profilePhoto?: string }) => void;
   onSwitchToRegistration?: () => void;
   hideBack?: boolean;
   firestore?: any;
@@ -30,10 +31,11 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
     setResetMsg(null);
     setIsResetting(true);
     try {
-      const res = await fetch('/api/reset-password', {
+      const targetUrl = resolveMediaUrl('/api/reset-password');
+      const res = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail, newPassword })
+        body: JSON.stringify({ email: resetEmail.toLowerCase().trim(), newPassword })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -80,7 +82,7 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
     setError(null);
     setIsLoading(true);
 
-    const cleanEmail = email.trim();
+    const cleanEmail = email.toLowerCase().trim();
     const cleanPass = password.trim();
 
     const isNativeOrExternal = typeof window !== "undefined" && (
@@ -91,7 +93,7 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
     );
 
     const runFirestoreLogin = async () => {
-      const formattedEmail = cleanEmail.toLowerCase().trim();
+      const formattedEmail = cleanEmail;
       const userDocSnap = await firestore.collection("users").doc(formattedEmail).get();
       if (!userDocSnap.exists) {
         throw new Error("Nessun account registrato con questa email.");
@@ -101,16 +103,20 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       if (storedPass !== cleanPass) {
         throw new Error("Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'.");
       }
-      if (userData.approved === false) {
+      const isSuper = formattedEmail === "sambucci.simone@gmail.com" || formattedEmail === "viacamperapp@gmail.com";
+      if (!isSuper && userData.approved === false) {
         throw new Error("Il tuo account è in attesa di approvazione da parte di un moderatore.");
       }
       const userObj = {
-        email: userData.email,
+        email: formattedEmail,
         name: userData.name,
         nickname: userData.nickname,
         profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
         favorites: userData.favorites || [],
-        isModerator: !!userData.isModerator
+        isModerator: isSuper || !!userData.isModerator,
+        moderatorRoles: isSuper
+          ? { community: true, places: true, itineraries: true }
+          : userData.moderatorRoles || {}
       };
       window.dispatchEvent(new CustomEvent('show-toast', { 
         detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
@@ -130,7 +136,8 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
     }
 
     try {
-      const res = await fetch('/api/login', {
+      const targetUrl = resolveMediaUrl('/api/login');
+      const res = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, password: cleanPass })
@@ -141,10 +148,20 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
         throw new Error(data.error || 'Errore durante l\'accesso.');
       }
 
+      const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
+      const userObj = {
+        ...data.user,
+        email: cleanEmail,
+        isModerator: isSuper || !!data.user?.isModerator,
+        moderatorRoles: isSuper
+          ? { community: true, places: true, itineraries: true }
+          : data.user?.moderatorRoles || {}
+      };
+
       window.dispatchEvent(new CustomEvent('show-toast', { 
-        detail: { message: `🔑 Accesso eseguito! Bentornato, ${data.user.nickname}.`, duration: 4000 } 
+        detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
       }));
-      onSuccess(data.user);
+      onSuccess(userObj);
     } catch (err: any) {
       console.warn("Login API failed, attempting direct Firestore fallback...", err);
       if (firestore) {

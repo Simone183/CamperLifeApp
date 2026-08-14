@@ -2,6 +2,9 @@ import React from 'react';
 import { ArrowLeft, User, Lock, Mail, Calendar, AtSign, Eye, EyeOff, Camera, X } from 'lucide-react';
 import { compressImage } from '../utils/photoCompressor';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+import { doc, getDoc, setDoc, addDoc, collection } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface RegistrationFormProps {
   onBack: () => void;
@@ -60,11 +63,98 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
 
     setIsLoading(true);
 
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanNickname = nickname.trim();
+    const cleanName = name.trim();
+    const cleanSurname = surname.trim();
+
+    const isSuperAdmin =
+      cleanEmail === "sambucci.simone@gmail.com" ||
+      cleanEmail === "viacamperapp@gmail.com";
+
+    const newUserDoc = {
+      email: cleanEmail,
+      password: password.trim(),
+      name: cleanName,
+      surname: cleanSurname,
+      dob: dob || "",
+      nickname: cleanNickname,
+      profilePhoto: profilePhoto || null,
+      createdAt: new Date().toISOString(),
+      favorites: [],
+      approved: isSuperAdmin ? true : false,
+      isModerator: isSuperAdmin ? true : false,
+      moderatorRoles: isSuperAdmin
+        ? { community: true, places: true, itineraries: true }
+        : {}
+    };
+
+    // Helper for direct Firestore registration fallback
+    const directFirestoreRegister = async () => {
+      try {
+        const userDocRef = doc(db, "users", cleanEmail);
+        const existingSnap = await getDoc(userDocRef);
+        if (existingSnap.exists()) {
+          throw new Error("Esiste già un account registrato con questa email.");
+        }
+
+        await setDoc(userDocRef, newUserDoc);
+
+        // Notify moderators / admin if pending approval
+        if (!isSuperAdmin) {
+          try {
+            await addDoc(collection(db, "adminNotifications"), {
+              type: "users",
+              title: "Richiesta Iscrizione Utente",
+              body: `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`,
+              timestamp: new Date().toISOString(),
+              data: { email: cleanEmail, nickname: cleanNickname, type: "user_approval" },
+              read: false
+            });
+
+            const superAdmins = ["sambucci.simone@gmail.com", "viacamperapp@gmail.com"];
+            for (const adminEmail of superAdmins) {
+              await addDoc(collection(db, "notifications"), {
+                userId: adminEmail,
+                title: "Richiesta Iscrizione Utente",
+                body: `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`,
+                type: "users",
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: { email: cleanEmail, nickname: cleanNickname, type: "user_approval" }
+              });
+            }
+          } catch (notifErr) {
+            console.warn("Could not dispatch registration notification:", notifErr);
+          }
+        }
+
+        onSuccess({
+          nickname: cleanNickname,
+          email: cleanEmail,
+          name: cleanName,
+          profilePhoto: profilePhoto || undefined,
+          approved: newUserDoc.approved
+        });
+      } catch (err: any) {
+        throw new Error(err.message || "Errore durante la registrazione nel database.");
+      }
+    };
+
     try {
-      const res = await fetch('/api/register', {
+      const targetUrl = resolveMediaUrl('/api/register');
+      const res = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, surname, dob, nickname, profilePhoto })
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: password.trim(),
+          name: cleanName,
+          surname: cleanSurname,
+          dob,
+          nickname: cleanNickname,
+          profilePhoto
+        })
       });
 
       const data = await res.json();
@@ -72,9 +162,14 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
         throw new Error(data.error || 'Impossibile completare la registrazione.');
       }
 
-      onSuccess(data.user);
+      onSuccess(data.user || newUserDoc);
     } catch (err: any) {
-      setError(err.message || 'Errore di connessione con il server.');
+      console.warn("Registration API call failed, falling back to direct Firestore register:", err);
+      try {
+        await directFirestoreRegister();
+      } catch (fallbackErr: any) {
+        setError(fallbackErr.message || 'Errore di connessione con il server.');
+      }
     } finally {
       setIsLoading(false);
     }

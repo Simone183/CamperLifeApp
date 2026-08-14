@@ -1047,8 +1047,8 @@ export default function App() {
   // Determine if the current user is an authorized admin/moderator
   const isSuperAdminOrModerator = Boolean(
     currentUser && (
-      currentUser.email?.toLowerCase() === "sambucci.simone@gmail.com" ||
-      currentUser.email?.toLowerCase() === "viacamperapp@gmail.com" ||
+      currentUser.email?.toLowerCase().trim() === "sambucci.simone@gmail.com" ||
+      currentUser.email?.toLowerCase().trim() === "viacamperapp@gmail.com" ||
       currentUser.isModerator ||
       (currentUser.moderatorRoles && (
         currentUser.moderatorRoles.community ||
@@ -1065,7 +1065,7 @@ export default function App() {
       const savedUser = localStorage.getItem("camper_user");
       if (savedUser) {
         const u = JSON.parse(savedUser);
-        const email = u?.email?.toLowerCase();
+        const email = u?.email?.toLowerCase()?.trim();
         if (
           email === "sambucci.simone@gmail.com" ||
           email === "viacamperapp@gmail.com" ||
@@ -1844,7 +1844,17 @@ export default function App() {
 
 
   React.useEffect(() => {
-    if (currentUser && (currentUser.email === "sambucci.simone@gmail.com" || currentUser.email === "viacamperapp@gmail.com" || (currentUser.moderatorRoles && (currentUser.moderatorRoles.community || currentUser.moderatorRoles.places || currentUser.moderatorRoles.itineraries)))) {
+    const cleanEmail = currentUser?.email?.toLowerCase()?.trim();
+    if (
+      currentUser &&
+      (cleanEmail === "sambucci.simone@gmail.com" ||
+        cleanEmail === "viacamperapp@gmail.com" ||
+        currentUser.isModerator ||
+        (currentUser.moderatorRoles &&
+          (currentUser.moderatorRoles.community ||
+            currentUser.moderatorRoles.places ||
+            currentUser.moderatorRoles.itineraries)))
+    ) {
       setIsAdminLoggedIn(true);
       fetchPendingPlaces();
       fetchAdminUsers();
@@ -3912,6 +3922,9 @@ out center;`;
           </span>
           <button
             onClick={() => {
+              if (isSuperAdminOrModerator) {
+                setIsAdminLoggedIn(true);
+              }
               setShowAdminPanel(true);
               setAdminSubTab("users");
               fetchAdminUsers();
@@ -3932,6 +3945,9 @@ out center;`;
           </span>
           <button
             onClick={() => {
+              if (isSuperAdminOrModerator) {
+                setIsAdminLoggedIn(true);
+              }
               setShowAdminPanel(true);
               setAdminSubTab("pending");
               fetchPendingPlaces();
@@ -5252,10 +5268,13 @@ out center;`;
                       <span className="truncate">Tutela & Licenza</span>
                     </button>
 
-                    {(isAdminLoggedIn || currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && (
+                    {(isAdminLoggedIn || isSuperAdminOrModerator) && (
                       <button
                         type="button"
                         onClick={() => {
+                          if (isSuperAdminOrModerator) {
+                            setIsAdminLoggedIn(true);
+                          }
                           fetchPendingPlaces();
                           fetchFeedbacks();
                           fetchAdminUsers();
@@ -5380,18 +5399,24 @@ out center;`;
                     <LoginForm
                       onBack={() => setSettingsSubTab("hub")}
                       onSuccess={(user) => {
+                        const cleanEmail = user.email?.toLowerCase().trim();
+                        const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
                         const sanitizedUser = {
-                          email: user.email,
+                          email: cleanEmail,
                           nickname: user.nickname,
                           name: user.name,
                           profilePhoto: user.profilePhoto,
-                          isModerator: user.isModerator,
+                          isModerator: isSuper || user.isModerator,
+                          moderatorRoles: user.moderatorRoles || (isSuper ? { community: true, places: true, itineraries: true } : undefined)
                         };
                         setCurrentUser(sanitizedUser);
                         localStorage.setItem(
                           "camper_user",
                           JSON.stringify(sanitizedUser),
                         );
+                        if (isSuper || sanitizedUser.isModerator || sanitizedUser.moderatorRoles) {
+                          setIsAdminLoggedIn(true);
+                        }
                         setIsRegistered(true);
                         localStorage.setItem("camper_is_registered", "true");
                         if (user.favorites) {
