@@ -1113,22 +1113,60 @@ async function fixExistingPlaces() {
 async function notifyModerators(role, title, body, data) {
   console.log(`[Notification] Notifying moderators for role: ${role}`);
   try {
-    const usersSnapshot = await firestoreDb.collection("users").where(`moderatorRoles.${role}`, "==", true).get();
-    const moderatorEmails = [];
-    usersSnapshot.forEach((doc2) => {
-      moderatorEmails.push(doc2.id);
-      firestoreDb.collection("notifications").add({
-        userId: doc2.id,
+    const moderatorEmails = /* @__PURE__ */ new Set();
+    moderatorEmails.add("sambucci.simone@gmail.com");
+    moderatorEmails.add("viacamperapp@gmail.com");
+    if (process.env.ADMIN_EMAIL) {
+      moderatorEmails.add(process.env.ADMIN_EMAIL.toLowerCase().trim());
+    }
+    try {
+      const usersSnapshot = await firestoreDb.collection("users").get();
+      usersSnapshot.forEach((doc2) => {
+        const u = doc2.data();
+        const email = (u.email || doc2.id).toLowerCase().trim();
+        if (u.isModerator || u.isAdmin || email === "sambucci.simone@gmail.com" || email === "viacamperapp@gmail.com" || role === "all" && u.moderatorRoles || u.moderatorRoles && (u.moderatorRoles[role] === true || u.moderatorRoles.community || u.moderatorRoles.places || u.moderatorRoles.itineraries)) {
+          moderatorEmails.add(email);
+        }
+      });
+    } catch (dbErr) {
+      console.warn("[Notification] Could not query moderators from DB:", dbErr);
+    }
+    const emailList = Array.from(moderatorEmails);
+    for (const email of emailList) {
+      try {
+        await firestoreDb.collection("notifications").add({
+          userId: email,
+          title,
+          body,
+          type: role,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+          read: false,
+          data: data || {}
+        });
+      } catch (notifErr) {
+        console.warn(`[Notification] Failed to write notification for ${email}:`, notifErr);
+      }
+    }
+    try {
+      await firestoreDb.collection("adminNotifications").add({
+        type: role,
         title,
         body,
-        type: role,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-        read: false,
-        data
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        data: data || {},
+        read: false
       });
-    });
-    if (moderatorEmails.length > 0) {
-      await sendPushNotification(moderatorEmails, title, body, data);
+    } catch (admNotifErr) {
+      console.warn("[Notification] Failed to write adminNotifications history:", admNotifErr);
+    }
+    if (emailList.length > 0) {
+      await sendPushNotification(emailList, title, body, {
+        ...data || {},
+        type: role,
+        title,
+        body,
+        click_action: "FLUTTER_NOTIFICATION_CLICK"
+      });
     }
   } catch (err) {
     console.error(`[Notification] Error notifying moderators:`, err);
@@ -1169,7 +1207,9 @@ async function sendPushNotification(emails, title, body, data) {
           channelId: "fcm_default_channel",
           notificationPriority: "PRIORITY_MAX",
           visibility: "public",
-          icon: "ic_launcher"
+          icon: "ic_launcher",
+          defaultSound: true,
+          defaultVibrateTimings: true
         }
       },
       apns: {
@@ -1181,7 +1221,11 @@ async function sendPushNotification(emails, title, body, data) {
           }
         }
       },
-      data: data || {},
+      data: {
+        title,
+        body,
+        ...data || {}
+      },
       tokens
     };
     const response = await (0, import_messaging.getMessaging)(app).sendEachForMulticast(message);
@@ -2728,7 +2772,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       try {
         await usersRef.doc(cleanEmail).set(newUserDoc);
         console.log(`[Firestore Auth] User registered successfully on Firestore: ${cleanEmail}`);
-        await notifyModerators("community", "Nuovo Utente", `Un nuovo utente si \xE8 iscritto: ${cleanNickname}`, { email: cleanEmail });
+        if (!newUserDoc.approved) {
+          await notifyModerators("users", "Richiesta Iscrizione Utente", `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`, { email: cleanEmail, nickname: cleanNickname, type: "user_approval" });
+        }
       } catch (fsErr) {
         console.log(`[Firestore Auth Fallback] User ${cleanEmail} registered & saved locally.`);
       }

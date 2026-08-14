@@ -1849,18 +1849,54 @@ export default function App() {
       fetchPendingPlaces();
       fetchAdminUsers();
       fetchAdminNotifications();
+
+      // Set up real-time listener for users collection so pending user count is always live
+      let unsubUsers: (() => void) | null = null;
+      try {
+        const usersCol = collection(db, "users");
+        unsubUsers = onSnapshot(usersCol, () => {
+          fetchAdminUsers();
+        }, (err) => {
+          console.warn("Real-time users listener warning:", err);
+        });
+      } catch (e) {
+        console.warn("Could not attach real-time users listener:", e);
+      }
+
+      // Set up real-time listener for places collection so proposed places count is always live
+      let unsubPlaces: (() => void) | null = null;
+      try {
+        const placesCol = collection(db, "places");
+        unsubPlaces = onSnapshot(placesCol, () => {
+          fetchPendingPlaces();
+        }, (err) => {
+          console.warn("Real-time places listener warning:", err);
+        });
+      } catch (e) {
+        console.warn("Could not attach real-time places listener:", e);
+      }
+
+      return () => {
+        if (unsubUsers) unsubUsers();
+        if (unsubPlaces) unsubPlaces();
+      };
     }
   }, [currentUser]);
 
-  // Listen for real-time notifications for moderators
+  // Listen for real-time notifications for moderators and superadmins
   React.useEffect(() => {
     if (!currentUser || !currentUser.email) return;
     
-    // Check if user is a moderator for any role
-    const isModerator = currentUser.moderatorRoles && 
-      (currentUser.moderatorRoles.community || currentUser.moderatorRoles.places || currentUser.moderatorRoles.itineraries);
+    // Check if user is a superadmin or moderator
+    const email = currentUser.email.toLowerCase();
+    const isSuperOrMod = 
+      email === "sambucci.simone@gmail.com" ||
+      email === "viacamperapp@gmail.com" ||
+      currentUser.isModerator ||
+      (currentUser.moderatorRoles && 
+        (currentUser.moderatorRoles.community || currentUser.moderatorRoles.places || currentUser.moderatorRoles.itineraries));
       
-    if (!isModerator) return;
+    if (!isSuperOrMod) return;
 
     const q = query(
       collection(db, "notifications"),
@@ -1879,6 +1915,8 @@ export default function App() {
           );
         }
       });
+    }, (err) => {
+      console.warn("Real-time notifications listener warning:", err);
     });
     
     return () => unsubscribe();
@@ -3861,6 +3899,46 @@ out center;`;
             className="underline hover:text-orange-100 transition-colors ml-1 sm:ml-3 font-black shrink-0 cursor-pointer text-[10px] min-[360px]:text-[11.5px] sm:text-sm md:text-base"
           >
             Controlla →
+          </button>
+        </div>
+      )}
+
+      {/* Top Warning Banner for pending user registrations (Admin/Moderator only) */}
+      {isSuperAdminOrModerator && adminUsers.filter(u => u.approved === false).length > 0 && (
+        <div className="bg-amber-600 text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-amber-700/30 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
+          <Users className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
+          <span className="leading-tight truncate sm:whitespace-normal">
+            Richiesta iscrizione: {adminUsers.filter(u => u.approved === false).length} {adminUsers.filter(u => u.approved === false).length === 1 ? "nuovo utente in attesa di approvazione" : "nuovi utenti in attesa di approvazione"}!
+          </span>
+          <button
+            onClick={() => {
+              setShowAdminPanel(true);
+              setAdminSubTab("users");
+              fetchAdminUsers();
+            }}
+            className="underline hover:text-amber-100 transition-colors ml-1 sm:ml-3 font-black shrink-0 cursor-pointer text-[10px] min-[360px]:text-[11.5px] sm:text-sm md:text-base"
+          >
+            Gestisci →
+          </button>
+        </div>
+      )}
+
+      {/* Top Warning Banner for pending place proposals (Admin/Moderator only) */}
+      {isSuperAdminOrModerator && pendingPlaces.length > 0 && (
+        <div className="bg-[#3E4A35] text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-[#3E4A35]/30 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
+          <MapPin className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-emerald-300 shrink-0 animate-pulse" />
+          <span className="leading-tight truncate sm:whitespace-normal">
+            Nuova sosta proposta: {pendingPlaces.length} {pendingPlaces.length === 1 ? "sosta in attesa di approvazione" : "soste in attesa di approvazione"}!
+          </span>
+          <button
+            onClick={() => {
+              setShowAdminPanel(true);
+              setAdminSubTab("pending");
+              fetchPendingPlaces();
+            }}
+            className="underline hover:text-emerald-200 transition-colors ml-1 sm:ml-3 font-black shrink-0 cursor-pointer text-[10px] min-[360px]:text-[11.5px] sm:text-sm md:text-base"
+          >
+            Esamina →
           </button>
         </div>
       )}
