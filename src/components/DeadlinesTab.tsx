@@ -8,11 +8,29 @@ import { useAppSettings } from '../useAppSettings';
 import { getCurrencySymbol, getDistanceUnit } from '../unit-helpers';
 import { Deadline } from '../types';
 import { Calendar, CheckCircle2, AlertTriangle, Clock, Plus, Trash2, ShieldCheck, DollarSign } from 'lucide-react';
-import { useFirestoreSync } from '../lib/firestoreSync';
 
-export default function DeadlinesTab() {
+interface DeadlinesTabProps {
+  deadlines?: Deadline[];
+  setDeadlines?: React.Dispatch<React.SetStateAction<Deadline[]>>;
+}
+
+export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: propSetDeadlines }: DeadlinesTabProps = {}) {
   const settings = useAppSettings();
-  const [deadlines, setDeadlines] = useFirestoreSync<Deadline[]>("user_data", "deadlines", []);
+  const [localDeadlines, setLocalDeadlines] = React.useState<Deadline[]>(() => {
+    try {
+      const saved = localStorage.getItem("camper_deadlines");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error("Error reading camper_deadlines:", e);
+    }
+    return [];
+  });
+
+  const deadlines = propDeadlines !== undefined ? propDeadlines : localDeadlines;
+  const setDeadlines = propSetDeadlines !== undefined ? propSetDeadlines : setLocalDeadlines;
   const [filter, setFilter] = React.useState<'all' | 'pending' | 'urgent' | 'completed'>('all');
   const [showAddForm, setShowAddForm] = React.useState(false);
 

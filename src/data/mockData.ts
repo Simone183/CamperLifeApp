@@ -858,13 +858,13 @@ export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
 
 export const DEFAULT_CHECKLIST: ChecklistItem[] = [
   // Partenza
-  { id: 'c1', text: 'Chiudere tutte le finestre e l\'oblò del tetto', category: 'Partenza', checked: true },
-  { id: 'c2', text: 'Ritirare il gradino d\'ingresso elettrico/manuale', category: 'Partenza', checked: true },
+  { id: 'c1', text: 'Chiudere tutte le finestre e l\'oblò del tetto', category: 'Partenza', checked: false },
+  { id: 'c2', text: 'Ritirare il gradino d\'ingresso elettrico/manuale', category: 'Partenza', checked: false },
   { id: 'c3', text: 'Spegnere la pompa dell\'acqua interna', category: 'Partenza', checked: false },
   { id: 'c4', text: 'Commutare il frigorifero su modalità 12V (in viaggio)', category: 'Partenza', checked: false },
   { id: 'c5', text: 'Chiudere la serranda del serbatoio delle acque grigie', category: 'Partenza', checked: false },
-  { id: 'c6', text: 'Chiudere la valvola della bombola del gas principale', category: 'Partenza', checked: true },
-  { id: 'c7', text: 'Bloccare tutte le antine degli armadietti e cassetti', category: 'Partenza', checked: true },
+  { id: 'c6', text: 'Chiudere la valvola della bombola del gas principale', category: 'Partenza', checked: false },
+  { id: 'c7', text: 'Bloccare tutte le antine degli armadietti e cassetti', category: 'Partenza', checked: false },
   { id: 'c8', text: 'Fissare o riporre in sicurezza oggetti sui ripiani', category: 'Partenza', checked: false },
   
   // Sosta
@@ -874,10 +874,10 @@ export const DEFAULT_CHECKLIST: ChecklistItem[] = [
   { id: 'c12', text: 'Livellare il camper con i piedini stabilizzatori (se presenti)', category: 'Sosta', checked: false },
 
   // Sicurezza
-  { id: 'c13', text: 'Verificare pressione degli pneumatici (incluso ruota scorta)', category: 'Sicurezza', checked: true },
-  { id: 'c14', text: 'Controllare data di scadenza della bombola gas e tubi flessibili', category: 'Sicurezza', checked: true },
-  { id: 'c15', text: 'Verificare funzionamento del rilevatore di fumo e gas nocivi (TrioGas)', category: 'Sicurezza', checked: true },
-  { id: 'c16', text: 'Controllare estintore a bordo (pressione in zona verde)', category: 'Sicurezza', checked: true },
+  { id: 'c13', text: 'Verificare pressione degli pneumatici (incluso ruota scorta)', category: 'Sicurezza', checked: false },
+  { id: 'c14', text: 'Controllare data di scadenza della bombola gas e tubi flessibili', category: 'Sicurezza', checked: false },
+  { id: 'c15', text: 'Verificare funzionamento del rilevatore di fumo e gas nocivi (TrioGas)', category: 'Sicurezza', checked: false },
+  { id: 'c16', text: 'Controllare estintore a bordo (pressione in zona verde)', category: 'Sicurezza', checked: false },
   { id: 'c17', text: 'Rifornire cassetta di pronto soccorso', category: 'Sicurezza', checked: false }
 ];
 

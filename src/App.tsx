@@ -298,8 +298,47 @@ export default function App() {
     }
   }, [challengeSubmissions]);
 
-  const [checklistItems, setChecklistItems] = useFirestoreSync<ChecklistItem[]>("user_data", "checklist", DEFAULT_CHECKLIST);
-  const [deadlines, setDeadlines] = useFirestoreSync<Deadline[]>("user_data", "deadlines", INITIAL_DEADLINES);
+  const [checklistItems, setChecklistItems] = React.useState<ChecklistItem[]>(() => {
+    try {
+      const saved = localStorage.getItem("camper_checklist");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error("Error reading camper_checklist:", e);
+    }
+    return DEFAULT_CHECKLIST;
+  });
+
+  const [deadlines, setDeadlines] = React.useState<Deadline[]>(() => {
+    try {
+      const saved = localStorage.getItem("camper_deadlines");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error("Error reading camper_deadlines:", e);
+    }
+    return INITIAL_DEADLINES;
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("camper_checklist", JSON.stringify(checklistItems));
+    } catch (e) {
+      console.error("Error saving camper_checklist:", e);
+    }
+  }, [checklistItems]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("camper_deadlines", JSON.stringify(deadlines));
+    } catch (e) {
+      console.error("Error saving camper_deadlines:", e);
+    }
+  }, [deadlines]);
 
   // Persistent Favorites State from LocalStorage
   const [favoriteIds, setFavoriteIds] = React.useState<string[]>(() => {
@@ -5383,10 +5422,16 @@ out center;`;
                     />
                   )}
                   {settingsSubTab === "checklist" && (
-                    <ChecklistTab />
+                    <ChecklistTab
+                      items={checklistItems}
+                      setItems={setChecklistItems}
+                    />
                   )}
                   {settingsSubTab === "deadlines" && (
-                    <DeadlinesTab />
+                    <DeadlinesTab
+                      deadlines={deadlines}
+                      setDeadlines={setDeadlines}
+                    />
                   )}
                   {settingsSubTab === "registration" && (
                     <RegistrationForm

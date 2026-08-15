@@ -89,9 +89,13 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
         : {}
     };
 
-    // Helper for direct Firestore registration fallback
+    // Helper for direct Firestore registration fallback with strict timeout
     const directFirestoreRegister = async () => {
-      try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout connessione database.")), 5000)
+      );
+
+      const performRegister = async () => {
         // Option A: Use firestore adapter if provided
         if (firestore) {
           const userDocRef = firestore.collection("users").doc(cleanEmail);
@@ -146,6 +150,10 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
           profilePhoto: profilePhoto || undefined,
           approved: newUserDoc.approved
         });
+      };
+
+      try {
+        await Promise.race([performRegister(), timeoutPromise]);
       } catch (err: any) {
         throw new Error(err.message || "Errore durante la registrazione nel database.");
       }
@@ -154,7 +162,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
     try {
       const targetUrl = resolveMediaUrl('/api/register');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
 
       let res;
       try {
@@ -176,13 +184,18 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
         clearTimeout(timeoutId);
       }
 
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Impossibile completare la registrazione.');
+        let errText = 'Impossibile completare la registrazione.';
+        try {
+          const data = await res.json();
+          if (data && data.error) errText = data.error;
+        } catch (_) {}
+        setError(errText);
         setIsLoading(false);
         return;
       }
 
+      const data = await res.json();
       onSuccess(data.user || newUserDoc);
       return;
     } catch (err: any) {
@@ -190,7 +203,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       try {
         await directFirestoreRegister();
       } catch (fallbackErr: any) {
-        setError(fallbackErr.message || 'Errore di connessione con il server. Riprova tra qualche istante.');
+        setError(fallbackErr.message || 'Errore durante la registrazione. Verifica la connessione e riprova.');
       }
     } finally {
       setIsLoading(false);

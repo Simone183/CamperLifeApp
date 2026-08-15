@@ -19,10 +19,28 @@ import {
   Wand2,
   Info
 } from 'lucide-react';
-import { useFirestoreSync } from '../lib/firestoreSync';
 
-export default function ChecklistTab() {
-  const [items, setItems] = useFirestoreSync<ChecklistItem[]>("user_data", "checklist", []);
+interface ChecklistTabProps {
+  items?: ChecklistItem[];
+  setItems?: React.Dispatch<React.SetStateAction<ChecklistItem[]>>;
+}
+
+export default function ChecklistTab({ items: propItems, setItems: propSetItems }: ChecklistTabProps = {}) {
+  const [localItems, setLocalItems] = React.useState<ChecklistItem[]>(() => {
+    try {
+      const saved = localStorage.getItem("camper_checklist");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error("Error reading camper_checklist:", e);
+    }
+    return [];
+  });
+
+  const items = propItems !== undefined ? propItems : localItems;
+  const setItems = propSetItems !== undefined ? propSetItems : setLocalItems;
   const [newItemText, setNewItemText] = React.useState('');
   const [newCategory, setNewCategory] = React.useState<ChecklistItem['category']>('Partenza');
 
