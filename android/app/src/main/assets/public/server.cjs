@@ -2773,7 +2773,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         await usersRef.doc(cleanEmail).set(newUserDoc);
         console.log(`[Firestore Auth] User registered successfully on Firestore: ${cleanEmail}`);
         if (!newUserDoc.approved) {
-          await notifyModerators("users", "Richiesta Iscrizione Utente", `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`, { email: cleanEmail, nickname: cleanNickname, type: "user_approval" });
+          notifyModerators("users", "Richiesta Iscrizione Utente", `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`, { email: cleanEmail, nickname: cleanNickname, type: "user_approval" }).catch((err) => console.warn("[Notification] Moderator alert failed:", err));
         }
       } catch (fsErr) {
         console.log(`[Firestore Auth Fallback] User ${cleanEmail} registered & saved locally.`);
@@ -2783,40 +2783,36 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       cacheUsers(updatedCached);
       const targetAdminEmailForReg = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
       if (process.env.RESEND_API_KEY && targetAdminEmailForReg) {
-        try {
-          const { Resend } = await import("resend");
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          resend.emails.send({
-            from: "ViaCamperApp <onboarding@resend.dev>",
-            to: targetAdminEmailForReg,
-            subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
-            html: `
-              <h2>Richiesta di approvazione nuovo utente registrato</h2>
-              <p>Un nuovo camperista si \xE8 appena iscritto ed \xE8 in attesa di essere approvato per accedere all'app:</p>
-              <ul>
-                <li><strong>Email:</strong> ${newUserDoc.email}</li>
-                <li><strong>Nickname:</strong> ${newUserDoc.nickname}</li>
-                <li><strong>Nome:</strong> ${newUserDoc.name || "N/D"}</li>
-                <li><strong>Cognome:</strong> ${newUserDoc.surname || "N/D"}</li>
-                <li><strong>Data di Nascita:</strong> ${newUserDoc.dob || "N/D"}</li>
-                <li><strong>Data registrazione:</strong> ${newUserDoc.createdAt}</li>
-                <li><strong>Stato approvazione:</strong> IN ATTESA DI APPROVAZIONE</li>
-              </ul>
-              <br/>
-              <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
-            `
-          }).then((emailRes) => {
-            if (emailRes?.error) {
-              console.log(`[Email Notice] Resend registration email: ${emailRes.error.message || "validation notice"}`);
-            } else {
-              console.log(`[Email] Admin notification sent successfully for user: ${newUserDoc.email}`);
-            }
-          }).catch((emailSendErr) => {
-            console.log("Admin notification email notice:", emailSendErr?.message || emailSendErr);
-          });
-        } catch (emailErr) {
-          console.log("Admin notification email setup notice:", emailErr?.message || emailErr);
-        }
+        (async () => {
+          try {
+            const { Resend } = await import("resend");
+            const resend = new Resend(process.env.RESEND_API_KEY);
+            await resend.emails.send({
+              from: "ViaCamperApp <onboarding@resend.dev>",
+              to: targetAdminEmailForReg,
+              subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
+              html: `
+                <h2>Richiesta di approvazione nuovo utente registrato</h2>
+                <p>Un nuovo camperista si \xE8 appena iscritto ed \xE8 in attesa di essere approvato per accedere all'app:</p>
+                <ul>
+                  <li><strong>Email:</strong> ${newUserDoc.email}</li>
+                  <li><strong>Nickname:</strong> ${newUserDoc.nickname}</li>
+                  <li><strong>Nome:</strong> ${newUserDoc.name || "N/D"}</li>
+                  <li><strong>Cognome:</strong> ${newUserDoc.surname || "N/D"}</li>
+                  <li><strong>Data di Nascita:</strong> ${newUserDoc.dob || "N/D"}</li>
+                  <li><strong>Data registrazione:</strong> ${newUserDoc.createdAt}</li>
+                  <li><strong>Stato approvazione:</strong> IN ATTESA DI APPROVAZIONE</li>
+                </ul>
+                <br/>
+                <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
+              `
+            });
+            console.log(`[Email] Admin notification sent successfully for user: ${newUserDoc.email}`);
+          } catch (emailErr) {
+            console.log("Admin notification email notice:", emailErr?.message || emailErr);
+          }
+        })().catch(() => {
+        });
       }
       const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
       if (targetAdminEmail) {

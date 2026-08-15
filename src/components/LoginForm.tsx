@@ -32,14 +32,24 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
     setIsResetting(true);
     try {
       const targetUrl = resolveMediaUrl('/api/reset-password');
-      const res = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail.toLowerCase().trim(), newPassword })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      let res;
+      try {
+        res = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({ email: resetEmail.toLowerCase().trim(), newPassword })
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Errore nel ripristino password.');
+        setResetMsg(`⚠️ ${data.error || 'Errore nel ripristino password.'}`);
+        setIsResetting(false);
+        return;
       }
       setResetMsg(data.message || '✅ Password aggiornata con successo! Ora puoi accedere.');
       setTimeout(() => {
@@ -137,15 +147,25 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
 
     try {
       const targetUrl = resolveMediaUrl('/api/login');
-      const res = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password: cleanPass })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      let res;
+      try {
+        res = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({ email: cleanEmail, password: cleanPass })
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Errore durante l\'accesso.');
+        setError(data.error || 'Errore durante l\'accesso.');
+        setIsLoading(false);
+        return;
       }
 
       const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
@@ -162,6 +182,7 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
         detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
       }));
       onSuccess(userObj);
+      return;
     } catch (err: any) {
       console.warn("Login API failed, attempting direct Firestore fallback...", err);
       if (firestore) {

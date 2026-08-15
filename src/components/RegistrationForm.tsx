@@ -92,41 +92,51 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
     // Helper for direct Firestore registration fallback
     const directFirestoreRegister = async () => {
       try {
-        const userDocRef = doc(db, "users", cleanEmail);
-        const existingSnap = await getDoc(userDocRef);
-        if (existingSnap.exists()) {
-          throw new Error("Esiste già un account registrato con questa email.");
+        // Option A: Use firestore adapter if provided
+        if (firestore) {
+          const userDocRef = firestore.collection("users").doc(cleanEmail);
+          const existingSnap = await userDocRef.get();
+          if (existingSnap.exists) {
+            throw new Error("Esiste già un account registrato con questa email.");
+          }
+          await userDocRef.set(newUserDoc);
+        } else {
+          // Option B: Use Firebase SDK directly
+          const userDocRef = doc(db, "users", cleanEmail);
+          const existingSnap = await getDoc(userDocRef);
+          if (existingSnap.exists()) {
+            throw new Error("Esiste già un account registrato con questa email.");
+          }
+          await setDoc(userDocRef, newUserDoc);
         }
 
-        await setDoc(userDocRef, newUserDoc);
-
-        // Notify moderators / admin if pending approval
+        // Notify moderators in background without blocking UI
         if (!isSuperAdmin) {
-          try {
-            await addDoc(collection(db, "adminNotifications"), {
-              type: "users",
-              title: "Richiesta Iscrizione Utente",
-              body: `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`,
-              timestamp: new Date().toISOString(),
-              data: { email: cleanEmail, nickname: cleanNickname, type: "user_approval" },
-              read: false
-            });
-
-            const superAdmins = ["sambucci.simone@gmail.com", "viacamperapp@gmail.com"];
-            for (const adminEmail of superAdmins) {
-              await addDoc(collection(db, "notifications"), {
-                userId: adminEmail,
-                title: "Richiesta Iscrizione Utente",
-                body: `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`,
-                type: "users",
-                createdAt: new Date().toISOString(),
-                read: false,
-                data: { email: cleanEmail, nickname: cleanNickname, type: "user_approval" }
-              });
+          (async () => {
+            try {
+              if (firestore) {
+                await firestore.collection("adminNotifications").add({
+                  type: "users",
+                  title: "Richiesta Iscrizione Utente",
+                  body: `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`,
+                  timestamp: new Date().toISOString(),
+                  data: { email: cleanEmail, nickname: cleanNickname, type: "user_approval" },
+                  read: false
+                });
+              } else {
+                await addDoc(collection(db, "adminNotifications"), {
+                  type: "users",
+                  title: "Richiesta Iscrizione Utente",
+                  body: `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`,
+                  timestamp: new Date().toISOString(),
+                  data: { email: cleanEmail, nickname: cleanNickname, type: "user_approval" },
+                  read: false
+                });
+              }
+            } catch (notifErr) {
+              console.warn("Could not dispatch registration notification:", notifErr);
             }
-          } catch (notifErr) {
-            console.warn("Could not dispatch registration notification:", notifErr);
-          }
+          })().catch(() => {});
         }
 
         onSuccess({
@@ -143,32 +153,44 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
 
     try {
       const targetUrl = resolveMediaUrl('/api/register');
-      const res = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: cleanEmail,
-          password: password.trim(),
-          name: cleanName,
-          surname: cleanSurname,
-          dob,
-          nickname: cleanNickname,
-          profilePhoto
-        })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+      let res;
+      try {
+        res = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            email: cleanEmail,
+            password: password.trim(),
+            name: cleanName,
+            surname: cleanSurname,
+            dob,
+            nickname: cleanNickname,
+            profilePhoto
+          })
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Impossibile completare la registrazione.');
+        setError(data.error || 'Impossibile completare la registrazione.');
+        setIsLoading(false);
+        return;
       }
 
       onSuccess(data.user || newUserDoc);
+      return;
     } catch (err: any) {
       console.warn("Registration API call failed, falling back to direct Firestore register:", err);
       try {
         await directFirestoreRegister();
       } catch (fallbackErr: any) {
-        setError(fallbackErr.message || 'Errore di connessione con il server.');
+        setError(fallbackErr.message || 'Errore di connessione con il server. Riprova tra qualche istante.');
       }
     } finally {
       setIsLoading(false);

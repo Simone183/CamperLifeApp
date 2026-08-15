@@ -26,15 +26,16 @@ export function resolveMediaUrl(url?: string): string {
       window.location.port !== "5173");
 
   if (isMobileNative) {
-    // Standard GCS/Cloud Run production host urls
-    const devBase = "https://ais-dev-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
+    // Public production Cloud Run URL
     const preBase = "https://ais-pre-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
+    const devBase = "https://ais-dev-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
     
-    let base = devBase;
+    // Default to the public production endpoint for all native mobile apps & external devices
+    let base = preBase;
     
-    // Choose the base URL according to the current app host/deployment type
-    if (window.location.hostname.includes("ais-pre-") || window.location.href.includes("ais-pre-")) {
-      base = preBase;
+    // Only use devBase when explicitly running in AI Studio dev environment
+    if (window.location.hostname.includes("ais-dev-") || window.location.href.includes("ais-dev-")) {
+      base = devBase;
     }
     
     const cleanBase = base.replace(/\/$/, "");
