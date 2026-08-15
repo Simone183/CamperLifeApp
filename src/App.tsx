@@ -861,8 +861,31 @@ export default function App() {
     };
 
     window.addEventListener("popstate", handlePopState);
+
+    const handleNavAdminUsers = () => {
+      setActiveTab("settings_tools");
+      setSettingsSubTab("hub");
+    };
+
+    const handleNavAdminPlaces = () => {
+      setActiveTab("settings_tools");
+      setSettingsSubTab("hub");
+    };
+
+    const handleNavCommunity = () => {
+      setActiveTab("settings_tools");
+      setSettingsSubTab("community");
+    };
+
+    window.addEventListener("navigate-admin-users", handleNavAdminUsers);
+    window.addEventListener("navigate-admin-places", handleNavAdminPlaces);
+    window.addEventListener("navigate-community", handleNavCommunity);
+
     return () => {
       window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("navigate-admin-users", handleNavAdminUsers);
+      window.removeEventListener("navigate-admin-places", handleNavAdminPlaces);
+      window.removeEventListener("navigate-community", handleNavCommunity);
     };
   }, []);
 

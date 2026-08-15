@@ -330,14 +330,37 @@ async function sendPushNotification(
     const tokens: string[] = [];
     const tokensToClean: string[] = [];
 
-    for (const email of emailList) {
+    for (const rawEmail of emailList) {
+      const email = String(rawEmail || '').toLowerCase().trim();
+      if (!email) continue;
+
+      // 1. Check push_tokens collection
       try {
-        const doc = await tokensRef.doc(email.toLowerCase().trim()).get();
+        const doc = await tokensRef.doc(email).get();
         if (doc.exists && doc.data()?.token) {
-          tokens.push(doc.data().token);
+          const t = doc.data()?.token;
+          if (t && !tokens.includes(t)) tokens.push(t);
         }
       } catch (err) {
-        console.error(`[FCM Push] Error reading push token for user ${email}:`, err);
+        console.error(`[FCM Push] Error reading push token from push_tokens for ${email}:`, err);
+      }
+
+      // 2. Also check users collection as backup
+      try {
+        const userDoc = await firestoreDb.collection("users").doc(email).get();
+        if (userDoc.exists) {
+          const uData = userDoc.data() || {};
+          if (uData.pushToken && !tokens.includes(uData.pushToken)) {
+            tokens.push(uData.pushToken);
+          }
+          if (Array.isArray(uData.pushTokens)) {
+            uData.pushTokens.forEach((t: string) => {
+              if (t && !tokens.includes(t)) tokens.push(t);
+            });
+          }
+        }
+      } catch (uErr) {
+        // silent
       }
     }
 
@@ -346,7 +369,7 @@ async function sendPushNotification(
       return;
     }
 
-    console.log(`[FCM Push] Sending notification to ${tokens.length} devices...`);
+    console.log(`[FCM Push] Sending notification to ${tokens.length} devices for ${emailList.join(", ")}...`);
 
     const message = {
       notification: {
@@ -360,7 +383,7 @@ async function sendPushNotification(
           channelId: "fcm_default_channel",
           notificationPriority: "PRIORITY_MAX" as const,
           visibility: "public" as const,
-          icon: "ic_launcher",
+          icon: "ic_notification",
           defaultSound: true,
           defaultVibrateTimings: true,
         }
@@ -379,7 +402,7 @@ async function sendPushNotification(
         body: body,
         ...(data || {})
       },
-      tokens: tokens,
+      tokens: Array.from(new Set(tokens)),
     };
 
     const response = await getMessaging(app).sendEachForMulticast(message);
@@ -2256,16 +2279,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         })().catch(() => {});
       }
 
-      // Send instant push notification to admin about new user registration (in background)
-      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-      if (targetAdminEmail) {
-        sendPushNotification(
-          targetAdminEmail,
-          `👥 Nuovo camperista iscritto!`,
-          `L'utente ${newUserDoc.nickname} (${newUserDoc.name} ${newUserDoc.surname}) si è registrato ed è in attesa di approvazione.`,
-          { type: "new_registration", userEmail: newUserDoc.email }
-        ).catch(err => console.error("[FCM Push] Failed to notify admin of new registration:", err));
+      // Send instant push notification to all superadmins and moderators about new user registration
+      const adminPushTargets = ["sambucci.simone@gmail.com", "viacamperapp@gmail.com"];
+      if (process.env.ADMIN_EMAIL && !adminPushTargets.includes(process.env.ADMIN_EMAIL.toLowerCase().trim())) {
+        adminPushTargets.push(process.env.ADMIN_EMAIL.toLowerCase().trim());
       }
+      sendPushNotification(
+        adminPushTargets,
+        `👥 Nuovo camperista iscritto!`,
+        `L'utente ${newUserDoc.nickname} (${newUserDoc.name || ''} ${newUserDoc.surname || ''}) si è registrato ed è in attesa di approvazione.`,
+        { type: "new_registration", userEmail: newUserDoc.email, nickname: newUserDoc.nickname }
+      ).catch(err => console.error("[FCM Push] Failed to notify admin of new registration:", err));
 
       return res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
     } catch (err: any) {

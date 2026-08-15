@@ -1180,21 +1180,39 @@ async function sendPushNotification(emails, title, body, data) {
     const tokensRef = firestoreDb.collection("push_tokens");
     const tokens = [];
     const tokensToClean = [];
-    for (const email of emailList) {
+    for (const rawEmail of emailList) {
+      const email = String(rawEmail || "").toLowerCase().trim();
+      if (!email) continue;
       try {
-        const doc2 = await tokensRef.doc(email.toLowerCase().trim()).get();
+        const doc2 = await tokensRef.doc(email).get();
         if (doc2.exists && doc2.data()?.token) {
-          tokens.push(doc2.data().token);
+          const t = doc2.data()?.token;
+          if (t && !tokens.includes(t)) tokens.push(t);
         }
       } catch (err) {
-        console.error(`[FCM Push] Error reading push token for user ${email}:`, err);
+        console.error(`[FCM Push] Error reading push token from push_tokens for ${email}:`, err);
+      }
+      try {
+        const userDoc = await firestoreDb.collection("users").doc(email).get();
+        if (userDoc.exists) {
+          const uData = userDoc.data() || {};
+          if (uData.pushToken && !tokens.includes(uData.pushToken)) {
+            tokens.push(uData.pushToken);
+          }
+          if (Array.isArray(uData.pushTokens)) {
+            uData.pushTokens.forEach((t) => {
+              if (t && !tokens.includes(t)) tokens.push(t);
+            });
+          }
+        }
+      } catch (uErr) {
       }
     }
     if (tokens.length === 0) {
       console.log(`[FCM Push] No push tokens found for users:`, emailList);
       return;
     }
-    console.log(`[FCM Push] Sending notification to ${tokens.length} devices...`);
+    console.log(`[FCM Push] Sending notification to ${tokens.length} devices for ${emailList.join(", ")}...`);
     const message = {
       notification: {
         title,
@@ -1207,7 +1225,7 @@ async function sendPushNotification(emails, title, body, data) {
           channelId: "fcm_default_channel",
           notificationPriority: "PRIORITY_MAX",
           visibility: "public",
-          icon: "ic_launcher",
+          icon: "ic_notification",
           defaultSound: true,
           defaultVibrateTimings: true
         }
@@ -1226,7 +1244,7 @@ async function sendPushNotification(emails, title, body, data) {
         body,
         ...data || {}
       },
-      tokens
+      tokens: Array.from(new Set(tokens))
     };
     const response = await (0, import_messaging.getMessaging)(app).sendEachForMulticast(message);
     console.log(`[FCM Push] Multicast send summary: ${response.successCount} succeeded, ${response.failureCount} failed.`);
@@ -2814,15 +2832,16 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         })().catch(() => {
         });
       }
-      const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-      if (targetAdminEmail) {
-        sendPushNotification(
-          targetAdminEmail,
-          `\u{1F465} Nuovo camperista iscritto!`,
-          `L'utente ${newUserDoc.nickname} (${newUserDoc.name} ${newUserDoc.surname}) si \xE8 registrato ed \xE8 in attesa di approvazione.`,
-          { type: "new_registration", userEmail: newUserDoc.email }
-        ).catch((err) => console.error("[FCM Push] Failed to notify admin of new registration:", err));
+      const adminPushTargets = ["sambucci.simone@gmail.com", "viacamperapp@gmail.com"];
+      if (process.env.ADMIN_EMAIL && !adminPushTargets.includes(process.env.ADMIN_EMAIL.toLowerCase().trim())) {
+        adminPushTargets.push(process.env.ADMIN_EMAIL.toLowerCase().trim());
       }
+      sendPushNotification(
+        adminPushTargets,
+        `\u{1F465} Nuovo camperista iscritto!`,
+        `L'utente ${newUserDoc.nickname} (${newUserDoc.name || ""} ${newUserDoc.surname || ""}) si \xE8 registrato ed \xE8 in attesa di approvazione.`,
+        { type: "new_registration", userEmail: newUserDoc.email, nickname: newUserDoc.nickname }
+      ).catch((err) => console.error("[FCM Push] Failed to notify admin of new registration:", err));
       return res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
     } catch (err) {
       console.error("Error in register endpoint:", err);
