@@ -144,6 +144,7 @@ import { useFirestoreSync } from "./lib/firestoreSync";
 import { doc, onSnapshot, setDoc, query, collection, where } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import firebaseConfig from "../firebase-applet-config.json";
+import { resolveMediaUrl } from "./utils/resolveMediaUrl";
 const firestore = new ClientFirestoreAdapter(
   firebaseConfig,
   firebaseConfig.firestoreDatabaseId,
@@ -571,7 +572,7 @@ export default function App() {
 
       for (const proposal of proposals) {
         try {
-          const res = await fetch("/api/propose-place", {
+          const res = await fetch(resolveMediaUrl("/api/propose-place"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(proposal),
@@ -682,7 +683,7 @@ export default function App() {
     setFavoriteIds(updated);
 
     // Sync favorites with Firestore for logged-in user
-    fetch("/api/user/favorites", {
+    fetch(resolveMediaUrl("/api/user/favorites"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: currentUser.email, favorites: updated }),
@@ -1996,7 +1997,7 @@ export default function App() {
 
   const fetchPendingPlaces = async () => {
     try {
-      const res = await fetch("/api/admin/pending-places");
+      const res = await fetch(resolveMediaUrl("/api/admin/pending-places"));
       if (res.ok) {
         const data = await res.json();
         setPendingPlaces(data);
@@ -2009,7 +2010,7 @@ export default function App() {
   const fetchAllPlaces = async () => {
     try {
       console.log("[Admin API] Fetching all places...");
-      const res = await fetch("/api/admin/all-places");
+      const res = await fetch(resolveMediaUrl("/api/admin/all-places"));
       if (res.ok) {
         const data = await res.json();
         console.log(`[Admin API] Fetched ${data.length} places.`);
@@ -2024,7 +2025,7 @@ export default function App() {
 
   const handleUpdatePlace = async (updatedPlace: any) => {
     try {
-      const res = await fetch("/api/admin/update-place", {
+      const res = await fetch(resolveMediaUrl("/api/admin/update-place"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: updatedPlace.id, updatedData: updatedPlace }),
@@ -2040,7 +2041,7 @@ export default function App() {
 
   const fetchFeedbacks = async () => {
     try {
-      const res = await fetch("/api/admin/feedbacks");
+      const res = await fetch(resolveMediaUrl("/api/admin/feedbacks"));
       if (res.ok) {
         const data = await res.json();
         setFeedbacks(data);
@@ -2053,7 +2054,7 @@ export default function App() {
   const fetchAdminNotifications = async () => {
     setAdminNotificationsLoading(true);
     try {
-      const res = await fetch("/api/admin/notifications");
+      const res = await fetch(resolveMediaUrl("/api/admin/notifications"));
       if (res.ok) {
         const data = await res.json();
         setAdminNotifications(data);
@@ -2068,7 +2069,7 @@ export default function App() {
   const fetchCrashReports = async () => {
     setCrashReportsLoading(true);
     try {
-      const res = await fetch("/api/admin/crash-reports");
+      const res = await fetch(resolveMediaUrl("/api/admin/crash-reports"));
       if (res.ok) {
         const data = await res.json();
         setCrashReports(data);
@@ -2082,7 +2083,7 @@ export default function App() {
 
   const handleDeleteCrashReport = async (id: string) => {
     try {
-      const res = await fetch(`/api/admin/crash-reports/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(resolveMediaUrl(`/api/admin/crash-reports/${encodeURIComponent(id)}`), { method: "DELETE" });
       if (res.ok) {
         setCrashReports((prev) => prev.filter((r) => r.id !== id));
       }
@@ -2094,7 +2095,7 @@ export default function App() {
   const handleClearAllCrashReports = async () => {
     if (!window.confirm("Sei sicuro di voler svuotare tutti i log di crash?")) return;
     try {
-      const res = await fetch("/api/admin/crash-reports/clear-all", { method: "POST" });
+      const res = await fetch(resolveMediaUrl("/api/admin/crash-reports/clear-all"), { method: "POST" });
       if (res.ok) {
         setCrashReports([]);
       }
@@ -2108,7 +2109,7 @@ export default function App() {
     setAdminUsersError(null);
     let apiErrorMsg = "";
     try {
-      const res = await fetch("/api/admin/users");
+      const res = await fetch(resolveMediaUrl("/api/admin/users"));
       if (res.ok) {
         const data = await res.json();
         setAdminUsers(data);
@@ -2150,6 +2151,7 @@ export default function App() {
               dob: data.dob || "",
               createdAt: data.createdAt || "",
               isModerator: !!data.isModerator,
+              moderatorRoles: data.moderatorRoles || {},
               approved: data.approved !== false,
               favoritesCount: (data.favorites || []).length,
               proposalsCount: proposalCounts[email] || 0
@@ -2175,7 +2177,7 @@ export default function App() {
     setShowUserProposalsModal(true);
     try {
       const res = await fetch(
-        `/api/admin/users/${encodeURIComponent(email)}/proposals`,
+        resolveMediaUrl(`/api/admin/users/${encodeURIComponent(email)}/proposals`),
       );
       if (res.ok) {
         const data = await res.json();
@@ -2216,7 +2218,7 @@ export default function App() {
   const executeDeleteUser = async (email: string) => {
     setAdminActionExecuting("delete-" + email);
     try {
-      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}`, {
+      const res = await fetch(resolveMediaUrl(`/api/admin/users/${encodeURIComponent(email)}`), {
         method: "DELETE",
       });
       if (res.ok) {
@@ -2275,7 +2277,7 @@ export default function App() {
   const executeApproveUser = async (email: string) => {
     setAdminActionExecuting("approve-" + email);
     try {
-      const res = await fetch("/api/admin/users/approve", {
+      const res = await fetch(resolveMediaUrl("/api/admin/users/approve"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -2336,7 +2338,7 @@ export default function App() {
   const executeToggleModerator = async (email: string, roles: { community: boolean, places: boolean, itineraries: boolean }) => {
     setAdminActionExecuting("toggle-" + email);
     try {
-      const res = await fetch("/api/admin/users/toggle-moderator", {
+      const res = await fetch(resolveMediaUrl("/api/admin/users/toggle-moderator"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, roles }),
@@ -2398,7 +2400,7 @@ export default function App() {
     const replyText = adminReplies[id];
     if (!replyText || !replyText.trim()) return;
     try {
-      const res = await fetch("/api/admin/reply-feedback", {
+      const res = await fetch(resolveMediaUrl("/api/admin/reply-feedback"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2425,7 +2427,7 @@ export default function App() {
 
   const fetchPendingCommunityItineraries = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/community-itineraries?includePending=true");
+      const res = await fetch(resolveMediaUrl("/api/community-itineraries?includePending=true"));
       if (res.ok) {
         const data = await res.json();
         if (data.itineraries) {
@@ -2440,7 +2442,7 @@ export default function App() {
 
   const handleApproveCommunityItinerary = async (id: string) => {
     try {
-      const res = await fetch("/api/admin/approve-community-itinerary", {
+      const res = await fetch(resolveMediaUrl("/api/admin/approve-community-itinerary"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -2465,7 +2467,7 @@ export default function App() {
   const handleRejectCommunityItinerary = async (id: string) => {
     if (!confirm("Sei sicuro di voler rifiutare ed eliminare questo itinerario?")) return;
     try {
-      const res = await fetch("/api/admin/reject-community-itinerary", {
+      const res = await fetch(resolveMediaUrl("/api/admin/reject-community-itinerary"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -5862,7 +5864,7 @@ out center;`;
                                     };
                                   }
 
-                                  const res = await fetch("/api/feedback", {
+                                  const res = await fetch(resolveMediaUrl("/api/feedback"), {
                                     method: "POST",
                                     headers: {
                                       "Content-Type": "application/json",
@@ -5886,7 +5888,7 @@ out center;`;
                                     setFeedbackPhoto(null);
                                     // Refresh local feedback list to show new submission
                                     const listRes = await fetch(
-                                      "/api/admin/feedbacks",
+                                      resolveMediaUrl("/api/admin/feedbacks"),
                                     );
                                     if (listRes.ok) {
                                       const data = await listRes.json();

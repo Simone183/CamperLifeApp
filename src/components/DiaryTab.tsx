@@ -243,6 +243,8 @@ export default function DiaryTab({
   const [pdfIncludeMovements, setPdfIncludeMovements] = React.useState(true);
   const [pdfIncludeExpenses, setPdfIncludeExpenses] = React.useState(true);
   const [pdfIncludePhotos, setPdfIncludePhotos] = React.useState(true);
+  const [pdfRingBinderMargin, setPdfRingBinderMargin] = React.useState(true);
+  const [pdfShowHoleGuides, setPdfShowHoleGuides] = React.useState(true);
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
 
   React.useEffect(() => {
@@ -3729,6 +3731,52 @@ export default function DiaryTab({
                   </label>
                 </div>
               </div>
+
+              {/* Opzioni di Impaginazione / Raccoglitore ad Anelli */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black uppercase text-stone-400 tracking-wider">
+                  Impaginazione e Raccoglitore ad Anelli
+                </label>
+                <div className="space-y-2 bg-stone-50 p-3 rounded-xl border border-stone-200/60">
+                  <label className="flex items-start justify-between gap-3 text-xs cursor-pointer select-none">
+                    <div>
+                      <span className="font-bold text-stone-800 block">
+                        Margine sinistro per foratura raccoglitore
+                      </span>
+                      <span className="text-[11px] text-stone-500 leading-tight block mt-0.5">
+                        Aggiunge 25mm di margine sul lato sinistro per permettere di fare i buchi senza tagliare testi o tabelle.
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={pdfRingBinderMargin}
+                      onChange={(e) => setPdfRingBinderMargin(e.target.checked)}
+                      disabled={isGeneratingPdf}
+                      className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 accent-emerald-600 mt-0.5"
+                    />
+                  </label>
+
+                  {pdfRingBinderMargin && (
+                    <label className="flex items-start justify-between gap-3 text-xs pt-2 border-t border-stone-200/60 cursor-pointer select-none">
+                      <div>
+                        <span className="font-bold text-stone-800 block">
+                          Segni guida fori stampati
+                        </span>
+                        <span className="text-[11px] text-stone-500 leading-tight block mt-0.5">
+                          Stampa dei piccoli riferimenti discreti per allineare perfettamente la perforatrice per raccoglitori.
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={pdfShowHoleGuides}
+                        onChange={(e) => setPdfShowHoleGuides(e.target.checked)}
+                        disabled={isGeneratingPdf}
+                        className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 accent-emerald-600 mt-0.5"
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Action buttons */}
@@ -3751,11 +3799,13 @@ export default function DiaryTab({
                           includeMovements: pdfIncludeMovements,
                           includeExpenses: pdfIncludeExpenses,
                           includePhotos: pdfIncludePhotos,
+                          ringBinderMargin: pdfRingBinderMargin,
+                          showHoleGuides: pdfShowHoleGuides,
                         });
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
                             detail: {
-                              message: `📄 PDF del viaggio generato e scaricato correttamente!`,
+                              message: `📄 PDF del viaggio generato e scaricato con margine per raccoglitore!`,
                             },
                           })
                         );

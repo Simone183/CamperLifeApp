@@ -14,6 +14,7 @@ import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
 import androidx.car.app.model.CarLocation;
 import androidx.car.app.model.ItemList;
+import androidx.car.app.model.ListTemplate;
 import androidx.car.app.model.MessageTemplate;
 import androidx.car.app.model.Metadata;
 import androidx.car.app.model.Place;
@@ -21,6 +22,9 @@ import androidx.car.app.model.PlaceListMapTemplate;
 import androidx.car.app.model.PlaceMarker;
 import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -32,13 +36,14 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class CamperCarScreen extends Screen {
+public class CamperCarScreen extends Screen implements DefaultLifecycleObserver {
     private static final String TAG = "CamperCarScreen";
-    private static final int MAX_CAR_ITEMS = 6; // Strict limit for Android Auto PlaceList templates
+    private static final int MAX_CAR_ITEMS = 6; // Max 6 items allowed in standard car templates
     private final List<CamperStop> camperStops = new ArrayList<>();
     private boolean isLoading = false;
     private double currentLat = 41.9028; // Default Italy center (Roma)
     private double currentLng = 12.4964;
+    private boolean hasFetched = false;
 
     private static class CamperStop {
         String name;
@@ -58,9 +63,37 @@ public class CamperCarScreen extends Screen {
 
     public CamperCarScreen(@NonNull CarContext carContext) {
         super(carContext);
-        updateUserLocation();
+        getLifecycle().addObserver(this);
         loadDefaultStops();
-        fetchDynamicStops();
+    }
+
+    @Override
+    public void onStart(@NonNull LifecycleOwner owner) {
+        updateUserLocation();
+        if (!hasFetched) {
+            hasFetched = true;
+            fetchDynamicStops();
+        }
+    }
+
+    @Override
+    public void onResume(@NonNull LifecycleOwner owner) {
+        updateUserLocation();
+    }
+
+    private void safeInvalidate() {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                        invalidate();
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "safeInvalidate ignored exception: ", e);
+                }
+            }
+        });
     }
 
     private void updateUserLocation() {
@@ -82,7 +115,7 @@ public class CamperCarScreen extends Screen {
                 }
             }
         } catch (Exception e) {
-            Log.w(TAG, "Could not obtain user location for Android Auto sorting: ", e);
+            Log.w(TAG, "Could not obtain user location: ", e);
         }
     }
 
@@ -167,31 +200,33 @@ public class CamperCarScreen extends Screen {
                     Log.w(TAG, "Failed to fetch live stops from remote server, keeping default: ", e);
                 } finally {
                     isLoading = false;
-                    new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                invalidate();
-                            } catch (Exception ignored) {}
-                        }
-                    });
+                    safeInvalidate();
                 }
             }
         }).start();
+    }
+
+    private void startNavigation(double lat, double lng, String name) {
+        try {
+            Uri uri = Uri.parse("geo:" + lat + "," + lng + "?q=" + lat + "," + lng + "(" + Uri.encode(name) + ")");
+            Intent intent = new Intent(CarContext.ACTION_NAVIGATE, uri);
+            getCarContext().startCarApp(intent);
+        } catch (Exception err) {
+            Log.e(TAG, "Failed to start car navigation: ", err);
+            try {
+                Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + lat + "," + lng));
+                fallback.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getCarContext().startActivity(fallback);
+            } catch (Exception ex) {
+                Log.e(TAG, "Fallback navigation failed: ", ex);
+            }
+        }
     }
 
     @NonNull
     @Override
     public Template onGetTemplate() {
         try {
-            if (isLoading && camperStops.isEmpty()) {
-                return new PlaceListMapTemplate.Builder()
-                        .setTitle("ViaCamper - Aree Sosta")
-                        .setHeaderAction(Action.APP_ICON)
-                        .setLoading(true)
-                        .build();
-            }
-
             ItemList.Builder listBuilder = new ItemList.Builder();
 
             if (camperStops.isEmpty()) {
@@ -201,41 +236,30 @@ public class CamperCarScreen extends Screen {
                 for (int i = 0; i < limit; i++) {
                     final CamperStop stop = camperStops.get(i);
 
-                    Place place = new Place.Builder(CarLocation.create(stop.latitude, stop.longitude))
-                            .setMarker(new PlaceMarker.Builder()
-                                    .setColor(CarColor.PRIMARY)
-                                    .build())
-                            .build();
-
                     String subTitle = stop.description;
                     if (stop.distanceKm > 0.1) {
                         subTitle = String.format("%.1f km • %s", stop.distanceKm, stop.description);
                     }
 
-                    listBuilder.addItem(new Row.Builder()
+                    Row.Builder rowBuilder = new Row.Builder()
                             .setTitle(stop.name)
                             .addText(subTitle)
-                            .setMetadata(new Metadata.Builder().setPlace(place).build())
                             .setOnClickListener(new androidx.car.app.model.OnClickListener() {
                                 @Override
                                 public void onClick() {
-                                    try {
-                                        Uri uri = Uri.parse("geo:" + stop.latitude + "," + stop.longitude + "?q=" + stop.latitude + "," + stop.longitude + "(" + Uri.encode(stop.name) + ")");
-                                        Intent intent = new Intent(CarContext.ACTION_NAVIGATE, uri);
-                                        getCarContext().startCarApp(intent);
-                                    } catch (Exception err) {
-                                        Log.e(TAG, "Failed to start navigation: ", err);
-                                        try {
-                                            Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + stop.latitude + "," + stop.longitude));
-                                            fallback.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                            getCarContext().startActivity(fallback);
-                                        } catch (Exception ex) {
-                                            Log.e(TAG, "Fallback navigation failed: ", ex);
-                                        }
-                                    }
+                                    startNavigation(stop.latitude, stop.longitude, stop.name);
                                 }
-                            })
-                            .build());
+                            });
+
+                    // Add metadata place marker safely
+                    try {
+                        Place place = new Place.Builder(CarLocation.create(stop.latitude, stop.longitude))
+                                .setMarker(new PlaceMarker.Builder().build())
+                                .build();
+                        rowBuilder.setMetadata(new Metadata.Builder().setPlace(place).build());
+                    } catch (Exception ignored) {}
+
+                    listBuilder.addItem(rowBuilder.build());
                 }
             }
 
@@ -245,23 +269,36 @@ public class CamperCarScreen extends Screen {
                             .setOnClickListener(new androidx.car.app.model.OnClickListener() {
                                 @Override
                                 public void onClick() {
+                                    updateUserLocation();
                                     fetchDynamicStops();
                                 }
                             })
                             .build())
                     .build();
 
-            return new PlaceListMapTemplate.Builder()
-                    .setTitle("ViaCamper - Soste Vicine")
-                    .setHeaderAction(Action.APP_ICON)
-                    .setActionStrip(actionStrip)
-                    .setItemList(listBuilder.build())
-                    .build();
+            // Try PlaceListMapTemplate first, with automatic fallback to ListTemplate
+            try {
+                return new PlaceListMapTemplate.Builder()
+                        .setTitle("ViaCamper - Aree Sosta")
+                        .setHeaderAction(Action.APP_ICON)
+                        .setActionStrip(actionStrip)
+                        .setItemList(listBuilder.build())
+                        .build();
+            } catch (Throwable t) {
+                Log.w(TAG, "PlaceListMapTemplate not supported on this head unit, falling back to ListTemplate: ", t);
+                return new ListTemplate.Builder()
+                        .setTitle("ViaCamper - Aree Sosta")
+                        .setHeaderAction(Action.APP_ICON)
+                        .setActionStrip(actionStrip)
+                        .setSingleList(listBuilder.build())
+                        .build();
+            }
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "Error in onGetTemplate: ", e);
-            // Safe fallback to MessageTemplate so the car screen NEVER crashes
-            return new MessageTemplate.Builder("ViaCamper per Android Auto")
+            // Universal fallback template that is 100% compliant on all Android Auto versions
+            return new MessageTemplate.Builder("ViaCamper - Seleziona per ricaricare le aree sosta")
+                    .setTitle("ViaCamper")
                     .setHeaderAction(Action.APP_ICON)
                     .addAction(new Action.Builder()
                             .setTitle("Ricarica")
@@ -269,7 +306,7 @@ public class CamperCarScreen extends Screen {
                                 @Override
                                 public void onClick() {
                                     fetchDynamicStops();
-                                    invalidate();
+                                    safeInvalidate();
                                 }
                             })
                             .build())

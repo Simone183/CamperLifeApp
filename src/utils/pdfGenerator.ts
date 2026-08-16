@@ -61,6 +61,8 @@ export const generateTripPDF = async (
     includeMovements: boolean;
     includeExpenses: boolean;
     includePhotos: boolean;
+    ringBinderMargin?: boolean;
+    showHoleGuides?: boolean;
   }
 ): Promise<void> => {
   // Dimensions in mm
@@ -68,8 +70,16 @@ export const generateTripPDF = async (
   const pageWidth = isA4 ? 210 : 148;
   const pageHeight = isA4 ? 297 : 210;
 
-  const margin = isA4 ? 15 : 10;
-  const usableWidth = pageWidth - margin * 2;
+  const useBinderMargin = options.ringBinderMargin !== false;
+  const showGuides = options.showHoleGuides !== false && useBinderMargin;
+
+  // Margin allocation: 25mm left gutter on A4 (20mm on A5) gives ample room for 2-hole and 4-hole punches without clipping content
+  const marginLeft = useBinderMargin ? (isA4 ? 25 : 20) : (isA4 ? 15 : 10);
+  const marginRight = useBinderMargin ? (isA4 ? 12 : 9) : (isA4 ? 15 : 10);
+  const marginTop = isA4 ? 14 : 11;
+  const marginBottom = isA4 ? 14 : 11;
+
+  const usableWidth = pageWidth - marginLeft - marginRight;
 
   // Colors (RGB)
   const cPrimary = [62, 74, 53];     // Deep Olive (#3E4A35)
@@ -88,7 +98,7 @@ export const generateTripPDF = async (
   });
 
   let pageNum = 1;
-  let y = margin;
+  let y = marginTop;
 
   // Add metadata
   doc.setProperties({
@@ -99,32 +109,63 @@ export const generateTripPDF = async (
     creator: "ViaCamper"
   });
 
-  // Footer/Header Draw Function
+  // Footer/Header Draw Function with Binder Hole Guides
   const drawPageDecorations = () => {
     // Top running header
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-    doc.text("ViaCamper - Diario di Bordo", margin, margin - 4);
+    doc.text("ViaCamper - Diario di Bordo", marginLeft, marginTop - 4);
     
     // Header divider line
     doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
     doc.setLineWidth(0.2);
-    doc.line(margin, margin - 2, pageWidth - margin, margin - 2);
+    doc.line(marginLeft, marginTop - 2, pageWidth - marginRight, marginTop - 2);
 
     // Footer divider line
-    doc.line(margin, pageHeight - margin + 4, pageWidth - margin, pageHeight - margin + 4);
+    doc.line(marginLeft, pageHeight - marginBottom + 4, pageWidth - marginRight, pageHeight - marginBottom + 4);
 
     // Footer page number
-    doc.text(`Pagina ${pageNum}`, pageWidth - margin, pageHeight - margin + 8, { align: "right" });
-    doc.text(`Generato il ${new Date().toLocaleDateString("it-IT")}`, margin, pageHeight - margin + 8);
+    doc.text(`Pagina ${pageNum}`, pageWidth - marginRight, pageHeight - marginBottom + 8, { align: "right" });
+    doc.text(`Generato il ${new Date().toLocaleDateString("it-IT")}`, marginLeft, pageHeight - marginBottom + 8);
+
+    // Optional discreet hole punch guide marks on left margin
+    if (showGuides) {
+      doc.setDrawColor(203, 213, 225); // Slate 300 - soft, elegant guide color
+      doc.setLineWidth(0.15);
+
+      // Center alignment notch on the very left sheet edge
+      const midY = pageHeight / 2;
+      doc.line(0, midY, 3, midY);
+
+      const punchX = isA4 ? 12 : 9.5; // Standard 12mm hole center distance from left edge
+
+      if (isA4) {
+        // Standard ISO 838 4-hole positions (80mm spacing, centered)
+        const holePositionsA4 = [28.5, 108.5, 188.5, 268.5];
+        holePositionsA4.forEach((hY) => {
+          // Draw subtle crosshair and faint circle for punching guidance
+          doc.circle(punchX, hY, 2.2);
+          doc.line(punchX - 1.2, hY, punchX + 1.2, hY);
+          doc.line(punchX, hY - 1.2, punchX, hY + 1.2);
+        });
+      } else {
+        // A5 2-hole positions (80mm spacing centered: 65mm and 145mm)
+        const holePositionsA5 = [65, 145];
+        holePositionsA5.forEach((hY) => {
+          doc.circle(punchX, hY, 2.0);
+          doc.line(punchX - 1.0, hY, punchX + 1.0, hY);
+          doc.line(punchX, hY - 1.0, punchX, hY + 1.0);
+        });
+      }
+    }
   };
 
   const checkPageBreak = (heightNeeded: number) => {
-    if (y + heightNeeded > pageHeight - margin - 12) {
+    if (y + heightNeeded > pageHeight - marginBottom - 10) {
       doc.addPage(paperSize, "portrait");
       pageNum++;
-      y = margin + 5; // offset slightly for top header spacing
+      y = marginTop + 5; // offset slightly for top header spacing
       drawPageDecorations();
     }
   };
@@ -135,26 +176,26 @@ export const generateTripPDF = async (
   // --- COVER / HEADER AREA ---
   // Circle Icon emblem
   doc.setFillColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.circle(margin + 6, y + 6, 6, "F");
+  doc.circle(marginLeft + 6, y + 6, 6, "F");
   
   // Custom tiny tent design inside circle
   doc.setDrawColor(255, 255, 255);
   doc.setLineWidth(0.4);
-  doc.line(margin + 3.5, y + 8, margin + 6, y + 4); // left slope
-  doc.line(margin + 6, y + 4, margin + 8.5, y + 8); // right slope
-  doc.line(margin + 4.5, y + 8, margin + 7.5, y + 8); // ground line
-  doc.line(margin + 6, y + 4, margin + 6, y + 8);   // center post
+  doc.line(marginLeft + 3.5, y + 8, marginLeft + 6, y + 4); // left slope
+  doc.line(marginLeft + 6, y + 4, marginLeft + 8.5, y + 8); // right slope
+  doc.line(marginLeft + 4.5, y + 8, marginLeft + 7.5, y + 8); // ground line
+  doc.line(marginLeft + 6, y + 4, marginLeft + 6, y + 8);   // center post
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(isA4 ? 11 : 9);
   doc.setTextColor(cSecondary[0], cSecondary[1], cSecondary[2]);
-  doc.text("DIARIO DI VIAGGIO", margin + 15, y + 5);
+  doc.text("DIARIO DI VIAGGIO", marginLeft + 15, y + 5);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(isA4 ? 20 : 15);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
   const splitTitle = doc.splitTextToSize(trip.title, usableWidth - 20);
-  doc.text(splitTitle, margin + 15, y + 12);
+  doc.text(splitTitle, marginLeft + 15, y + 12);
   
   y += 12 + (splitTitle.length * (isA4 ? 7 : 5.5));
 
@@ -165,7 +206,7 @@ export const generateTripPDF = async (
   
   const tripStartDate = formatDate(trip.startDate);
   const tripEndDate = formatDate(trip.endDate);
-  doc.text(`Periodo: dal ${tripStartDate} al ${tripEndDate}`, margin + 15, y);
+  doc.text(`Periodo: dal ${tripStartDate} al ${tripEndDate}`, marginLeft + 15, y);
   
   y += isA4 ? 8 : 6;
 
@@ -207,39 +248,39 @@ export const generateTripPDF = async (
 
   // Box 1: Distance
   doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-  doc.rect(margin, y, colWidth - 2, isA4 ? 18 : 15, "F");
+  doc.rect(marginLeft, y, colWidth - 2, isA4 ? 18 : 15, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-  doc.text("DISTANZA TOTALI", margin + 4, y + 5);
+  doc.text("DISTANZA TOTALI", marginLeft + 4, y + 5);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(isA4 ? 14 : 11);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.text(`${totalDistance} ${distanceUnit}`, margin + 4, y + 12);
+  doc.text(`${totalDistance} ${distanceUnit}`, marginLeft + 4, y + 12);
 
   // Box 2: Expenses
   doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-  doc.rect(margin + colWidth, y, colWidth - 2, isA4 ? 18 : 15, "F");
+  doc.rect(marginLeft + colWidth, y, colWidth - 2, isA4 ? 18 : 15, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-  doc.text("BUDGET SPESO", margin + colWidth + 4, y + 5);
+  doc.text("BUDGET SPESO", marginLeft + colWidth + 4, y + 5);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(isA4 ? 14 : 11);
   doc.setTextColor(cAccent[0], cAccent[1], cAccent[2]);
-  doc.text(`${totalSpent.toFixed(2)} ${currencySymbol}`, margin + colWidth + 4, y + 12);
+  doc.text(`${totalSpent.toFixed(2)} ${currencySymbol}`, marginLeft + colWidth + 4, y + 12);
 
   // Box 3: Movements
   doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-  doc.rect(margin + colWidth * 2, y, colWidth, isA4 ? 18 : 15, "F");
+  doc.rect(marginLeft + colWidth * 2, y, colWidth, isA4 ? 18 : 15, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-  doc.text("TAPPE & SPOSTAMENTI", margin + colWidth * 2 + 4, y + 5);
+  doc.text("TAPPE & SPOSTAMENTI", marginLeft + colWidth * 2 + 4, y + 5);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(isA4 ? 14 : 11);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.text(`${totalMovements} tappe`, margin + colWidth * 2 + 4, y + 12);
+  doc.text(`${totalMovements} tappe`, marginLeft + colWidth * 2 + 4, y + 12);
 
   y += (isA4 ? 18 : 15) + 10;
 
@@ -251,12 +292,12 @@ export const generateTripPDF = async (
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 12 : 10);
     doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.text("IL RACCONTO DI VIAGGIO", margin, y);
+    doc.text("IL RACCONTO DI VIAGGIO", marginLeft, y);
     
     // Line decoration under header
     doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
     doc.setLineWidth(1);
-    doc.line(margin, y + 2, margin + 25, y + 2);
+    doc.line(marginLeft, y + 2, marginLeft + 25, y + 2);
     
     y += 7;
 
@@ -270,7 +311,7 @@ export const generateTripPDF = async (
 
     for (let i = 0; i < descLines.length; i++) {
       checkPageBreak(lineHeight);
-      doc.text(descLines[i], margin, y);
+      doc.text(descLines[i], marginLeft, y);
       y += lineHeight;
     }
     y += 8;
@@ -283,11 +324,11 @@ export const generateTripPDF = async (
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 12 : 10);
     doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.text("TAPPE & SPOSTAMENTI CRONOLOGICI", margin, y);
+    doc.text("TAPPE & SPOSTAMENTI CRONOLOGICI", marginLeft, y);
     
     doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
     doc.setLineWidth(1);
-    doc.line(margin, y + 2, margin + 25, y + 2);
+    doc.line(marginLeft, y + 2, marginLeft + 25, y + 2);
     
     y += 7;
 
@@ -299,16 +340,16 @@ export const generateTripPDF = async (
 
     // Table Header
     doc.setFillColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.rect(margin, y, usableWidth, isA4 ? 8 : 7, "F");
+    doc.rect(marginLeft, y, usableWidth, isA4 ? 8 : 7, "F");
     
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 8.5 : 7);
     doc.setTextColor(255, 255, 255);
     
-    doc.text("DATA", margin + 2, y + (isA4 ? 5 : 4.5));
-    doc.text("KM/ODO", margin + colDateW + 2, y + (isA4 ? 5 : 4.5));
-    doc.text("LOCALITÀ / TAPPA", margin + colDateW + colOdoW + 2, y + (isA4 ? 5 : 4.5));
-    doc.text("NOTE / DETTAGLI", margin + colDateW + colOdoW + colLocW + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("DATA", marginLeft + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("KM/ODO", marginLeft + colDateW + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("LOCALITÀ / TAPPA", marginLeft + colDateW + colOdoW + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("NOTE / DETTAGLI", marginLeft + colDateW + colOdoW + colLocW + 2, y + (isA4 ? 5 : 4.5));
     
     y += isA4 ? 8 : 7;
 
@@ -340,33 +381,33 @@ export const generateTripPDF = async (
       // Row background
       if (altRow) {
         doc.setFillColor(248, 250, 252); // Slate 50
-        doc.rect(margin, y, usableWidth, rowHeight, "F");
+        doc.rect(marginLeft, y, usableWidth, rowHeight, "F");
       }
       altRow = !altRow;
 
       // Draw bottom line
       doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
       doc.setLineWidth(0.15);
-      doc.line(margin, y + rowHeight, margin + usableWidth, y + rowHeight);
+      doc.line(marginLeft, y + rowHeight, marginLeft + usableWidth, y + rowHeight);
 
       // Render cell text
       doc.setFont("helvetica", "normal");
       doc.setFontSize(isA4 ? 8 : 7);
       doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
 
-      doc.text(dateText, margin + 2, y + (isA4 ? 5.5 : 4.5));
-      doc.text(odoText, margin + colDateW + 2, y + (isA4 ? 5.5 : 4.5));
+      doc.text(dateText, marginLeft + 2, y + (isA4 ? 5.5 : 4.5));
+      doc.text(odoText, marginLeft + colDateW + 2, y + (isA4 ? 5.5 : 4.5));
 
       // Multiline cell support
       let currentY = y + (isA4 ? 5.5 : 4.5);
       for (let i = 0; i < wrappedLoc.length; i++) {
-        doc.text(wrappedLoc[i], margin + colDateW + colOdoW + 2, currentY);
+        doc.text(wrappedLoc[i], marginLeft + colDateW + colOdoW + 2, currentY);
         currentY += isA4 ? 4.5 : 3.5;
       }
 
       currentY = y + (isA4 ? 5.5 : 4.5);
       for (let i = 0; i < wrappedNotes.length; i++) {
-        doc.text(wrappedNotes[i], margin + colDateW + colOdoW + colLocW + 2, currentY);
+        doc.text(wrappedNotes[i], marginLeft + colDateW + colOdoW + colLocW + 2, currentY);
         currentY += isA4 ? 4.5 : 3.5;
       }
 
@@ -382,11 +423,11 @@ export const generateTripPDF = async (
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 12 : 10);
     doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.text("RENDICONTO DELLE SPESE", margin, y);
+    doc.text("RENDICONTO DELLE SPESE", marginLeft, y);
     
     doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
     doc.setLineWidth(1);
-    doc.line(margin, y + 2, margin + 25, y + 2);
+    doc.line(marginLeft, y + 2, marginLeft + 25, y + 2);
     
     y += 7;
 
@@ -398,16 +439,16 @@ export const generateTripPDF = async (
 
     // Table Header
     doc.setFillColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.rect(margin, y, usableWidth, isA4 ? 8 : 7, "F");
+    doc.rect(marginLeft, y, usableWidth, isA4 ? 8 : 7, "F");
     
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 8.5 : 7);
     doc.setTextColor(255, 255, 255);
     
-    doc.text("DATA", margin + 2, y + (isA4 ? 5 : 4.5));
-    doc.text("CATEGORIA", margin + colDateW + 2, y + (isA4 ? 5 : 4.5));
-    doc.text("DESCRIZIONE", margin + colDateW + colCatW + 2, y + (isA4 ? 5 : 4.5));
-    doc.text("IMPORTO", margin + colDateW + colCatW + colDescW + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("DATA", marginLeft + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("CATEGORIA", marginLeft + colDateW + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("DESCRIZIONE", marginLeft + colDateW + colCatW + 2, y + (isA4 ? 5 : 4.5));
+    doc.text("IMPORTO", marginLeft + colDateW + colCatW + colDescW + 2, y + (isA4 ? 5 : 4.5));
     
     y += isA4 ? 8 : 7;
 
@@ -433,20 +474,20 @@ export const generateTripPDF = async (
 
       if (altRow) {
         doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y, usableWidth, rowHeight, "F");
+        doc.rect(marginLeft, y, usableWidth, rowHeight, "F");
       }
       altRow = !altRow;
 
       doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
       doc.setLineWidth(0.15);
-      doc.line(margin, y + rowHeight, margin + usableWidth, y + rowHeight);
+      doc.line(marginLeft, y + rowHeight, marginLeft + usableWidth, y + rowHeight);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(isA4 ? 8 : 7);
       doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
 
-      doc.text(dateText, margin + 2, y + (isA4 ? 5.5 : 4.5));
-      doc.text(catText, margin + colDateW + 2, y + (isA4 ? 5.5 : 4.5));
+      doc.text(dateText, marginLeft + 2, y + (isA4 ? 5.5 : 4.5));
+      doc.text(catText, marginLeft + colDateW + 2, y + (isA4 ? 5.5 : 4.5));
       
       // Amount text: bold and right aligned or colored if fuel
       if (exp.category === "Carburante") {
@@ -456,14 +497,14 @@ export const generateTripPDF = async (
         doc.setFont("helvetica", "normal");
         doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
       }
-      doc.text(amountText, margin + colDateW + colCatW + colDescW + 2, y + (isA4 ? 5.5 : 4.5));
+      doc.text(amountText, marginLeft + colDateW + colCatW + colDescW + 2, y + (isA4 ? 5.5 : 4.5));
       
       doc.setFont("helvetica", "normal");
       doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
 
       let currentY = y + (isA4 ? 5.5 : 4.5);
       for (let i = 0; i < wrappedDesc.length; i++) {
-        doc.text(wrappedDesc[i], margin + colDateW + colCatW + 2, currentY);
+        doc.text(wrappedDesc[i], marginLeft + colDateW + colCatW + 2, currentY);
         currentY += isA4 ? 4.5 : 3.5;
       }
 
@@ -473,15 +514,15 @@ export const generateTripPDF = async (
     // Spend sum row
     checkPageBreak(isA4 ? 10 : 8);
     doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-    doc.rect(margin, y, usableWidth, isA4 ? 8 : 7, "F");
+    doc.rect(marginLeft, y, usableWidth, isA4 ? 8 : 7, "F");
     
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 9 : 7.5);
     doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.text("TOTALE SPESO:", margin + 2, y + (isA4 ? 5.5 : 4.5));
+    doc.text("TOTALE SPESO:", marginLeft + 2, y + (isA4 ? 5.5 : 4.5));
     
     doc.setTextColor(cAccent[0], cAccent[1], cAccent[2]);
-    doc.text(`${totalSpent.toFixed(2)} ${currencySymbol}`, margin + colDateW + colCatW + colDescW + 2, y + (isA4 ? 5.5 : 4.5));
+    doc.text(`${totalSpent.toFixed(2)} ${currencySymbol}`, marginLeft + colDateW + colCatW + colDescW + 2, y + (isA4 ? 5.5 : 4.5));
     
     y += (isA4 ? 8 : 7) + 8;
   }
@@ -493,11 +534,11 @@ export const generateTripPDF = async (
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isA4 ? 12 : 10);
     doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.text("GALLERIA FOTOGRAFICA & RICORDI", margin, y);
+    doc.text("GALLERIA FOTOGRAFICA & RICORDI", marginLeft, y);
     
     doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
     doc.setLineWidth(1);
-    doc.line(margin, y + 2, margin + 25, y + 2);
+    doc.line(marginLeft, y + 2, marginLeft + 25, y + 2);
     
     y += 7;
 
@@ -581,7 +622,7 @@ export const generateTripPDF = async (
       checkPageBreak(rowHeight + 10);
 
       // Render Photo 1
-      const x1 = margin;
+      const x1 = marginLeft;
       let img1Width = maxW;
       let img1Height = maxH;
       if (imageData1) {
@@ -661,7 +702,7 @@ export const generateTripPDF = async (
 
       // Render Photo 2 (if exists)
       if (photo2) {
-        const x2 = margin + colWidth + gap;
+        const x2 = marginLeft + colWidth + gap;
         let img2Width = maxW;
         let img2Height = maxH;
         if (imageData2) {
@@ -756,8 +797,11 @@ export const exportAIItineraryToPDF = async (
 ): Promise<void> => {
   const pageWidth = 210;
   const pageHeight = 297;
-  const margin = 15;
-  const usableWidth = pageWidth - margin * 2;
+  const marginLeft = 25; // 25mm left margin for ring binder hole punch
+  const marginRight = 12;
+  const marginTop = 14;
+  const marginBottom = 14;
+  const usableWidth = pageWidth - marginLeft - marginRight;
 
   const cPrimary = [62, 74, 53];     // Deep Olive (#3E4A35)
   const cSecondary = [90, 107, 78];  // Light Olive
@@ -790,7 +834,7 @@ export const exportAIItineraryToPDF = async (
   });
 
   let pageNum = 1;
-  let y = margin;
+  let y = marginTop;
 
   const cleanMainTitle = sanitizePDFText(itinerary.title || "Itinerario Camper AI");
 
@@ -805,23 +849,37 @@ export const exportAIItineraryToPDF = async (
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-    doc.text("ViaCamper AI - Itinerario di Viaggio Personalizzato", margin, margin - 4);
+    doc.text("ViaCamper AI - Itinerario di Viaggio Personalizzato", marginLeft, marginTop - 4);
     
     doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
     doc.setLineWidth(0.2);
-    doc.line(margin, margin - 2, pageWidth - margin, margin - 2);
+    doc.line(marginLeft, marginTop - 2, pageWidth - marginRight, marginTop - 2);
 
-    doc.line(margin, pageHeight - margin + 4, pageWidth - margin, pageHeight - margin + 4);
+    doc.line(marginLeft, pageHeight - marginBottom + 4, pageWidth - marginRight, pageHeight - marginBottom + 4);
 
-    doc.text(`Pagina ${pageNum}`, pageWidth - margin, pageHeight - margin + 8, { align: "right" });
-    doc.text(`Generato il ${new Date().toLocaleDateString("it-IT")}`, margin, pageHeight - margin + 8);
+    doc.text(`Pagina ${pageNum}`, pageWidth - marginRight, pageHeight - marginBottom + 8, { align: "right" });
+    doc.text(`Generato il ${new Date().toLocaleDateString("it-IT")}`, marginLeft, pageHeight - marginBottom + 8);
+
+    // Discreet hole punch guides on left margin
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.15);
+    const midY = pageHeight / 2;
+    doc.line(0, midY, 3, midY); // center notch
+
+    const punchX = 12; // 12mm standard
+    const holePositionsA4 = [28.5, 108.5, 188.5, 268.5];
+    holePositionsA4.forEach((hY) => {
+      doc.circle(punchX, hY, 2.2);
+      doc.line(punchX - 1.2, hY, punchX + 1.2, hY);
+      doc.line(punchX, hY - 1.2, punchX, hY + 1.2);
+    });
   };
 
   const checkPageBreak = (heightNeeded: number) => {
-    if (y + heightNeeded > pageHeight - margin - 10) {
+    if (y + heightNeeded > pageHeight - marginBottom - 10) {
       doc.addPage("a4", "portrait");
       pageNum++;
-      y = margin + 5;
+      y = marginTop + 5;
       drawPageDecorations();
     }
   };
@@ -830,25 +888,25 @@ export const exportAIItineraryToPDF = async (
 
   // Cover Emblem & Header
   doc.setFillColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.circle(margin + 6, y + 6, 6, "F");
+  doc.circle(marginLeft + 6, y + 6, 6, "F");
 
   doc.setDrawColor(255, 255, 255);
   doc.setLineWidth(0.4);
-  doc.line(margin + 3.5, y + 8, margin + 6, y + 4);
-  doc.line(margin + 6, y + 4, margin + 8.5, y + 8);
-  doc.line(margin + 4.5, y + 8, margin + 7.5, y + 8);
-  doc.line(margin + 6, y + 4, margin + 6, y + 8);
+  doc.line(marginLeft + 3.5, y + 8, marginLeft + 6, y + 4);
+  doc.line(marginLeft + 6, y + 4, marginLeft + 8.5, y + 8);
+  doc.line(marginLeft + 4.5, y + 8, marginLeft + 7.5, y + 8);
+  doc.line(marginLeft + 6, y + 4, marginLeft + 6, y + 8);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(cSecondary[0], cSecondary[1], cSecondary[2]);
-  doc.text("ITINERARIO AI GENERATO", margin + 15, y + 5);
+  doc.text("ITINERARIO AI GENERATO", marginLeft + 15, y + 5);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
   const splitTitle = doc.splitTextToSize(cleanMainTitle, usableWidth - 20);
-  doc.text(splitTitle, margin + 15, y + 12);
+  doc.text(splitTitle, marginLeft + 15, y + 12);
 
   y += 12 + (splitTitle.length * 6.5);
 
@@ -861,7 +919,7 @@ export const exportAIItineraryToPDF = async (
       const splitDesc = doc.splitTextToSize(cleanDesc, usableWidth);
       for (const line of splitDesc) {
         checkPageBreak(4.5);
-        doc.text(line, margin, y);
+        doc.text(line, marginLeft, y);
         y += 4.5;
       }
       y += 4;
@@ -874,39 +932,39 @@ export const exportAIItineraryToPDF = async (
 
   // Box 1: Distance
   doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-  doc.rect(margin, y, colWidth - 2, 16, "F");
+  doc.rect(marginLeft, y, colWidth - 2, 16, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
   doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-  doc.text("DISTANZA STIMATA", margin + 4, y + 5);
+  doc.text("DISTANZA STIMATA", marginLeft + 4, y + 5);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.text(sanitizePDFText(itinerary.totalKm || "N/D"), margin + 4, y + 12);
+  doc.text(sanitizePDFText(itinerary.totalKm || "N/D"), marginLeft + 4, y + 12);
 
   // Box 2: Driving Time
   doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-  doc.rect(margin + colWidth, y, colWidth - 2, 16, "F");
+  doc.rect(marginLeft + colWidth, y, colWidth - 2, 16, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
   doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-  doc.text("TEMPO AL VOLANTE", margin + colWidth + 4, y + 5);
+  doc.text("TEMPO AL VOLANTE", marginLeft + colWidth + 4, y + 5);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(cAccent[0], cAccent[1], cAccent[2]);
-  doc.text(sanitizePDFText(itinerary.totalDrivingTime || "N/D"), margin + colWidth + 4, y + 12);
+  doc.text(sanitizePDFText(itinerary.totalDrivingTime || "N/D"), marginLeft + colWidth + 4, y + 12);
 
   // Box 3: Total Days / Vehicle
   doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-  doc.rect(margin + colWidth * 2, y, colWidth, 16, "F");
+  doc.rect(marginLeft + colWidth * 2, y, colWidth, 16, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
   doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-  doc.text("DURATA TAPPE", margin + colWidth * 2 + 4, y + 5);
+  doc.text("DURATA TAPPE", marginLeft + colWidth * 2 + 4, y + 5);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.text(`${itinerary.days?.length || 0} Giorni`, margin + colWidth * 2 + 4, y + 12);
+  doc.text(`${itinerary.days?.length || 0} Giorni`, marginLeft + colWidth * 2 + 4, y + 12);
 
   y += 22;
 
@@ -920,14 +978,14 @@ export const exportAIItineraryToPDF = async (
 
     checkPageBreak(vehBoxH + 2);
     doc.setFillColor(231, 235, 220); // #E7EBDC
-    doc.rect(margin, y, usableWidth, vehBoxH, "F");
+    doc.rect(marginLeft, y, usableWidth, vehBoxH, "F");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
     let vY = y + 5.5;
     for (const line of vehLines) {
-      doc.text(line, margin + 4, vY);
+      doc.text(line, marginLeft + 4, vY);
       vY += 4.5;
     }
     y += vehBoxH + 4;
@@ -938,11 +996,11 @@ export const exportAIItineraryToPDF = async (
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-  doc.text("CRONOLOGIA TAPPE GIORNO PER GIORNO", margin, y);
+  doc.text("CRONOLOGIA TAPPE GIORNO PER GIORNO", marginLeft, y);
 
   doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
   doc.setLineWidth(1);
-  doc.line(margin, y + 2, margin + 30, y + 2);
+  doc.line(marginLeft, y + 2, marginLeft + 30, y + 2);
   y += 8;
 
   // Render each day
@@ -961,20 +1019,20 @@ export const exportAIItineraryToPDF = async (
 
     // Day title bar
     doc.setFillColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.rect(margin, y, usableWidth, barH, "F");
+    doc.rect(marginLeft, y, usableWidth, barH, "F");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
     let tY = y + 5.5;
     for (const line of titleLines) {
-      doc.text(line, margin + 4, tY);
+      doc.text(line, marginLeft + 4, tY);
       tY += 4.5;
     }
 
     if (drivingSeg) {
       doc.setFontSize(8);
-      doc.text(drivingSeg, pageWidth - margin - 4, y + 5.5, { align: "right" });
+      doc.text(drivingSeg, pageWidth - marginRight - 4, y + 5.5, { align: "right" });
     }
 
     y += barH + 3;
@@ -989,7 +1047,7 @@ export const exportAIItineraryToPDF = async (
         const descLines = doc.splitTextToSize(cleanDesc, usableWidth);
         for (const line of descLines) {
           checkPageBreak(4.5);
-          doc.text(line, margin, y);
+          doc.text(line, marginLeft, y);
           y += 4.5;
         }
         y += 2;
@@ -1017,14 +1075,14 @@ export const exportAIItineraryToPDF = async (
       checkPageBreak(boxH + 3);
 
       doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-      doc.rect(margin, y, usableWidth, boxH, "F");
+      doc.rect(marginLeft, y, usableWidth, boxH, "F");
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
       doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
       let sY = y + 5;
       for (const line of sostaTitleLines) {
-        doc.text(line, margin + 4, sY);
+        doc.text(line, marginLeft + 4, sY);
         sY += 4.5;
       }
 
@@ -1034,7 +1092,7 @@ export const exportAIItineraryToPDF = async (
         doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
         sY += 0.5;
         for (const line of sostaCoordLines) {
-          doc.text(line, margin + 4, sY);
+          doc.text(line, marginLeft + 4, sY);
           sY += 4;
         }
       }
@@ -1053,7 +1111,7 @@ export const exportAIItineraryToPDF = async (
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
         doc.setTextColor(cSecondary[0], cSecondary[1], cSecondary[2]);
-        doc.text("Attivita suggerite:", margin, y);
+        doc.text("Attivita suggerite:", marginLeft, y);
         y += 4.5;
 
         doc.setFont("helvetica", "normal");
@@ -1063,7 +1121,7 @@ export const exportAIItineraryToPDF = async (
           const actLines = doc.splitTextToSize(`- ${act}`, usableWidth - 4);
           for (const line of actLines) {
             checkPageBreak(4.5);
-            doc.text(line, margin + 2, y);
+            doc.text(line, marginLeft + 2, y);
             y += 4.5;
           }
         }
@@ -1085,11 +1143,11 @@ export const exportAIItineraryToPDF = async (
         checkPageBreak(Math.min(boxHeight, 25));
 
         doc.setFillColor(254, 243, 199); // Amber 100
-        doc.rect(margin, y, usableWidth, boxHeight, "F");
+        doc.rect(marginLeft, y, usableWidth, boxHeight, "F");
 
         doc.setDrawColor(217, 119, 6); // Amber accent border
         doc.setLineWidth(0.6);
-        doc.line(margin, y, margin, y + boxHeight); // Left accent border
+        doc.line(marginLeft, y, marginLeft, y + boxHeight); // Left accent border
 
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8.5);
@@ -1097,11 +1155,11 @@ export const exportAIItineraryToPDF = async (
 
         let tipY = y + 5;
         for (const line of tipLines) {
-          if (tipY + 4.5 > pageHeight - margin - 10) {
+          if (tipY + 4.5 > pageHeight - marginBottom - 10) {
             checkPageBreak(12);
             tipY = y + 5;
           }
-          doc.text(line, margin + 5, tipY);
+          doc.text(line, marginLeft + 5, tipY);
           tipY += 4.5;
         }
         y += boxHeight + 4;

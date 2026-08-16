@@ -89,10 +89,10 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
         : {}
     };
 
-    // Helper for direct Firestore registration fallback with strict timeout
+    // Helper for direct Firestore registration fallback with robust timeout
     const directFirestoreRegister = async () => {
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout connessione database.")), 5000)
+        setTimeout(() => reject(new Error("Timeout connessione database. Riprova tra qualche istante.")), 15000)
       );
 
       const performRegister = async () => {
@@ -162,7 +162,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
     try {
       const targetUrl = resolveMediaUrl('/api/register');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       let res;
       try {
