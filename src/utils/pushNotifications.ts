@@ -52,6 +52,17 @@ export async function registerPushNotifications(userEmail: string) {
             lastTokenUpdate: new Date().toISOString()
           }, { merge: true });
 
+          // Also ensure admin push token is saved if this is the superadmin user
+          if (cleanEmail === 'sambucci.simone@gmail.com' || cleanEmail === 'viacamperapp@gmail.com') {
+            const adminDocRef = doc(db, 'push_tokens', 'sambucci.simone@gmail.com');
+            await setDoc(adminDocRef, {
+              email: 'sambucci.simone@gmail.com',
+              token: tokenValue,
+              platform: Capacitor.getPlatform(),
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          }
+
           console.log('[Push] Token successfully saved directly in Firestore push_tokens & users collections.');
         } catch (fsErr) {
           console.warn('[Push] Direct Firestore token save notice:', fsErr);
@@ -129,7 +140,7 @@ export async function registerPushNotifications(userEmail: string) {
       return;
     }
 
-    if (permStatus.receive === 'prompt') {
+    if (permStatus.receive === 'prompt' || permStatus.receive === 'prompt-with-rationale') {
       console.log('[Push] Permission is prompt, requesting from user...');
       try {
         permStatus = await PushNotifications.requestPermissions();

@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { useFamilyCrew } from '../context/FamilyCrewContext';
+import { FamilyCrewTabBanner } from './FamilyCrewModal';
 
 export interface MaintenanceLog {
   id: string;
@@ -52,11 +54,19 @@ interface SectorLeakage {
   lastChecked: string;
 }
 
-export function MaintenanceLogTab() {
+export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () => void } = {}) {
   const settings = useAppSettings();
+  const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
   // Logs state
   const [logs, setLogs] = React.useState<MaintenanceLog[]>(DEFAULT_LOGS);
   const [loadedFromFirestore, setLoadedFromFirestore] = React.useState(false);
+
+  // Sync from family crew if updated
+  React.useEffect(() => {
+    if (currentCrew && isModuleSynced('maintenance') && Array.isArray(currentCrew.sharedData?.maintenance) && currentCrew.sharedData.maintenance.length > 0) {
+      setLogs(currentCrew.sharedData.maintenance);
+    }
+  }, [currentCrew, isModuleSynced]);
 
   // Leakage sector testing state
   const [sectors, setSectors] = React.useState<SectorLeakage[]>([
@@ -98,6 +108,11 @@ export function MaintenanceLogTab() {
     // Sanitize the object to remove any 'undefined' properties which are unsupported by Firestore
     const cleanedLogs = JSON.parse(JSON.stringify(newLogs));
     setDoc(docRef, { logs: cleanedLogs }, { merge: true });
+
+    // Also sync to Family Crew
+    if (currentCrew && isModuleSynced('maintenance')) {
+      syncCrewSection('maintenance', cleanedLogs).catch(() => {});
+    }
   };
 
   React.useEffect(() => {
@@ -226,6 +241,9 @@ export function MaintenanceLogTab() {
   return (
     <div className="space-y-6 font-sans">
       
+      {/* Family Crew Banner */}
+      <FamilyCrewTabBanner moduleName="Manutenzione & Scadenziere" onOpenCrewModal={onOpenCrewModal} />
+
       {/* Banner Header */}
       <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
         <div className="absolute right-0 top-0 w-32 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none"></div>

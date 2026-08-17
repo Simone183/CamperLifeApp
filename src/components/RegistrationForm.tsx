@@ -86,7 +86,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
       isModerator: isSuperAdmin ? true : false,
       moderatorRoles: isSuperAdmin
         ? { community: true, places: true, itineraries: true }
-        : {}
+        : { community: false, places: false, itineraries: false }
     };
 
     // Helper for direct Firestore registration fallback with robust timeout

@@ -224,6 +224,10 @@ class ServerRESTFirestoreAdapter {
     });
     if (!res.ok) {
       const text = await res.text();
+      if (res.status === 429) {
+        console.info(`[Firestore] Daily quota reached for setDoc (${docPath}). Local persistence will handle this operation.`);
+        return { success: true, localOnly: true };
+      }
       throw new Error(`REST Firestore setDoc failed: ${res.statusText} - ${text}`);
     }
     return await res.json();
@@ -232,7 +236,7 @@ class ServerRESTFirestoreAdapter {
   async deleteDoc(docPath: string) {
     const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents/${docPath}?key=${this.apiKey}`;
     const res = await fetch(url, { method: "DELETE" });
-    if (res.status === 404) return;
+    if (res.status === 404 || res.status === 429) return;
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`REST Firestore deleteDoc failed: ${res.statusText} - ${text}`);
@@ -249,6 +253,10 @@ class ServerRESTFirestoreAdapter {
     });
     if (!res.ok) {
       const text = await res.text();
+      if (res.status === 429) {
+        console.info(`[Firestore] Daily quota reached for addDoc (${colPath}). Local persistence will handle this operation.`);
+        return { id: `local_${Date.now()}` };
+      }
       throw new Error(`REST Firestore addDoc failed: ${res.statusText} - ${text}`);
     }
     const result = await res.json();

@@ -19,13 +19,17 @@ import {
   Wand2,
   Info
 } from 'lucide-react';
+import { useFamilyCrew } from '../context/FamilyCrewContext';
+import { FamilyCrewTabBanner } from './FamilyCrewModal';
 
 interface ChecklistTabProps {
   items?: ChecklistItem[];
   setItems?: React.Dispatch<React.SetStateAction<ChecklistItem[]>>;
+  onOpenCrewModal?: () => void;
 }
 
-export default function ChecklistTab({ items: propItems, setItems: propSetItems }: ChecklistTabProps = {}) {
+export default function ChecklistTab({ items: propItems, setItems: propSetItems, onOpenCrewModal }: ChecklistTabProps = {}) {
+  const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
   const [localItems, setLocalItems] = React.useState<ChecklistItem[]>(() => {
     try {
       const saved = localStorage.getItem("camper_checklist");
@@ -41,6 +45,23 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems 
 
   const items = propItems !== undefined ? propItems : localItems;
   const setItems = propSetItems !== undefined ? propSetItems : setLocalItems;
+
+  // Sync incoming family crew checklists
+  React.useEffect(() => {
+    if (currentCrew && isModuleSynced('checklists') && Array.isArray(currentCrew.sharedData?.checklists) && currentCrew.sharedData.checklists.length > 0) {
+      setItems(currentCrew.sharedData.checklists);
+      localStorage.setItem("camper_checklist", JSON.stringify(currentCrew.sharedData.checklists));
+    }
+  }, [currentCrew, isModuleSynced, setItems]);
+
+  // Sync to family crew when items change
+  const handleUpdateItems = React.useCallback((newItems: ChecklistItem[]) => {
+    setItems(newItems);
+    localStorage.setItem("camper_checklist", JSON.stringify(newItems));
+    if (currentCrew && isModuleSynced('checklists')) {
+      syncCrewSection('checklists', newItems).catch(() => {});
+    }
+  }, [currentCrew, isModuleSynced, setItems, syncCrewSection]);
   const [newItemText, setNewItemText] = React.useState('');
   const [newCategory, setNewCategory] = React.useState<ChecklistItem['category']>('Partenza');
 
@@ -85,7 +106,7 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems 
     const updated = items.map((item) =>
       item.id === id ? { ...item, checked: !item.checked } : item
     );
-    setItems(updated);
+    handleUpdateItems(updated);
   };
 
   const handleAddItem = (e: React.FormEvent) => {
@@ -99,12 +120,12 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems 
       checked: false,
     };
 
-    setItems([...items, newItem]);
+    handleUpdateItems([...items, newItem]);
     setNewItemText('');
   };
 
   const removeItem = (id: string) => {
-    setItems(items.filter((item) => item.id !== id));
+    handleUpdateItems(items.filter((item) => item.id !== id));
   };
 
   const [showResetConfirm, setShowResetConfirm] = React.useState(false);
@@ -115,7 +136,7 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems 
 
   const confirmResetChecklist = () => {
     const reset = items.map(item => ({ ...item, checked: false }));
-    setItems(reset);
+    handleUpdateItems(reset);
     setShowResetConfirm(false);
     window.dispatchEvent(new CustomEvent('show-toast', {
       detail: { message: '🔄 Tutte le spunte della checklist sono state azzerate con successo!' }
@@ -172,9 +193,9 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems 
     }
 
     if (mode === 'replace') {
-      setItems(selectedItemsToImport);
+      handleUpdateItems(selectedItemsToImport);
     } else {
-      setItems([...items, ...selectedItemsToImport]);
+      handleUpdateItems([...items, ...selectedItemsToImport]);
     }
 
     setGeneratedItems([]);
@@ -194,6 +215,9 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems 
 
   return (
     <div className="space-y-6">
+      {/* Family Crew Banner */}
+      <FamilyCrewTabBanner moduleName="Checklist di Bordo" onOpenCrewModal={onOpenCrewModal} />
+
       {/* Overview Card */}
       <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] rounded-2xl shadow-md p-6 text-white">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

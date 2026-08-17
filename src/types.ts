@@ -43,6 +43,46 @@ export interface DashboardSettings {
   showDimensions: boolean;
 }
 
+export interface CrewMember {
+  email: string;
+  nickname: string;
+  name?: string;
+  role: 'owner' | 'member';
+  joinedAt: string;
+  profilePhoto?: string;
+}
+
+export interface CrewSyncModules {
+  fuelCard: boolean;
+  trips: boolean;
+  checklists: boolean;
+  pantry: boolean;
+  maintenance: boolean;
+}
+
+export interface FamilyCrew {
+  id: string;
+  code: string;
+  name: string;
+  ownerEmail: string;
+  ownerName: string;
+  createdAt: string;
+  members: CrewMember[];
+  syncModules: CrewSyncModules;
+  sharedData?: {
+    fuelLogs?: any[];
+    trips?: any[];
+    checklists?: any[];
+    pantry?: {
+      pantry?: any[];
+      shoppingList?: any[];
+    };
+    maintenance?: any[];
+  };
+  lastUpdated?: string;
+  updatedBy?: string;
+}
+
 export interface AppSettings {
   language: string;
   textSize: string;

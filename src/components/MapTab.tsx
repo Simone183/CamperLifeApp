@@ -619,6 +619,15 @@ export default function MapTab({
     }
   });
 
+  // Listen to open-google-maps-key-modal event from Settings or Layers Menu
+  React.useEffect(() => {
+    const handleOpenModal = () => setShowKeyModal(true);
+    window.addEventListener("open-google-maps-key-modal", handleOpenModal);
+    return () => {
+      window.removeEventListener("open-google-maps-key-modal", handleOpenModal);
+    };
+  }, []);
+
   // Periodic speech bubble for Rolly on the map with 5-min inactivity reset on map interaction
   const [rollyBubbleText, setRollyBubbleText] = React.useState<string | null>(null);
   const [showRollyBubble, setShowRollyBubble] = React.useState<boolean>(false);
@@ -4796,27 +4805,6 @@ out center;`;
                 📍 Posiziona Camper Qui
               </button>
             )}
-
-            {/* Google Maps Key Configuration Button - visible only to admins */}
-            {isAdmin && (currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && (
-              <button
-                type="button"
-                onClick={() => setShowKeyModal(true)}
-                className={`h-8 px-2.5 rounded-xl shadow-md font-extrabold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border shrink-0 ${
-                  hasValidKey
-                    ? "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700"
-                    : "bg-[#A45C40] text-white hover:bg-[#b0674a] border-[#A45C40]/20"
-                }`}
-                title={
-                  hasValidKey
-                    ? "Chiave Google Maps Attiva 🔑"
-                    : "Configura Chiave Google Maps"
-                }
-              >
-                <Lock className="w-3 h-3 text-white" />
-                <span>API Key</span>
-              </button>
-            )}
           </div>
 
           {/* Pulsanti + e - (Zoom) con Pulsante dei Livelli SUBITO SOTTO (Floating a sinistra) */}
@@ -4918,6 +4906,23 @@ out center;`;
                   >
                     ⛰️ Terreno
                   </button>
+
+                  {/* Impostazioni Chiave API solo per admin all'interno del menu Livelli */}
+                  {isAdmin && (currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && (
+                    <div className="border-t border-slate-100 pt-1 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMapTypeMenu(false);
+                          setShowKeyModal(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 text-amber-700 hover:bg-amber-50 cursor-pointer"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Chiave API Google</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

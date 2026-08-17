@@ -2022,6 +2022,53 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  // Get pending places for admin moderation
+  app.get("/api/admin/pending-places", async (req, res) => {
+    try {
+      const places: any[] = [];
+      try {
+        const snapshot = await firestoreDb.collection("places").where("status", "==", "pending").get();
+        snapshot.forEach((doc: any) => {
+          places.push({ id: doc.id, ...doc.data() });
+        });
+      } catch (fsErr: any) {
+        console.warn("[Admin API] Error fetching pending places from Firestore, falling back to full places scan:", fsErr?.message);
+        try {
+          const snapshot = await firestoreDb.collection("places").get();
+          snapshot.forEach((doc: any) => {
+            const data = doc.data() || {};
+            if (data.status === "pending") {
+              places.push({ id: doc.id, ...data });
+            }
+          });
+        } catch (scanErr) {
+          console.warn("[Admin API] Full scan failed:", scanErr);
+        }
+      }
+
+      // Fallback to local user places if empty or Firestore was offline
+      if (places.length === 0) {
+        try {
+          const list = loadUserPlaces().filter((p: any) => p.status === "pending");
+          list.forEach((p: any) => {
+            if (!places.some(item => item.id === p.id)) {
+              places.push(p);
+            }
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Sort newest first
+      places.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json(places);
+    } catch (err: any) {
+      console.error("Error in /api/admin/pending-places:", err);
+      res.json([]);
+    }
+  });
+
   // Approve a pending place (Admin action)
   app.post("/api/admin/approve-place", async (req, res) => {
     try {
@@ -2215,7 +2262,11 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         profilePhoto: profilePhoto || "",
         favorites: [],
         createdAt: new Date().toISOString(),
-        approved: isRegisteredUserAdmin ? true : false
+        approved: isRegisteredUserAdmin ? true : false,
+        isModerator: isRegisteredUserAdmin ? true : false,
+        moderatorRoles: isRegisteredUserAdmin
+          ? { community: true, places: true, itineraries: true }
+          : { community: false, places: false, itineraries: false }
       };
 
       // Clear any previous "deleted" override if re-registering
@@ -2245,38 +2296,52 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       updatedCached.push(newUserDoc);
       cacheUsers(updatedCached);
 
-      // Send email notification to admin if Resend is configured (in background)
-      const targetAdminEmailForReg = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-      if (process.env.RESEND_API_KEY && targetAdminEmailForReg) {
-        (async () => {
-          try {
-            const { Resend } = await import('resend');
-            const resend = new Resend(process.env.RESEND_API_KEY);
-            await resend.emails.send({
-              from: 'ViaCamperApp <onboarding@resend.dev>',
-              to: targetAdminEmailForReg,
-              subject: `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`,
-              html: `
-                <h2>Richiesta di approvazione nuovo utente registrato</h2>
-                <p>Un nuovo camperista si è appena iscritto ed è in attesa di essere approvato per accedere all'app:</p>
-                <ul>
-                  <li><strong>Email:</strong> ${newUserDoc.email}</li>
-                  <li><strong>Nickname:</strong> ${newUserDoc.nickname}</li>
-                  <li><strong>Nome:</strong> ${newUserDoc.name || 'N/D'}</li>
-                  <li><strong>Cognome:</strong> ${newUserDoc.surname || 'N/D'}</li>
-                  <li><strong>Data di Nascita:</strong> ${newUserDoc.dob || 'N/D'}</li>
-                  <li><strong>Data registrazione:</strong> ${newUserDoc.createdAt}</li>
-                  <li><strong>Stato approvazione:</strong> IN ATTESA DI APPROVAZIONE</li>
-                </ul>
-                <br/>
-                <p>Puoi approvare questo utente direttamente dal pannello amministratore di ViaCamperApp sotto la sezione <strong>Impostazioni > Amministrazione > Iscritti</strong>.</p>
-              `
-            });
-            console.log(`[Email] Admin notification sent successfully for user: ${newUserDoc.email}`);
-          } catch (emailErr: any) {
-            console.log("Admin notification email notice:", emailErr?.message || emailErr);
-          }
-        })().catch(() => {});
+      // Send email notification to admin via sendAdminNotificationEmail
+      if (!newUserDoc.approved) {
+        const regSubject = `Richiesta di approvazione nuovo utente su ViaCamperApp [${newUserDoc.nickname}]`;
+        const regHtml = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
+            <div style="background: linear-gradient(135deg, #1C3D2B 0%, #2D5A40 100%); padding: 20px; border-radius: 12px; color: white;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp • Notifica Amministratore</div>
+              <h2 style="margin: 0; color: #ffffff; font-size: 20px;">👥 Richiesta Approvazione Nuovo Utente</h2>
+            </div>
+            <div style="background: #ffffff; padding: 22px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
+              <p style="font-size: 14px; color: #1e293b; margin-top: 0;">Un nuovo camperista si è appena registrato ed è in attesa di essere approvato per accedere all'app:</p>
+              <table style="width: 100%; font-size: 13.5px; color: #334155; border-collapse: collapse; margin-top: 12px;">
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: bold; width: 140px; color: #64748b;">Nickname:</td>
+                  <td style="padding: 8px 0; font-weight: 700; color: #0f172a;">${newUserDoc.nickname}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Email:</td>
+                  <td style="padding: 8px 0; color: #0f172a;">${newUserDoc.email}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Nome e Cognome:</td>
+                  <td style="padding: 8px 0; color: #0f172a;">${newUserDoc.name || 'N/D'} ${newUserDoc.surname || ''}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Data di Nascita:</td>
+                  <td style="padding: 8px 0; color: #0f172a;">${newUserDoc.dob || 'N/D'}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Data Iscrizione:</td>
+                  <td style="padding: 8px 0; color: #0f172a;">${new Date().toLocaleString('it-IT')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Stato:</td>
+                  <td style="padding: 8px 0; font-weight: 700; color: #d97706;">IN ATTESA DI APPROVAZIONE</td>
+                </tr>
+              </table>
+              <div style="margin-top: 20px; text-align: center;">
+                <p style="font-size: 12.5px; color: #64748b; margin-bottom: 8px;">Puoi approvare o moderare questo utente direttamente dall'applicazione nel <strong>Pannello Moderatore &gt; Iscritti</strong>.</p>
+              </div>
+            </div>
+          </div>
+        `;
+        sendAdminNotificationEmail(regSubject, regHtml).catch((err) =>
+          console.warn("[Register API] sendAdminNotificationEmail notice:", err)
+        );
       }
 
       // Send instant push notification to all superadmins and moderators about new user registration
@@ -2291,7 +2356,18 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         { type: "new_registration", userEmail: newUserDoc.email, nickname: newUserDoc.nickname }
       ).catch(err => console.error("[FCM Push] Failed to notify admin of new registration:", err));
 
-      return res.json({ success: true, user: { email: newUserDoc.email, name: newUserDoc.name, nickname: newUserDoc.nickname, profilePhoto: newUserDoc.profilePhoto, approved: newUserDoc.approved } });
+      return res.json({ 
+        success: true, 
+        user: { 
+          email: newUserDoc.email, 
+          name: newUserDoc.name, 
+          nickname: newUserDoc.nickname, 
+          profilePhoto: newUserDoc.profilePhoto, 
+          approved: newUserDoc.approved,
+          isModerator: newUserDoc.isModerator,
+          moderatorRoles: newUserDoc.moderatorRoles
+        } 
+      });
     } catch (err: any) {
       console.error("Error in register endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown register error" });
@@ -2334,6 +2410,16 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       console.log(`[Firestore Auth] User logged in: ${cleanEmail}`);
+      const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
+      const hasAnyModRole = Boolean(
+        userData.moderatorRoles && (
+          userData.moderatorRoles.community === true ||
+          userData.moderatorRoles.places === true ||
+          userData.moderatorRoles.itineraries === true
+        )
+      );
+      const isMod = isSuper || (userData.isModerator === true && hasAnyModRole);
+
       res.json({ 
         success: true, 
         user: { 
@@ -2342,7 +2428,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           nickname: userData.nickname,
           profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
           favorites: userData.favorites || [],
-          isModerator: !!userData.isModerator
+          isModerator: isMod,
+          moderatorRoles: isSuper
+            ? { community: true, places: true, itineraries: true }
+            : (hasAnyModRole ? userData.moderatorRoles : { community: false, places: false, itineraries: false })
         } 
       });
     } catch (err: any) {
@@ -2539,23 +2628,29 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         itineraries: !!req.body.isModerator
       };
 
+      const hasAnyRole = Boolean(
+        moderatorRoles && (moderatorRoles.community || moderatorRoles.places || moderatorRoles.itineraries)
+      );
+
       try {
         await firestoreDb.collection("users").doc(cleanEmail).update({
-          moderatorRoles
+          moderatorRoles,
+          isModerator: hasAnyRole
         });
-        console.log(`[Firestore Auth] User ${cleanEmail} moderator roles updated to:`, moderatorRoles);
+        console.log(`[Firestore Auth] User ${cleanEmail} moderator roles updated to:`, moderatorRoles, `isModerator:`, hasAnyRole);
       } catch (fsErr: any) {
         console.log(`[Firestore Auth Fallback] Saved user ${cleanEmail} moderator roles locally.`);
       }
 
       // Always persist local override
-      saveUserOverride(cleanEmail, { moderatorRoles });
+      saveUserOverride(cleanEmail, { moderatorRoles, isModerator: hasAnyRole });
 
       // Update cached user entry as well
       const cached = getCachedUsers();
       const uIdx = cached.findIndex(u => (u.email || "").toLowerCase().trim() === cleanEmail);
       if (uIdx !== -1) {
         cached[uIdx].moderatorRoles = moderatorRoles;
+        cached[uIdx].isModerator = hasAnyRole;
         cacheUsers(cached);
       }
 
@@ -2793,43 +2888,194 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
-  // --- FUEL LOGS ---
+  // --- FUEL LOGS WITH CACHE & AUTOMATIC TRIP EXPENSE RECOVERY ---
+  const FUEL_LOGS_CACHE_FILE = path.join(process.cwd(), "fuel_logs_cache.json");
+
+  function getCachedFuelLogs(email: string): any[] {
+    try {
+      if (fs.existsSync(FUEL_LOGS_CACHE_FILE)) {
+        const all = JSON.parse(fs.readFileSync(FUEL_LOGS_CACHE_FILE, "utf-8"));
+        const clean = email.toLowerCase().trim();
+        if (Array.isArray(all[clean])) return all[clean];
+      }
+    } catch (e) {
+      console.warn("Error reading fuel logs cache:", e);
+    }
+    return [];
+  }
+
+  function saveCachedFuelLogs(email: string, logs: any[]) {
+    try {
+      let all: Record<string, any[]> = {};
+      if (fs.existsSync(FUEL_LOGS_CACHE_FILE)) {
+        try {
+          all = JSON.parse(fs.readFileSync(FUEL_LOGS_CACHE_FILE, "utf-8"));
+        } catch {}
+      }
+      const clean = email.toLowerCase().trim();
+      all[clean] = logs;
+      fs.writeFileSync(FUEL_LOGS_CACHE_FILE, JSON.stringify(all, null, 2), "utf-8");
+    } catch (e) {
+      console.warn("Error saving fuel logs cache:", e);
+    }
+  }
+
   app.get("/api/fuel-logs/:email", async (req, res) => {
     try {
-      const { email } = req.params;
-      const logsRef = firestoreDb.collection(`users/${email.toLowerCase().trim()}/fuelLogs`).orderBy('createdAt', 'desc');
-      const snapshot = await logsRef.get();
-      const logs = snapshot.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      res.json(logs);
+      const email = (req.params.email || "").toLowerCase().trim();
+      if (!email) return res.json([]);
+
+      let existingLogs = getCachedFuelLogs(email);
+
+      // Try fetching from Firestore fuelLogs subcollection
+      try {
+        const logsRef = firestoreDb.collection(`users/${email}/fuelLogs`).orderBy('createdAt', 'desc');
+        const snapshot = await logsRef.get();
+        if (snapshot && Array.isArray(snapshot.docs) && snapshot.docs.length > 0) {
+          const fsLogs = snapshot.docs.map((doc: any) => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          // Merge fsLogs
+          const map = new Map<string, any>();
+          existingLogs.forEach(l => map.set(l.id, l));
+          fsLogs.forEach((l: any) => map.set(l.id, l));
+          existingLogs = Array.from(map.values());
+        }
+      } catch (fsErr) {
+        console.warn("[Fuel Logs] Direct subcollection fetch failed (may be quota or offline):", fsErr);
+      }
+
+      // Also recover any fuel expenses recorded in user trips if cache is low or to ensure full history
+      try {
+        const tripsDoc = await firestoreDb.collection(`users/${email}/data`).doc("trips").get();
+        if (tripsDoc && tripsDoc.exists) {
+          const tripsData = tripsDoc.data();
+          if (tripsData && Array.isArray(tripsData.trips)) {
+            const map = new Map<string, any>();
+            existingLogs.forEach(l => map.set(l.id, l));
+
+            for (const trip of tripsData.trips) {
+              for (const exp of (trip.expenses || [])) {
+                if (exp.category === 'Carburante' || exp.liters || exp.pricePerLiter || exp.fuelCompany) {
+                  let liters = exp.liters;
+                  let pricePerLiter = exp.pricePerLiter;
+                  let odometer = exp.odometer || 0;
+                  let fuelCompany = exp.fuelCompany || "Eni";
+                  let isFullTank = !!exp.isFullTank;
+
+                  if (!liters && exp.title) {
+                    const match = exp.title.match(/([\d.,]+)\s*L/i);
+                    if (match) liters = parseFloat(match[1].replace(',', '.'));
+                  }
+                  if (!pricePerLiter && exp.title) {
+                    const match = exp.title.match(/@\s*([\d.,]+)/i);
+                    if (match) pricePerLiter = parseFloat(match[1].replace(',', '.'));
+                  }
+                  if (!pricePerLiter && liters && exp.amount) {
+                    pricePerLiter = Number((exp.amount / liters).toFixed(3));
+                  }
+                  if (!liters && pricePerLiter && exp.amount) {
+                    liters = Number((exp.amount / pricePerLiter).toFixed(2));
+                  }
+
+                  const logId = exp.id || `fuel_trip_${trip.id}_${exp.date || Date.now()}`;
+                  if (!map.has(logId)) {
+                    map.set(logId, {
+                      id: logId,
+                      date: exp.date || trip.startDate || new Date().toISOString().split('T')[0],
+                      liters: liters || 0,
+                      pricePerLiter: pricePerLiter || 0,
+                      totalCost: exp.amount || 0,
+                      odometer: odometer,
+                      isFullTank: isFullTank,
+                      fuelCompany: fuelCompany,
+                      createdAt: exp.date ? new Date(exp.date).toISOString() : new Date().toISOString()
+                    });
+                  }
+                }
+              }
+            }
+            existingLogs = Array.from(map.values());
+          }
+        }
+      } catch (tripsErr) {
+        console.warn("[Fuel Logs] Error recovering from trips:", tripsErr);
+      }
+
+      // Sort descending by date (newest in alto), then odometer, then createdAt
+      existingLogs.sort((a, b) => {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        const odoA = Number(a.odometer) || 0;
+        const odoB = Number(b.odometer) || 0;
+        if (odoA !== odoB) return odoB - odoA;
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+
+      // Save merged logs to cache
+      saveCachedFuelLogs(email, existingLogs);
+
+      res.json(existingLogs);
     } catch (err: any) {
       console.error("Error fetching fuel logs:", err);
-      res.status(500).json({ error: err.message || "Unknown error fetching fuel logs" });
+      const fallback = getCachedFuelLogs((req.params.email || "").toLowerCase().trim());
+      res.json(fallback);
     }
   });
 
   app.post("/api/fuel-logs/:email", async (req, res) => {
     try {
-      const { email } = req.params;
+      const email = (req.params.email || "").toLowerCase().trim();
       const data = req.body;
       
       const newLog = {
-        date: data.date,
-        liters: data.liters,
-        pricePerLiter: data.pricePerLiter,
-        totalCost: data.totalCost,
-        odometer: data.odometer,
-        isFullTank: data.isFullTank || false,
-        fuelCompany: data.fuelCompany || "Sconosciuta",
-        createdAt: new Date().toISOString()
+        id: data.id || `fuel_${Date.now()}`,
+        date: data.date || new Date().toISOString().split('T')[0],
+        liters: Number(data.liters) || 0,
+        pricePerLiter: Number(data.pricePerLiter) || 0,
+        totalCost: Number(data.totalCost) || Number((data.liters * data.pricePerLiter).toFixed(2)) || 0,
+        odometer: Number(data.odometer) || 0,
+        isFullTank: !!data.isFullTank,
+        fuelCompany: (data.fuelCompany || "Eni").trim(),
+        createdAt: data.createdAt || new Date().toISOString()
       };
 
-      const newDocId = data.id || `fuel_${Date.now()}`;
-      await firestoreDb.collection(`users/${email.toLowerCase().trim()}/fuelLogs`).doc(newDocId).set(newLog);
+      // 1. Immediately update cache and sort descending (newest on top)
+      const current = getCachedFuelLogs(email);
+      const filtered = current.filter(l => l.id !== newLog.id);
+      const updated = [newLog, ...filtered];
+      updated.sort((a, b) => {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        const odoA = Number(a.odometer) || 0;
+        const odoB = Number(b.odometer) || 0;
+        if (odoA !== odoB) return odoB - odoA;
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+      saveCachedFuelLogs(email, updated);
 
-      res.json({ success: true, log: { id: newDocId, ...newLog } });
+      // 2. Try Firestore in background (non-blocking, tolerant to 429 quota)
+      (async () => {
+        try {
+          await firestoreDb.collection(`users/${email}/fuelLogs`).doc(newLog.id).set(newLog);
+        } catch (fsErr: any) {
+          const errMsg = fsErr?.message || String(fsErr);
+          if (errMsg.includes("429") || errMsg.includes("Quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Too Many Requests")) {
+            // Handled silently by local persistent cache
+          } else {
+            console.warn("[Fuel Logs] Background sync notice:", errMsg);
+          }
+        }
+      })().catch(() => {});
+
+      res.json({ success: true, log: newLog });
     } catch (err: any) {
       console.error("Error adding fuel log:", err);
       res.status(500).json({ error: err.message || "Unknown error adding fuel log" });
@@ -2838,12 +3084,391 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
   app.delete("/api/fuel-logs/:email/:logId", async (req, res) => {
     try {
-      const { email, logId } = req.params;
-      await firestoreDb.collection(`users/${email.toLowerCase().trim()}/fuelLogs`).doc(logId).delete();
+      const email = (req.params.email || "").toLowerCase().trim();
+      const { logId } = req.params;
+
+      // 1. Immediately remove from cache
+      const current = getCachedFuelLogs(email);
+      const updated = current.filter(l => l.id !== logId);
+      saveCachedFuelLogs(email, updated);
+
+      // 2. Try Firestore delete in background
+      (async () => {
+        try {
+          await firestoreDb.collection(`users/${email}/fuelLogs`).doc(logId).delete();
+        } catch (fsErr: any) {
+          const errMsg = fsErr?.message || String(fsErr);
+          if (!errMsg.includes("429") && !errMsg.includes("Quota") && !errMsg.includes("RESOURCE_EXHAUSTED")) {
+            console.warn("[Fuel Logs] Firestore delete warning:", errMsg);
+          }
+        }
+      })().catch(() => {});
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error deleting fuel log:", err);
       res.status(500).json({ error: err.message || "Unknown error deleting fuel log" });
+    }
+  });
+
+  // --- FAMILY CREW / GRUPPO FAMIGLIA & REAL-TIME SYNC ---
+  const FAMILY_CREWS_FILE = path.join(process.cwd(), "family_crews_cache.json");
+
+  function getCachedFamilyCrews(): Record<string, any> {
+    try {
+      if (fs.existsSync(FAMILY_CREWS_FILE)) {
+        return JSON.parse(fs.readFileSync(FAMILY_CREWS_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.warn("Error reading family crews cache:", e);
+    }
+    return {};
+  }
+
+  function saveCachedFamilyCrews(crews: Record<string, any>) {
+    try {
+      fs.writeFileSync(FAMILY_CREWS_FILE, JSON.stringify(crews, null, 2), "utf-8");
+    } catch (e) {
+      console.warn("Error saving family crews cache:", e);
+    }
+  }
+
+  function generateInviteCode(): string {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "FAM-";
+    for (let i = 0; i < 4; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
+
+  // Get crew for specific user email
+  app.get("/api/family-crew/user/:email", async (req, res) => {
+    try {
+      const email = (req.params.email || "").toLowerCase().trim();
+      if (!email) return res.json({ crew: null });
+
+      const allCrews = getCachedFamilyCrews();
+      let foundCrew = Object.values(allCrews).find((c: any) => 
+        Array.isArray(c.members) && c.members.some((m: any) => (m.email || "").toLowerCase().trim() === email)
+      );
+
+      // If not in cache, check Firestore
+      if (!foundCrew) {
+        try {
+          const snapshot = await firestoreDb.collection("family_crews").get();
+          if (snapshot && Array.isArray(snapshot.docs)) {
+            for (const doc of snapshot.docs) {
+              const data = doc.data();
+              if (data && Array.isArray(data.members) && data.members.some((m: any) => (m.email || "").toLowerCase().trim() === email)) {
+                foundCrew = { id: doc.id, ...data };
+                allCrews[doc.id] = foundCrew;
+                saveCachedFamilyCrews(allCrews);
+                break;
+              }
+            }
+          }
+        } catch (fsErr) {
+          // Ignore quota errors
+        }
+      }
+
+      res.json({ crew: foundCrew || null });
+    } catch (err: any) {
+      console.error("Error fetching user family crew:", err);
+      res.status(500).json({ error: err.message || "Errore recupero equipaggio" });
+    }
+  });
+
+  // Get crew by ID
+  app.get("/api/family-crew/:crewId", async (req, res) => {
+    try {
+      const { crewId } = req.params;
+      const allCrews = getCachedFamilyCrews();
+      let crew = allCrews[crewId];
+
+      if (!crew) {
+        try {
+          const docSnap = await firestoreDb.collection("family_crews").doc(crewId).get();
+          if (docSnap && docSnap.exists) {
+            crew = { id: docSnap.id, ...docSnap.data() };
+            allCrews[crewId] = crew;
+            saveCachedFamilyCrews(allCrews);
+          }
+        } catch (fsErr) {}
+      }
+
+      res.json({ crew: crew || null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create a new Family Crew
+  app.post("/api/family-crew/create", async (req, res) => {
+    try {
+      const { name, ownerEmail, ownerName, syncModules } = req.body;
+      if (!ownerEmail) {
+        return res.status(400).json({ error: "Email proprietario richiesta." });
+      }
+
+      const cleanEmail = ownerEmail.toLowerCase().trim();
+      const cleanName = (name || "Famiglia in Viaggio 🚐").trim();
+      const crewId = `crew_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const inviteCode = generateInviteCode();
+
+      const newCrew = {
+        id: crewId,
+        code: inviteCode,
+        name: cleanName,
+        ownerEmail: cleanEmail,
+        ownerName: (ownerName || cleanEmail.split("@")[0]).trim(),
+        createdAt: new Date().toISOString(),
+        members: [
+          {
+            email: cleanEmail,
+            nickname: (ownerName || cleanEmail.split("@")[0]).trim(),
+            role: "owner",
+            joinedAt: new Date().toISOString()
+          }
+        ],
+        syncModules: {
+          fuelCard: syncModules?.fuelCard !== false,
+          trips: syncModules?.trips !== false,
+          checklists: syncModules?.checklists !== false,
+          pantry: syncModules?.pantry !== false,
+          maintenance: syncModules?.maintenance !== false,
+        },
+        sharedData: {
+          fuelLogs: [],
+          trips: [],
+          checklists: [],
+          pantry: { pantry: [], shoppingList: [] },
+          maintenance: []
+        },
+        lastUpdated: new Date().toISOString(),
+        updatedBy: ownerName || cleanEmail
+      };
+
+      // 1. Save to local cache
+      const allCrews = getCachedFamilyCrews();
+      // Remove user from any old crews if necessary
+      Object.keys(allCrews).forEach(k => {
+        allCrews[k].members = (allCrews[k].members || []).filter((m: any) => (m.email || "").toLowerCase().trim() !== cleanEmail);
+      });
+      allCrews[crewId] = newCrew;
+      saveCachedFamilyCrews(allCrews);
+
+      // 2. Background Firestore write
+      (async () => {
+        try {
+          await firestoreDb.collection("family_crews").doc(crewId).set(newCrew);
+        } catch (fsErr: any) {
+          const errMsg = fsErr?.message || String(fsErr);
+          if (!errMsg.includes("429") && !errMsg.includes("Quota") && !errMsg.includes("RESOURCE_EXHAUSTED")) {
+            console.warn("[Family Crew] Firestore write notice:", errMsg);
+          }
+        }
+      })().catch(() => {});
+
+      res.json({ success: true, crew: newCrew });
+    } catch (err: any) {
+      console.error("Error creating family crew:", err);
+      res.status(500).json({ error: err.message || "Errore creazione equipaggio." });
+    }
+  });
+
+  // Join a Family Crew with invite code
+  app.post("/api/family-crew/join", async (req, res) => {
+    try {
+      const { code, user } = req.body;
+      if (!code || !user || !user.email) {
+        return res.status(400).json({ error: "Codice invito ed utente richiesti." });
+      }
+
+      const cleanCode = code.trim().toUpperCase();
+      const cleanEmail = user.email.toLowerCase().trim();
+      const cleanNickname = (user.nickname || user.name || cleanEmail.split("@")[0]).trim();
+
+      const allCrews = getCachedFamilyCrews();
+      let targetCrew: any = Object.values(allCrews).find((c: any) => 
+        (c.code || "").toUpperCase() === cleanCode || (c.id || "") === code.trim()
+      );
+
+      if (!targetCrew) {
+        try {
+          const snapshot = await firestoreDb.collection("family_crews").get();
+          if (snapshot && Array.isArray(snapshot.docs)) {
+            for (const doc of snapshot.docs) {
+              const data = doc.data();
+              if ((data?.code || "").toUpperCase() === cleanCode || doc.id === code.trim()) {
+                targetCrew = { id: doc.id, ...data };
+                allCrews[doc.id] = targetCrew;
+                break;
+              }
+            }
+          }
+        } catch (fsErr) {}
+      }
+
+      if (!targetCrew) {
+        return res.status(404).json({ error: `Nessun equipaggio trovato con il codice ${cleanCode}. Controlla il codice e riprova.` });
+      }
+
+      // Add user to target crew members if not already present
+      const existingMemberIdx = targetCrew.members.findIndex((m: any) => (m.email || "").toLowerCase().trim() === cleanEmail);
+      if (existingMemberIdx >= 0) {
+        targetCrew.members[existingMemberIdx].nickname = cleanNickname;
+      } else {
+        targetCrew.members.push({
+          email: cleanEmail,
+          nickname: cleanNickname,
+          role: "member",
+          joinedAt: new Date().toISOString(),
+          profilePhoto: user.profilePhoto || undefined
+        });
+      }
+
+      targetCrew.lastUpdated = new Date().toISOString();
+      targetCrew.updatedBy = cleanNickname;
+
+      allCrews[targetCrew.id] = targetCrew;
+      saveCachedFamilyCrews(allCrews);
+
+      // Background Firestore update
+      (async () => {
+        try {
+          await firestoreDb.collection("family_crews").doc(targetCrew.id).set(targetCrew);
+        } catch (fsErr) {}
+      })().catch(() => {});
+
+      res.json({ success: true, crew: targetCrew });
+    } catch (err: any) {
+      console.error("Error joining family crew:", err);
+      res.status(500).json({ error: err.message || "Errore durante l'adesione all'equipaggio." });
+    }
+  });
+
+  // Leave Family Crew
+  app.post("/api/family-crew/leave", async (req, res) => {
+    try {
+      const { crewId, email } = req.body;
+      if (!crewId || !email) {
+        return res.status(400).json({ error: "Dati mancanti." });
+      }
+
+      const cleanEmail = email.toLowerCase().trim();
+      const allCrews = getCachedFamilyCrews();
+      const crew = allCrews[crewId];
+
+      if (crew) {
+        crew.members = (crew.members || []).filter((m: any) => (m.email || "").toLowerCase().trim() !== cleanEmail);
+        if (crew.members.length === 0) {
+          delete allCrews[crewId];
+          (async () => {
+            try { await firestoreDb.collection("family_crews").doc(crewId).delete(); } catch (e) {}
+          })().catch(() => {});
+        } else {
+          // If owner left, reassign owner to first member
+          if ((crew.ownerEmail || "").toLowerCase().trim() === cleanEmail) {
+            crew.ownerEmail = crew.members[0].email;
+            crew.ownerName = crew.members[0].nickname;
+            crew.members[0].role = "owner";
+          }
+          allCrews[crewId] = crew;
+          (async () => {
+            try { await firestoreDb.collection("family_crews").doc(crewId).set(crew); } catch (e) {}
+          })().catch(() => {});
+        }
+        saveCachedFamilyCrews(allCrews);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Sync a specific section of data to Family Crew
+  app.post("/api/family-crew/sync/:crewId", async (req, res) => {
+    try {
+      const { crewId } = req.params;
+      const { section, data, userEmail, userName } = req.body;
+
+      if (!crewId || !section) {
+        return res.status(400).json({ error: "crewId e section richiesti." });
+      }
+
+      const allCrews = getCachedFamilyCrews();
+      let crew = allCrews[crewId];
+
+      if (!crew) {
+        try {
+          const docSnap = await firestoreDb.collection("family_crews").doc(crewId).get();
+          if (docSnap && docSnap.exists) {
+            crew = { id: docSnap.id, ...docSnap.data() };
+          }
+        } catch (e) {}
+      }
+
+      if (!crew) {
+        return res.status(404).json({ error: "Equipaggio non trovato." });
+      }
+
+      if (!crew.sharedData) {
+        crew.sharedData = {};
+      }
+
+      crew.sharedData[section] = data;
+      crew.lastUpdated = new Date().toISOString();
+      crew.updatedBy = userName || userEmail || "Membro equipaggio";
+
+      allCrews[crewId] = crew;
+      saveCachedFamilyCrews(allCrews);
+
+      // Background Firestore update
+      (async () => {
+        try {
+          await firestoreDb.collection("family_crews").doc(crewId).set(crew);
+        } catch (fsErr) {}
+      })().catch(() => {});
+
+      res.json({ success: true, crew });
+    } catch (err: any) {
+      console.error("Error syncing family crew section:", err);
+      res.status(500).json({ error: err.message || "Errore sincronizzazione sezione equipaggio." });
+    }
+  });
+
+  // Update crew settings (sync modules & name)
+  app.post("/api/family-crew/update-settings/:crewId", async (req, res) => {
+    try {
+      const { crewId } = req.params;
+      const { name, syncModules, email } = req.body;
+
+      const allCrews = getCachedFamilyCrews();
+      const crew = allCrews[crewId];
+
+      if (!crew) {
+        return res.status(404).json({ error: "Equipaggio non trovato." });
+      }
+
+      if (name) crew.name = name.trim();
+      if (syncModules) crew.syncModules = { ...crew.syncModules, ...syncModules };
+      crew.lastUpdated = new Date().toISOString();
+
+      allCrews[crewId] = crew;
+      saveCachedFamilyCrews(allCrews);
+
+      (async () => {
+        try {
+          await firestoreDb.collection("family_crews").doc(crewId).set(crew);
+        } catch (fsErr) {}
+      })().catch(() => {});
+
+      res.json({ success: true, crew });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -3899,31 +4524,45 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
   // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
   async function sendAdminNotificationEmail(subject: string, htmlContent: string) {
-    const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-    console.log(`[Email Service] Preparing to send email to ${targetAdminEmail}: "${subject}"`);
+    const adminTargets = Array.from(
+      new Set([
+        "sambucci.simone@gmail.com",
+        "viacamperapp@gmail.com",
+        ...(process.env.ADMIN_EMAIL ? [process.env.ADMIN_EMAIL.toLowerCase().trim()] : [])
+      ])
+    );
+    console.log(`[Email Service] Preparing to send email to [${adminTargets.join(", ")}]: "${subject}"`);
     
     if (process.env.RESEND_API_KEY) {
       try {
         const { Resend } = await import('resend');
         const resend = new Resend(process.env.RESEND_API_KEY);
-        const res: any = await resend.emails.send({
-          from: 'ViaCamperApp <onboarding@resend.dev>',
-          to: targetAdminEmail,
-          subject: subject,
-          html: htmlContent
-        });
-        if (res?.error) {
-          console.log(`[Email Service] Resend notice for ${targetAdminEmail}: ${res.error.message || 'validation notice'}`);
-          return { success: false, error: res.error };
+        let anySuccess = false;
+        for (const recipient of adminTargets) {
+          try {
+            const res: any = await resend.emails.send({
+              from: 'ViaCamperApp <onboarding@resend.dev>',
+              to: recipient,
+              subject: subject,
+              html: htmlContent
+            });
+            if (res?.error) {
+              console.log(`[Email Service] Resend notice for ${recipient}: ${res.error.message || 'validation notice'}`);
+            } else {
+              anySuccess = true;
+              console.log(`[Email Service] Email sent successfully via Resend to ${recipient}:`, res.data);
+            }
+          } catch (itemErr: any) {
+            console.warn(`[Email Service] Could not send to ${recipient}:`, itemErr?.message || itemErr);
+          }
         }
-        console.log(`[Email Service] Email sent successfully via Resend to ${targetAdminEmail}:`, res.data);
-        return { success: true, data: res.data };
-      } catch (err) {
-        console.error(`[Email Service] Failed to send email via Resend to ${targetAdminEmail}:`, err);
+        return { success: anySuccess };
+      } catch (err: any) {
+        console.error(`[Email Service] Failed to send email via Resend:`, err?.message || err);
         return { success: false, error: err };
       }
     } else {
-      console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email a ${targetAdminEmail} per: "${subject}". Imposta RESEND_API_KEY nelle variabili d'ambiente.`);
+      console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email a [${adminTargets.join(", ")}] per: "${subject}".`);
       return { success: false, reason: "RESEND_API_KEY missing" };
     }
   }

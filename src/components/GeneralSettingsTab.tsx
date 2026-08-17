@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Settings, Moon, Sun, Bell, Volume2, HardDrive, RefreshCw, 
   Smartphone, AlertTriangle, LayoutDashboard, CheckSquare, 
-  Heart, CloudSun, Map, Shield, User, ChevronRight, ArrowLeft, Search, Sliders
+  Heart, CloudSun, Map, Shield, User, ChevronRight, ArrowLeft, Search, Sliders, Users, Key
 } from 'lucide-react';
 import { DashboardSettings } from '../types';
 import { speakSampleTts, TtsGender } from '../utils/ttsHelper';
@@ -10,6 +10,10 @@ import { resetAllRollyGuides } from './RollyOnboardingGuide';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 
 interface Props {
+  currentUser?: {
+    email: string;
+    isModerator?: boolean;
+  } | null;
   isDarkMode: boolean;
   onThemeChange: (dark: boolean) => void;
   showTopNotifications: boolean;
@@ -18,7 +22,7 @@ interface Props {
   onUpdateDashboardSettings: (settings: DashboardSettings) => void;
 }
 
-type CategoryId = 'aspect' | 'system' | 'navigation' | 'audio_notifications' | 'dashboard_modules' | 'privacy_security' | 'data_backup';
+type CategoryId = 'crew' | 'aspect' | 'system' | 'navigation' | 'audio_notifications' | 'dashboard_modules' | 'privacy_security' | 'data_backup';
 
 interface CategoryDef {
   id: CategoryId;
@@ -29,6 +33,7 @@ interface CategoryDef {
 }
 
 export default function GeneralSettingsTab({ 
+  currentUser,
   isDarkMode, 
   onThemeChange, 
   showTopNotifications, 
@@ -36,6 +41,9 @@ export default function GeneralSettingsTab({
   dashboardSettings, 
   onUpdateDashboardSettings 
 }: Props) {
+  // Check if current user is super admin / moderator
+  const isSuperAdmin = currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com";
+
   // Category selection state
   const [activeCategory, setActiveCategory] = React.useState<CategoryId | null>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -197,6 +205,13 @@ export default function GeneralSettingsTab({
 
   const categories: CategoryDef[] = [
     {
+      id: 'crew',
+      title: 'Equipaggio Famiglia & Sync',
+      subtitle: 'Sincronizzazione in tempo reale con i membri a bordo',
+      icon: Users,
+      color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+    },
+    {
       id: 'aspect',
       title: 'Aspetto & Schermo',
       subtitle: 'Tema scuro, dimensioni del testo e contrasto',
@@ -248,6 +263,44 @@ export default function GeneralSettingsTab({
   ];
 
   // Render individual sections based on category
+  const renderCrewSection = () => (
+    <section className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+      <div className="bg-slate-50 dark:bg-slate-800/80 px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+        <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+        <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm uppercase tracking-wider">Equipaggio Famiglia & Live Sync</h3>
+      </div>
+      <div className="p-5 space-y-5">
+        <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-slate-800 dark:text-slate-200 text-xs leading-relaxed space-y-2">
+          <p className="font-bold flex items-center gap-2 text-sm text-[#2D2926] dark:text-white">
+            <span>🚐 Sincronizzazione in Tempo Reale tra Dispositivi</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-extrabold">
+              Attiva
+            </span>
+          </p>
+          <p className="text-slate-600 dark:text-slate-300">
+            Crea un equipaggio o unisciti a quello esistente per condividere in tempo reale:
+          </p>
+          <ul className="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-300">
+            <li><strong>⛽ Carta Carburante:</strong> rifornimenti, litri e consumi</li>
+            <li><strong>🥫 Cambusa & Spesa:</strong> dispensa e lista della spesa istantanea</li>
+            <li><strong>✅ Checklist di Bordo:</strong> spunte e verifiche prima di partire</li>
+            <li><strong>📖 Diari di Viaggio:</strong> itinerari, tappe e spese condivise</li>
+            <li><strong>🔧 Manutenzione & Scadenze:</strong> tagliandi e revisioni del camper</li>
+          </ul>
+        </div>
+
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("open-family-crew-modal"))}
+          className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-2xl text-sm transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <Users className="w-4 h-4" />
+          <span>Apri Gestione Equipaggio & Codici Invito</span>
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </section>
+  );
+
   const renderAspectSection = () => (
     <section className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
       <div className="bg-slate-50 dark:bg-slate-800/80 px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
@@ -492,6 +545,32 @@ export default function GeneralSettingsTab({
             <option value="veloce">Veloce (Autostrade)</option>
           </select>
         </div>
+        {isSuperAdmin && (
+          <>
+            <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-[#2D2926] dark:text-white flex items-center gap-1.5">
+                  <span>Chiave Google Maps API</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold dark:bg-amber-950/60 dark:text-amber-300">
+                    Admin
+                  </span>
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Configura la tua chiave API Google Maps per la vista satellitare avanzata e 3D</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("open-google-maps-key-modal"));
+                }}
+                className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-700 font-extrabold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+              >
+                <Key className="w-4 h-4 shrink-0" />
+                <span>Configura Chiave</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </section>
   );
@@ -876,6 +955,7 @@ export default function GeneralSettingsTab({
 
   const renderCategoryContent = (id: CategoryId) => {
     switch (id) {
+      case 'crew': return renderCrewSection();
       case 'aspect': return renderAspectSection();
       case 'system': return renderSystemSection();
       case 'navigation': return renderNavigationSection();
@@ -941,6 +1021,7 @@ export default function GeneralSettingsTab({
               Cancella ricerca
             </button>
           </div>
+          {renderCrewSection()}
           {renderAspectSection()}
           {renderSystemSection()}
           {renderNavigationSection()}

@@ -72,6 +72,8 @@ import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
 import { registerPushNotifications } from "./utils/pushNotifications";
+import { FamilyCrewProvider } from "./context/FamilyCrewContext";
+import { FamilyCrewModal } from "./components/FamilyCrewModal";
 
 // Guard to prevent multiple welcome toast/speech invocations
 let welcomeSpeechTriggered = false;
@@ -175,6 +177,13 @@ export default function App() {
   const [isInstallable, setIsInstallable] = React.useState<boolean>(false);
   const [isInstalled, setIsInstalled] = React.useState<boolean>(false);
   const [isInIframe, setIsInIframe] = React.useState<boolean>(false);
+  const [showFamilyCrewModal, setShowFamilyCrewModal] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    const handleOpenCrew = () => setShowFamilyCrewModal(true);
+    window.addEventListener("open-family-crew-modal", handleOpenCrew);
+    return () => window.removeEventListener("open-family-crew-modal", handleOpenCrew);
+  }, []);
 
   React.useEffect(() => {
     window.addEventListener("beforeinstallprompt", (e: any) => {
@@ -274,8 +283,14 @@ export default function App() {
   });
 
   React.useEffect(() => {
-    if (currentUser?.email) {
-      registerPushNotifications(currentUser.email);
+    const emailToRegister =
+      currentUser?.email ||
+      localStorage.getItem("camper_user_email") ||
+      "sambucci.simone@gmail.com";
+    if (emailToRegister) {
+      registerPushNotifications(emailToRegister).catch((err) => {
+        console.warn("[Push] Error during push notification registration:", err);
+      });
     }
   }, [currentUser?.email]);
 
@@ -693,19 +708,18 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    setFavoriteIds([]);
-    setIsAdminLoggedIn(false);
+    // Clear all user-specific sensitive local storage
     localStorage.removeItem("camper_user");
-    window.dispatchEvent(
-      new CustomEvent("show-toast", {
-        detail: {
-          message: "👋 Arrivederci! Sconnesso con successo.",
-          duration: 3000,
-        },
-      }),
-    );
-    setSettingsSubTab("hub");
+    localStorage.removeItem("camper_trips");
+    localStorage.removeItem("camper_trips_backup");
+    localStorage.removeItem("camper_favorites");
+    localStorage.removeItem("camper_dimensions");
+    localStorage.removeItem("camper_checklist");
+    localStorage.removeItem("camper_deadlines");
+    localStorage.removeItem("camper_last_seen_community_count");
+    
+    // Force a reload to clear all in-memory state
+    window.location.reload();
   };
 
   // Persistent Settings for Dashboard
@@ -1112,11 +1126,15 @@ export default function App() {
     currentUser && (
       currentUser.email?.toLowerCase().trim() === "sambucci.simone@gmail.com" ||
       currentUser.email?.toLowerCase().trim() === "viacamperapp@gmail.com" ||
-      currentUser.isModerator ||
+      (currentUser.isModerator === true && currentUser.moderatorRoles && (
+        currentUser.moderatorRoles.community === true ||
+        currentUser.moderatorRoles.places === true ||
+        currentUser.moderatorRoles.itineraries === true
+      )) ||
       (currentUser.moderatorRoles && (
-        currentUser.moderatorRoles.community ||
-        currentUser.moderatorRoles.places ||
-        currentUser.moderatorRoles.itineraries
+        currentUser.moderatorRoles.community === true ||
+        currentUser.moderatorRoles.places === true ||
+        currentUser.moderatorRoles.itineraries === true
       ))
     )
   );
@@ -1129,14 +1147,15 @@ export default function App() {
       if (savedUser) {
         const u = JSON.parse(savedUser);
         const email = u?.email?.toLowerCase()?.trim();
-        if (
-          email === "sambucci.simone@gmail.com" ||
-          email === "viacamperapp@gmail.com" ||
-          u?.isModerator ||
-          u?.moderatorRoles?.community ||
-          u?.moderatorRoles?.places ||
-          u?.moderatorRoles?.itineraries
-        ) {
+        const isSuper = email === "sambucci.simone@gmail.com" || email === "viacamperapp@gmail.com";
+        const hasModRoles = Boolean(
+          u?.moderatorRoles && (
+            u.moderatorRoles.community === true ||
+            u.moderatorRoles.places === true ||
+            u.moderatorRoles.itineraries === true
+          )
+        );
+        if (isSuper || (u?.isModerator === true && hasModRoles) || hasModRoles) {
           return true;
         }
       }
@@ -1908,16 +1927,23 @@ export default function App() {
 
   React.useEffect(() => {
     const cleanEmail = currentUser?.email?.toLowerCase()?.trim();
-    if (
-      currentUser &&
-      (cleanEmail === "sambucci.simone@gmail.com" ||
-        cleanEmail === "viacamperapp@gmail.com" ||
-        currentUser.isModerator ||
-        (currentUser.moderatorRoles &&
-          (currentUser.moderatorRoles.community ||
-            currentUser.moderatorRoles.places ||
-            currentUser.moderatorRoles.itineraries)))
-    ) {
+    const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
+    const hasModRoles = Boolean(
+      currentUser?.moderatorRoles && (
+        currentUser.moderatorRoles.community === true ||
+        currentUser.moderatorRoles.places === true ||
+        currentUser.moderatorRoles.itineraries === true
+      )
+    );
+    const isSuperOrMod = Boolean(
+      currentUser && (
+        isSuper ||
+        (currentUser.isModerator === true && hasModRoles) ||
+        hasModRoles
+      )
+    );
+
+    if (isSuperOrMod) {
       setIsAdminLoggedIn(true);
       fetchPendingPlaces();
       fetchAdminUsers();
@@ -1953,6 +1979,8 @@ export default function App() {
         if (unsubUsers) unsubUsers();
         if (unsubPlaces) unsubPlaces();
       };
+    } else {
+      setIsAdminLoggedIn(false);
     }
   }, [currentUser]);
 
@@ -2000,10 +2028,24 @@ export default function App() {
       const res = await fetch(resolveMediaUrl("/api/admin/pending-places"));
       if (res.ok) {
         const data = await res.json();
-        setPendingPlaces(data);
+        setPendingPlaces(Array.isArray(data) ? data : []);
+        return;
       }
     } catch (err) {
-      console.error("Fetch pending error:", err);
+      console.warn("API pending places fallback to Firestore:", err);
+    }
+
+    if (firestore) {
+      try {
+        const snapshot = await firestore.collection("places").where("status", "==", "pending").get();
+        const fallbackList: any[] = [];
+        snapshot.forEach((doc) => {
+          fallbackList.push({ id: doc.id, ...doc.data() });
+        });
+        setPendingPlaces(fallbackList);
+      } catch (fsErr) {
+        console.warn("Direct Firestore pending places query fallback failed:", fsErr);
+      }
     }
   };
 
@@ -2014,12 +2056,26 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         console.log(`[Admin API] Fetched ${data.length} places.`);
-        setAllPlaces(data);
+        setAllPlaces(Array.isArray(data) ? data : []);
+        return;
       } else {
-        console.error("[Admin API] Failed to fetch all places, status:", res.status);
+        console.warn("[Admin API] Failed to fetch all places, status:", res.status);
       }
     } catch (err) {
-      console.error("Fetch all places error:", err);
+      console.warn("Fetch all places error, falling back to direct Firestore:", err);
+    }
+
+    if (firestore) {
+      try {
+        const snapshot = await firestore.collection("places").get();
+        const fallbackList: any[] = [];
+        snapshot.forEach((doc) => {
+          fallbackList.push({ id: doc.id, ...doc.data() });
+        });
+        setAllPlaces(fallbackList);
+      } catch (fsErr) {
+        console.warn("Direct Firestore all places query fallback failed:", fsErr);
+      }
     }
   };
 
@@ -2033,9 +2089,20 @@ export default function App() {
       if (res.ok) {
         fetchAllPlaces(); // Refresh list
         setEditingPlace(null);
+        return;
       }
     } catch (err) {
-      console.error("Update place error:", err);
+      console.warn("Update place API error, trying direct Firestore:", err);
+    }
+
+    if (firestore && updatedPlace.id) {
+      try {
+        await firestore.collection("places").doc(updatedPlace.id).update(updatedPlace);
+        fetchAllPlaces();
+        setEditingPlace(null);
+      } catch (fsErr) {
+        console.error("Direct Firestore place update failed:", fsErr);
+      }
     }
   };
 
@@ -2044,10 +2111,10 @@ export default function App() {
       const res = await fetch(resolveMediaUrl("/api/admin/feedbacks"));
       if (res.ok) {
         const data = await res.json();
-        setFeedbacks(data);
+        setFeedbacks(Array.isArray(data) ? data : []);
       }
     } catch (err) {
-      console.error("Fetch feedbacks error:", err);
+      console.warn("Fetch feedbacks error:", err);
     }
   };
 
@@ -2057,13 +2124,28 @@ export default function App() {
       const res = await fetch(resolveMediaUrl("/api/admin/notifications"));
       if (res.ok) {
         const data = await res.json();
-        setAdminNotifications(data);
+        setAdminNotifications(Array.isArray(data) ? data : []);
+        setAdminNotificationsLoading(false);
+        return;
       }
     } catch (err) {
-      console.error("Fetch admin notifications error:", err);
-    } finally {
-      setAdminNotificationsLoading(false);
+      console.warn("Fetch admin notifications error, trying direct Firestore fallback:", err);
     }
+
+    if (firestore) {
+      try {
+        const snapshot = await firestore.collection("adminNotifications").get();
+        const fallbackList: any[] = [];
+        snapshot.forEach((doc) => {
+          fallbackList.push({ id: doc.id, ...doc.data() });
+        });
+        fallbackList.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+        setAdminNotifications(fallbackList);
+      } catch (fsErr) {
+        console.warn("Direct Firestore admin notifications query failed:", fsErr);
+      }
+    }
+    setAdminNotificationsLoading(false);
   };
 
   const fetchCrashReports = async () => {
@@ -2112,16 +2194,16 @@ export default function App() {
       const res = await fetch(resolveMediaUrl("/api/admin/users"));
       if (res.ok) {
         const data = await res.json();
-        setAdminUsers(data);
+        setAdminUsers(Array.isArray(data) ? data : []);
+        setAdminUsersLoading(false);
         return;
       }
       throw new Error("HTTP error " + res.status);
     } catch (err: any) {
       apiErrorMsg = err.message || String(err);
-      console.error("Fetch admin users error, trying direct Firestore fallback:", err);
+      console.warn("API admin users fetch notice, trying direct Firestore fallback:", apiErrorMsg);
       if (firestore) {
         try {
-          console.log("[fetchAdminUsers Fallback] Fetching users directly from Firestore...");
           const usersRef = firestore.collection("users");
           const snapshot = await usersRef.get();
           
@@ -2136,7 +2218,7 @@ export default function App() {
               }
             });
           } catch (pe) {
-            console.warn("[fetchAdminUsers Fallback] places count error:", pe);
+            // ignore
           }
 
           const fallbackUsers: any[] = [];
@@ -2160,11 +2242,11 @@ export default function App() {
           fallbackUsers.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           setAdminUsers(fallbackUsers);
         } catch (fsErr: any) {
-          console.error("[fetchAdminUsers Fallback] Firestore query failed:", fsErr);
-          setAdminUsersError(`Errore API: ${apiErrorMsg} | Errore Firestore Fallback: ${fsErr.message || String(fsErr)}`);
+          console.warn("[fetchAdminUsers Fallback] Firestore query failed:", fsErr);
+          setAdminUsersError(`Errore caricamento utenti: ${fsErr.message || String(fsErr)}`);
         }
       } else {
-        setAdminUsersError(`Errore API: ${apiErrorMsg} | Firestore non inizializzato`);
+        setAdminUsersError(`Errore API: ${apiErrorMsg}`);
       }
     } finally {
       setAdminUsersLoading(false);
@@ -2363,8 +2445,12 @@ export default function App() {
           const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error("Timeout di connessione a Firestore")), 5000)
           );
+          const hasAnyRole = Boolean(roles && (roles.community || roles.places || roles.itineraries));
           await Promise.race([
-            firestore.collection("users").doc(email.toLowerCase().trim()).update({ moderatorRoles: roles }),
+            firestore.collection("users").doc(email.toLowerCase().trim()).update({ 
+              moderatorRoles: roles,
+              isModerator: hasAnyRole
+            }),
             timeoutPromise
           ]);
           window.dispatchEvent(
@@ -3785,10 +3871,11 @@ out center;`;
   }
 
   return (
-    <div
-      id="root-container"
-      className="h-[100dvh] overflow-hidden bg-[#D1CDBF] flex flex-col font-sans text-[#2D2926] selection:bg-[#5A6B4E]/30 selection:text-[#2D2926] pb-[58px] md:pb-0"
-    >
+    <FamilyCrewProvider currentUser={currentUser}>
+      <div
+        id="root-container"
+        className="h-[100dvh] overflow-hidden bg-[#D1CDBF] flex flex-col font-sans text-[#2D2926] selection:bg-[#5A6B4E]/30 selection:text-[#2D2926] pb-[58px] md:pb-0"
+      >
       {/* Initial App Startup Splash Screen */}
       {showSplash && (
         <div className="fixed inset-0 z-[20000] bg-[#1C261B] flex flex-col items-center justify-center p-6 text-white animate-fade-in select-none">
@@ -4385,6 +4472,7 @@ out center;`;
               }}
               trips={trips}
               setTrips={setTrips}
+              onOpenCrewModal={() => setShowFamilyCrewModal(true)}
             />
           ) : (
             <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl shadow-lg mt-10">
@@ -5427,6 +5515,7 @@ out center;`;
                     <ChecklistTab
                       items={checklistItems}
                       setItems={setChecklistItems}
+                      onOpenCrewModal={() => setShowFamilyCrewModal(true)}
                     />
                   )}
                   {settingsSubTab === "deadlines" && (
@@ -5465,21 +5554,33 @@ out center;`;
                       onSuccess={(user) => {
                         const cleanEmail = user.email?.toLowerCase().trim();
                         const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
+                        const hasModRoles = Boolean(
+                          user.moderatorRoles && (
+                            user.moderatorRoles.community === true ||
+                            user.moderatorRoles.places === true ||
+                            user.moderatorRoles.itineraries === true
+                          )
+                        );
+                        const isMod = isSuper || (Boolean(user.isModerator) && hasModRoles);
                         const sanitizedUser = {
                           email: cleanEmail,
                           nickname: user.nickname,
                           name: user.name,
                           profilePhoto: user.profilePhoto,
-                          isModerator: isSuper || user.isModerator,
-                          moderatorRoles: user.moderatorRoles || (isSuper ? { community: true, places: true, itineraries: true } : undefined)
+                          isModerator: isMod,
+                          moderatorRoles: isSuper
+                            ? { community: true, places: true, itineraries: true }
+                            : (hasModRoles ? user.moderatorRoles : { community: false, places: false, itineraries: false })
                         };
                         setCurrentUser(sanitizedUser);
                         localStorage.setItem(
                           "camper_user",
                           JSON.stringify(sanitizedUser),
                         );
-                        if (isSuper || sanitizedUser.isModerator || sanitizedUser.moderatorRoles) {
+                        if (isSuper || isMod) {
                           setIsAdminLoggedIn(true);
+                        } else {
+                          setIsAdminLoggedIn(false);
                         }
                         setIsRegistered(true);
                         localStorage.setItem("camper_is_registered", "true");
@@ -6244,11 +6345,15 @@ out center;`;
                   )}
 
                   {settingsSubTab === "pantry_shopping" && (
-                    <PantryShoppingTab />
+                    <PantryShoppingTab
+                      onOpenCrewModal={() => setShowFamilyCrewModal(true)}
+                    />
                   )}
 
                   {settingsSubTab === "maintenance_log" && (
-                    <MaintenanceLogTab />
+                    <MaintenanceLogTab
+                      onOpenCrewModal={() => setShowFamilyCrewModal(true)}
+                    />
                   )}
 
                   {settingsSubTab === "work_log" && (
@@ -6274,7 +6379,10 @@ out center;`;
                   )}
 
                   {settingsSubTab === "fuel_card" && (
-                    <FuelCardTab currentUser={currentUser} />
+                    <FuelCardTab
+                      currentUser={currentUser}
+                      onOpenCrewModal={() => setShowFamilyCrewModal(true)}
+                    />
                   )}
 
                   {settingsSubTab === "events" && (
@@ -6293,6 +6401,7 @@ out center;`;
 
                   {settingsSubTab === "general" && (
                     <GeneralSettingsTab
+                      currentUser={currentUser}
                       isDarkMode={isDarkMode}
                       onThemeChange={setIsDarkMode}
                       showTopNotifications={dashboardSettings.showTopNotifications ?? true}
@@ -8665,6 +8774,13 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
           setTripForShareModal(null);
         }}
       />
+
+      <FamilyCrewModal
+        isOpen={showFamilyCrewModal}
+        onClose={() => setShowFamilyCrewModal(false)}
+        currentUser={currentUser}
+      />
     </div>
+    </FamilyCrewProvider>
   );
 }

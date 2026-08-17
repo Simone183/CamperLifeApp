@@ -117,16 +117,24 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       if (!isSuper && userData.approved === false) {
         throw new Error("Il tuo account è in attesa di approvazione da parte di un moderatore.");
       }
+      const hasAnyModRole = Boolean(
+        userData.moderatorRoles && (
+          userData.moderatorRoles.community === true ||
+          userData.moderatorRoles.places === true ||
+          userData.moderatorRoles.itineraries === true
+        )
+      );
+      const isMod = isSuper || (Boolean(userData.isModerator) && hasAnyModRole);
       const userObj = {
         email: formattedEmail,
         name: userData.name,
         nickname: userData.nickname,
         profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
         favorites: userData.favorites || [],
-        isModerator: isSuper || !!userData.isModerator,
+        isModerator: isMod,
         moderatorRoles: isSuper
           ? { community: true, places: true, itineraries: true }
-          : userData.moderatorRoles || {}
+          : (hasAnyModRole ? userData.moderatorRoles : { community: false, places: false, itineraries: false })
       };
       window.dispatchEvent(new CustomEvent('show-toast', { 
         detail: { message: `🔑 Accesso eseguito! Bentornato, ${userObj.nickname}.`, duration: 4000 } 
@@ -169,13 +177,21 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       }
 
       const isSuper = cleanEmail === "sambucci.simone@gmail.com" || cleanEmail === "viacamperapp@gmail.com";
+      const hasAnyModRole = Boolean(
+        data.user?.moderatorRoles && (
+          data.user.moderatorRoles.community === true ||
+          data.user.moderatorRoles.places === true ||
+          data.user.moderatorRoles.itineraries === true
+        )
+      );
+      const isMod = isSuper || (Boolean(data.user?.isModerator) && hasAnyModRole);
       const userObj = {
         ...data.user,
         email: cleanEmail,
-        isModerator: isSuper || !!data.user?.isModerator,
+        isModerator: isMod,
         moderatorRoles: isSuper
           ? { community: true, places: true, itineraries: true }
-          : data.user?.moderatorRoles || {}
+          : (hasAnyModRole ? data.user.moderatorRoles : { community: false, places: false, itineraries: false })
       };
 
       window.dispatchEvent(new CustomEvent('show-toast', { 

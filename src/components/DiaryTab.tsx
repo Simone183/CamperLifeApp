@@ -9,6 +9,7 @@ import { TripRouteMap } from "./TripRouteMap";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
+import { formatDateDDMMAA } from "./FuelCardTab";
 import {
   BookOpen,
   Plus,
@@ -40,6 +41,8 @@ import {
 } from "lucide-react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { useFamilyCrew } from "../context/FamilyCrewContext";
+import { FamilyCrewTabBanner } from "./FamilyCrewModal";
 
 const PHOTO_PRESETS = [
   {
@@ -64,8 +67,8 @@ const INITIAL_TRIPS: Trip[] = [
   {
     id: "t1",
     title: "ESEMPIO: Weekend d'Autunno in Val d'Orcia",
-    startDate: "2026-10-10",
-    endDate: "2026-10-12",
+    startDate: "2025-10-10",
+    endDate: "2025-10-12",
     description:
       "Questo è un viaggio di esempio per mostrarti come funziona il diario. Puoi modificarlo o cancellarlo in qualsiasi momento.",
     startOdometer: 124500,
@@ -77,21 +80,21 @@ const INITIAL_TRIPS: Trip[] = [
         title: "Gasolio Eni Siena",
         amount: 55.0,
         category: "Carburante",
-        date: "2026-10-10",
+        date: "2025-10-10",
       },
       {
         id: "te2",
         title: "Sosta Pienza comunale",
         amount: 12.0,
         category: "Sosta",
-        date: "2026-10-11",
+        date: "2025-10-11",
       },
       {
         id: "te3",
         title: "Pranzo Tipico Trattoria",
         amount: 48.0,
         category: "Cibo",
-        date: "2026-10-11",
+        date: "2025-10-11",
       },
     ],
     photos: [
@@ -100,7 +103,7 @@ const INITIAL_TRIPS: Trip[] = [
         url: "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
         description:
           "Il nostro amato mansardato immerso nell'abbraccio dorato dei cipressi toscani.",
-        date: "2026-10-11",
+        date: "2025-10-11",
       },
     ],
     movements: [],
@@ -121,6 +124,7 @@ interface DiaryTabProps {
   onNavigateToAIItinerary?: () => void;
   trips?: Trip[];
   setTrips?: (trips: Trip[]) => void;
+  onOpenCrewModal?: () => void;
 }
 
 export default function DiaryTab({
@@ -131,11 +135,45 @@ export default function DiaryTab({
   onNavigateToAIItinerary,
   trips: propsTrips,
   setTrips: propsSetTrips,
+  onOpenCrewModal,
 }: DiaryTabProps) {
   const settings = useAppSettings();
+  const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
   const [internalTrips, setInternalTrips] = React.useState<Trip[]>(() => {
     const saved = localStorage.getItem("camper_trips");
-    return saved ? JSON.parse(saved) : INITIAL_TRIPS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Normalize example Val d'Orcia trip dates to 2025
+          return parsed.map((t: Trip) => {
+            if (t.id === "t1" || (t.title && t.title.toLowerCase().includes("val d'orcia"))) {
+              return {
+                ...t,
+                startDate: t.startDate?.includes("2026-") ? t.startDate.replace("2026-", "2025-") : (t.startDate || "2025-10-10"),
+                endDate: t.endDate?.includes("2026-") ? t.endDate.replace("2026-", "2025-") : (t.endDate || "2025-10-12"),
+                expenses: t.expenses?.map((e) => ({
+                  ...e,
+                  date: e.date?.includes("2026-") ? e.date.replace("2026-", "2025-") : e.date,
+                })),
+                photos: t.photos?.map((p) => ({
+                  ...p,
+                  date: p.date?.includes("2026-") ? p.date.replace("2026-", "2025-") : p.date,
+                })),
+                movements: t.movements?.map((m) => ({
+                  ...m,
+                  date: m.date?.includes("2026-") ? m.date.replace("2026-", "2025-") : m.date,
+                })),
+              };
+            }
+            return t;
+          });
+        }
+      } catch (e) {
+        console.error("Error parsing camper_trips:", e);
+      }
+    }
+    return INITIAL_TRIPS;
   });
 
   const trips = propsTrips || internalTrips;
@@ -256,7 +294,19 @@ export default function DiaryTab({
     } catch (e) {
       console.error("Error writing trips in DiaryTab:", e);
     }
-  }, [trips]);
+
+    // Sync to Family Crew
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', trips).catch(() => {});
+    }
+  }, [trips, currentCrew, isModuleSynced]);
+
+  // Sync incoming trips from Family Crew
+  React.useEffect(() => {
+    if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips) && currentCrew.sharedData.trips.length > 0) {
+      setTrips(currentCrew.sharedData.trips);
+    }
+  }, [currentCrew, isModuleSynced]);
 
   React.useEffect(() => {
     const handleOpenPlanned = (e: any) => {
@@ -1275,6 +1325,9 @@ export default function DiaryTab({
 
   return (
     <div id="diary-container" className="space-y-6">
+      {/* Family Crew Banner */}
+      <FamilyCrewTabBanner moduleName="Diari di Viaggio" onOpenCrewModal={onOpenCrewModal} />
+
       {/* Top Welcome Panel */}
       {diarySubTab !== "details" && !showAddTrip && (
         <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white p-5 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -2609,7 +2662,7 @@ export default function DiaryTab({
                                       </p>
                                     </div>
                                     <span className="text-[9px] text-slate-400 font-mono block mt-0.5">
-                                      {exp.date}
+                                      {formatDateDDMMAA(exp.date)}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -2887,7 +2940,7 @@ export default function DiaryTab({
                           ) : (
                             activeTrip.expenses
                               .filter((e) => e.category === "Carburante")
-                              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                               .map((exp) => {
                                 const brandColor =
                                   exp.fuelCompany === "Eni"
@@ -2948,7 +3001,7 @@ export default function DiaryTab({
                                           </p>
                                         )}
                                         <span className="text-[9px] text-slate-400 font-mono block">
-                                          {exp.date}
+                                          {formatDateDDMMAA(exp.date)}
                                         </span>
                                       </div>
 
