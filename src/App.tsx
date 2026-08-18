@@ -708,18 +708,23 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    // Clear all user-specific sensitive local storage
-    localStorage.removeItem("camper_user");
-    localStorage.removeItem("camper_trips");
-    localStorage.removeItem("camper_trips_backup");
-    localStorage.removeItem("camper_favorites");
-    localStorage.removeItem("camper_dimensions");
-    localStorage.removeItem("camper_checklist");
-    localStorage.removeItem("camper_deadlines");
-    localStorage.removeItem("camper_last_seen_community_count");
+    // Aggressively clear all storage mechanisms
+    localStorage.clear();
+    sessionStorage.clear();
     
-    // Force a reload to clear all in-memory state
-    window.location.reload();
+    // Attempt to clear IndexedDB if possible (not trivial, but this helps)
+    try {
+      indexedDB.databases().then((dbs) => {
+        dbs.forEach((db) => {
+          if (db.name) indexedDB.deleteDatabase(db.name);
+        });
+      });
+    } catch (e) {
+      console.warn("Could not clear IndexedDB");
+    }
+
+    // Force a full reload to clear all in-memory state and re-initialize
+    window.location.replace(window.location.origin);
   };
 
   // Persistent Settings for Dashboard
