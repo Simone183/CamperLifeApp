@@ -936,17 +936,25 @@ export default function GeneralSettingsTab({
           {isBackingUp ? 'Backup in corso...' : 'Esegui Backup Manuale Ora'}
         </button>
         <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
+        <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
         <div className="flex items-center justify-between">
           <div>
-            <p className="font-bold text-[#2D2926] dark:text-white">Memoria Cache Locale</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">124 MB di dati temporanei sul dispositivo</p>
+            <p className="font-bold text-[#2D2926] dark:text-white">🧹 Forza Reset Dati Totale</p>
+            <p className="text-xs text-rose-500 dark:text-rose-400 mt-1 font-bold">ATTENZIONE: Cancella TUTTI i dati e forza il logout.</p>
           </div>
           <button
-            onClick={handleClearCache}
-            disabled={isClearingCache}
-            className="px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 font-bold rounded-xl text-sm transition-colors disabled:opacity-50 cursor-pointer"
+            type="button"
+            onClick={() => {
+              if (confirm("Sei sicuro di voler eliminare TUTTI i dati locali e forzare il logout? Questa operazione non è annullabile.")) {
+                localStorage.clear();
+                sessionStorage.clear();
+                window.location.reload();
+              }
+            }}
+            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 dark:bg-rose-950/60 dark:hover:bg-rose-900 dark:text-rose-200 dark:border-rose-700 font-extrabold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
           >
-            {isClearingCache ? 'Pulizia...' : 'Svuota Cache'}
+            <RefreshCw className="w-4 h-4" />
+            <span>Reset Totale</span>
           </button>
         </div>
       </div>
