@@ -708,23 +708,30 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    // Aggressively clear all storage mechanisms
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    // Attempt to clear IndexedDB if possible (not trivial, but this helps)
+    setCurrentUser(null);
+    setIsAdminLoggedIn(false);
+    setIsRegistered(false);
+
     try {
-      indexedDB.databases().then((dbs) => {
-        dbs.forEach((db) => {
-          if (db.name) indexedDB.deleteDatabase(db.name);
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (e) {
+      console.warn("Storage clear error:", e);
+    }
+    
+    try {
+      if (typeof indexedDB !== 'undefined' && indexedDB.databases) {
+        indexedDB.databases().then((dbs) => {
+          dbs.forEach((db) => {
+            if (db.name) indexedDB.deleteDatabase(db.name);
+          });
         });
-      });
+      }
     } catch (e) {
       console.warn("Could not clear IndexedDB");
     }
 
-    // Force a full reload to clear all in-memory state and re-initialize
-    window.location.replace(window.location.origin);
+    window.location.reload();
   };
 
   // Persistent Settings for Dashboard
@@ -1306,13 +1313,14 @@ export default function App() {
     }
   }, [currentUser?.email]);
 
-  // Sync trips with Firestore if currentUser is logged in
+  // Sync trips with Firestore strictly scoped to the logged-in user
   React.useEffect(() => {
     if (!currentUser?.email) {
       setLoadedFromFirestore(false);
       return;
     }
-    const docRef = doc(db, "users", currentUser.email, "data", "trips");
+    const cleanEmail = currentUser.email.toLowerCase().trim();
+    const docRef = doc(db, "users", cleanEmail, "data", "trips");
     
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -1326,67 +1334,17 @@ export default function App() {
             return;
           }
 
-          setTrips((prevTrips) => {
-            const currentList = prevTrips || [];
-
-            // If cloud is empty but local has trips, do not wipe local trips; sync them to cloud instead!
-            if (cloudTrips.length === 0 && currentList.length > 0) {
-              lastSavedTripsJsonRef.current = JSON.stringify(currentList);
-              saveTripsToFirestore(currentList);
-              return currentList;
-            }
-
-            // Create map of cloud trips
-            const cloudMap: Record<string, Trip> = {};
-            cloudTrips.forEach((t) => {
-              if (t && t.id) cloudMap[t.id] = t;
-            });
-
-            // Keep any locally created trip not yet in cloud
-            const localOnlyTrips = currentList.filter(
-              (lt) => lt && lt.id && !cloudMap[lt.id]
-            );
-
-            // Merge trips existing in both, keeping the version with the highest detail
-            const mergedCloudTrips = cloudTrips.map((ct) => {
-              const localMatch = currentList.find((lt) => lt && lt.id === ct.id);
-              if (!localMatch) return ct;
-              const localScore =
-                (localMatch.movements?.length || 0) +
-                (localMatch.expenses?.length || 0) +
-                (localMatch.photos?.length || 0);
-              const cloudScore =
-                (ct.movements?.length || 0) +
-                (ct.expenses?.length || 0) +
-                (ct.photos?.length || 0);
-              return localScore > cloudScore ? localMatch : ct;
-            });
-
-            const merged = [...localOnlyTrips, ...mergedCloudTrips];
-            const mergedJson = JSON.stringify(merged);
-            const prevJson = JSON.stringify(prevTrips);
-
-            if (mergedJson === prevJson) {
-              lastSavedTripsJsonRef.current = mergedJson;
-              return prevTrips;
-            }
-
-            isSyncingFromFirestoreRef.current = true;
-            lastSavedTripsJsonRef.current = mergedJson;
-
-            // If there were local trips missing from cloud, save them to cloud
-            if (localOnlyTrips.length > 0) {
-              setTimeout(() => saveTripsToFirestore(merged), 300);
-            }
-
-            return merged;
-          });
+          // Strictly replace local trips with the user's Firestore cloud trips.
+          // Do NOT bleed trips from previous local state into a new/different user's cloud account.
+          isSyncingFromFirestoreRef.current = true;
+          lastSavedTripsJsonRef.current = cloudTripsJson;
+          setTrips(cloudTrips);
         }
       } else {
-        // First time initialization in cloud: if we have local trips, initialize cloud document
-        if (trips.length > 0) {
-          saveTripsToFirestore(trips);
-        }
+        // Document does not exist in cloud yet for this user: initialize with empty trips
+        setTrips([]);
+        lastSavedTripsJsonRef.current = "[]";
+        saveTripsToFirestore([]);
       }
       setLoadedFromFirestore(true);
     }, (error) => {
@@ -1426,41 +1384,36 @@ export default function App() {
     }
   }, [trips, currentUser?.email, loadedFromFirestore, saveTripsToFirestore]);
 
-  // Refresh settings when navigating to settings tools
+  // Refresh camper settings automatically when user logs in or switches tabs
   React.useEffect(() => {
-    if (currentUser && activeTab === "settings_tools") {
-      console.log(
-        "Refreshing camper settings from Firestore for:",
-        currentUser.email,
-      );
-      const path = "users/" + currentUser.email + "/camperSettings";
+    if (currentUser?.email) {
+      const cleanEmail = currentUser.email.toLowerCase().trim();
+      const path = "users/" + cleanEmail + "/camperSettings";
       firestore
         .collection(path)
         .doc("default")
         .get()
         .then((snap) => {
           if (snap.exists) {
-            console.log("Found camper settings in Firestore:", snap.data());
             const data = snap.data();
             setVehicleDimensions(data as VehicleDimensions);
             localStorage.setItem("camper_dimensions", JSON.stringify(data));
           } else {
-            console.log(
-              "No camper settings found in Firestore at:",
-              path + "/default",
-            );
+            // New user without custom camper settings: reset to defaults
+            setVehicleDimensions(INITIAL_VEHICLE_DIMENSIONS);
+            localStorage.setItem("camper_dimensions", JSON.stringify(INITIAL_VEHICLE_DIMENSIONS));
           }
         })
         .catch((err: any) => {
           const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
           if (isOffline) {
-            console.warn("Camper settings loading from Firestore deferred (app is offline):", err?.message || err);
+            console.warn("Camper settings loading deferred (app is offline):", err?.message || err);
           } else {
             console.error("Error loading camper settings from Firestore:", err);
           }
         });
     }
-  }, [currentUser, activeTab]);
+  }, [currentUser?.email]);
 
   const handleVehicleDimensionsChange = (newDimensions: VehicleDimensions) => {
     console.log(

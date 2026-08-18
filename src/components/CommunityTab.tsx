@@ -410,7 +410,7 @@ export default function CommunityTab({
     } catch {
       // fallback
     }
-    return 'Sam83';
+    return 'Ospite';
   }, [currentUser]);
 
   // Unique community usernames list for tagging autocomplete

@@ -8,16 +8,16 @@ import { FRANCE_RAW_PLACES } from './francePlaces';
 import { ITALIA_RAW_PLACES } from './italiaPlaces';
 
 export const INITIAL_VEHICLE_DIMENSIONS: VehicleDimensions = {
-  modelName: 'Sunlight T67',
-  brand: 'Sunlight',
-  chassisBrand: 'Fiat Ducato 2.2 Multijet III',
+  modelName: 'Mio Camper',
+  brand: 'Camper',
+  chassisBrand: 'Chassis Standard',
   vehicleType: 'Semintegrale',
-  registrationYear: '2022',
-  licensePlate: 'FX 842 ML',
-  vinNumber: 'ZFA25000001234567',
-  displacementHpKw: '2184 cc - 140 CV (103 kW)',
+  registrationYear: '2023',
+  licensePlate: 'AA 000 AA',
+  vinNumber: 'ZFA00000000000000',
+  displacementHpKw: '2.2 - 140 CV',
   engineType: 'Diesel',
-  euroCategory: 'Euro 6d-Final',
+  euroCategory: 'Euro 6',
   tractionType: 'Anteriore',
   grossWeightRating: 3.5,
   seatsHomologated: 4,
@@ -28,84 +28,31 @@ export const INITIAL_VEHICLE_DIMENSIONS: VehicleDimensions = {
   weight: 3.5,   // metric tons
   length: 6.96,  // meters
 
-  freshWaterTank: 120,
-  greyWaterTank: 92,
-  blackWaterTank: 'Cassetta Thetford C220 (18 litri)',
-  heatingType: 'Truma Combi 6 (Gas/Elettrico)',
-  batteryCapacity: '100Ah LiFePO4 (Litio)',
-  solarPanelWatts: 200,
-  inverterWatts: 1500,
-  gasBottlesInfo: '2x 10kg Vetrresina con MonoControl CS',
+  freshWaterTank: 100,
+  greyWaterTank: 90,
+  blackWaterTank: 'Cassetta Thetford (18 litri)',
+  heatingType: 'Truma Combi (Gas)',
+  batteryCapacity: '100Ah AGM / Litio',
+  solarPanelWatts: 150,
+  inverterWatts: 1000,
+  gasBottlesInfo: '2x 10kg',
 
   tireSize: '225/75 R16 CP',
   tirePressureFrontBar: 5.0,
   tirePressureRearBar: 5.5,
 
   accessories: [
-    'Tendalino Thule 4m',
-    'Portabici 3 posti',
-    'Pannello Solare 200W',
+    'Tendalino',
+    'Portabici',
+    'Pannello Solare',
     'Climatizzatore Cabina',
-    'Retrocamera Doppia Lente',
-    'Inverter Onda Pura 1500W',
-    'Sospensioni ad Aria Posteriori',
-    'Gradino Elettrico',
-    'Attacco Esterno Gas'
+    'Retrocamera'
   ],
 
   mainPhotoUrl: 'https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=1000',
-  galleryPhotos: [
-    {
-      id: 'g1',
-      url: 'https://images.unsplash.com/photo-1513311068348-19c8fbdc0bb6?auto=format&fit=crop&q=80&w=800',
-      title: 'Zona Giorno & Dinette',
-      category: 'Interno'
-    },
-    {
-      id: 'g2',
-      url: 'https://images.unsplash.com/photo-1565043589221-1a6fd9ae45c7?auto=format&fit=crop&q=80&w=800',
-      title: 'Cucina & Piano Cottura',
-      category: 'Interno'
-    },
-    {
-      id: 'g3',
-      url: 'https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=800',
-      title: 'Vista Esterna in Sosta',
-      category: 'Esterno'
-    }
-  ],
-  memberships: [
-    {
-      id: 'm1',
-      clubName: 'Agricamper Italia',
-      cardNumber: 'AGRI-2026-9814',
-      holderName: 'Simone Sambucci',
-      expiryDate: '31/12/2026',
-      qrOrBarCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=AGRI-2026-9814-SIMONE',
-      websiteUrl: 'https://www.agricamper-italia.com',
-      notes: 'Sosta gratuita 24h presso fattorie, aziende agricole e aziende vitivinicole in Italia.'
-    },
-    {
-      id: 'm2',
-      clubName: 'ACSI CampingCard',
-      cardNumber: 'ACSI-8842190',
-      holderName: 'Simone Sambucci',
-      expiryDate: '31/12/2026',
-      qrOrBarCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=ACSI-8842190',
-      websiteUrl: 'https://www.campingcard.it',
-      notes: 'Sconti tariffe fisse in bassa stagione nei campeggi europei convenzionati.'
-    },
-    {
-      id: 'm3',
-      clubName: 'PleinAir Club',
-      cardNumber: 'PA-2026-00412',
-      holderName: 'Simone Sambucci',
-      expiryDate: '28/02/2027',
-      websiteUrl: 'https://www.pleinairclub.it',
-      notes: 'Sconti su traghetti, sosta camper, assicurazioni e ingressi convenzionati.'
-    }
-  ],
-  notes: 'Tagliando motore eseguito ogni 15.000km. Codice autoradio 4812. Pressione pneumatici a freddo 5.0 bar ant / 5.5 bar post.'
+  galleryPhotos: [],
+  memberships: [],
+  notes: ''
 };
 
 const HANDCRAFTED_PLACES: Place[] = [
