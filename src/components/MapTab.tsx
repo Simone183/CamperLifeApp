@@ -1715,15 +1715,55 @@ export default function MapTab({
       const lngParam = refLng !== undefined ? refLng : '';
       const keyParam = googleMapsKey ? `&key=${encodeURIComponent(googleMapsKey)}` : '';
 
-      const res = await fetch(
-        `/api/google-places/search?q=${encodeURIComponent(query)}&lat=${latParam}&lng=${lngParam}${keyParam}`,
-      );
-      if (!res.ok) throw new Error("Errore di rete durante la ricerca");
-      const data = await res.json();
+      let placesList: any[] = [];
 
-      if (data.places && Array.isArray(data.places)) {
-        let placesList = [...data.places];
+      try {
+        const res = await fetch(
+          `/api/google-places/search?q=${encodeURIComponent(query)}&lat=${latParam}&lng=${lngParam}${keyParam}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.places)) {
+            placesList = data.places;
+          }
+        }
+      } catch (networkErr) {
+        console.warn("Primary places search failed, trying direct OpenStreetMap Nominatim fallback...", networkErr);
+      }
 
+      // Fallback diretto al client su OpenStreetMap Nominatim se l'endpoint proxy o Google dà errore o zero risultati
+      if (placesList.length === 0) {
+        try {
+          const nomRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1`,
+            {
+              headers: { "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)" }
+            }
+          );
+          if (nomRes.ok) {
+            const nomData = await nomRes.json();
+            if (Array.isArray(nomData) && nomData.length > 0) {
+              placesList = nomData.map((item: any) => ({
+                id: `osm-${item.place_id}`,
+                place_id: String(item.place_id),
+                name: item.display_name.split(",")[0] || "Località",
+                address: item.display_name,
+                lat: parseFloat(item.lat),
+                lng: parseFloat(item.lon),
+                rating: null,
+                user_ratings_total: null,
+                types: [item.type, item.class].filter(Boolean),
+                photoUrl: null,
+                source: "nominatim"
+              }));
+            }
+          }
+        } catch (osmErr) {
+          console.warn("Direct OpenStreetMap Nominatim fallback failed:", osmErr);
+        }
+      }
+
+      if (placesList.length > 0) {
         // Haversine distance calculator
         const calcDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
           const R = 6371;
@@ -1763,20 +1803,18 @@ export default function MapTab({
 
         setAddressSuggestions(placesList);
         setSearchResultPins(placesList);
-        if (placesList.length === 0) {
-          setAddressSearchError("Nessun luogo o area sosta trovata con questo nome.");
-        } else if (e) {
+        if (e) {
           // Auto-fit map bounds to show all search result pins when user manually searches
           setTimeout(() => fitBoundsToSearchResults(placesList), 200);
         }
       } else {
         setAddressSuggestions([]);
         setSearchResultPins([]);
-        setAddressSearchError("Nessun risultato disponibile.");
+        setAddressSearchError("Nessun luogo o area sosta trovata con questo nome.");
       }
     } catch (err) {
       console.error(err);
-      setAddressSearchError("Errore durante la ricerca.");
+      setAddressSearchError("Nessun risultato disponibile.");
     } finally {
       setIsSearchingAddress(false);
     }

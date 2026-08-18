@@ -23,7 +23,7 @@ try {
     if (isMobileNative && window.fetch) {
       const originalFetch = window.fetch;
 
-      const customFetch = function (
+      const customFetch = async function (
         input: RequestInfo | URL,
         init?: RequestInit,
       ) {
@@ -141,6 +141,77 @@ try {
                 });
               } catch (err) {
                 console.warn("[Capacitor Proxy] Failed direct Nominatim Search:", err);
+              }
+            }
+
+            if (apiPath.startsWith("/api/google-places/search")) {
+              try {
+                const urlObj = new URL(urlStr, window.location.href);
+                const q = urlObj.searchParams.get("q") || "";
+                const key = urlObj.searchParams.get("key") || "";
+                const lat = urlObj.searchParams.get("lat") || "";
+                const lng = urlObj.searchParams.get("lng") || "";
+
+                // Se abbiamo una chiave Google Maps valida, interroghiamo direttamente Google Places
+                if (key && key !== "YOUR_API_KEY") {
+                  let googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${encodeURIComponent(key)}&language=it`;
+                  if (lat && lng) {
+                    googleUrl += `&location=${lat},${lng}&radius=50000`;
+                  }
+                  const gRes = await originalFetch.call(window, googleUrl);
+                  if (gRes.ok) {
+                    const gData = await gRes.json();
+                    if (gData.status === "OK" && Array.isArray(gData.results)) {
+                      const places = gData.results.map((p: any) => ({
+                        id: `google-${p.place_id}`,
+                        place_id: p.place_id,
+                        name: p.name,
+                        address: p.formatted_address || p.vicinity || "",
+                        lat: p.geometry?.location?.lat,
+                        lng: p.geometry?.location?.lng,
+                        rating: p.rating || null,
+                        user_ratings_total: p.user_ratings_total || null,
+                        types: p.types || [],
+                        photoUrl: p.photos?.[0]?.photo_reference
+                          ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photo_reference=${p.photos[0].photo_reference}&key=${key}`
+                          : null,
+                        source: "google_places"
+                      }));
+                      return new Response(JSON.stringify({ source: "google", places }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" }
+                      });
+                    }
+                  }
+                }
+
+                // Fallback diretto OpenStreetMap Nominatim per l'APK mobile nativo
+                const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10&addressdetails=1`;
+                const nRes = await originalFetch.call(window, nomUrl, {
+                  headers: { "User-Agent": "ViaCamperApp/2.0 (viacamperapp@gmail.com)" }
+                });
+                if (nRes.ok) {
+                  const nData = await nRes.json();
+                  const places = (nData || []).map((item: any) => ({
+                    id: `osm-${item.place_id}`,
+                    place_id: String(item.place_id),
+                    name: item.display_name.split(",")[0] || "Località",
+                    address: item.display_name,
+                    lat: parseFloat(item.lat),
+                    lng: parseFloat(item.lon),
+                    rating: null,
+                    user_ratings_total: null,
+                    types: [item.type, item.class].filter(Boolean),
+                    photoUrl: null,
+                    source: "nominatim"
+                  }));
+                  return new Response(JSON.stringify({ source: "nominatim", places }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" }
+                  });
+                }
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct places search:", err);
               }
             }
 
