@@ -82,6 +82,7 @@ jobs:
           name: ViaCamperApp-Release-AAB
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: warn
+          retention-days: 1
 
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
@@ -89,6 +90,7 @@ jobs:
           name: ViaCamperApp-Release-APK
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
+          retention-days: 1
 
       - name: Upload Debug APK Artifact (For testing on phone)
         uses: actions/upload-artifact@v4
@@ -96,5 +98,6 @@ jobs:
           name: ViaCamperApp-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
+          retention-days: 1
 
 
