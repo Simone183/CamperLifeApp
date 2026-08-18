@@ -1363,6 +1363,7 @@ export default function App() {
   // Save trips to Firestore
   const saveTripsToFirestore = React.useCallback(async (newTrips: Trip[]) => {
     if (!currentUser?.email) return;
+    const cleanEmail = currentUser.email.toLowerCase().trim();
     const tripsJson = JSON.stringify(newTrips);
     if (tripsJson === lastSavedTripsJsonRef.current && isSyncingFromFirestoreRef.current) {
       isSyncingFromFirestoreRef.current = false;
@@ -1370,7 +1371,7 @@ export default function App() {
     }
     try {
       lastSavedTripsJsonRef.current = tripsJson;
-      const docRef = doc(db, "users", currentUser.email, "data", "trips");
+      const docRef = doc(db, "users", cleanEmail, "data", "trips");
       const cleanedTrips = JSON.parse(tripsJson);
       await setDoc(docRef, { trips: cleanedTrips }, { merge: true });
     } catch (err) {
