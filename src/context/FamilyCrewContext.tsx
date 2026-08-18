@@ -23,22 +23,51 @@ interface FamilyCrewProviderProps {
 }
 
 export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProviderProps) {
+  const emailLower = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+
   const [currentCrew, setCurrentCrew] = useState<FamilyCrew | null>(() => {
+    if (!emailLower) return null;
     try {
-      const saved = localStorage.getItem('camper_family_crew');
-      return saved ? JSON.parse(saved) : null;
+      const saved = localStorage.getItem(`camper_family_crew_${emailLower}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.ownerEmail === emailLower || (Array.isArray(parsed.members) && parsed.members.some((m: any) => m.email === emailLower)))) {
+          return parsed;
+        }
+      }
+      return null;
     } catch {
       return null;
     }
   });
   const [isLoading, setIsLoading] = useState(false);
 
-  const emailLower = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+  // When currentUser changes or logs out, immediately reset currentCrew
+  useEffect(() => {
+    if (!emailLower) {
+      setCurrentCrew(null);
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(`camper_family_crew_${emailLower}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.ownerEmail === emailLower || (Array.isArray(parsed.members) && parsed.members.some((m: any) => m.email === emailLower)))) {
+          setCurrentCrew(parsed);
+        } else {
+          setCurrentCrew(null);
+        }
+      } else {
+        setCurrentCrew(null);
+      }
+    } catch {
+      setCurrentCrew(null);
+    }
+  }, [emailLower]);
 
   const refreshCrew = useCallback(async () => {
     if (!emailLower) {
       setCurrentCrew(null);
-      localStorage.removeItem('camper_family_crew');
       return;
     }
 
@@ -48,11 +77,11 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
         const data = await res.json();
         if (data && data.crew) {
           setCurrentCrew(data.crew);
-          localStorage.setItem('camper_family_crew', JSON.stringify(data.crew));
+          localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(data.crew));
         } else {
           // No active crew for user
           setCurrentCrew(null);
-          localStorage.removeItem('camper_family_crew');
+          localStorage.removeItem(`camper_family_crew_${emailLower}`);
         }
       }
     } catch (err) {

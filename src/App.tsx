@@ -317,7 +317,9 @@ export default function App() {
 
   const [checklistItems, setChecklistItems] = React.useState<ChecklistItem[]>(() => {
     try {
-      const saved = localStorage.getItem("camper_checklist");
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_checklist_${cleanEmail}` : "camper_checklist_guest";
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -330,7 +332,9 @@ export default function App() {
 
   const [deadlines, setDeadlines] = React.useState<Deadline[]>(() => {
     try {
-      const saved = localStorage.getItem("camper_deadlines");
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_deadlines_${cleanEmail}` : "camper_deadlines_guest";
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -341,31 +345,70 @@ export default function App() {
     return INITIAL_DEADLINES;
   });
 
+  // Re-sync checklist, deadlines, and favorites when user changes
   React.useEffect(() => {
-    try {
-      localStorage.setItem("camper_checklist", JSON.stringify(checklistItems));
-    } catch (e) {
-      console.error("Error saving camper_checklist:", e);
+    const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+    if (cleanEmail) {
+      try {
+        const savedChecklist = localStorage.getItem(`camper_checklist_${cleanEmail}`);
+        setChecklistItems(savedChecklist ? JSON.parse(savedChecklist) : DEFAULT_CHECKLIST);
+        
+        const savedDeadlines = localStorage.getItem(`camper_deadlines_${cleanEmail}`);
+        setDeadlines(savedDeadlines ? JSON.parse(savedDeadlines) : INITIAL_DEADLINES);
+
+        const savedFavs = localStorage.getItem(`camper_favorites_${cleanEmail}`);
+        setFavoriteIds(savedFavs ? JSON.parse(savedFavs) : []);
+      } catch (e) {
+        console.error("Error reloading user scoped items:", e);
+      }
+    } else {
+      setChecklistItems(DEFAULT_CHECKLIST);
+      setDeadlines(INITIAL_DEADLINES);
+      setFavoriteIds([]);
     }
-  }, [checklistItems]);
+  }, [currentUser?.email]);
 
   React.useEffect(() => {
     try {
-      localStorage.setItem("camper_deadlines", JSON.stringify(deadlines));
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_checklist_${cleanEmail}` : "camper_checklist_guest";
+      localStorage.setItem(key, JSON.stringify(checklistItems));
+    } catch (e) {
+      console.error("Error saving camper_checklist:", e);
+    }
+  }, [checklistItems, currentUser?.email]);
+
+  React.useEffect(() => {
+    try {
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_deadlines_${cleanEmail}` : "camper_deadlines_guest";
+      localStorage.setItem(key, JSON.stringify(deadlines));
     } catch (e) {
       console.error("Error saving camper_deadlines:", e);
     }
-  }, [deadlines]);
+  }, [deadlines, currentUser?.email]);
 
   // Persistent Favorites State from LocalStorage
   const [favoriteIds, setFavoriteIds] = React.useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem("camper_favorites");
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_favorites_${cleanEmail}` : "camper_favorites_guest";
+      const saved = localStorage.getItem(key);
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
     }
   });
+
+  React.useEffect(() => {
+    try {
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_favorites_${cleanEmail}` : "camper_favorites_guest";
+      localStorage.setItem(key, JSON.stringify(favoriteIds));
+    } catch (e) {
+      console.error("Error saving camper_favorites:", e);
+    }
+  }, [favoriteIds, currentUser?.email]);
 
   const [showSplash, setShowSplash] = React.useState<boolean>(true);
 
@@ -764,26 +807,49 @@ export default function App() {
     });
 
   const [trips, setTrips] = React.useState<Trip[]>(() => {
-    const saved = localStorage.getItem("camper_trips");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) {
-        console.error("Error reading camper_trips:", e);
+    try {
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      if (cleanEmail) {
+        const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
+        if (userSaved) {
+          const parsed = JSON.parse(userSaved);
+          if (Array.isArray(parsed)) return parsed;
+        }
       }
-    }
-    const backup = localStorage.getItem("camper_trips_backup");
-    if (backup) {
-      try {
-        const parsed = JSON.parse(backup);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) {
-        console.error("Error reading camper_trips_backup:", e);
-      }
+    } catch (e) {
+      console.error("Error reading initial trips:", e);
     }
     return [];
   });
+
+  // When currentUser changes (e.g. login, switch account, logout), isolate trips instantly
+  React.useEffect(() => {
+    try {
+      localStorage.removeItem("camper_trips");
+      localStorage.removeItem("camper_trips_backup");
+      localStorage.removeItem("camper_family_crew");
+    } catch {}
+
+    const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+    if (cleanEmail) {
+      const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
+      if (userSaved) {
+        try {
+          const parsed = JSON.parse(userSaved);
+          if (Array.isArray(parsed)) {
+            setTrips(parsed);
+            lastSavedTripsJsonRef.current = JSON.stringify(parsed);
+            return;
+          }
+        } catch {}
+      }
+      setTrips([]);
+      lastSavedTripsJsonRef.current = "[]";
+    } else {
+      setTrips([]);
+      lastSavedTripsJsonRef.current = "[]";
+    }
+  }, [currentUser?.email]);
 
   const [selectedDiaryTripId, setSelectedDiaryTripId] = React.useState<
     string | null
@@ -1360,16 +1426,16 @@ export default function App() {
     return unsubscribe;
   }, [currentUser?.email, saveTripsToFirestore]);
 
-  // Persist trips to localStorage, backup, and sync to Firestore
+  // Persist trips to localStorage scoped by user email, and sync to Firestore
   React.useEffect(() => {
-    try {
-      const serialized = JSON.stringify(trips);
-      localStorage.setItem("camper_trips", serialized);
-      if (trips.length > 0) {
-        localStorage.setItem("camper_trips_backup", serialized);
+    const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+    if (cleanEmail) {
+      try {
+        const serialized = JSON.stringify(trips);
+        localStorage.setItem(`camper_trips_${cleanEmail}`, serialized);
+      } catch (e) {
+        console.error("Error saving trips locally:", e);
       }
-    } catch (e) {
-      console.error("Error saving trips locally:", e);
     }
     
     if (isSyncingFromFirestoreRef.current) {

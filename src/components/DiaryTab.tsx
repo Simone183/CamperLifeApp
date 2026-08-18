@@ -139,44 +139,24 @@ export default function DiaryTab({
 }: DiaryTabProps) {
   const settings = useAppSettings();
   const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
+  const emailKey = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+
   const [internalTrips, setInternalTrips] = React.useState<Trip[]>(() => {
-    const saved = localStorage.getItem("camper_trips");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          // Normalize example Val d'Orcia trip dates to 2025
-          return parsed.map((t: Trip) => {
-            if (t.id === "t1" || (t.title && t.title.toLowerCase().includes("val d'orcia"))) {
-              return {
-                ...t,
-                startDate: t.startDate?.includes("2026-") ? t.startDate.replace("2026-", "2025-") : (t.startDate || "2025-10-10"),
-                endDate: t.endDate?.includes("2026-") ? t.endDate.replace("2026-", "2025-") : (t.endDate || "2025-10-12"),
-                expenses: t.expenses?.map((e) => ({
-                  ...e,
-                  date: e.date?.includes("2026-") ? e.date.replace("2026-", "2025-") : e.date,
-                })),
-                photos: t.photos?.map((p) => ({
-                  ...p,
-                  date: p.date?.includes("2026-") ? p.date.replace("2026-", "2025-") : p.date,
-                })),
-                movements: t.movements?.map((m) => ({
-                  ...m,
-                  date: m.date?.includes("2026-") ? m.date.replace("2026-", "2025-") : m.date,
-                })),
-              };
-            }
-            return t;
-          });
-        }
-      } catch (e) {
-        console.error("Error parsing camper_trips:", e);
+    if (propsTrips !== undefined) return propsTrips;
+    if (emailKey) {
+      const saved = localStorage.getItem(`camper_trips_${emailKey}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {}
       }
+      return [];
     }
     return INITIAL_TRIPS;
   });
 
-  const trips = propsTrips || internalTrips;
+  const trips = propsTrips !== undefined ? propsTrips : internalTrips;
   const setTrips = propsSetTrips || setInternalTrips;
 
   // Selected Trip inside details view
