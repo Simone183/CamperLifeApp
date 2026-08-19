@@ -4,6 +4,7 @@
  */
 
 import React from "react";
+// Trigger AI Studio Sync
 import { motion, AnimatePresence } from "motion/react";
 import {
   Place,
@@ -3797,6 +3798,7 @@ out center;`;
   React.useEffect(() => {
     localStorage.setItem("camper_messages", JSON.stringify(communityMessages));
   }, [communityMessages]);
+
 
 
 
