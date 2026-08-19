@@ -26,6 +26,7 @@
     "firebase": "^12.15.0",
     "firebase-admin": "^14.0.0",
     "hls.js": "^1.6.16",
+    "jimp": "^1.6.1",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.546.0",
@@ -35,7 +36,7 @@
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
     "resend": "^6.16.0",
-    "sharp": "^0.35.1",
+    "sharp": "^0.35.3",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
