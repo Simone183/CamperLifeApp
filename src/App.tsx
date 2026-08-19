@@ -286,8 +286,7 @@ export default function App() {
   React.useEffect(() => {
     const emailToRegister =
       currentUser?.email ||
-      localStorage.getItem("camper_user_email") ||
-      "sambucci.simone@gmail.com";
+      localStorage.getItem("camper_user_email");
     if (emailToRegister) {
       registerPushNotifications(emailToRegister).catch((err) => {
         console.warn("[Push] Error during push notification registration:", err);
@@ -345,7 +344,23 @@ export default function App() {
     return INITIAL_DEADLINES;
   });
 
-  // Re-sync checklist, deadlines, and favorites when user changes
+  // Persistent Favorites State from LocalStorage
+  const [favoriteIds, setFavoriteIds] = React.useState<string[]>(() => {
+    try {
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_favorites_${cleanEmail}` : "camper_favorites_guest";
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Reset loadedFromFirestore when currentUser changes to prevent writing previous user state into new user document
+  React.useEffect(() => {
+    setLoadedFromFirestore(false);
+    lastSavedTripsJsonRef.current = "";
+  }, [currentUser?.email]);
   React.useEffect(() => {
     const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
     if (cleanEmail) {
@@ -387,18 +402,6 @@ export default function App() {
       console.error("Error saving camper_deadlines:", e);
     }
   }, [deadlines, currentUser?.email]);
-
-  // Persistent Favorites State from LocalStorage
-  const [favoriteIds, setFavoriteIds] = React.useState<string[]>(() => {
-    try {
-      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
-      const key = cleanEmail ? `camper_favorites_${cleanEmail}` : "camper_favorites_guest";
-      const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
 
   React.useEffect(() => {
     try {
@@ -822,6 +825,9 @@ export default function App() {
     return [];
   });
 
+  const isSyncingFromFirestoreRef = React.useRef(false);
+  const lastSavedTripsJsonRef = React.useRef<string>("");
+
   // When currentUser changes (e.g. login, switch account, logout), isolate trips instantly
   React.useEffect(() => {
     try {
@@ -865,9 +871,6 @@ export default function App() {
   const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details">(
     "list",
   );
-
-  const isSyncingFromFirestoreRef = React.useRef(false);
-  const lastSavedTripsJsonRef = React.useRef<string>("");
 
   React.useEffect(() => {
     localStorage.setItem(
@@ -1659,11 +1662,14 @@ export default function App() {
   // --- Toast/Notification State ---
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
   const [hasActiveTrip, setHasActiveTrip] = React.useState<boolean>(() => {
-    const saved = localStorage.getItem("camper_trips");
-    if (saved) {
-      const trips = JSON.parse(saved);
-      return trips.some((t: any) => t.status === "Attivo");
-    }
+    try {
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const saved = cleanEmail ? localStorage.getItem(`camper_trips_${cleanEmail}`) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) && parsed.some((t: any) => t.status === "Attivo");
+      }
+    } catch {}
     return false;
   });
 
@@ -3208,7 +3214,6 @@ out center;`;
               }
             : t
         );
-        localStorage.setItem("camper_trips", JSON.stringify(updated));
         return updated;
       });
 
@@ -4421,32 +4426,20 @@ out center;`;
                   }}
                   hasActiveTrip={hasActiveTrip}
                   onNavigateToExpenses={() => {
-                    try {
-                      const stored = localStorage.getItem("camper_trips");
-                      if (stored) {
-                        const trips = JSON.parse(stored);
-                        const activeTrip = trips.find(
-                          (t: any) => t.status === "Attivo",
-                        );
-                        if (activeTrip) {
-                          setSelectedDiaryTripId(activeTrip.id);
-                          setDiarySubTab("details");
-                          setActiveTab("diary");
-                        } else {
-                          window.dispatchEvent(
-                            new CustomEvent("show-toast", {
-                              detail: { message: "Nessun viaggio in corso" },
-                            }),
-                          );
-                        }
-                      } else {
-                        window.dispatchEvent(
-                          new CustomEvent("show-toast", {
-                            detail: { message: "Nessun viaggio in corso" },
-                          }),
-                        );
-                      }
-                    } catch (e) {}
+                    const activeTrip = trips.find(
+                      (t) => t.status === "Attivo" || t.status === "In Corso",
+                    );
+                    if (activeTrip) {
+                      setSelectedDiaryTripId(activeTrip.id);
+                      setDiarySubTab("details");
+                      setActiveTab("diary");
+                    } else {
+                      window.dispatchEvent(
+                        new CustomEvent("show-toast", {
+                          detail: { message: "Nessun viaggio in corso" },
+                        }),
+                      );
+                    }
                   }}
                   onNavigateToMovementLog={() => {
                     setMapNavSubTab("movement_log");

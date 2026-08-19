@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem } from '../types.ts';
-import { FRANCE_RAW_PLACES } from './francePlaces';
-import { ITALIA_RAW_PLACES } from './italiaPlaces';
+import type { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem } from '../types.ts';
+import { FRANCE_RAW_PLACES } from './francePlaces.ts';
+import { ITALIA_RAW_PLACES } from './italiaPlaces.ts';
 
 export const INITIAL_VEHICLE_DIMENSIONS: VehicleDimensions = {
   modelName: 'Mio Camper',

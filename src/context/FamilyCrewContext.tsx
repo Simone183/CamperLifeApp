@@ -137,7 +137,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
         const data = await res.json();
         if (data.crew) {
           setCurrentCrew(data.crew);
-          localStorage.setItem('camper_family_crew', JSON.stringify(data.crew));
+          localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(data.crew));
           window.dispatchEvent(new CustomEvent('family-crew-changed', { detail: data.crew }));
           window.dispatchEvent(
             new CustomEvent('show-toast', {
@@ -177,7 +177,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       const data = await res.json();
       if (res.ok && data.crew) {
         setCurrentCrew(data.crew);
-        localStorage.setItem('camper_family_crew', JSON.stringify(data.crew));
+        localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(data.crew));
         window.dispatchEvent(new CustomEvent('family-crew-changed', { detail: data.crew }));
         window.dispatchEvent(
           new CustomEvent('show-toast', {
@@ -259,7 +259,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
         updatedBy: currentUser?.nickname || currentUser?.name || emailLower
       };
       setCurrentCrew(updatedCrew);
-      localStorage.setItem('camper_family_crew', JSON.stringify(updatedCrew));
+      localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(updatedCrew));
 
       // Network sync
       const res = await fetch(resolveMediaUrl(`/api/family-crew/sync/${encodeURIComponent(currentCrew.id)}`), {

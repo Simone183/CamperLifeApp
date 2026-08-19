@@ -64,7 +64,6 @@ export default function SharedTripsTab({ trips, onViewTrip, setTrips }: Props) {
     } else if (type === 'delete' && setTrips) {
       const updated = trips.map(t => t.id === trip.id ? { ...t, isShared: false } : t);
       setTrips(updated);
-      localStorage.setItem("camper_trips", JSON.stringify(updated));
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: { message: `🗑️ Viaggio rimosso dai viaggi condivisi.` }

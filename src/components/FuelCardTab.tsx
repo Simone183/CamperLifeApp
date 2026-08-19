@@ -161,10 +161,10 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
         }
       }
 
-      // 3. Fallback: extract from local camper_trips if no logs found yet
+      // 3. Fallback: extract from user-scoped trips if no logs found yet
       if (!fetchedLogs || fetchedLogs.length === 0) {
         try {
-          const savedTrips = localStorage.getItem('camper_trips');
+          const savedTrips = emailLower ? localStorage.getItem(`camper_trips_${emailLower}`) : null;
           if (savedTrips) {
             const trips = JSON.parse(savedTrips);
             if (Array.isArray(trips)) {
@@ -273,7 +273,7 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
 
       // 2. Sync into local active trip expenses
       try {
-        const savedTrips = localStorage.getItem('camper_trips');
+        const savedTrips = emailLower ? localStorage.getItem(`camper_trips_${emailLower}`) : null;
         if (savedTrips) {
           let trips = JSON.parse(savedTrips);
           let updated = false;
@@ -302,8 +302,8 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
             }
             return t;
           });
-          if (updated) {
-            localStorage.setItem('camper_trips', JSON.stringify(trips));
+          if (updated && emailLower) {
+            localStorage.setItem(`camper_trips_${emailLower}`, JSON.stringify(trips));
           }
         }
       } catch (tripErr) {

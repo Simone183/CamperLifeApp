@@ -104,6 +104,9 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
             throw new Error("Esiste già un account registrato con questa email.");
           }
           await userDocRef.set(newUserDoc);
+          try {
+            await firestore.collection("users").doc(cleanEmail).collection("data").doc("trips").set({ trips: [] });
+          } catch {}
         } else {
           // Option B: Use Firebase SDK directly
           const userDocRef = doc(db, "users", cleanEmail);
@@ -112,6 +115,9 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
             throw new Error("Esiste già un account registrato con questa email.");
           }
           await setDoc(userDocRef, newUserDoc);
+          try {
+            await setDoc(doc(db, "users", cleanEmail, "data", "trips"), { trips: [] });
+          } catch {}
         }
 
         // Notify moderators in background without blocking UI

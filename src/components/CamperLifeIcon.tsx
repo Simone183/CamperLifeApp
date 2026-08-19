@@ -1,5 +1,5 @@
 import React from 'react';
-import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+import { LOGO_BASE64 } from '../assets/logoBase64';
 
 interface CamperLifeIconProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   size?: number | string;
@@ -23,7 +23,7 @@ export function CamperLifeIcon({ size = 44, className, style, alt = "ViaCamper",
 
   return (
     <img
-      src={resolveMediaUrl("/logo.png")}
+      src={LOGO_BASE64}
       alt={alt}
       onError={() => setHasError(true)}
       style={{ width: dimension, height: dimension, objectFit: 'contain', ...style }}

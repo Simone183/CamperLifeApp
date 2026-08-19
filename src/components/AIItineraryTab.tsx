@@ -105,10 +105,14 @@ export default function AIItineraryTab({
     }));
 
     let targetId = selectedTripTargetId;
+    const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
     const currentTrips: Trip[] = trips || (() => {
       try {
-        const saved = localStorage.getItem("camper_trips");
-        return saved ? JSON.parse(saved) : [];
+        if (cleanEmail) {
+          const saved = localStorage.getItem(`camper_trips_${cleanEmail}`);
+          return saved ? JSON.parse(saved) : [];
+        }
+        return [];
       } catch {
         return [];
       }
@@ -162,7 +166,9 @@ export default function AIItineraryTab({
     if (setTrips) {
       setTrips(updatedTrips);
     }
-    localStorage.setItem("camper_trips", JSON.stringify(updatedTrips));
+    if (cleanEmail) {
+      localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(updatedTrips));
+    }
     window.dispatchEvent(
       new CustomEvent("trip-updated", {
         detail: { trips: updatedTrips },
@@ -1513,9 +1519,12 @@ export default function AIItineraryTab({
               }
             };
 
+            const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
             const updatedTrips = [newTrip, ...(trips || [])];
             setTrips(updatedTrips);
-            localStorage.setItem('camper_trips', JSON.stringify(updatedTrips));
+            if (cleanEmail) {
+              localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(updatedTrips));
+            }
           }
         }}
       />

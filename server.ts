@@ -176,13 +176,17 @@ function getOverrideAppliedUser(email: string, userData: any): any {
   if (overrides[cleanEmail]?.deleted) {
     return null;
   }
+  
+  if (userData && userData.deleted === true) {
+    return null;
+  }
 
   let baseUser = userData;
   if (!baseUser) {
     const cached = getCachedUsers();
     baseUser = cached.find(u => (u.email || "").toLowerCase().trim() === cleanEmail);
   }
-  if (!baseUser) return null;
+  if (!baseUser || baseUser.deleted === true) return null;
 
   if (overrides[cleanEmail]) {
     const o = overrides[cleanEmail];
@@ -1245,9 +1249,14 @@ async function startServer() {
             }
             // If the image is large (above 400KB), we shrink/optimise it using sharp
             if (stats.size > 400 * 1024) {
-              console.log(`[Startup Optimizer] Optimizing large file: ${filePath} (${(stats.size/1024/1024).toFixed(2)} MB)`);
               try {
                 const buffer = fs.readFileSync(filePath);
+                // Validate sharp can read metadata first
+                const meta = await sharp(buffer).metadata();
+                if (!meta || !meta.format) {
+                  continue;
+                }
+                console.log(`[Startup Optimizer] Optimizing large file: ${filePath} (${(stats.size/1024/1024).toFixed(2)} MB)`);
                 
                 // Scale down to maximum dimension of 1024px ensuring aspect ratio is kept
                 const sharpInstance = sharp(buffer).resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true });
@@ -1263,8 +1272,8 @@ async function startServer() {
                 fs.writeFileSync(filePath, resizedBuffer);
                 const newStats = fs.statSync(filePath);
                 console.log(`[Startup Optimizer] Successfully optimized ${file}: ${(stats.size/1024/1024).toFixed(2)} MB -> ${(newStats.size/1024).toFixed(1)} KB!`);
-              } catch (err) {
-                console.error(`[Startup Optimizer] Error processing ${file}:`, err);
+              } catch (err: any) {
+                console.warn(`[Startup Optimizer] Skipped ${file}:`, err?.message || err);
               }
             }
           }
@@ -2356,6 +2365,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         { type: "new_registration", userEmail: newUserDoc.email, nickname: newUserDoc.nickname }
       ).catch(err => console.error("[FCM Push] Failed to notify admin of new registration:", err));
 
+      // Initialize empty user trips collection in Firestore
+      try {
+        await firestoreDb.collection(`users/${cleanEmail}/data`).doc("trips").set({ trips: [] });
+      } catch (fsErr) {
+        console.warn("[Register API] Init empty trips doc notice:", fsErr);
+      }
+
       return res.json({ 
         success: true, 
         user: { 
@@ -2384,6 +2400,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Email e password sono richiesti per accedere." });
       }
 
+      if (isUserDeleted(cleanEmail)) {
+        return res.status(403).json({ error: "Questo account è stato eliminato definitivamente e non può più accedere." });
+      }
+
       let userData: any = null;
       try {
         const userDoc = await firestoreDb.collection("users").doc(cleanEmail).get();
@@ -2395,8 +2415,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       userData = getOverrideAppliedUser(cleanEmail, userData);
-      if (!userData) {
-        return res.status(400).json({ error: "Nessun account registrato con questa email." });
+      if (!userData || userData.deleted === true || isUserDeleted(cleanEmail)) {
+        return res.status(403).json({ error: "Questo account è stato eliminato definitivamente e non può più accedere." });
       }
 
       const storedPass = String(userData.password || '').trim();
@@ -2790,6 +2810,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const cleanEmail = email.toLowerCase().trim();
 
       try {
+        await firestoreDb.collection("users").doc(cleanEmail).set({ deleted: true }, { merge: true });
         await firestoreDb.collection("users").doc(cleanEmail).delete();
         console.log(`[Firestore Auth Admin] Fully deleted user account on Firestore: ${cleanEmail}`);
       } catch (fsErr: any) {
@@ -2819,22 +2840,30 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
       const cleanEmail = email.toLowerCase().trim();
       
-      if (firestoreDb) {
-        // Delete user main document from Firestore
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).set({ deleted: true }, { merge: true });
         await firestoreDb.collection("users").doc(cleanEmail).delete();
 
+        // Delete user trips doc as well
+        await firestoreDb.collection(`users/${cleanEmail}/data`).doc("trips").delete();
+
         // Delete user fuel logs subcollection if present
-        try {
-          const fuelLogs = await firestoreDb.collection(`users/${cleanEmail}/fuelLogs`).get();
-          if (!fuelLogs.empty) {
-            const batch = firestoreDb.batch();
-            fuelLogs.forEach((doc) => batch.delete(doc.ref));
-            await batch.commit();
-          }
-        } catch (subErr) {
-          console.warn("[Firestore] Error deleting fuelLogs subcollection:", subErr);
+        const fuelLogs = await firestoreDb.collection(`users/${cleanEmail}/fuelLogs`).get();
+        if (!fuelLogs.empty) {
+          const batch = firestoreDb.batch();
+          fuelLogs.forEach((doc: any) => batch.delete(doc.ref));
+          await batch.commit();
         }
+      } catch (subErr) {
+        console.warn("[Firestore] Error deleting subcollections during self-deletion:", subErr);
       }
+
+      // Always persist local override to mark user as deleted so they cannot log back in
+      saveUserOverride(cleanEmail, { deleted: true });
+
+      // Update cached users list by removing deleted user
+      const cached = getCachedUsers().filter(u => (u.email || "").toLowerCase().trim() !== cleanEmail);
+      cacheUsers(cached);
 
       console.log(`[Firestore Auth] User self-deleted account: ${cleanEmail}`);
       res.json({ success: true, message: "Account ed i dati personali ad esso associati sono stati eliminati con successo." });

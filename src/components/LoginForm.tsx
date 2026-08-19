@@ -109,6 +109,9 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
         throw new Error("Nessun account registrato con questa email.");
       }
       const userData = userDocSnap.data();
+      if (userData.deleted === true) {
+        throw new Error("Questo account è stato eliminato definitivamente.");
+      }
       const storedPass = String(userData.password || '').trim();
       if (storedPass !== cleanPass) {
         throw new Error("Password errata. Se non la ricordi, usa la funzione 'Password dimenticata?'.");
@@ -141,17 +144,6 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       }));
       onSuccess(userObj);
     };
-
-    if (isNativeOrExternal && firestore) {
-      try {
-        await runFirestoreLogin();
-      } catch (dbErr: any) {
-        setError(dbErr.message || "Errore di connessione o password errata.");
-      } finally {
-        setIsLoading(false);
-      }
-      return;
-    }
 
     try {
       const targetUrl = resolveMediaUrl('/api/login');

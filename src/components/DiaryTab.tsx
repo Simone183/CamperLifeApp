@@ -153,8 +153,34 @@ export default function DiaryTab({
       }
       return [];
     }
-    return INITIAL_TRIPS;
+    return [];
   });
+
+  // Keep internal state aligned when propsTrips changes from App.tsx
+  React.useEffect(() => {
+    if (propsTrips !== undefined) {
+      setInternalTrips(propsTrips);
+    }
+  }, [propsTrips]);
+
+  // When emailKey changes, reset or load scoped trips
+  React.useEffect(() => {
+    if (propsTrips === undefined) {
+      if (emailKey) {
+        const saved = localStorage.getItem(`camper_trips_${emailKey}`);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setInternalTrips(parsed);
+              return;
+            }
+          } catch {}
+        }
+      }
+      setInternalTrips([]);
+    }
+  }, [emailKey, propsTrips]);
 
   const trips = propsTrips !== undefined ? propsTrips : internalTrips;
   const setTrips = propsSetTrips || setInternalTrips;
@@ -166,6 +192,17 @@ export default function DiaryTab({
       return trips.length > 0 ? trips[0].id : null;
     },
   );
+
+  // Sync selectedTripId when trips or initialTripId changes
+  React.useEffect(() => {
+    if (initialTripId) {
+      setSelectedTripId(initialTripId);
+    } else if (selectedTripId && !trips.some((t) => t.id === selectedTripId)) {
+      setSelectedTripId(trips.length > 0 ? trips[0].id : null);
+    } else if (!selectedTripId && trips.length > 0) {
+      setSelectedTripId(trips[0].id);
+    }
+  }, [trips, initialTripId, selectedTripId]);
 
   // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details, 'album' contains global photos)
   const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details" | "album">(
@@ -266,20 +303,19 @@ export default function DiaryTab({
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem("camper_trips", JSON.stringify(trips));
-      if (trips.length > 0) {
-        localStorage.setItem("camper_trips_backup", JSON.stringify(trips));
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(trips));
+      } catch (e) {
+        console.error("Error writing trips in DiaryTab:", e);
       }
-    } catch (e) {
-      console.error("Error writing trips in DiaryTab:", e);
     }
 
-    // Sync to Family Crew
+    // Sync to Family Crew if member
     if (currentCrew && isModuleSynced('trips')) {
       syncCrewSection('trips', trips).catch(() => {});
     }
-  }, [trips, currentCrew, isModuleSynced]);
+  }, [trips, currentCrew, isModuleSynced, emailKey]);
 
   // Sync incoming trips from Family Crew
   React.useEffect(() => {
