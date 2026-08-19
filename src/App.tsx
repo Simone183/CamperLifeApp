@@ -4429,7 +4429,7 @@ out center;`;
                   hasActiveTrip={hasActiveTrip}
                   onNavigateToExpenses={() => {
                     const activeTrip = trips.find(
-                      (t) => t.status === "Attivo" || t.status === "In Corso",
+                      (t) => t.status === "Attivo",
                     );
                     if (activeTrip) {
                       setSelectedDiaryTripId(activeTrip.id);
