@@ -74,6 +74,7 @@ import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats } from "./utils/offlineMapCache";
 import { registerPushNotifications } from "./utils/pushNotifications";
+import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
 
@@ -291,6 +292,9 @@ export default function App() {
     if (emailToRegister) {
       registerPushNotifications(emailToRegister).catch((err) => {
         console.warn("[Push] Error during push notification registration:", err);
+      });
+      scheduleLocalPromoNotifications().catch((err) => {
+        console.warn("[LocalPush] Error scheduling local notifications:", err);
       });
     }
   }, [currentUser?.email]);
