@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ArrowRight } from 'lucide-react';
-import { RollyMascot } from './RollyMascot';
 
 interface TourStep {
   title: string;
@@ -56,9 +55,11 @@ export const OnboardingTour = ({ onComplete }: { onComplete: () => void }) => {
           initial={{ scale: 0.95, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
         >
-          {/* Header Graphic (Rolly Mascot) */}
-          <div className="w-full bg-slate-50/50 rounded-2xl mb-6 relative pt-4 pb-2">
-             <RollyMascot variant={steps[currentStep].variant} />
+          {/* Header Graphic (Icon Placeholder) */}
+          <div className="w-full bg-slate-50/50 rounded-2xl mb-6 relative pt-4 pb-2 flex items-center justify-center">
+             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center border border-slate-200">
+               <span className="text-4xl">🚐</span>
+             </div>
           </div>
 
           <div className="flex justify-between items-center mb-3">

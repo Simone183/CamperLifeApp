@@ -6,7 +6,7 @@
     "nickname": "Sam83",
     "dob": "1983-06-19",
     "createdAt": "2026-06-28T19:05:51.537Z",
-    "isModerator": false,
+    "isModerator": true,
     "approved": true,
     "favoritesCount": 0
   },
@@ -18,7 +18,7 @@
     "dob": "1987-01-17",
     "createdAt": "2026-08-13T07:03:31.885Z",
     "isModerator": false,
-    "approved": false,
+    "approved": true,
     "favoritesCount": 0
   },
   {
@@ -27,11 +27,13 @@
     "name": "Claudia",
     "surname": "Rossetti",
     "dob": "1987-01-17",
-    "nickname": "Cluchy",
+    "nickname": "Cluchy87",
     "profilePhoto": "",
     "favorites": [],
-    "createdAt": "2026-08-13T13:20:56.374Z",
-    "approved": false
+    "createdAt": "2026-08-19T09:27:41.323Z",
+    "approved": true,
+    "isModerator": false,
+    "favoritesCount": 0
   },
   {
     "email": "test.verifica.nuova.mail@gmail.com",
@@ -43,6 +45,19 @@
     "profilePhoto": "",
     "favorites": [],
     "createdAt": "2026-08-13T13:56:23.899Z",
-    "approved": false
+    "approved": true,
+    "isModerator": false,
+    "favoritesCount": 0
+  },
+  {
+    "email": "viacamperapp@gmail.com",
+    "name": "Via",
+    "surname": "Camper",
+    "nickname": "Viacamper",
+    "dob": "2026-05-01",
+    "createdAt": "2026-08-19T18:08:50.538Z",
+    "isModerator": true,
+    "approved": true,
+    "favoritesCount": 0
   }
 ]

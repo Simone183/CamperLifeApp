@@ -836,17 +836,27 @@ export default function App() {
   const [trips, setTrips] = React.useState<Trip[]>(() => {
     try {
       const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      let initialTrips: Trip[] = [];
+      
       if (cleanEmail) {
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
           const parsed = JSON.parse(userSaved);
-          if (Array.isArray(parsed)) return parsed;
+          if (Array.isArray(parsed)) initialTrips = parsed;
         }
       }
+
+      // INJECTION: Ensure example trip exists if not deleted
+      if (!initialTrips.some(t => t.id === EXAMPLE_TRIP.id) && 
+          localStorage.getItem(`example_deleted_${currentUser?.email?.toLowerCase().trim()}`) !== "true") {
+        initialTrips = [EXAMPLE_TRIP, ...initialTrips];
+      }
+      
+      return initialTrips;
     } catch (e) {
       console.error("Error reading initial trips:", e);
     }
-    return [];
+    return [EXAMPLE_TRIP];
   });
 
   const isSyncingFromFirestoreRef = React.useRef(false);
@@ -1074,31 +1084,37 @@ export default function App() {
     };
   }, []);
 
+  // Refs to hold current state for backButton handler
+  const activeTabRef = React.useRef(activeTab);
+  const mapNavSubTabRef = React.useRef(mapNavSubTab);
+  const settingsSubTabRef = React.useRef(settingsSubTab);
+
+  React.useEffect(() => {
+    activeTabRef.current = activeTab;
+    mapNavSubTabRef.current = mapNavSubTab;
+    settingsSubTabRef.current = settingsSubTab;
+  }, [activeTab, mapNavSubTab, settingsSubTab]);
+
   // Gestione nativa del tasto indietro di Android tramite Capacitor
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
-    const backListener = CapacitorApp.addListener("backButton", () => {
+    const backListener = CapacitorApp.addListener("backButton", ({ canGoBack }) => {
       // Logic for back button routing
-      if (activeTab === "settings_tools") {
-        if (settingsSubTab !== "hub") {
-          // Inner settings page -> go back to settings hub
+      if (activeTabRef.current === "settings_tools") {
+        if (settingsSubTabRef.current !== "hub") {
           setSettingsSubTab("hub");
         } else {
-          // Settings hub -> go back to map
           setActiveTab("map_nav");
           setMapNavSubTab("map");
         }
-      } else if (activeTab === "diary") {
-        // From diary -> go back to map
+      } else if (activeTabRef.current === "diary") {
         setActiveTab("map_nav");
         setMapNavSubTab("map");
-      } else if (activeTab === "map_nav") {
-        if (mapNavSubTab !== "map") {
-          // From map subtabs -> go back to main map
+      } else if (activeTabRef.current === "map_nav") {
+        if (mapNavSubTabRef.current !== "map") {
           setMapNavSubTab("map");
         } else {
-          // From main map -> exit app
           CapacitorApp.exitApp();
         }
       }
@@ -1107,7 +1123,7 @@ export default function App() {
     return () => {
       backListener.then(l => l.remove());
     };
-  }, [activeTab, mapNavSubTab, settingsSubTab]);
+  }, []);
 
   React.useEffect(() => {
     const currentState = window.history.state;
@@ -1478,40 +1494,32 @@ export default function App() {
     const docRef = doc(db, "users", cleanEmail, "data", "trips");
     
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      console.log("[App] Firestore snapshot received. Exists:", docSnap.exists());
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data && Array.isArray(data.trips)) {
-          let cloudTrips: Trip[] = data.trips;
-          
-          if (!cloudTrips.some(t => t.id === "trip-example-10-oct-2025") && localStorage.getItem(`example_deleted_${cleanEmail}`) !== "true") {
-            cloudTrips = [EXAMPLE_TRIP, ...cloudTrips];
-            saveTripsToFirestore(cloudTrips);
-          }
-
-          const cloudTripsJson = JSON.stringify(cloudTrips);
-
-          if (cloudTripsJson === lastSavedTripsJsonRef.current) {
-            setLoadedFromFirestore(true);
-            return;
-          }
-
-          // Strictly replace local trips with the user's Firestore cloud trips.
-          // Do NOT bleed trips from previous local state into a new/different user's cloud account.
-          isSyncingFromFirestoreRef.current = true;
-          lastSavedTripsJsonRef.current = cloudTripsJson;
-          setTrips(cloudTrips);
+        console.log("[App] Firestore snapshot data:", data);
+        
+        let cloudTrips: Trip[] = [];
+        if (data && data.trips && Array.isArray(data.trips)) {
+            cloudTrips = data.trips;
         }
+
+        const cloudTripsJson = JSON.stringify(cloudTrips);
+
+        if (cloudTripsJson === lastSavedTripsJsonRef.current) {
+          setLoadedFromFirestore(true);
+          return;
+        }
+
+        // Strictly replace local trips with the user's Firestore cloud trips.
+        // Do NOT bleed trips from previous local state into a new/different user's cloud account.
+        isSyncingFromFirestoreRef.current = true;
+        lastSavedTripsJsonRef.current = cloudTripsJson;
+        setTrips(cloudTrips);
       } else {
         // Document does not exist in cloud yet for this user.
         // DO NOT destroy local trips! Instead, upload the existing local trips to initialize the cloud.
-        setTrips((currentLocalTrips) => {
-          let updatedTrips = currentLocalTrips;
-          if (!updatedTrips.some(t => t.id === "trip-example-10-oct-2025") && localStorage.getItem(`example_deleted_${cleanEmail}`) !== "true") {
-            updatedTrips = [EXAMPLE_TRIP, ...updatedTrips];
-          }
-          saveTripsToFirestore(updatedTrips);
-          return updatedTrips;
-        });
+        saveTripsToFirestore(trips);
       }
       setLoadedFromFirestore(true);
     }, (error) => {
@@ -2133,7 +2141,13 @@ export default function App() {
       where("read", "==", false)
     );
     
+    let isInitialLoad = true;
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (isInitialLoad) {
+        isInitialLoad = false;
+        return;
+      }
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           const notification = change.doc.data();

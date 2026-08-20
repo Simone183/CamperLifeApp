@@ -1,8 +1,8 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "2.4.10",
-  "description": "ViaCamper App v2.4.10",
+  "version": "2.4.11",
+  "description": "ViaCamper App v2.4.11",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
