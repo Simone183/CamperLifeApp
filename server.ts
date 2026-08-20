@@ -1971,57 +1971,41 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         // Safe to ignore
       }
 
-      // Send email notification to admin if Resend is configured
-      // Send email notification to admin if Resend is configured
       const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-      if (process.env.RESEND_API_KEY && targetAdminEmail && entry.status === "pending") {
-        try {
-          const { Resend } = await import('resend');
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          resend.emails.send({
-            from: 'ViaCamperApp <onboarding@resend.dev>',
-            to: targetAdminEmail,
-            subject: `📍 Nuova proposta di sosta da approvare: ${entry.name}`,
-            html: `
-              <h2>📍 Nuova Proposta di Sosta Inviata dagli Utenti</h2>
-              <p>Un utente ha proposto una nuova struttura su ViaCamperApp ed è in attesa di approvazione:</p>
-              <ul>
-                <li><strong>Nome Sosta:</strong> ${entry.name}</li>
-                <li><strong>Categoria:</strong> ${entry.category}</li>
-                <li><strong>Indirizzo:</strong> ${entry.address || 'N/D'}</li>
-                <li><strong>Coordinate:</strong> ${entry.lat}, ${entry.lng}</li>
-                <li><strong>Prezzo:</strong> ${entry.priceInfo || 'Gratuito'} (${entry.priceEuro}€)</li>
-                <li><strong>Telefono:</strong> ${entry.phone || 'N/D'}</li>
-                <li><strong>Servizi:</strong> ${entry.facilities.length > 0 ? entry.facilities.join(', ') : 'Nessuno'}</li>
-                <li><strong>Inviata da (Email/Utente):</strong> ${entry.createdBy || 'Anonimo / Non specificato'}</li>
-                <li><strong>Data Invio:</strong> ${entry.createdAt}</li>
-              </ul>
-              <br/>
-              <p>Puoi esaminare e approvare direttamente questa proposta accedendo al pannello amministratore dell'app (sezione <strong>Impostazioni > Amministrazione > Proposte Sosta</strong> o nella tab Mappa).</p>
-            `
-          }).then((emailRes: any) => {
-            if (emailRes?.error) {
-              console.log(`[Email Notice] Resend: ${emailRes.error.message || 'validation notice'}`);
-            } else {
-              console.log(`[Email] Admin proposal notification sent successfully: ${entry.name}`);
-            }
-          }).catch(emailSendErr => {
-            console.log("Admin proposal email notification notice:", emailSendErr?.message || emailSendErr);
-          });
-          console.log(`[Email] Admin proposal notification triggered in background to: ${targetAdminEmail}`);
-        } catch (emailErr) {
-          console.error("Error setting up admin proposal email notification:", emailErr);
-        }
-      }
-
-      // Send push notification to admin about new proposed place
-      if (entry.status === "pending" && targetAdminEmail) {
-        sendPushNotification(
-          targetAdminEmail,
-          `📍 Nuova sosta proposta!`,
-          `L'utente ${entry.createdBy || 'Anonimo'} ha proposto la sosta "${entry.name}".`,
-          { type: "new_proposal", placeId }
-        ).catch(err => console.error("[FCM Push] Failed to notify admin of new proposal:", err));
+      if (entry.status === "pending") {
+        const placeHtml = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
+            <div style="background: linear-gradient(135deg, #1C3D2B 0%, #2D5A40 100%); padding: 20px; border-radius: 12px; color: white;">
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp • Notifica Amministratore</div>
+              <h2 style="margin: 0; color: #ffffff; font-size: 20px;">📍 Nuova Proposta di Sosta</h2>
+            </div>
+            <div style="background: #ffffff; padding: 22px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
+              <p style="font-size: 14px; color: #1e293b; margin-top: 0;">Un utente ha proposto una nuova struttura ed è in attesa di approvazione:</p>
+              <table style="width: 100%; font-size: 13.5px; color: #334155; border-collapse: collapse; margin-top: 12px;">
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: 600; width: 130px;">Nome Sosta:</td>
+                  <td style="padding: 8px 0;">${entry.name}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: 600;">Categoria:</td>
+                  <td style="padding: 8px 0;">${entry.category}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: 600;">Indirizzo:</td>
+                  <td style="padding: 8px 0;">${entry.address || 'N/D'}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: 600;">Inviata da:</td>
+                  <td style="padding: 8px 0;">${entry.createdBy || 'Anonimo'}</td>
+                </tr>
+              </table>
+              <div style="margin-top: 24px;">
+                <p style="font-size: 13px; color: #64748b; margin-bottom: 0;">Puoi approvare questa sosta dal pannello Amministrazione o dalla Mappa.</p>
+              </div>
+            </div>
+          </div>
+        `;
+        sendAdminNotificationEmail(`📍 Nuova proposta di sosta da approvare: ${entry.name}`, placeHtml).catch(e => console.error(e));
       }
 
       res.json({ success: true, place: { id: placeId, ...entry } });
@@ -2714,7 +2698,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             dob: data.dob || existing.dob || "",
             createdAt: data.createdAt || existing.createdAt || new Date().toISOString(),
             isModerator: data.isModerator !== undefined ? !!data.isModerator : !!existing.isModerator,
-            approved: data.approved !== undefined ? data.approved : (existing.approved !== undefined ? existing.approved : false),
+            approved: (data.approved !== undefined ? data.approved : existing.approved) !== false,
             favoritesCount: (data.favorites || existing.favorites || []).length
           });
         });

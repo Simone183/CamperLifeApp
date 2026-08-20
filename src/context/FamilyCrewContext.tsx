@@ -210,7 +210,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
 
       if (res.ok) {
         setCurrentCrew(null);
-        localStorage.removeItem('camper_family_crew');
+        localStorage.removeItem(`camper_family_crew_${emailLower}`);
         window.dispatchEvent(new CustomEvent('family-crew-changed', { detail: null }));
         window.dispatchEvent(
           new CustomEvent('show-toast', {
@@ -277,7 +277,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
         const resData = await res.json();
         if (resData.crew) {
           setCurrentCrew(resData.crew);
-          localStorage.setItem('camper_family_crew', JSON.stringify(resData.crew));
+          localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(resData.crew));
         }
         return true;
       }
@@ -304,7 +304,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
         const resData = await res.json();
         if (resData.crew) {
           setCurrentCrew(resData.crew);
-          localStorage.setItem('camper_family_crew', JSON.stringify(resData.crew));
+          localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(resData.crew));
           window.dispatchEvent(
             new CustomEvent('show-toast', {
               detail: { message: "Impostazioni equipaggio salvate con successo.", duration: 3000 }

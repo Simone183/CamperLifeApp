@@ -517,6 +517,9 @@ export default function DiaryTab({
         "Vuoi davvero eliminare questo viaggio ed eliminare tutte le sue spese e foto?",
       )
     ) {
+      if (tripId === "trip-example-10-oct-2025" && currentUser?.email) {
+        localStorage.setItem(`example_deleted_${currentUser.email.toLowerCase().trim()}`, "true");
+      }
       const filtered = trips.filter((t) => t.id !== tripId);
       setTrips(filtered);
       if (selectedTripId === tripId) {

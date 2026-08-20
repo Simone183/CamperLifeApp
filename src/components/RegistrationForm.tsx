@@ -329,7 +329,17 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
                 placeholder="Data di nascita"
                 value={dob}
                 onChange={(e) => setDob(e.target.value)}
-                onFocus={(e) => { e.target.type = "date"; }}
+                onFocus={(e) => { 
+                  e.target.type = "date";
+                }}
+                onClick={(e) => {
+                  e.target.type = "date";
+                  try {
+                    if ('showPicker' in HTMLInputElement.prototype) {
+                      e.target.showPicker();
+                    }
+                  } catch (err) {}
+                }}
                 onBlur={(e) => { if (!e.target.value) e.target.type = "text"; }}
                 className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20 text-slate-500"
                 required

@@ -1,29 +1,34 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ArrowRight } from 'lucide-react';
-import { CamperLifeIcon } from './CamperLifeIcon';
+import { RollyMascot } from './RollyMascot';
 
 interface TourStep {
   title: string;
   content: string;
+  variant: 'welcome' | 'map' | 'diary' | 'tools';
 }
 
 const steps: TourStep[] = [
   {
     title: "Benvenuto su ViaCamper!",
-    content: "Scopri le migliori aree sosta, campeggi e servizi per il tuo viaggio."
+    content: "Scopri le migliori aree sosta, campeggi e servizi per il tuo viaggio.",
+    variant: "welcome"
   },
   {
     title: "Mappa e Navigazione",
-    content: "Usa la mappa per trovare luoghi e navigare verso la tua prossima tappa."
+    content: "Usa la mappa per trovare luoghi e navigare verso la tua prossima tappa.",
+    variant: "map"
   },
   {
     title: "Diario di Viaggio",
-    content: "Tieni traccia delle tue avventure e pianifica i tuoi itinerari."
+    content: "Tieni traccia delle tue avventure e pianifica i tuoi itinerari.",
+    variant: "diary"
   },
   {
     title: "Strumenti e Impostazioni",
-    content: "Accedi a strumenti utili come il calcolatore di peso, checklist e molto altro."
+    content: "Accedi a strumenti utili come il calcolatore di peso, checklist e molto altro.",
+    variant: "tools"
   }
 ];
 
@@ -41,32 +46,35 @@ export const OnboardingTour = ({ onComplete }: { onComplete: () => void }) => {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
         <motion.div
-          className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full -translate-y-[25vh] text-center"
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
+          className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full text-center relative overflow-hidden"
+          initial={{ scale: 0.95, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
         >
-          <div className="w-16 h-16 mx-auto mb-3 bg-white p-1 rounded-full border border-stone-200 shadow-sm flex items-center justify-center">
-            <CamperLifeIcon size={54} className="text-[#3E4A35]" />
+          {/* Header Graphic (Rolly Mascot) */}
+          <div className="w-full bg-slate-50/50 rounded-2xl mb-6 relative pt-4 pb-2">
+             <RollyMascot variant={steps[currentStep].variant} />
           </div>
 
-          <div className="flex justify-between items-center mb-3 text-left">
-            <h2 className="text-lg font-bold text-slate-900">{steps[currentStep].title}</h2>
-            <button onClick={onComplete} className="text-slate-500 hover:text-slate-700">
-              <X size={20} />
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">{steps[currentStep].title}</h2>
+            <button onClick={onComplete} className="text-slate-400 hover:text-slate-700 bg-slate-100 p-1.5 rounded-full transition-colors absolute top-4 right-4 z-10 shadow-sm">
+              <X size={18} />
             </button>
           </div>
-          <p className="text-slate-600 mb-6 text-sm">{steps[currentStep].content}</p>
+
+          <p className="text-slate-600 mb-8 text-sm leading-relaxed font-medium px-2">{steps[currentStep].content}</p>
+
           <button
             onClick={nextStep}
-            className="w-full bg-[#5A6B4E] hover:bg-[#3E4A35] text-white py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition"
+            className="w-full bg-[#3E4A35] hover:bg-[#2C3525] text-white py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98]"
           >
-            {currentStep < steps.length - 1 ? "Prossimo" : "Inizia!"}
+            {currentStep < steps.length - 1 ? "Prossimo" : "Inizia l'Avventura"}
             <ArrowRight size={18} />
           </button>
         </motion.div>

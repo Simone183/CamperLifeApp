@@ -5,6 +5,8 @@
 
 import React from "react";
 // Trigger AI Studio Sync
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Place,
@@ -150,6 +152,7 @@ import { doc, onSnapshot, setDoc, query, collection, where } from "firebase/fire
 import { db } from "./lib/firebase";
 import firebaseConfig from "../firebase-applet-config.json";
 import { resolveMediaUrl } from "./utils/resolveMediaUrl";
+import { EXAMPLE_TRIP } from "./data/exampleTrip";
 const firestore = new ClientFirestoreAdapter(
   firebaseConfig,
   firebaseConfig.firestoreDatabaseId,
@@ -269,7 +272,9 @@ export default function App() {
 
   const [challenges, setChallenges] = React.useState<ChallengeItem[] | undefined>(() => {
     try {
-      const saved = localStorage.getItem("camper_challenges");
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_challenges_${cleanEmail}` : "camper_challenges_guest";
+      const saved = localStorage.getItem(key);
       return saved ? JSON.parse(saved) : undefined;
     } catch {
       return undefined;
@@ -278,7 +283,9 @@ export default function App() {
 
   const [challengeSubmissions, setChallengeSubmissions] = React.useState<ChallengeSubmission[] | undefined>(() => {
     try {
-      const saved = localStorage.getItem("camper_challenge_submissions");
+      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+      const key = cleanEmail ? `camper_challenge_submissions_${cleanEmail}` : "camper_challenge_submissions_guest";
+      const saved = localStorage.getItem(key);
       return saved ? JSON.parse(saved) : undefined;
     } catch {
       return undefined;
@@ -302,22 +309,26 @@ export default function App() {
   React.useEffect(() => {
     if (challenges) {
       try {
-        localStorage.setItem("camper_challenges", JSON.stringify(challenges));
+        const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+        const key = cleanEmail ? `camper_challenges_${cleanEmail}` : "camper_challenges_guest";
+        localStorage.setItem(key, JSON.stringify(challenges));
       } catch (e) {
         console.error("Error saving challenges", e);
       }
     }
-  }, [challenges]);
+  }, [challenges, currentUser?.email]);
 
   React.useEffect(() => {
     if (challengeSubmissions) {
       try {
-        localStorage.setItem("camper_challenge_submissions", JSON.stringify(challengeSubmissions));
+        const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+        const key = cleanEmail ? `camper_challenge_submissions_${cleanEmail}` : "camper_challenge_submissions_guest";
+        localStorage.setItem(key, JSON.stringify(challengeSubmissions));
       } catch (e) {
         console.error("Error saving challenge submissions", e);
       }
     }
-  }, [challengeSubmissions]);
+  }, [challengeSubmissions, currentUser?.email]);
 
   const [checklistItems, setChecklistItems] = React.useState<ChecklistItem[]>(() => {
     try {
@@ -378,6 +389,12 @@ export default function App() {
 
         const savedFavs = localStorage.getItem(`camper_favorites_${cleanEmail}`);
         setFavoriteIds(savedFavs ? JSON.parse(savedFavs) : []);
+
+        const savedChallenges = localStorage.getItem(`camper_challenges_${cleanEmail}`);
+        setChallenges(savedChallenges ? JSON.parse(savedChallenges) : undefined);
+
+        const savedSubmissions = localStorage.getItem(`camper_challenge_submissions_${cleanEmail}`);
+        setChallengeSubmissions(savedSubmissions ? JSON.parse(savedSubmissions) : undefined);
       } catch (e) {
         console.error("Error reloading user scoped items:", e);
       }
@@ -385,6 +402,8 @@ export default function App() {
       setChecklistItems(DEFAULT_CHECKLIST);
       setDeadlines(INITIAL_DEADLINES);
       setFavoriteIds([]);
+      setChallenges(undefined);
+      setChallengeSubmissions(undefined);
     }
   }, [currentUser?.email]);
 
@@ -835,13 +854,38 @@ export default function App() {
 
   // When currentUser changes (e.g. login, switch account, logout), isolate trips instantly
   React.useEffect(() => {
-    try {
-      localStorage.removeItem("camper_trips");
-      localStorage.removeItem("camper_trips_backup");
-      localStorage.removeItem("camper_family_crew");
-    } catch {}
-
     const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+    
+    // MIGRATION: Se c'è un account, migriamo i dati legacy invece di cancellarli
+    if (cleanEmail) {
+      try {
+        const legacyTrips = localStorage.getItem("camper_trips");
+        if (legacyTrips) {
+          const existingScoped = localStorage.getItem(`camper_trips_${cleanEmail}`);
+          if (!existingScoped || existingScoped === "[]") {
+            localStorage.setItem(`camper_trips_${cleanEmail}`, legacyTrips);
+          }
+          localStorage.removeItem("camper_trips");
+        }
+        
+        const legacyBackup = localStorage.getItem("camper_trips_backup");
+        if (legacyBackup) {
+          localStorage.removeItem("camper_trips_backup");
+        }
+        
+        const legacyCrew = localStorage.getItem("camper_family_crew");
+        if (legacyCrew) {
+          const existingCrew = localStorage.getItem(`camper_family_crew_${cleanEmail}`);
+          if (!existingCrew) {
+            localStorage.setItem(`camper_family_crew_${cleanEmail}`, legacyCrew);
+          }
+          localStorage.removeItem("camper_family_crew");
+        }
+      } catch (e) {
+        console.error("Errore durante la migrazione dei dati legacy:", e);
+      }
+    }
+
     if (cleanEmail) {
       const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
       if (userSaved) {
@@ -1029,6 +1073,41 @@ export default function App() {
       window.removeEventListener("navigate-community", handleNavCommunity);
     };
   }, []);
+
+  // Gestione nativa del tasto indietro di Android tramite Capacitor
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const backListener = CapacitorApp.addListener("backButton", () => {
+      // Logic for back button routing
+      if (activeTab === "settings_tools") {
+        if (settingsSubTab !== "hub") {
+          // Inner settings page -> go back to settings hub
+          setSettingsSubTab("hub");
+        } else {
+          // Settings hub -> go back to map
+          setActiveTab("map_nav");
+          setMapNavSubTab("map");
+        }
+      } else if (activeTab === "diary") {
+        // From diary -> go back to map
+        setActiveTab("map_nav");
+        setMapNavSubTab("map");
+      } else if (activeTab === "map_nav") {
+        if (mapNavSubTab !== "map") {
+          // From map subtabs -> go back to main map
+          setMapNavSubTab("map");
+        } else {
+          // From main map -> exit app
+          CapacitorApp.exitApp();
+        }
+      }
+    });
+
+    return () => {
+      backListener.then(l => l.remove());
+    };
+  }, [activeTab, mapNavSubTab, settingsSubTab]);
 
   React.useEffect(() => {
     const currentState = window.history.state;
@@ -1402,7 +1481,13 @@ export default function App() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && Array.isArray(data.trips)) {
-          const cloudTrips: Trip[] = data.trips;
+          let cloudTrips: Trip[] = data.trips;
+          
+          if (!cloudTrips.some(t => t.id === "trip-example-10-oct-2025") && localStorage.getItem(`example_deleted_${cleanEmail}`) !== "true") {
+            cloudTrips = [EXAMPLE_TRIP, ...cloudTrips];
+            saveTripsToFirestore(cloudTrips);
+          }
+
           const cloudTripsJson = JSON.stringify(cloudTrips);
 
           if (cloudTripsJson === lastSavedTripsJsonRef.current) {
@@ -1417,10 +1502,16 @@ export default function App() {
           setTrips(cloudTrips);
         }
       } else {
-        // Document does not exist in cloud yet for this user: initialize with empty trips
-        setTrips([]);
-        lastSavedTripsJsonRef.current = "[]";
-        saveTripsToFirestore([]);
+        // Document does not exist in cloud yet for this user.
+        // DO NOT destroy local trips! Instead, upload the existing local trips to initialize the cloud.
+        setTrips((currentLocalTrips) => {
+          let updatedTrips = currentLocalTrips;
+          if (!updatedTrips.some(t => t.id === "trip-example-10-oct-2025") && localStorage.getItem(`example_deleted_${cleanEmail}`) !== "true") {
+            updatedTrips = [EXAMPLE_TRIP, ...updatedTrips];
+          }
+          saveTripsToFirestore(updatedTrips);
+          return updatedTrips;
+        });
       }
       setLoadedFromFirestore(true);
     }, (error) => {
