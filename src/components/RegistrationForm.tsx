@@ -330,17 +330,18 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
                 value={dob}
                 onChange={(e) => setDob(e.target.value)}
                 onFocus={(e) => { 
-                  e.target.type = "date";
+                  e.currentTarget.type = "date";
                 }}
                 onClick={(e) => {
-                  e.target.type = "date";
+                  const input = e.currentTarget as HTMLInputElement;
+                  input.type = "date";
                   try {
                     if ('showPicker' in HTMLInputElement.prototype) {
-                      e.target.showPicker();
+                      input.showPicker();
                     }
                   } catch (err) {}
                 }}
-                onBlur={(e) => { if (!e.target.value) e.target.type = "text"; }}
+                onBlur={(e) => { if (!e.currentTarget.value) e.currentTarget.type = "text"; }}
                 className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E4A35]/20 text-slate-500"
                 required
               />

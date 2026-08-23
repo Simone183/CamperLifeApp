@@ -1,38 +1,26 @@
 {
   "id": "/",
   "scope": "/",
-  "name": "ViaCamper",
-  "short_name": "ViaCamper",
-  "description": "Applicazione per la gestione del viaggio, aree sosta, navigatore sagomato, scadenze e diario di bordo in camper.",
+  "name": "CamperLife",
+  "short_name": "CamperLife",
+  "description": "Applicazione per la gestione del viaggio, checklist, scadenze e diario di bordo per la vita in camper.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#3E4A35",
+  "background_color": "#ffffff",
   "theme_color": "#3E4A35",
   "orientation": "portrait",
-  "categories": ["travel", "utilities", "navigation"],
+  "categories": ["travel", "utilities"],
   "icons": [
     {
-      "src": "/logo-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
+      "src": "/logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/maskable-icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/logo-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/maskable-icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
+      "src": "/logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
       "purpose": "maskable"
     }
   ]

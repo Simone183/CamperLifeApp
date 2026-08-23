@@ -29,7 +29,7 @@
     },
     "User": {
       "title": "User",
-      "description": "A registered camper account in ViaCamperApp",
+      "description": "A registered camper account in CamperLifeApp",
       "type": "object",
       "properties": {
         "email": { "type": "string", "format": "email", "description": "Email address" },
@@ -115,23 +115,6 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "Notification creation timestamp" }
       },
       "required": ["type", "reason", "author", "content", "timestamp"]
-    },
-    "CrashReport": {
-      "title": "CrashReport",
-      "description": "An automated crash report or unexpected runtime error logged from the app",
-      "type": "object",
-      "properties": {
-        "message": { "type": "string", "description": "Error message" },
-        "stack": { "type": "string", "description": "Error stack trace" },
-        "componentStack": { "type": "string", "description": "React component stack trace" },
-        "userEmail": { "type": "string", "description": "User email if logged in" },
-        "url": { "type": "string", "description": "Page URL or tab where crash occurred" },
-        "userAgent": { "type": "string", "description": "Browser / Device user agent" },
-        "appVersion": { "type": "string", "description": "App version string" },
-        "status": { "type": "string", "description": "Status: open, investigated, resolved" },
-        "timestamp": { "type": "string", "format": "date-time", "description": "Crash timestamp" }
-      },
-      "required": ["message", "timestamp"]
     }
   },
   "firestore": {
@@ -162,10 +145,6 @@
     "adminNotifications/{notifId}": {
       "schema": { "$ref": "#/entities/AdminNotification" },
       "description": "Collection of admin notifications for moderation events"
-    },
-    "crashReports/{reportId}": {
-      "schema": { "$ref": "#/entities/CrashReport" },
-      "description": "Collection of automated crash logs and runtime error reports"
     }
   }
 }

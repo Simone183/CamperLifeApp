@@ -1,8 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "2.4.11",
-  "description": "ViaCamper App v2.4.11",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -16,7 +15,7 @@
     "@capacitor/android": "^8.4.1",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.4.1",
-    "@capacitor/local-notifications": "^8.3.0",
+    "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/push-notifications": "^8.1.2",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
@@ -38,7 +37,7 @@
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
     "resend": "^6.16.0",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.1",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
