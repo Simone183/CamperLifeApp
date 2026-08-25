@@ -131,6 +131,8 @@ class ServerRESTFirestoreAdapter {
     if (parts.length > 1) {
       const parentPath = parts.slice(0, parts.length - 1).join("/");
       requestBody.parent = `projects/${this.projectId}/databases/${this.databaseId}/documents/${parentPath}`;
+    } else {
+      requestBody.parent = `projects/${this.projectId}/databases/${this.databaseId}/documents`;
     }
     
     const filters = constraints.map(c => ({

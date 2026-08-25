@@ -331,8 +331,11 @@ async function sendPushNotification(
     console.log(`[FCM Push] Preparing to send push notification to users:`, emailList);
 
     const tokensRef = firestoreDb.collection("push_tokens");
-    const tokens: string[] = [];
+    const rawTokens: string[] = [];
     const tokensToClean: string[] = [];
+
+    const isValidToken = (t: any) =>
+      typeof t === "string" && t.trim().length >= 20 && !t.includes(" ");
 
     for (const rawEmail of emailList) {
       const email = String(rawEmail || '').toLowerCase().trim();
@@ -341,9 +344,13 @@ async function sendPushNotification(
       // 1. Check push_tokens collection
       try {
         const doc = await tokensRef.doc(email).get();
-        if (doc.exists && doc.data()?.token) {
-          const t = doc.data()?.token;
-          if (t && !tokens.includes(t)) tokens.push(t);
+        if (doc.exists) {
+          const t = doc.data()?.token || doc.data()?.pushToken;
+          if (isValidToken(t)) {
+            if (!rawTokens.includes(t)) rawTokens.push(t);
+          } else if (t) {
+            tokensToClean.push(t);
+          }
         }
       } catch (err) {
         console.error(`[FCM Push] Error reading push token from push_tokens for ${email}:`, err);
@@ -354,12 +361,21 @@ async function sendPushNotification(
         const userDoc = await firestoreDb.collection("users").doc(email).get();
         if (userDoc.exists) {
           const uData = userDoc.data() || {};
-          if (uData.pushToken && !tokens.includes(uData.pushToken)) {
-            tokens.push(uData.pushToken);
+          if (isValidToken(uData.pushToken)) {
+            if (!rawTokens.includes(uData.pushToken)) {
+              rawTokens.push(uData.pushToken);
+            }
+          } else if (uData.pushToken) {
+            tokensToClean.push(uData.pushToken);
           }
+
           if (Array.isArray(uData.pushTokens)) {
             uData.pushTokens.forEach((t: string) => {
-              if (t && !tokens.includes(t)) tokens.push(t);
+              if (isValidToken(t)) {
+                if (!rawTokens.includes(t)) rawTokens.push(t);
+              } else if (t) {
+                tokensToClean.push(t);
+              }
             });
           }
         }
@@ -368,12 +384,18 @@ async function sendPushNotification(
       }
     }
 
-    if (tokens.length === 0) {
-      console.log(`[FCM Push] No push tokens found for users:`, emailList);
+    const uniqueTokens = Array.from(new Set(rawTokens));
+
+    if (uniqueTokens.length === 0) {
+      console.log(`[FCM Push] No valid active push tokens found for users:`, emailList);
+      if (tokensToClean.length > 0) {
+        // Cleanup malformed tokens right away
+        await cleanStaleTokens(tokensToClean, emailList, tokensRef);
+      }
       return;
     }
 
-    console.log(`[FCM Push] Sending notification to ${tokens.length} devices for ${emailList.join(", ")}...`);
+    console.log(`[FCM Push] Sending notification to ${uniqueTokens.length} device(s) for ${emailList.join(", ")}...`);
 
     const message = {
       notification: {
@@ -406,7 +428,7 @@ async function sendPushNotification(
         body: body,
         ...(data || {})
       },
-      tokens: Array.from(new Set(tokens)),
+      tokens: uniqueTokens,
     };
 
     const response = await getMessaging(app).sendEachForMulticast(message);
@@ -415,25 +437,72 @@ async function sendPushNotification(
     response.responses.forEach((resp, idx) => {
       if (!resp.success) {
         const error = resp.error;
-        if (error && (error.code === 'messaging/invalid-registration-token' || error.code === 'messaging/registration-token-not-registered')) {
-          const badToken = tokens[idx];
-          console.log(`[FCM Push] Token is invalid/expired. Scheduling deletion of token:`, badToken);
-          tokensToClean.push(badToken);
+        const failedToken = uniqueTokens[idx];
+        console.warn(`[FCM Push] Device ${idx + 1}/${uniqueTokens.length} delivery failed:`, error?.code || error?.message || error);
+        if (
+          error &&
+          (error.code === 'messaging/invalid-registration-token' ||
+            error.code === 'messaging/registration-token-not-registered' ||
+            error.code === 'messaging/invalid-argument' ||
+            error.code === 'messaging/mismatched-credential')
+        ) {
+          console.log(`[FCM Push] Token is invalid/expired (${error.code}). Scheduling deletion:`, failedToken);
+          tokensToClean.push(failedToken);
         }
       }
     });
 
     if (tokensToClean.length > 0) {
-      const snapshot = await tokensRef.get();
-      for (const doc of snapshot.docs) {
-        if (tokensToClean.includes(doc.data()?.token)) {
-          console.log(`[FCM Push] Cleaning up stale token doc for email:`, doc.id);
-          await tokensRef.doc(doc.id).delete();
-        }
-      }
+      await cleanStaleTokens(tokensToClean, emailList, tokensRef);
     }
   } catch (err) {
     console.error(`[FCM Push] Error sending multicast notification:`, err);
+  }
+}
+
+async function cleanStaleTokens(tokensToClean: string[], emailList: string[], tokensRef: any) {
+  try {
+    const uniqueBadTokens = Array.from(new Set(tokensToClean));
+    // 1. Clean from push_tokens collection
+    const snapshot = await tokensRef.get();
+    for (const doc of snapshot.docs) {
+      const docData = doc.data() || {};
+      const docToken = docData.token || docData.pushToken;
+      if (uniqueBadTokens.includes(docToken)) {
+        console.log(`[FCM Push] Purging stale token doc in push_tokens for:`, doc.id);
+        await tokensRef.doc(doc.id).delete();
+      }
+    }
+
+    // 2. Clean from users collection
+    for (const rawEmail of emailList) {
+      const email = String(rawEmail || '').toLowerCase().trim();
+      if (!email) continue;
+      const userDocRef = firestoreDb.collection("users").doc(email);
+      const userDoc = await userDocRef.get();
+      if (userDoc.exists) {
+        const uData = userDoc.data() || {};
+        let shouldUpdate = false;
+        const updatePayload: any = {};
+        if (uData.pushToken && uniqueBadTokens.includes(uData.pushToken)) {
+          updatePayload.pushToken = null;
+          shouldUpdate = true;
+        }
+        if (Array.isArray(uData.pushTokens)) {
+          const filtered = uData.pushTokens.filter((t: string) => !uniqueBadTokens.includes(t));
+          if (filtered.length !== uData.pushTokens.length) {
+            updatePayload.pushTokens = filtered;
+            shouldUpdate = true;
+          }
+        }
+        if (shouldUpdate) {
+          console.log(`[FCM Push] Purging stale tokens in users collection for:`, email);
+          await userDocRef.set(updatePayload, { merge: true });
+        }
+      }
+    }
+  } catch (cleanErr) {
+    console.warn(`[FCM Push] Error during stale token cleanup:`, cleanErr);
   }
 }
 
@@ -1470,23 +1539,35 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
     }
   });
 
-  // Bulk import places in a province using Gemini with Google Search Grounding
+  // Bulk import places in a province or near GPS coordinates using Gemini with Google Search Grounding
   app.post("/api/admin/generate-province-places", async (req, res) => {
     let province = "";
     try {
-      province = req.body.province || "";
-      if (!province) {
-        return res.status(400).json({ error: "Province is required" });
+      province = (req.body.province || "").trim();
+      const reqLat = req.body.lat !== undefined && req.body.lat !== null ? parseFloat(req.body.lat) : undefined;
+      const reqLng = req.body.lng !== undefined && req.body.lng !== null ? parseFloat(req.body.lng) : undefined;
+      const hasCoordinates = reqLat !== undefined && !isNaN(reqLat) && reqLng !== undefined && !isNaN(reqLng);
+
+      if (!province && !hasCoordinates) {
+        return res.status(400).json({ error: "Specificare una provincia/località o rilevare la posizione GPS." });
       }
 
-      // 1. Skip cache check as requested: always execute a real-time web search to fetch updated data
-      console.log(`[Fresh Search Mandated] Bypassing cache and hardcoded hits to execute real-time search for province: ${province}`);
+      if (!province && hasCoordinates) {
+        province = findNearestCity(reqLat!, reqLng!) || `Zona (${reqLat!.toFixed(3)}, ${reqLng!.toFixed(3)})`;
+      }
 
-      console.log(`[Gemini AI with Search Grounding] Discovering POIs for province: ${province}...`);
+      const geoDescription = hasCoordinates
+        ? `nel raggio di 25-30 km attorno alla posizione GPS (${reqLat!.toFixed(4)}, ${reqLng!.toFixed(4)}) - territorio di "${province}" (Italia)`
+        : `nel territorio di "${province}" (Italia) o nelle immediate vicinanze`;
+
+      // 1. Skip cache check as requested: always execute a real-time web search to fetch updated data
+      console.log(`[Fresh Search Mandated] Bypassing cache to execute real-time search for: ${geoDescription}`);
+
+      console.log(`[Gemini AI with Search Grounding] Discovering POIs for ${geoDescription}...`);
 
       try {
         // Step 1: Use Google Search Grounding to find actual real, active places
-        const searchPrompt = `Cerca sul web (usando Google Search Grounding) reali, esistenti, attivi ed ufficiali punti di sosta camper, aree di sosta attrezzate, campeggi o camper service (carico/scarico acque) situati nel territorio di "${province}" (Italia) o nelle immediate vicinanze.
+        const searchPrompt = `Cerca sul web (usando Google Search Grounding) reali, esistenti, attivi ed ufficiali punti di sosta camper, aree di sosta attrezzate, campeggi o camper service (carico/scarico acque) situati ${geoDescription}.
 Esegui una ricerca approfondita e ad ampio spettro che interroghi e combini i risultati provenienti sia da Camperpass.it sia da tutti gli altri principali portali specializzati italiani ed europei. Non limitarti ad un solo portale: vogliamo ottenere la massima copertura raccogliendo tutti i punti sosta reali documentati in uno o più di questi siti:
 - Camperpass.it
 - Camperonline.it
@@ -1502,7 +1583,7 @@ Esegui una ricerca approfondita e ad ampio spettro che interroghi e combini i ri
 Elenchi SOLO luoghi che esistono realmente e sono ampiamente documentati su questi siti. 
 ATTENZIONE CRITICA: Non inventare o allucinare NOMI o INDIRIZZI che non esistono sul web. Se per "${province}" esistono solo pochissimi luoghi reali o nessuno, restituisci solo quelli realmente esistenti o non restituirne affatto. Non forzare l'inserimento di luoghi fittizi.`;
 
-        console.log(`[Gemini AI Search] Querying web search for real camper facilities in ${province}...`);
+        console.log(`[Gemini AI Search] Querying web search for real camper facilities ${geoDescription}...`);
         const searchResponse = await generateContentWithRetry({
           model: "gemini-3.5-flash",
           contents: searchPrompt,
@@ -1631,7 +1712,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
             saveCachedProvincePlaces(province, enriched);
             return res.json({ places: enriched, isFallback: true });
           }
-          const coords = await getProvinceCoordinates(province);
+          const coords = hasCoordinates ? { lat: reqLat!, lng: reqLng! } : await getProvinceCoordinates(province);
           const realPlaces = await fetchActualOSMPlaces(province, coords);
           if (realPlaces && realPlaces.length > 0) {
             const mappedPlaces = realPlaces.map((p: any) => ({
@@ -1667,7 +1748,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
           saveCachedProvincePlaces(province, enriched);
           return res.json({ places: enriched, isFallback: true });
         }
-        const coords = await getProvinceCoordinates(province);
+        const coords = (req.body.lat && req.body.lng) ? { lat: parseFloat(req.body.lat), lng: parseFloat(req.body.lng) } : await getProvinceCoordinates(province);
         const realPlaces = await fetchActualOSMPlaces(province, coords);
         if (realPlaces && realPlaces.length > 0) {
           const mappedPlaces = realPlaces.map((p: any) => ({
@@ -1870,6 +1951,148 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  // AI OCR & Extraction of Tariffs & Facilities from a photo of a signboard/price list
+  app.post("/api/extract-tariffs-from-image", async (req, res) => {
+    try {
+      const { image, mimeType } = req.body;
+      if (!image) {
+        return res.status(400).json({ error: "Nessuna immagine fornita per l'estrazione." });
+      }
+
+      // Clean base64 string
+      let cleanBase64 = image;
+      let detectedMime = mimeType || "image/jpeg";
+      if (typeof image === "string" && image.startsWith("data:")) {
+        const match = image.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (match) {
+          detectedMime = match[1];
+          cleanBase64 = match[2];
+        } else {
+          cleanBase64 = image.split(",")[1] || image;
+        }
+      }
+
+      console.log(`[Gemini AI] Extracting tariffs from image (mime: ${detectedMime}, len: ${cleanBase64.length})...`);
+
+      const systemInstruction =
+        "Sei l'assistente esperto di ViaCamper specializzato nella lettura, OCR e interpretazione di cartelli informativi, tabelle prezzi, orari e regolamenti di aree sosta camper, campeggi, agrisosta e punti sosta. " +
+        "Il tuo compito è esaminare l'immagine fornita, leggere con la massima precisione i prezzi e le tariffe indicate (anche scritte a mano, tabelle complesse, prezzi orari, giornalieri, 24 ore, tariffe stagionali alta/media/bassa stagione, supplementi per allaccio luce 220V, gettoni docce calde, tassa di soggiorno, carico/scarico acque reflue). " +
+        "Estrai i dati in un formato JSON strutturato e accurato. Se una tariffa o un servizio non è chiaramente visibile, ometti solo ciò che non è leggibile senza inventare valori irrealistici.";
+
+      const promptText =
+        "Analizza con precisione questa fotografia di un cartello o tabella tariffe per area sosta camper / campeggio. " +
+        "1. Estrai tutte le tariffe e fasce di prezzo elencate (periodo/descrizione, prezzo in Euro, unità es. 'a notte (24h)', 'al giorno', 'a persona', 'a sosta', 'a gettone / ora', 'a consumo', e note opzionali con inclusioni/esclusioni). " +
+        "2. Fornisci un testo sintetico della tariffa principale (es: 'Da 15€ a 25€/notte', '18€/24h con elettricità', oppure 'Gratuito'). " +
+        "3. Estrai il prezzo base o minimo numerico in Euro (es: 15). " +
+        "4. Riconosci se sul cartello sono menzionati o indicati pittogrammi dei servizi tra: WiFi, Attacco 220V, Scarico Acque, Carico Acqua, Bagni, Docce, Cani Ammessi, Illuminato, Videosorvegliato, Raccolta Rifiuti. " +
+        "5. Estrai l'eventuale nome della struttura o indicazioni di apertura/orari/regolamento (es. sosta max 48h, check-in 08-20).";
+
+      const imagePart = {
+        inlineData: {
+          mimeType: detectedMime,
+          data: cleanBase64,
+        },
+      };
+
+      const textPart = {
+        text: promptText,
+      };
+
+      const response = await generateContentWithRetry({
+        model: "gemini-3.7-flash",
+        contents: { parts: [imagePart, textPart] },
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              priceInfo: {
+                type: Type.STRING,
+                description: "Sintesi tariffaria es: '15€/notte', 'Da 12€ a 22€/notte' o 'Gratuito'",
+              },
+              priceEuro: {
+                type: Type.NUMBER,
+                description: "Prezzo base indicativo a notte in euro (0 se gratuito)",
+              },
+              seasonalPrices: {
+                type: Type.ARRAY,
+                description: "Elenco delle tariffe per stagione, durata, sosta o singoli servizi",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    period: {
+                      type: Type.STRING,
+                      description: "Periodo o nome tariffa (es: 'Alta Stagione (Luglio - Agosto)', 'Sosta 24h', 'Allaccio 220V', 'Solo C/S')",
+                    },
+                    priceEuro: {
+                      type: Type.NUMBER,
+                      description: "Prezzo numerico in euro (es: 18 o 5)",
+                    },
+                    unit: {
+                      type: Type.STRING,
+                      description: "Unità (es: 'a notte (24h)', 'al giorno', 'a persona', 'a sosta', 'a gettone / ora', 'a consumo')",
+                    },
+                    notes: {
+                      type: Type.STRING,
+                      description: "Eventuali dettagli: es. 'Luce inclusa', 'Minimo 2 notti', 'Docce 1€'",
+                    },
+                  },
+                  required: ["period", "priceEuro", "unit"],
+                },
+              },
+              facilities: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "Servizi identificati sul cartello tra: 'WiFi', 'Attacco 220V', 'Scarico Acque', 'Carico Acqua', 'Bagni', 'Docce', 'Cani Ammessi', 'Illuminato', 'Videosorvegliato', 'Raccolta Rifiuti'",
+              },
+              detectedPlaceName: {
+                type: Type.STRING,
+                description: "Nome della struttura se presente nell'insegna del cartello (altrimenti stringa vuota)",
+              },
+              descriptionNotes: {
+                type: Type.STRING,
+                description: "Note su orari, regole di sosta o particolarità lette dal cartello",
+              },
+              summaryMessage: {
+                type: Type.STRING,
+                description: "Breve frase in italiano di riepilogo (es: 'Rilevate 3 tariffe stagionali e allaccio corrente')",
+              },
+            },
+            required: ["priceInfo", "priceEuro", "seasonalPrices"],
+          },
+        },
+      });
+
+      const responseText = response && response.text ? response.text.trim() : "{}";
+      const parsedData = JSON.parse(responseText);
+
+      // Add unique IDs to seasonal prices if missing
+      if (Array.isArray(parsedData.seasonalPrices)) {
+        parsedData.seasonalPrices = parsedData.seasonalPrices.map((sp: any, i: number) => ({
+          id: sp.id || `sp_ai_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 5)}`,
+          period: sp.period || "Tariffa",
+          priceEuro: typeof sp.priceEuro === 'number' ? sp.priceEuro : (parseFloat(sp.priceEuro) || 0),
+          unit: sp.unit || "a notte (24h)",
+          notes: sp.notes || ""
+        }));
+      } else {
+        parsedData.seasonalPrices = [];
+      }
+
+      res.json({
+        success: true,
+        ...parsedData
+      });
+    } catch (err: any) {
+      console.error("Error in extract-tariffs-from-image endpoint:", err);
+      const friendlyMsg = getFriendlyGeminiError(err);
+      res.status(500).json({
+        error: friendlyMsg || "Impossibile analizzare l'immagine del tariffario. Assicurati che il testo sia nitido e ben illuminato.",
+      });
+    }
+  });
+
   // Propose a new place
   app.post("/api/propose-place", async (req, res) => {
     try {
@@ -1879,7 +2102,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       // Check for profanity
-      const textToCheck = `${newPlace.name} ${newPlace.address || ''}`;
+      const textToCheck = `${newPlace.name} ${newPlace.address || ''} ${newPlace.description || ''}`;
       const profanityResult = await checkContentForProfanity(textToCheck);
       
       if (!profanityResult.isClean) {
@@ -1938,8 +2161,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         lat: Number(newPlace.lat),
         lng: Number(newPlace.lng),
         address: newPlace.address || "",
+        description: newPlace.description || "",
         priceInfo: newPlace.priceInfo || "Gratuito",
         priceEuro: Number(newPlace.priceEuro) || 0,
+        seasonalPrices: Array.isArray(newPlace.seasonalPrices) ? newPlace.seasonalPrices : [],
         phone: newPlace.phone || "",
         imageUrl: imageUrl,
         facilities: newPlace.facilities || [],
@@ -1994,6 +2219,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                   <td style="padding: 8px 0; font-weight: 600;">Indirizzo:</td>
                   <td style="padding: 8px 0;">${entry.address || 'N/D'}</td>
                 </tr>
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: 600;">Tariffa / Costo:</td>
+                  <td style="padding: 8px 0;">${entry.priceInfo || (entry.priceEuro ? `${entry.priceEuro}€` : 'Gratuito')}</td>
+                </tr>
+                ${entry.seasonalPrices && entry.seasonalPrices.length > 0 ? `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; font-weight: 600; vertical-align: top;">Listino periodi:</td>
+                  <td style="padding: 8px 0;">
+                    <ul style="margin: 0; padding-left: 18px;">
+                      ${entry.seasonalPrices.map((sp: any) => `<li><strong>${sp.period}</strong>: ${sp.priceEuro}€ ${sp.unit || ''} ${sp.notes ? `(${sp.notes})` : ''}</li>`).join('')}
+                    </ul>
+                  </td>
+                </tr>` : ''}
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                   <td style="padding: 8px 0; font-weight: 600;">Inviata da:</td>
                   <td style="padding: 8px 0;">${entry.createdBy || 'Anonimo'}</td>
@@ -2676,7 +2914,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       for (const u of cached) {
         if (u && u.email) {
           const clean = u.email.toLowerCase().trim();
-          userMap.set(clean, { ...u, email: clean });
+          if (!isUserDeleted(clean)) {
+            userMap.set(clean, { ...u, email: clean });
+          }
         }
       }
 
@@ -2688,6 +2928,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         snapshot.forEach((doc: any) => {
           const data = doc.data() || {};
           const clean = (data.email || doc.id).toLowerCase().trim();
+          if (isUserDeleted(clean) || data.deleted === true) {
+            return;
+          }
           const existing = userMap.get(clean) || {};
           userMap.set(clean, {
             ...existing,

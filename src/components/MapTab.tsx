@@ -9,6 +9,7 @@ import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getFuelEfficiencyUnit, getFuelEfficiencyValue, parseDimToNumber } from "../unit-helpers";
 import {
   Place,
+  PlaceSeasonalPrice,
   Review,
   VehicleDimensions,
   PlaceCategory,
@@ -48,6 +49,8 @@ import {
   Upload,
   ExternalLink,
   Map as MapIcon,
+  Loader2,
+  ScanLine,
 } from "lucide-react";
 import L from "leaflet";
 import { CategoryIllustration } from "./CategoryIllustration";
@@ -55,6 +58,7 @@ import { WeatherWidget } from "./WeatherWidget";
 import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
+import { CamperLifeIcon } from "./CamperLifeIcon";
 import { MapPoiIcon, getMapPoiIconHtml } from "./MapPoiIcon";
 import { PlaceOccupancyWidget } from "./PlaceOccupancyWidget";
 import { PlaceOccupancyBadge } from "./PlaceOccupancyBadge";
@@ -846,6 +850,9 @@ export default function MapTab({
   const [searchResultPins, setSearchResultPins] = React.useState<any[]>([]);
   const [isSearchingAddress, setIsSearchingAddress] = React.useState(false);
   const [addressSearchError, setAddressSearchError] = React.useState("");
+  const [searchOverlaySubtext, setSearchOverlaySubtext] = React.useState<string>(
+    "Individuazione aree sosta e punti camper"
+  );
 
   const fitBoundsToSearchResults = (pinsList?: any[]) => {
     try {
@@ -1063,8 +1070,10 @@ export default function MapTab({
     lat: 45.864,
     lng: 10.869,
     address: "",
+    description: "",
     priceInfo: "Gratuito",
     priceEuro: 0,
+    seasonalPrices: [] as PlaceSeasonalPrice[],
     phone: "",
     selectedFacilities: [] as string[],
     imageUrl:
@@ -1089,6 +1098,140 @@ export default function MapTab({
   const [isSearchingNewPlaceAddress, setIsSearchingNewPlaceAddress] =
     React.useState(false);
   const [isLocatingGPS, setIsLocatingGPS] = React.useState(false);
+
+  // --- TARIFF OCR SCANNING FROM PHOTO (AI) ---
+  const [isScanningTariffPhoto, setIsScanningTariffPhoto] = React.useState(false);
+  const [tariffScanResultMsg, setTariffScanResultMsg] = React.useState<string | null>(null);
+  const tariffFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleTariffPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsScanningTariffPhoto(true);
+    setTariffScanResultMsg(null);
+
+    try {
+      // Convert to base64 and resize to max 1600px via canvas for ultra fast processing
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new window.Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const maxDim = 1600;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              resolve(event.target?.result as string);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", 0.85));
+          };
+          img.onerror = () => resolve(event.target?.result as string);
+          img.src = event.target?.result as string;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/extract-tariffs-from-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: base64Data,
+          mimeType: "image/jpeg",
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Errore durante l'analisi dell'immagine del tariffario.");
+      }
+
+      const extractedPrices: PlaceSeasonalPrice[] = Array.isArray(data.seasonalPrices)
+        ? data.seasonalPrices
+        : [];
+
+      setNewPlaceForm((prev) => {
+        const mergedPrices = extractedPrices.length > 0 ? extractedPrices : prev.seasonalPrices;
+        
+        let updatedFacilities = [...prev.selectedFacilities];
+        if (Array.isArray(data.facilities)) {
+          data.facilities.forEach((f: string) => {
+            if (f && !updatedFacilities.includes(f)) {
+              updatedFacilities.push(f);
+            }
+          });
+        }
+
+        let newDesc = prev.description;
+        if (data.descriptionNotes && (!prev.description || prev.description.trim() === "")) {
+          newDesc = data.descriptionNotes;
+        } else if (data.descriptionNotes && !prev.description.includes(data.descriptionNotes)) {
+          newDesc = prev.description
+            ? `${prev.description}\n\n📋 Info tariffario/regole: ${data.descriptionNotes}`
+            : data.descriptionNotes;
+        }
+
+        let newName = prev.name;
+        if ((!prev.name || prev.name.trim() === "") && data.detectedPlaceName) {
+          newName = data.detectedPlaceName;
+        }
+
+        return {
+          ...prev,
+          priceInfo: data.priceInfo || prev.priceInfo,
+          priceEuro: typeof data.priceEuro === "number" ? data.priceEuro : prev.priceEuro,
+          seasonalPrices: mergedPrices,
+          selectedFacilities: updatedFacilities,
+          description: newDesc,
+          name: newName,
+        };
+      });
+
+      const msg = data.summaryMessage || `Estratte con successo ${extractedPrices.length} tariffe dal cartello!`;
+      setTariffScanResultMsg(msg);
+
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `✨ ${msg}`,
+            duration: 4500,
+          },
+        }),
+      );
+    } catch (err: any) {
+      console.error("Tariff scan failed:", err);
+      const errText = err.message || "Impossibile estrarre le tariffe dalla foto.";
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `⚠️ ${errText}`,
+            duration: 4000,
+          },
+        }),
+      );
+    } finally {
+      setIsScanningTariffPhoto(false);
+      if (tariffFileInputRef.current) {
+        tariffFileInputRef.current.value = "";
+      }
+    }
+  };
 
   // --- CHOOSE NAVIGATOR MODAL STATES ---
   const [showNavigatorSelector, setShowNavigatorSelector] = React.useState(false);
@@ -1542,8 +1685,10 @@ export default function MapTab({
         lat: newPlaceForm.lat,
         lng: newPlaceForm.lng,
         address: newPlaceForm.address,
+        description: newPlaceForm.description || "",
         priceInfo: newPlaceForm.priceInfo || "Gratuito",
         priceEuro: newPlaceForm.priceEuro,
+        seasonalPrices: newPlaceForm.seasonalPrices || [],
         phone: newPlaceForm.phone,
         imageUrl:
           newPlaceForm.imageUrl ||
@@ -1614,8 +1759,10 @@ export default function MapTab({
           lat: newPlaceForm.lat,
           lng: newPlaceForm.lng,
           address: newPlaceForm.address,
+          description: newPlaceForm.description || "",
           priceInfo: newPlaceForm.priceInfo || "Gratuito",
           priceEuro: newPlaceForm.priceEuro,
+          seasonalPrices: newPlaceForm.seasonalPrices || [],
           phone: newPlaceForm.phone,
           imageUrl:
             newPlaceForm.imageUrl ||
@@ -1656,8 +1803,10 @@ export default function MapTab({
           lat: newPlaceForm.lat,
           lng: newPlaceForm.lng,
           address: newPlaceForm.address,
+          description: newPlaceForm.description || "",
           priceInfo: newPlaceForm.priceInfo || "Gratuito",
           priceEuro: newPlaceForm.priceEuro,
+          seasonalPrices: newPlaceForm.seasonalPrices || [],
           phone: newPlaceForm.phone,
           imageUrl:
             newPlaceForm.imageUrl ||
@@ -1707,6 +1856,7 @@ export default function MapTab({
     }
 
     setIsSearchingAddress(true);
+    setSearchOverlaySubtext("Ricerca su mappa e punti sosta...");
     setAddressSearchError("");
     try {
       const refLat = typeof userLocation?.lat === 'number' ? userLocation.lat : (typeof filterCenter?.lat === 'number' ? filterCenter.lat : undefined);
@@ -2715,7 +2865,14 @@ out center;`;
     }
   };
 
-  const autoLoadOSMForProximity = async (lat: number, lng: number) => {
+  const autoLoadOSMForProximity = async (
+    lat: number,
+    lng: number,
+    customSubtext?: string
+  ) => {
+    if (customSubtext) {
+      setSearchOverlaySubtext(customSubtext);
+    }
     setIsAutoLoadingOSM(true);
 
     // Auto-search notification silenced on user request
@@ -3922,6 +4079,7 @@ out center;`;
                   await autoLoadOSMForProximity(
                     userLocation.lat,
                     userLocation.lng,
+                    "Ricerca soste intorno a te..."
                   );
                 }
               }}
@@ -3993,7 +4151,11 @@ out center;`;
                   mapRef.current?.setView([centerLat, centerLng], 10);
 
                   // Automatically trigger live Overpass QL fetch around the target place on-demand! 🚀
-                  await autoLoadOSMForProximity(centerLat, centerLng);
+                  await autoLoadOSMForProximity(
+                    centerLat,
+                    centerLng,
+                    "Ricerca soste nell'area selezionata..."
+                  );
                 }
               }}
               className={`flex-1 py-2 px-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none border ${
@@ -5051,8 +5213,10 @@ out center;`;
                           address:
                             clickedAddress ||
                             `Coordinate: ${Number(clickedCoords.lat).toFixed(5)}, ${Number(clickedCoords.lng).toFixed(5)}`,
+                          description: "",
                           priceInfo: "Gratuito",
                           priceEuro: 0,
+                          seasonalPrices: [],
                           phone: "",
                           selectedFacilities: [],
                           imageUrl:
@@ -5102,7 +5266,11 @@ out center;`;
                           }),
                         );
 
-                        await autoLoadOSMForProximity(lat, lng);
+                        await autoLoadOSMForProximity(
+                          lat,
+                          lng,
+                          "Ricerca soste vicine entro 15km..."
+                        );
                       }}
                       disabled={isAutoLoadingOSM}
                       className="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-bold rounded-lg text-[10px] transition-all shadow-sm active:scale-95 cursor-pointer text-center"
@@ -5288,6 +5456,41 @@ out center;`;
               <Route className="w-5 h-5 text-blue-600" />
             </button>
           )}
+
+          {/* Logo e indicatore "Ricerca in corso" al centro della mappa */}
+          <AnimatePresence>
+            {(isAutoLoadingOSM || isSearchingAddress || isImporting) && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="absolute inset-0 z-[4500] flex items-center justify-center pointer-events-none p-4"
+              >
+                <div className="bg-slate-900/90 backdrop-blur-md text-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-white/20 flex flex-col items-center gap-3 text-center max-w-[280px] sm:max-w-[320px] pointer-events-auto">
+                  <div className="relative flex items-center justify-center">
+                    {/* Animated glowing ring */}
+                    <div className="absolute -inset-3 bg-emerald-500/25 rounded-full animate-ping opacity-75 pointer-events-none" />
+                    <div className="relative p-1.5 rounded-full bg-white/10 ring-2 ring-emerald-400/60 shadow-xl">
+                      <CamperLifeIcon size={64} className="rounded-full drop-shadow-md" />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                      <span className="text-sm sm:text-base font-black tracking-wide text-white">
+                        Ricerca in corso...
+                      </span>
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-tight">
+                      {searchOverlaySubtext || "Individuazione aree sosta e punti camper"}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Proximity Distance Filters Block - Rendered safely right below the map (First Row) */}
@@ -5326,6 +5529,7 @@ out center;`;
                 await autoLoadOSMForProximity(
                   userLocation.lat,
                   userLocation.lng,
+                  "Ricerca soste intorno a te..."
                 );
               }
             }}
@@ -5397,7 +5601,11 @@ out center;`;
                 mapRef.current?.setView([centerLat, centerLng], 10);
 
                 // Automatically trigger live Overpass QL fetch around the target place on-demand! 🚀
-                await autoLoadOSMForProximity(centerLat, centerLng);
+                await autoLoadOSMForProximity(
+                  centerLat,
+                  centerLng,
+                  "Ricerca soste nell'area selezionata..."
+                );
               }
             }}
             className={`flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[10px] sm:text-[10.5px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none border h-8 ${
@@ -5492,8 +5700,10 @@ out center;`;
                     : mapRef.current.getCenter().lng
                   : 10.869,
                 address: "",
+                description: "",
                 priceInfo: "Gratuito",
                 priceEuro: 0,
+                seasonalPrices: [],
                 phone: "",
                 selectedFacilities: [],
                 imageUrl:
@@ -5643,6 +5853,57 @@ out center;`;
                         🏙️ Città più vicina: {selectedPlace.nearestCity}
                       </span>
                     </p>
+                  )}
+
+                  {selectedPlace.description && (
+                    <div className="mt-2 p-2.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200/80 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 text-xs leading-relaxed font-sans">
+                      <p className="font-bold text-[10px] uppercase text-slate-400 dark:text-slate-500 mb-0.5 tracking-wider flex items-center gap-1">
+                        <span>📝 Descrizione</span>
+                      </p>
+                      <p className="whitespace-pre-line text-[11px]">{selectedPlace.description}</p>
+                    </div>
+                  )}
+
+                  {selectedPlace.seasonalPrices && selectedPlace.seasonalPrices.length > 0 && (
+                    <div className="mt-2 p-2.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-xl border border-amber-200/70 dark:border-amber-900/40 text-xs">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold text-[10px] uppercase tracking-wider text-amber-900 dark:text-amber-300 flex items-center gap-1">
+                          <span>📅 Tariffe & Periodi</span>
+                        </span>
+                        <span className="text-[9px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded">
+                          {selectedPlace.seasonalPrices.length} {selectedPlace.seasonalPrices.length === 1 ? 'tariffa' : 'tariffe'}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {selectedPlace.seasonalPrices.map((sp, sIdx) => (
+                          <div
+                            key={sp.id || sIdx}
+                            className="bg-white/90 dark:bg-slate-800/90 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/30 flex items-start justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-800 dark:text-slate-100 text-[11px] truncate">
+                                {sp.period || "Tariffa"}
+                              </p>
+                              {sp.notes && (
+                                <p className="text-[9.5px] text-slate-500 dark:text-slate-400 italic leading-tight">
+                                  {sp.notes}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-black text-[#3E4A35] dark:text-emerald-400 text-xs">
+                                {sp.priceEuro > 0 ? `${sp.priceEuro}${getCurrencySymbol(settings)}` : "Gratuito"}
+                              </span>
+                              {sp.unit && (
+                                <span className="text-[9px] text-slate-400 block -mt-0.5">
+                                  {sp.unit}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   {selectedPlace.phone && (
@@ -5884,7 +6145,7 @@ out center;`;
               <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs">
                 <div className="text-center">
                   <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                    Rumorosità
+                    Silenziosità
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.noiseLevel || 3}/5
@@ -6196,7 +6457,7 @@ out center;`;
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Rumorosità (1-5)
+                      Silenziosità (1-5)
                     </label>
                     <div className="flex gap-1">
                       {[1, 2, 3, 4, 5].map((val) => (
@@ -6543,6 +6804,57 @@ out center;`;
                   )}
                 </div>
 
+                {selectedPlace.description && (
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 text-xs leading-relaxed font-sans mt-1">
+                    <p className="font-bold text-[10px] uppercase text-slate-400 dark:text-slate-400 mb-1 tracking-wider flex items-center gap-1">
+                      <span>📝 Descrizione</span>
+                    </p>
+                    <p className="whitespace-pre-line text-xs">{selectedPlace.description}</p>
+                  </div>
+                )}
+
+                {selectedPlace.seasonalPrices && selectedPlace.seasonalPrices.length > 0 && (
+                  <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 text-xs space-y-2 mt-1">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-[10.5px] uppercase text-amber-900 dark:text-amber-300 tracking-wider flex items-center gap-1.5">
+                        <span>📅 Tariffe per Periodo / Stagionalità</span>
+                      </p>
+                      <span className="text-[10px] bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded-full font-bold">
+                        {selectedPlace.seasonalPrices.length} {selectedPlace.seasonalPrices.length === 1 ? 'tariffa' : 'tariffe'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {selectedPlace.seasonalPrices.map((sp, sIdx) => (
+                        <div
+                          key={sp.id || sIdx}
+                          className="bg-white dark:bg-slate-800/90 p-2 rounded-xl border border-amber-100 dark:border-amber-900/30 flex items-start justify-between gap-2 shadow-2xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-800 dark:text-slate-100 text-xs">
+                              {sp.period || "Tariffa"}
+                            </p>
+                            {sp.notes && (
+                              <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                {sp.notes}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="font-black text-[#3E4A35] dark:text-emerald-400 text-sm">
+                              {sp.priceEuro > 0 ? `${sp.priceEuro}${getCurrencySymbol(settings)}` : "Gratuito"}
+                            </span>
+                            {sp.unit && (
+                              <span className="text-[10px] text-slate-400 block -mt-0.5">
+                                {sp.unit}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {selectedPlace.id === "current_location" && (
                   <div className="mt-4 p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2.5">
@@ -6591,7 +6903,7 @@ out center;`;
               <div className="grid grid-cols-3 gap-y-3 gap-x-2 my-4 p-4 bg-slate-200 dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-xs">
                 <div className="text-center">
                   <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                    Rumorosità
+                    Silenziosità
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
                     {selectedPlace.noiseLevel || 3}/5
@@ -7100,7 +7412,7 @@ out center;`;
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Rumorosità (1-5)
+                        Silenziosità (1-5)
                       </label>
                       <div className="flex gap-1">
                         {[1, 2, 3, 4, 5].map((val) => (
@@ -7897,43 +8209,393 @@ out center;`;
                 />
               </div>
 
-              {/* Pricing options */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
-                    Tariffa (Testo)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={`Es: 15${getCurrencySymbol(settings)}/giorno con elettricità`}
-                    value={newPlaceForm.priceInfo || ""}
-                    onChange={(e) =>
-                      setNewPlaceForm((prev) => ({
-                        ...prev,
-                        priceInfo: e.target.value,
-                      }))
-                    }
-                    className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-slate-800"
-                  />
+              {/* Descrizione della sosta */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 flex items-center justify-between">
+                  <span>Descrizione</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Opzionale ma consigliata</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Descrivi la sosta: accesso, fondo stradale, panorama, quiete, servizi o consigli utili per la sosta in camper..."
+                  value={newPlaceForm.description || ""}
+                  onChange={(e) =>
+                    setNewPlaceForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 outline-none focus:border-[#3E4A35] transition-all text-slate-800 resize-none placeholder:text-slate-400 text-xs"
+                />
+              </div>
+
+              {/* Prezzi e Tariffe stagionali / differenziate */}
+              <div className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-3">
+                <input
+                  type="file"
+                  ref={tariffFileInputRef}
+                  onChange={handleTariffPhotoUpload}
+                  className="hidden"
+                  accept="image/*"
+                />
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">💰</span>
+                    <span className="font-extrabold text-xs text-slate-800">Tariffe e Prezzi per Periodo</span>
+                  </div>
+                  <span className="text-[10px] bg-[#5A6B4E]/15 text-[#3E4A35] font-bold px-2 py-0.5 rounded-full">
+                    {newPlaceForm.seasonalPrices.length > 0
+                      ? `${newPlaceForm.seasonalPrices.length} ${newPlaceForm.seasonalPrices.length === 1 ? "tariffa definita" : "tariffe definite"}`
+                      : "Tariffa Unica / Gratuito"}
+                  </span>
                 </div>
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
-                    Prezzo Numerico ({getCurrencySymbol(settings)}/notte)
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Es: 15"
-                    value={
-                      newPlaceForm.priceEuro === 0 ? "" : newPlaceForm.priceEuro
-                    }
-                    onChange={(e) =>
-                      setNewPlaceForm((prev) => ({
-                        ...prev,
-                        priceEuro: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                    className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-slate-800"
-                  />
+
+                {/* AI Photo Tariff Scanner Card */}
+                <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50/40 to-slate-50 rounded-xl border border-emerald-200/80 shadow-2xs space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 bg-emerald-700 text-white rounded-lg shrink-0 mt-0.5 shadow-2xs">
+                        <ScanLine className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                          <span>Scansione Tariffario da Foto (AI)</span>
+                          <span className="text-[9.5px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded uppercase tracking-wider">
+                            Novità
+                          </span>
+                        </h4>
+                        <p className="text-[10.5px] text-slate-600 leading-snug mt-0.5">
+                          Fotografa o carica l'immagine del cartello/tabella prezzi dell'area sosta: l'AI compilerà automaticamente tariffe, periodi e servizi!
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                      <button
+                        type="button"
+                        disabled={isScanningTariffPhoto}
+                        onClick={() => tariffFileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-[#3E4A35] hover:bg-[#3E4A35]/90 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isScanningTariffPhoto ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Analisi foto in corso...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Camera className="w-3.5 h-3.5" />
+                            <span>Fotografa / Carica Cartello</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Active Scanning Animation */}
+                  {isScanningTariffPhoto && (
+                    <div className="p-2.5 bg-white/90 rounded-lg border border-emerald-300/80 flex items-center gap-2.5 text-xs text-emerald-900 animate-pulse">
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="font-bold text-[11px]">Lettura e interpretazione AI del cartello prezzi...</p>
+                        <p className="text-[10px] text-slate-500">Rilevamento alta/bassa stagione, tariffe 24h, allaccio 220V e servizi.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Success Message Banner */}
+                  {tariffScanResultMsg && !isScanningTariffPhoto && (
+                    <div className="p-2 bg-emerald-100/90 rounded-lg border border-emerald-300 text-[11px] text-emerald-900 font-semibold flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        <span>{tariffScanResultMsg}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setTariffScanResultMsg(null)}
+                        className="text-emerald-700 hover:text-emerald-900 text-xs font-bold cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Base pricing options */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-700 text-xs flex items-center justify-between">
+                      <span>Tariffa Principale / Sintesi</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Es. Gratuito, Da 15€ a 25€</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={`Es: 15${getCurrencySymbol(settings)}/notte o Gratuito`}
+                      value={newPlaceForm.priceInfo || ""}
+                      onChange={(e) =>
+                        setNewPlaceForm((prev) => ({
+                          ...prev,
+                          priceInfo: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-slate-800 text-xs outline-none focus:border-[#3E4A35]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-700 text-xs flex items-center justify-between">
+                      <span>Prezzo Base Indicativo ({getCurrencySymbol(settings)}/notte)</span>
+                      <span className="text-[9px] text-slate-400 font-normal">0 se gratuito</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      placeholder="Es: 15"
+                      value={
+                        newPlaceForm.priceEuro === 0 ? "" : newPlaceForm.priceEuro
+                      }
+                      onChange={(e) =>
+                        setNewPlaceForm((prev) => ({
+                          ...prev,
+                          priceEuro: parseFloat(e.target.value) || 0,
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-slate-800 text-xs outline-none focus:border-[#3E4A35]"
+                    />
+                  </div>
+                </div>
+
+                {/* Seasonal list builder */}
+                <div className="pt-2 border-t border-slate-200/70 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                    <div>
+                      <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                        <span>📅 Listino prezzi stagionali & periodi</span>
+                      </p>
+                      <p className="text-[10.5px] text-slate-500">
+                        Aggiungi i prezzi se variano in base alla stagione (alta/bassa), al weekend o ai singoli servizi.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewPlaceForm((prev) => ({
+                          ...prev,
+                          seasonalPrices: [
+                            ...prev.seasonalPrices,
+                            {
+                              id: `sp_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+                              period: "",
+                              priceEuro: 0,
+                              unit: "a notte (24h)",
+                              notes: "",
+                            },
+                          ],
+                        }));
+                      }}
+                      className="self-start sm:self-auto px-2.5 py-1.5 bg-[#3E4A35] hover:bg-[#3E4A35]/90 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Aggiungi periodo</span>
+                    </button>
+                  </div>
+
+                  {/* Quick presets buttons */}
+                  <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                    <span className="text-slate-400 font-semibold mr-0.5">Suggeriti:</span>
+                    {[
+                      { label: "🌞 Alta Stagione (Lug-Ago)", period: "Alta Stagione (Luglio - Agosto)", price: 22, unit: "a notte (24h)" },
+                      { label: "🍂 Media Stagione (Giu, Sett)", period: "Media Stagione (Giugno, Settembre)", price: 18, unit: "a notte (24h)" },
+                      { label: "❄️ Bassa Stagione (Inverno)", period: "Bassa Stagione (Ottobre - Maggio)", price: 12, unit: "a notte (24h)" },
+                      { label: "🗓️ Weekend e Festivi", period: "Weekend e Ponti Festivi", price: 20, unit: "a notte (24h)" },
+                      { label: "💧 Solo Carico/Scarico", period: "Solo Servizio C/S", price: 5, unit: "a sosta" },
+                      { label: "⚡ Allaccio Luce 220V", period: "Allaccio Elettricità 220V", price: 3, unit: "al giorno" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.period}
+                        type="button"
+                        onClick={() => {
+                          setNewPlaceForm((prev) => {
+                            const alreadyExists = prev.seasonalPrices.some(
+                              (p) => p.period.toLowerCase() === preset.period.toLowerCase()
+                            );
+                            if (alreadyExists) return prev;
+                            return {
+                              ...prev,
+                              seasonalPrices: [
+                                ...prev.seasonalPrices,
+                                {
+                                  id: `sp_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+                                  period: preset.period,
+                                  priceEuro: preset.price,
+                                  unit: preset.unit,
+                                  notes: "",
+                                },
+                              ],
+                            };
+                          });
+                        }}
+                        className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-md text-slate-700 hover:text-slate-900 transition-all font-medium cursor-pointer"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* List of added seasonal prices */}
+                  {newPlaceForm.seasonalPrices.length > 0 ? (
+                    <div className="space-y-2 pt-1">
+                      {newPlaceForm.seasonalPrices.map((sp, idx) => (
+                        <div
+                          key={sp.id || idx}
+                          className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2 transition-all hover:border-[#3E4A35]/50"
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                            <div className="sm:col-span-5 space-y-0.5">
+                              <label className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+                                Periodo / Nome Tariffa
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Es. Alta Stagione (Lug-Ago)"
+                                value={sp.period}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setNewPlaceForm((prev) => ({
+                                    ...prev,
+                                    seasonalPrices: prev.seasonalPrices.map((item, i) =>
+                                      i === idx ? { ...item, period: val } : item
+                                    ),
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 font-semibold outline-none focus:border-[#3E4A35]"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-3 space-y-0.5">
+                              <label className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+                                Prezzo ({getCurrencySymbol(settings)})
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder="0"
+                                value={sp.priceEuro === 0 ? "" : sp.priceEuro}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setNewPlaceForm((prev) => ({
+                                    ...prev,
+                                    seasonalPrices: prev.seasonalPrices.map((item, i) =>
+                                      i === idx ? { ...item, priceEuro: val } : item
+                                    ),
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 font-bold outline-none focus:border-[#3E4A35]"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-3 space-y-0.5">
+                              <label className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+                                Unità / Frequenza
+                              </label>
+                              <select
+                                value={sp.unit || "a notte (24h)"}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setNewPlaceForm((prev) => ({
+                                    ...prev,
+                                    seasonalPrices: prev.seasonalPrices.map((item, i) =>
+                                      i === idx ? { ...item, unit: val } : item
+                                    ),
+                                  }));
+                                }}
+                                className="w-full px-2 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-[11px] text-slate-800 font-medium outline-none focus:border-[#3E4A35]"
+                              >
+                                <option value="a notte (24h)">a notte (24h)</option>
+                                <option value="al giorno">al giorno</option>
+                                <option value="a persona">a persona</option>
+                                <option value="a sosta">a sosta</option>
+                                <option value="a gettone / ora">a gettone / ora</option>
+                                <option value="a consumo">a consumo</option>
+                              </select>
+                            </div>
+
+                            <div className="sm:col-span-1 flex items-center justify-end pt-1 sm:pt-4">
+                              <button
+                                type="button"
+                                title="Rimuovi questa tariffa"
+                                onClick={() => {
+                                  setNewPlaceForm((prev) => ({
+                                    ...prev,
+                                    seasonalPrices: prev.seasonalPrices.filter((_, i) => i !== idx),
+                                  }));
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-0.5">
+                            <input
+                              type="text"
+                              placeholder="Note opzionali: es. Luce inclusa, C/S incluso, docce 1€, minimo 2 notti..."
+                              value={sp.notes || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setNewPlaceForm((prev) => ({
+                                  ...prev,
+                                  seasonalPrices: prev.seasonalPrices.map((item, i) =>
+                                    i === idx ? { ...item, notes: val } : item
+                                  ),
+                                }));
+                              }}
+                              className="w-full px-2.5 py-1 bg-slate-50/70 rounded-lg border border-slate-200/80 text-[10.5px] text-slate-600 outline-none focus:border-[#3E4A35]"
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Sync helper */}
+                      <div className="flex flex-wrap items-center justify-between gap-1 pt-1">
+                        <p className="text-[10px] text-slate-500">
+                          💡 I prezzi stagionali saranno visibili nella scheda dettagli della sosta.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nightPrices = newPlaceForm.seasonalPrices
+                              .filter((p) => (p.unit || "").includes("notte") || !p.unit)
+                              .map((p) => p.priceEuro)
+                              .filter((p) => p > 0);
+                            const allPrices = nightPrices.length > 0 
+                              ? nightPrices 
+                              : newPlaceForm.seasonalPrices.map((p) => p.priceEuro).filter((p) => p > 0);
+                            
+                            if (allPrices.length > 0) {
+                              const min = Math.min(...allPrices);
+                              const max = Math.max(...allPrices);
+                              const text =
+                                min === max
+                                  ? `${min}${getCurrencySymbol(settings)}/notte`
+                                  : `Da ${min} a ${max}${getCurrencySymbol(settings)}/notte`;
+                              setNewPlaceForm((prev) => ({
+                                ...prev,
+                                priceInfo: text,
+                                priceEuro: min,
+                              }));
+                            }
+                          }}
+                          className="text-[10.5px] font-bold text-[#3E4A35] hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>Aggiorna sintesi tariffa</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -7990,7 +8652,7 @@ out center;`;
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <label className="font-bold text-slate-700 text-xs">
-                    Rumorosità (1-5)
+                    Silenziosità (1-5)
                   </label>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((val) => (

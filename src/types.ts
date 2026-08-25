@@ -122,6 +122,14 @@ export interface PlaceOccupancyReport {
   reportedBy?: string;
 }
 
+export interface PlaceSeasonalPrice {
+  id?: string;
+  period: string; // e.g. "Alta Stagione (Lug-Ago)", "Bassa Stagione", "Weekend", "Solo C/S"
+  priceEuro: number; // e.g. 20
+  unit?: string; // e.g. "a notte (24h)", "al giorno", "a persona", "a sosta"
+  notes?: string; // e.g. "Elettricità inclusa", "Docce 1€"
+}
+
 export interface Place {
   id: string;
   name: string;
@@ -130,8 +138,10 @@ export interface Place {
   lat: number;
   lng: number;
   address: string;
+  description?: string;
   priceInfo: string;
   priceEuro: number; // For interactive editing
+  seasonalPrices?: PlaceSeasonalPrice[];
   rating: number;
   noiseLevel?: number;
   maneuverability?: number;

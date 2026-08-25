@@ -144,6 +144,7 @@ import {
   Terminal,
   Bot,
   Copy,
+  Navigation,
 } from "lucide-react";
 
 import { ClientFirestoreAdapter } from "./client-firestore";
@@ -1379,6 +1380,8 @@ export default function App() {
 
   // AI POI Discovery States
   const [aiProvince, setAiProvince] = React.useState("");
+  const [aiSearchCoords, setAiSearchCoords] = React.useState<{ lat: number; lng: number } | null>(null);
+  const [isAiLocatingGPS, setIsAiLocatingGPS] = React.useState(false);
   const [aiPlacesLoading, setAiPlacesLoading] = React.useState(false);
   const [aiDiscoveredPlaces, setAiDiscoveredPlaces] = React.useState<any[]>([]);
   const [editingPlace, setEditingPlace] = React.useState<any | null>(null);
@@ -1841,11 +1844,93 @@ export default function App() {
   }, [toastMessage]);
 
   // --- ADMIN MODERATION HANDLERS ---
-  const handleAiPoiDiscovery = async () => {
-    if (!aiProvince.trim()) {
+  const handleDetectGPSForAiBulk = () => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
       window.dispatchEvent(
         new CustomEvent("show-toast", {
-          detail: { message: "⚠️ Inserisci una provincia valida." },
+          detail: { message: "⚠️ Geolocation non supportata dal tuo browser o dispositivo." },
+        }),
+      );
+      return;
+    }
+
+    setIsAiLocatingGPS(true);
+
+    const resolveCoords = async (lat: number, lng: number) => {
+      setAiSearchCoords({ lat, lng });
+      try {
+        const res = await fetch(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`);
+        if (res.ok) {
+          const data = await res.json();
+          const addr = data?.address || {};
+          const locality =
+            addr.city ||
+            addr.town ||
+            addr.village ||
+            addr.municipality ||
+            addr.county ||
+            addr.state ||
+            "";
+          const county = addr.county || addr.state || "";
+
+          let formattedName = locality;
+          if (locality && county && locality !== county) {
+            formattedName = `${locality} (${county})`;
+          } else if (!formattedName) {
+            formattedName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+
+          setAiProvince(formattedName);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `📍 Posizione GPS rilevata: ${formattedName}` },
+            }),
+          );
+        } else {
+          setAiProvince(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        }
+      } catch (err) {
+        console.warn("Reverse geocode error in AI bulk discovery:", err);
+        setAiProvince(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      } finally {
+        setIsAiLocatingGPS(false);
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolveCoords(pos.coords.latitude, pos.coords.longitude);
+      },
+      (err) => {
+        console.warn("GPS error in AI Discovery:", err);
+        if (userLocation) {
+          resolveCoords(userLocation.lat, userLocation.lng);
+        } else {
+          setIsAiLocatingGPS(false);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: "⚠️ Impossibile rilevare la posizione GPS. Verifica i permessi di localizzazione.",
+              },
+            }),
+          );
+        }
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  };
+
+  const handleAiPoiDiscovery = async (
+    overrideProvince?: string,
+    overrideCoords?: { lat: number; lng: number } | null
+  ) => {
+    const targetProvince = (overrideProvince !== undefined ? overrideProvince : aiProvince).trim();
+    const targetCoords = overrideCoords !== undefined ? overrideCoords : aiSearchCoords;
+
+    if (!targetProvince && !targetCoords) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⚠️ Inserisci una provincia/località oppure clicca su Rileva GPS." },
         }),
       );
       return;
@@ -1856,16 +1941,21 @@ export default function App() {
       const res = await fetch("/api/admin/generate-province-places", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ province: aiProvince }),
+        body: JSON.stringify({
+          province: targetProvince,
+          lat: targetCoords?.lat,
+          lng: targetCoords?.lng,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         if (data.places) {
           setAiDiscoveredPlaces(data.places);
+          const locationLabel = targetProvince || (targetCoords ? `GPS (${targetCoords.lat.toFixed(3)}, ${targetCoords.lng.toFixed(3)})` : "area selezionata");
           if (data.isFallback) {
             const msg = data.isOSM
-              ? `🌍 Caricate ${data.places.length} aree REALI da OpenStreetMap per ${aiProvince} (Quota giornaliera IA esaurita)`
-              : `⚠️ Caricate ${data.places.length} aree consigliate per ${aiProvince} (limite IA raggiunto)`;
+              ? `🌍 Caricate ${data.places.length} aree REALI da OpenStreetMap per ${locationLabel} (Quota giornaliera IA esaurita)`
+              : `⚠️ Caricate ${data.places.length} aree consigliate per ${locationLabel} (limite IA raggiunto)`;
             window.dispatchEvent(
               new CustomEvent("show-toast", { detail: { message: msg } }),
             );
@@ -1873,7 +1963,7 @@ export default function App() {
             window.dispatchEvent(
               new CustomEvent("show-toast", {
                 detail: {
-                  message: `✅ Trovate ${data.places.length} aree sosta via IA!`,
+                  message: `✅ Trovate ${data.places.length} aree sosta via IA per ${locationLabel}!`,
                 },
               }),
             );
@@ -7199,6 +7289,50 @@ out center;`;
                                 </div>
                               )}
 
+                              {/* Description if present */}
+                              {p.description && (
+                                <div className="w-full bg-white p-2.5 rounded-lg border border-slate-200 text-slate-700 text-xs mt-1">
+                                  <span className="font-bold text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">
+                                    📝 Descrizione:
+                                  </span>
+                                  <p className="whitespace-pre-line text-[11px] leading-relaxed">
+                                    {p.description}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Seasonal prices list if present */}
+                              {p.seasonalPrices && p.seasonalPrices.length > 0 && (
+                                <div className="w-full bg-amber-50/80 p-2.5 rounded-lg border border-amber-200/80 text-xs mt-1">
+                                  <span className="font-bold text-[9px] uppercase tracking-wider text-amber-900 block mb-1">
+                                    📅 Listino Prezzi / Stagionalità ({p.seasonalPrices.length}):
+                                  </span>
+                                  <div className="space-y-1">
+                                    {p.seasonalPrices.map((sp: any, spIdx: number) => (
+                                      <div
+                                        key={spIdx}
+                                        className="flex justify-between items-center bg-white p-1.5 rounded border border-amber-100 text-[11px]"
+                                      >
+                                        <span className="font-semibold text-slate-800">
+                                          {sp.period}{" "}
+                                          {sp.notes ? (
+                                            <span className="text-slate-400 font-normal">
+                                              ({sp.notes})
+                                            </span>
+                                          ) : null}
+                                        </span>
+                                        <span className="font-black text-[#3E4A35]">
+                                          {sp.priceEuro > 0 ? `${sp.priceEuro}€` : "Gratis"}{" "}
+                                          <span className="text-[9px] text-slate-500 font-normal">
+                                            {sp.unit || ""}
+                                          </span>
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Facilities check pills list */}
                               {p.facilities && p.facilities.length > 0 && (
                                 <div className="w-full flex flex-wrap gap-1 mt-1">
@@ -8414,27 +8548,66 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                           Ricerca AI Bulk di Punti Sosta
                         </h4>
                         <p className="text-xs text-indigo-700/70 mt-1">
-                          Usa Gemini per cercare e importare massivamente aree
+                          Usa Gemini con Google Search Grounding per cercare e importare massivamente aree
                           di sosta, campeggi, parcheggi e camper service di
-                          un'intera provincia direttamente nel database.
+                          un'intera provincia o attorno alla tua posizione GPS direttamente nel database.
                         </p>
                       </div>
 
                       <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="text"
-                          value={aiProvince}
-                          onChange={(e) => setAiProvince(e.target.value)}
-                          placeholder="es. Siena, Roma, Trento..."
-                          className="flex-1 px-4 py-2.5 rounded-xl border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && handleAiPoiDiscovery()
-                          }
-                        />
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={aiProvince}
+                            onChange={(e) => {
+                              setAiProvince(e.target.value);
+                              if (aiSearchCoords) setAiSearchCoords(null);
+                            }}
+                            placeholder="es. Siena, Roma, Trento oppure usa il GPS..."
+                            className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-indigo-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && handleAiPoiDiscovery()
+                            }
+                          />
+                          {aiProvince && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAiProvince("");
+                                setAiSearchCoords(null);
+                              }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                              title="Cancella campo"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
                         <button
-                          onClick={handleAiPoiDiscovery}
-                          disabled={aiPlacesLoading || !aiProvince.trim()}
-                          className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto"
+                          type="button"
+                          onClick={handleDetectGPSForAiBulk}
+                          disabled={isAiLocatingGPS || aiPlacesLoading}
+                          title="Rileva in automatico la posizione GPS attuale"
+                          className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:bg-emerald-300 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap shadow-xs disabled:cursor-not-allowed"
+                        >
+                          {isAiLocatingGPS ? (
+                            <>
+                              <span className="animate-spin text-sm leading-none">⏳</span>
+                              <span>Rilevamento GPS...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Navigation className="w-4 h-4 fill-white/20" />
+                              <span>Rileva GPS</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => handleAiPoiDiscovery()}
+                          disabled={aiPlacesLoading || (!aiProvince.trim() && !aiSearchCoords)}
+                          className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:bg-indigo-300 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto shadow-xs disabled:cursor-not-allowed"
                         >
                           {aiPlacesLoading ? (
                             <span className="animate-spin text-lg leading-none">
@@ -8448,6 +8621,15 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                             : "Cerca Punti Sosta"}
                         </button>
                       </div>
+
+                      {aiSearchCoords && (
+                        <div className="flex items-center gap-2 text-[11px] text-emerald-800 bg-emerald-50/90 px-3 py-1.5 rounded-xl border border-emerald-200">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="font-medium">
+                            Coordinate GPS fissate: <strong>{aiSearchCoords.lat.toFixed(5)}°, {aiSearchCoords.lng.toFixed(5)}°</strong> (raggio 25-30 km)
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {aiImportedSuccessList.length > 0 && (
