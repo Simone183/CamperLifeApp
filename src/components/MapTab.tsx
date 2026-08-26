@@ -2863,6 +2863,7 @@ out center;`;
         console.error("Error compressing file:", err);
       }
     }
+    event.target.value = "";
   };
 
   const autoLoadOSMForProximity = async (
@@ -8599,53 +8600,23 @@ out center;`;
                 </div>
               </div>
 
-              {/* Optional Fields (Phone & Image URL) */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
-                    Telefono (Opzionale)
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="Es. +39 333 123456"
-                    value={newPlaceForm.phone || ""}
-                    onChange={(e) =>
-                      setNewPlaceForm((prev) => ({
-                        ...prev,
-                        phone: e.target.value,
-                      }))
-                    }
-                    className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-slate-800"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-700">
-                    Carica immagine
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        document.getElementById("image-upload")?.click()
-                      }
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                    >
-                      Scegli file...
-                    </button>
-                    <input
-                      id="image-upload"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleNewPlaceImageUpload}
-                      className="hidden"
-                    />
-                    <span className="text-[10px] text-slate-400 truncate max-w-[150px]">
-                      {newPlaceForm.imageUrl.startsWith("data:")
-                        ? "Immagine caricata"
-                        : "Nessun file"}
-                    </span>
-                  </div>
-                </div>
+              {/* Optional Field: Telefono */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700">
+                  Telefono (Opzionale)
+                </label>
+                <input
+                  type="tel"
+                  placeholder="Es. +39 333 123456"
+                  value={newPlaceForm.phone || ""}
+                  onChange={(e) =>
+                    setNewPlaceForm((prev) => ({
+                      ...prev,
+                      phone: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-slate-800 text-xs outline-none focus:border-[#3E4A35]"
+                />
               </div>
 
               {/* Rating Fields */}
@@ -8958,6 +8929,141 @@ out center;`;
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Sezione Carica Immagine (In fondo alla pagina) */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-[#3E4A35]/10 text-[#3E4A35] rounded-lg">
+                      <Camera className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-800 text-xs block">
+                        Foto della Sosta
+                      </label>
+                      <p className="text-[10px] text-slate-500">
+                        Opzionale • Scatta una foto dal vivo o sceglila dalla galleria
+                      </p>
+                    </div>
+                  </div>
+                  {newPlaceForm.imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewPlaceForm((prev) => ({
+                          ...prev,
+                          imageUrl: "",
+                        }))
+                      }
+                      className="text-[10.5px] text-red-600 hover:text-red-700 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Rimuovi</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Hidden File Inputs for Camera and Gallery */}
+                <input
+                  id="new-place-camera-input"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleNewPlaceImageUpload}
+                  className="hidden"
+                />
+                <input
+                  id="new-place-gallery-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleNewPlaceImageUpload}
+                  className="hidden"
+                />
+
+                {newPlaceForm.imageUrl ? (
+                  <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+                    <img
+                      src={newPlaceForm.imageUrl}
+                      alt="Anteprima sosta"
+                      referrerPolicy="no-referrer"
+                      className="w-16 h-16 object-cover rounded-lg border border-slate-200 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                        <span>Foto pronta per l'invio</span>
+                      </p>
+                      <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                        Immagine allegata alla proposta
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            document.getElementById("new-place-camera-input")?.click()
+                          }
+                          className="text-[11px] font-bold text-[#3E4A35] hover:text-[#5A6B4E] bg-[#3E4A35]/10 hover:bg-[#3E4A35]/15 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>Scatta di nuovo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            document.getElementById("new-place-gallery-input")?.click()
+                          }
+                          className="text-[11px] font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Image className="w-3 h-3 text-slate-500" />
+                          <span>Galleria</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        document.getElementById("new-place-camera-input")?.click()
+                      }
+                      className="py-3 px-3.5 bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-500/50 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer text-slate-700 hover:text-emerald-900 group shadow-xs active:scale-[0.98]"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-emerald-100/70 text-emerald-700 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+                        <Camera className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs font-bold block leading-tight">
+                          Scatta Foto
+                        </span>
+                        <span className="text-[10px] text-slate-400 block leading-tight">
+                          Usa la fotocamera
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        document.getElementById("new-place-gallery-input")?.click()
+                      }
+                      className="py-3 px-3.5 bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-500/50 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer text-slate-700 hover:text-indigo-900 group shadow-xs active:scale-[0.98]"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-indigo-100/70 text-indigo-700 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+                        <Image className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs font-bold block leading-tight">
+                          Dalla Galleria
+                        </span>
+                        <span className="text-[10px] text-slate-400 block leading-tight">
+                          Scegli file dal telefono
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

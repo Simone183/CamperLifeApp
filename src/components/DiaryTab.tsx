@@ -1110,6 +1110,7 @@ export default function DiaryTab({
     if (e.target.files && e.target.files.length > 0) {
       await processAndUploadFiles(e.target.files);
     }
+    e.target.value = "";
   };
 
   // Add Photo with description handler
@@ -2310,15 +2311,68 @@ export default function DiaryTab({
                           className="p-4 bg-stone-50 rounded-xl border border-stone-100 space-y-3 font-sans"
                         >
                           {/* Intestazione Caricamento Foto */}
-                          <div className="flex gap-2.5 items-center pb-2 border-b border-stone-150 flex-wrap">
-                            <span className="text-[10.5px] font-black pb-1.5 border-b-2 text-[#3E4A35] border-[#3E4A35] flex items-center gap-1">
-                              <Upload className="w-3.5 h-3.5" />
-                              Carica foto 📷
+                          <div className="flex justify-between items-center pb-2 border-b border-stone-150 flex-wrap gap-2">
+                            <span className="text-[10.5px] font-black text-[#3E4A35] flex items-center gap-1.5">
+                              <Camera className="w-3.5 h-3.5" />
+                              Aggiungi Foto al Diario
                             </span>
+                            {(uploadedImages.length > 0 || uploadedImageUrl) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setUploadedImages([]);
+                                  setUploadedImageUrl("");
+                                }}
+                                className="text-[10px] font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Rimuovi tutte</span>
+                              </button>
+                            )}
                           </div>
 
+                          {/* Hidden File Inputs for Camera and Gallery/Files */}
+                          <input
+                            id="diary-camera-input"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleFileInputChange}
+                            className="hidden"
+                          />
+                          <input
+                            id="diary-file-input"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleFileInputChange}
+                            className="hidden"
+                          />
+
                           {photoType === "upload" && (
-                            <div className="space-y-2">
+                            <div className="space-y-2.5">
+                              {/* Pulsante Scatta Foto Diretta */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  document.getElementById("diary-camera-input")?.click()
+                                }
+                                className="w-full py-2.5 px-3 bg-white hover:bg-emerald-50/60 border border-slate-200 hover:border-emerald-500/50 rounded-xl flex items-center justify-center gap-2.5 transition cursor-pointer text-slate-700 hover:text-emerald-900 group shadow-xs active:scale-[0.99]"
+                              >
+                                <div className="w-7 h-7 rounded-lg bg-emerald-100/70 text-emerald-700 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+                                  <Camera className="w-4 h-4" />
+                                </div>
+                                <div className="text-left">
+                                  <span className="text-xs font-bold block leading-tight">
+                                    Scatta Foto
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block leading-tight">
+                                    Usa direttamente la fotocamera
+                                  </span>
+                                </div>
+                              </button>
+
+                              {/* Drag & Drop zone / Sfoglia file / Previews */}
                               <div
                                 onDragEnter={handleDrag}
                                 onDragOver={handleDrag}
@@ -2329,35 +2383,26 @@ export default function DiaryTab({
                                     .getElementById("diary-file-input")
                                     ?.click()
                                 }
-                                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[110px] relative ${
+                                className={`border-2 border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[95px] relative ${
                                   dragActive
                                     ? "border-[#3E4A35] bg-[#3E4A35]/5 scale-[0.99]"
                                     : (uploadedImages.length > 0 || uploadedImageUrl)
-                                      ? "border-emerald-500/50 bg-emerald-50/10"
+                                      ? "border-emerald-500/50 bg-emerald-50/15"
                                       : "border-slate-200 hover:border-[#3E4A35]/40 hover:bg-slate-50/50"
                                 }`}
                               >
-                                <input
-                                  id="diary-file-input"
-                                  type="file"
-                                  accept="image/*"
-                                  multiple
-                                  onChange={handleFileInputChange}
-                                  className="hidden"
-                                />
-
                                 {isUploading ? (
                                   <div className="space-y-2 flex flex-col items-center">
                                     <Loader2 className="w-6 h-6 text-[#3E4A35] animate-spin" />
                                     <p className="text-[10px] text-slate-500 font-bold font-sans">
-                                      Caricamento in corso...
+                                      Elaborazione e compressione foto in corso...
                                     </p>
                                   </div>
                                 ) : uploadedImages.length > 0 ? (
-                                  <div className="space-y-2 w-full">
-                                    <div className="grid grid-cols-4 gap-2 max-h-[150px] overflow-y-auto p-1">
+                                  <div className="space-y-2.5 w-full">
+                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-[160px] overflow-y-auto p-1">
                                       {uploadedImages.map((img, idx) => (
-                                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-500/50 shadow-xs group">
+                                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-500/50 shadow-xs group bg-slate-100">
                                           <img
                                             src={img.url}
                                             alt={img.name}
@@ -2368,8 +2413,8 @@ export default function DiaryTab({
                                                 : undefined
                                             }
                                           />
-                                          <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
-                                            <span className="text-white text-[9px] font-black bg-emerald-600/80 rounded-full w-4 h-4 flex items-center justify-center">
+                                          <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center pointer-events-none">
+                                            <span className="text-white text-[9px] font-black bg-emerald-600/90 rounded-full w-4 h-4 flex items-center justify-center shadow-xs">
                                               ✓
                                             </span>
                                           </div>
@@ -2393,16 +2438,40 @@ export default function DiaryTab({
                                         </div>
                                       ))}
                                     </div>
-                                    <p className="text-[10px] text-emerald-600 font-black">
-                                      {uploadedImages.length} {uploadedImages.length === 1 ? 'foto caricata' : 'foto caricate'} con successo!
-                                    </p>
-                                    <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
-                                      Carica altre foto
-                                    </p>
+                                    <div className="flex items-center justify-between px-1 flex-wrap gap-1">
+                                      <p className="text-[10px] text-emerald-700 font-bold">
+                                        ✓ {uploadedImages.length} {uploadedImages.length === 1 ? 'foto pronta' : 'foto pronte'} per il diario
+                                      </p>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            document.getElementById("diary-camera-input")?.click();
+                                          }}
+                                          className="text-[10px] text-[#3E4A35] font-bold hover:underline flex items-center gap-0.5"
+                                        >
+                                          <Camera className="w-2.5 h-2.5" />
+                                          Scatta altra
+                                        </button>
+                                        <span className="text-slate-300">•</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            document.getElementById("diary-file-input")?.click();
+                                          }}
+                                          className="text-[10px] text-indigo-700 font-bold hover:underline flex items-center gap-0.5"
+                                        >
+                                          <ImageIcon className="w-2.5 h-2.5" />
+                                          Sfoglia altre
+                                        </button>
+                                      </div>
+                                    </div>
                                   </div>
                                 ) : uploadedImageUrl ? (
-                                  <div className="space-y-1.5 flex flex-col items-center">
-                                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-emerald-500 shadow-xs">
+                                  <div className="space-y-2 flex flex-col items-center">
+                                    <div className="relative w-16 h-14 rounded-lg overflow-hidden border border-emerald-500 shadow-xs">
                                       <img
                                         src={uploadedImageUrl}
                                         alt="Preview"
@@ -2414,29 +2483,26 @@ export default function DiaryTab({
                                         }
                                       />
                                       <div className="absolute inset-0 bg-emerald-500/25 flex items-center justify-center">
-                                        <span className="text-white text-[9px] font-black">
+                                        <span className="text-white text-[9px] font-black bg-emerald-600/90 rounded-full w-4 h-4 flex items-center justify-center">
                                           ✓
                                         </span>
                                       </div>
                                     </div>
-                                    <p className="text-[10px] text-emerald-600 font-black">
-                                      Foto caricata con successo!
-                                    </p>
-                                    <p className="text-[9px] text-[#3E4A35] underline cursor-pointer font-bold">
-                                      Cambia foto
+                                    <p className="text-[10px] text-emerald-700 font-bold">
+                                      Foto caricata e pronta per il salvataggio!
                                     </p>
                                   </div>
                                 ) : (
-                                  <div className="space-y-1">
+                                  <div className="space-y-1 py-1">
                                     <Upload className="w-5 h-5 text-slate-400 mx-auto" />
                                     <p className="text-[10.5px] text-slate-600 font-bold">
-                                      Trascina qui le foto dallo smartphone/PC o{" "}
+                                      Oppure trascina qui le foto o{" "}
                                       <span className="text-[#3E4A35] underline font-bold">
-                                        sfoglia
+                                        sfoglia i file
                                       </span>
                                     </p>
                                     <p className="text-[9px] text-slate-400">
-                                      PNG, JPG, WEBP fino a 15MB
+                                      PNG, JPG, WEBP fino a 15MB con compressione automatica
                                     </p>
                                   </div>
                                 )}
