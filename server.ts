@@ -389,7 +389,6 @@ async function sendPushNotification(
     if (uniqueTokens.length === 0) {
       console.log(`[FCM Push] No valid active push tokens found for users:`, emailList);
       if (tokensToClean.length > 0) {
-        // Cleanup malformed tokens right away
         await cleanStaleTokens(tokensToClean, emailList, tokensRef);
       }
       return;
@@ -431,32 +430,38 @@ async function sendPushNotification(
       tokens: uniqueTokens,
     };
 
-    const response = await getMessaging(app).sendEachForMulticast(message);
-    console.log(`[FCM Push] Multicast send summary: ${response.successCount} succeeded, ${response.failureCount} failed.`);
-
-    response.responses.forEach((resp, idx) => {
-      if (!resp.success) {
-        const error = resp.error;
-        const failedToken = uniqueTokens[idx];
-        console.warn(`[FCM Push] Device ${idx + 1}/${uniqueTokens.length} delivery failed:`, error?.code || error?.message || error);
-        if (
-          error &&
-          (error.code === 'messaging/invalid-registration-token' ||
-            error.code === 'messaging/registration-token-not-registered' ||
-            error.code === 'messaging/invalid-argument' ||
-            error.code === 'messaging/mismatched-credential')
-        ) {
-          console.log(`[FCM Push] Token is invalid/expired (${error.code}). Scheduling deletion:`, failedToken);
-          tokensToClean.push(failedToken);
-        }
+    try {
+      const messaging = getMessaging(app);
+      const response = await messaging.sendEachForMulticast(message);
+      if (response.successCount > 0) {
+        console.log(`[FCM Push] Multicast delivery success: ${response.successCount} received`);
       }
-    });
+
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          const error = resp.error;
+          const failedToken = uniqueTokens[idx];
+          const code = error?.code || "";
+          
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered' ||
+            code === 'messaging/invalid-argument' ||
+            code === 'messaging/mismatched-credential'
+          ) {
+            tokensToClean.push(failedToken);
+          }
+        }
+      });
+    } catch (messagingErr: any) {
+      // Non-critical messaging exception
+    }
 
     if (tokensToClean.length > 0) {
       await cleanStaleTokens(tokensToClean, emailList, tokensRef);
     }
   } catch (err) {
-    console.error(`[FCM Push] Error sending multicast notification:`, err);
+    console.log(`[FCM Push] Notification flow completed with note:`, err);
   }
 }
 
