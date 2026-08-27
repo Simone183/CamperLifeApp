@@ -52,6 +52,12 @@ jobs:
           if [ -f "android/gradlew" ]; then
             chmod +x android/gradlew
           fi
+          # Ensure gradle-wrapper.jar is valid binary, fetch if corrupted or missing
+          if [ ! -f "android/gradle/wrapper/gradle-wrapper.jar" ] || ! unzip -tq android/gradle/wrapper/gradle-wrapper.jar 2>/dev/null; then
+            echo "Repairing gradle-wrapper.jar..."
+            mkdir -p android/gradle/wrapper
+            curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.14.3/gradle/wrapper/gradle-wrapper.jar -o android/gradle/wrapper/gradle-wrapper.jar
+          fi
 
       - name: Build Android Bundle (AAB)
         run: |
