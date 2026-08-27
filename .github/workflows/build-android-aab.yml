@@ -47,6 +47,9 @@ jobs:
           fi
           npx --yes @capacitor/cli sync android
 
+      - name: Generate & Verify Clean Android Assets
+        run: node generate-assets.js
+
       - name: Grant Execute Permission for Gradlew
         run: |
           if [ -f "android/gradlew" ]; then

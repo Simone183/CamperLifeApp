@@ -1,0 +1,19 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Force binary files to never be altered or corrupted by Git line-ending conversions
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.aar binary
+*.so binary
+*.keystore binary
+*.jks binary
+*.aab binary
+*.apk binary
+*.zip binary
+*.tar.gz binary
