@@ -82,26 +82,37 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Prepare Named AAB Release File
+        id: prep_release
+        run: |
+          AAB_ORIGIN="${{ steps.find_aab.outputs.aab_path }}"
+          VERSION="${{ steps.find_aab.outputs.app_version }}"
+          NAMED_AAB="android/app/build/outputs/bundle/release/ViaCamper-v${VERSION}.aab"
+          cp "$AAB_ORIGIN" "$NAMED_AAB"
+          echo "named_aab=$NAMED_AAB" >> $GITHUB_OUTPUT
+
       - name: Upload AAB to GitHub Actions Artifacts
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: viacamper-v${{ steps.find_aab.outputs.app_version }}-bundle
-          path: ${{ steps.find_aab.outputs.aab_path }}
-          retention-days: 14
+          path: ${{ steps.prep_release.outputs.named_aab }}
+          retention-days: 1
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/heads/')
+        if: steps.find_aab.outcome == 'success'
         with:
           tag_name: v${{ steps.find_aab.outputs.app_version }}
           name: ViaCamper v${{ steps.find_aab.outputs.app_version }}
           body: |
-            🚀 **Nuova Versione ViaCamper v${{ steps.find_aab.outputs.app_version }}**
+            🚀 **Release ViaCamper v${{ steps.find_aab.outputs.app_version }}**
             
-            - Android Bundle (`.aab`) pronto per il caricamento su Google Play Console.
+            - File Android Bundle (`ViaCamper-v${{ steps.find_aab.outputs.app_version }}.aab`) pronto per il caricamento su Google Play Console.
             - Compilazione automatica completata con successo da GitHub Actions.
-          files: ${{ steps.find_aab.outputs.aab_path }}
+          files: ${{ steps.prep_release.outputs.named_aab }}
           draft: false
           prerelease: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
