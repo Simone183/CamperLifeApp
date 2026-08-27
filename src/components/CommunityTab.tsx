@@ -674,6 +674,15 @@ export default function CommunityTab({
         const set = savedDeleted ? new Set<string>(JSON.parse(savedDeleted)) : new Set<string>();
         set.add(targetId);
         localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(set)));
+
+        const savedMsgs = localStorage.getItem("camper_messages");
+        if (savedMsgs) {
+          const parsed = JSON.parse(savedMsgs);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter((m: any) => m.id !== targetId);
+            localStorage.setItem("camper_messages", JSON.stringify(filtered));
+          }
+        }
       } catch {}
 
       // 2. Call backend delete API directly
@@ -696,6 +705,23 @@ export default function CommunityTab({
         const set = savedDeleted ? new Set<string>(JSON.parse(savedDeleted)) : new Set<string>();
         set.add(replyId);
         localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(set)));
+
+        const savedMsgs = localStorage.getItem("camper_messages");
+        if (savedMsgs) {
+          const parsed = JSON.parse(savedMsgs);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.map((m: any) => {
+              if (m.id === msgId) {
+                return {
+                  ...m,
+                  replies: (m.replies || []).filter((r: any) => r.id !== replyId),
+                };
+              }
+              return m;
+            });
+            localStorage.setItem("camper_messages", JSON.stringify(filtered));
+          }
+        }
       } catch {}
 
       const targetMsg = messages.find((m) => m.id === msgId);
