@@ -272,8 +272,20 @@ export default function CommunityTab({
   challenges,
   onViewTrip
 }: CommunityTabProps) {
-  // Sanitize messages array to filter out any remaining fake replies, fake likes, or fake posts
-  const sanitizedMessages = React.useMemo(() => sanitizeCommunityMessagesList(messages), [messages]);
+  // Sanitize messages array to filter out any remaining fake replies, fake likes, or deleted messages
+  const sanitizedMessages = React.useMemo(() => {
+    let deletedSet = new Set<string>();
+    try {
+      const saved = localStorage.getItem("camper_deleted_message_ids");
+      if (saved) deletedSet = new Set(JSON.parse(saved));
+    } catch {}
+    return sanitizeCommunityMessagesList(messages)
+      .filter((m) => !deletedSet.has(m.id))
+      .map((m) => ({
+        ...m,
+        replies: (m.replies || []).filter((r) => !deletedSet.has(r.id)),
+      }));
+  }, [messages]);
 
   // View mode: 'social' (Social Feed), 'feed' (Forum Argomenti), 'chat' (WhatsApp style), 'sos' (Emergency SOS focus)
   const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'sos'>('social');
@@ -654,14 +666,55 @@ export default function CommunityTab({
     if (!deleteConfirmTarget) return;
 
     if (deleteConfirmTarget.type === 'message') {
-      onChange(messages.filter((m) => m.id !== deleteConfirmTarget.msgId));
+      const targetId = deleteConfirmTarget.msgId;
+
+      // 1. Immediately persist deletion in localStorage
+      try {
+        const savedDeleted = localStorage.getItem("camper_deleted_message_ids");
+        const set = savedDeleted ? new Set<string>(JSON.parse(savedDeleted)) : new Set<string>();
+        set.add(targetId);
+        localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(set)));
+      } catch {}
+
+      // 2. Call backend delete API directly
+      fetch("/api/community-messages/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: targetId }),
+      }).catch((e: any) => console.warn("API delete error:", e));
+
+      // 3. Update local state
+      const updatedMessages = messages.filter((m) => m.id !== targetId);
+      onChange(updatedMessages);
     } else if (deleteConfirmTarget.type === 'reply' && deleteConfirmTarget.replyId) {
+      const msgId = deleteConfirmTarget.msgId;
+      const replyId = deleteConfirmTarget.replyId;
+
+      // 1. Immediately persist deletion in localStorage
+      try {
+        const savedDeleted = localStorage.getItem("camper_deleted_message_ids");
+        const set = savedDeleted ? new Set<string>(JSON.parse(savedDeleted)) : new Set<string>();
+        set.add(replyId);
+        localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(set)));
+      } catch {}
+
+      const targetMsg = messages.find((m) => m.id === msgId);
+      const newReplies = (targetMsg?.replies || []).filter((r) => r.id !== replyId);
+
+      // 2. Call backend reply delete API directly
+      fetch("/api/community-messages/reply-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: msgId, replies: newReplies, deletedReplyId: replyId }),
+      }).catch((e: any) => console.warn("API reply-delete error:", e));
+
+      // 3. Update local state
       onChange(
         messages.map((m) => {
-          if (m.id === deleteConfirmTarget.msgId) {
+          if (m.id === msgId) {
             return {
               ...m,
-              replies: (m.replies || []).filter((r) => r.id !== deleteConfirmTarget.replyId),
+              replies: newReplies,
             };
           }
           return m;
@@ -1953,11 +2006,11 @@ export default function CommunityTab({
                       <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${getTagStyle(msg.tag, msg.isResolved)}`}>
                         {msg.tag}
                       </span>
-                      {isAdmin && (
+                      {(isAdmin || isMe) && (
                         <button
                           type="button"
                           onClick={() => requestDeleteMessage(msg.id, msg.text)}
-                          title="Elimina messaggio chat (Admin)"
+                          title={isMe ? "Elimina il tuo messaggio" : "Elimina messaggio chat (Admin)"}
                           className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-all cursor-pointer ml-1"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -2057,11 +2110,11 @@ export default function CommunityTab({
                                     <span className="font-bold opacity-80 shrink-0">{rUser}: </span>
                                     <span className="truncate">{r.text}</span>
                                   </div>
-                                  {isAdmin && (
+                                  {(isAdmin || rUser === activeUserName || (currentUser?.email && r.user === currentUser.email)) && (
                                     <button
                                       type="button"
                                       onClick={() => requestDeleteReply(msg.id, r.id, r.text)}
-                                      title="Elimina risposta (Admin)"
+                                      title="Elimina risposta"
                                       className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 p-0.5 shrink-0 cursor-pointer"
                                     >
                                       <Trash2 className="w-3 h-3" />
@@ -2704,14 +2757,14 @@ export default function CommunityTab({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {isAdmin && (
+                        {(isAdmin || msg.user === activeUserName || msg.user.includes('Tu') || msg.user === 'Tu (Camperista)' || (currentUser?.email && msg.user === currentUser.email)) && (
                           <button
                             type="button"
                             onClick={() => {
                               requestDeleteMessage(msg.id, msg.text);
                               setSelectedDiscussionId(null);
                             }}
-                            title="Elimina Post (Admin)"
+                            title="Elimina Post"
                             className="p-1.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -2808,12 +2861,12 @@ export default function CommunityTab({
                                 </span>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-400">
                                   <span>{getRelativeTime(reply.timestamp)}</span>
-                                  {isAdmin && (
+                                  {(isAdmin || reply.user === activeUserName || reply.user.includes('Tu') || (currentUser?.email && reply.user === currentUser.email)) && (
                                     <button
                                       type="button"
                                       onClick={() => requestDeleteReply(msg.id, reply.id, reply.text)}
                                       className="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer"
-                                      title="Elimina risposta (Admin)"
+                                      title="Elimina risposta"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>

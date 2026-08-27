@@ -250,25 +250,42 @@ export default function App() {
     });
   });
 
+  const [deletedMessageIds, setDeletedMessageIds] = React.useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("camper_deleted_message_ids");
+      return saved ? new Set(JSON.parse(saved)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
+
   const [communityMessages, setCommunityMessages] = React.useState<
     CommunityMessage[]
   >(() => {
+    let deletedSet = new Set<string>();
+    try {
+      const savedDeleted = localStorage.getItem("camper_deleted_message_ids");
+      if (savedDeleted) {
+        deletedSet = new Set(JSON.parse(savedDeleted));
+      }
+    } catch {}
+
     const saved = localStorage.getItem("camper_messages");
     if (saved) {
       try {
         let parsed = JSON.parse(saved);
-        parsed = sanitizeCommunityMessagesList(parsed);
+        parsed = sanitizeCommunityMessagesList(parsed).filter((m: CommunityMessage) => !deletedSet.has(m.id));
         const existingIds = new Set(parsed.map((m: CommunityMessage) => m.id));
         const missingInitial = sanitizeCommunityMessagesList(
-          INITIAL_COMMUNITY_MESSAGES.filter((m) => !existingIds.has(m.id))
+          INITIAL_COMMUNITY_MESSAGES.filter((m) => !existingIds.has(m.id) && !deletedSet.has(m.id))
         );
         const combined = [...missingInitial, ...parsed];
-        return combined.length > 0 ? combined : sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES);
+        return combined.length > 0 ? combined : sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedSet.has(m.id)));
       } catch {
-        return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES);
+        return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedSet.has(m.id)));
       }
     }
-    return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES);
+    return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedSet.has(m.id)));
   });
 
   const [challenges, setChallenges] = React.useState<ChallengeItem[] | undefined>(() => {
@@ -3226,36 +3243,80 @@ out center;`;
       return;
     }
     try {
-      const isNativeOrExternal = typeof window !== "undefined" && (
-        typeof (window as any).Capacitor !== "undefined" ||
-        window.location.protocol.startsWith("capacitor") ||
-        window.location.protocol.startsWith("file:") ||
-        !window.location.hostname.includes("run.app")
-      );
+      let deletedSet = new Set<string>();
+      try {
+        const savedDeleted = localStorage.getItem("camper_deleted_message_ids");
+        if (savedDeleted) {
+          deletedSet = new Set(JSON.parse(savedDeleted));
+        }
+      } catch {}
+
+      // Synchronize deleted IDs with Firestore deleted_community_messages collection
+      if (firestore) {
+        try {
+          const delSnapshot = await firestore.collection("deleted_community_messages").get();
+          if (delSnapshot && delSnapshot.docs) {
+            delSnapshot.docs.forEach((d: any) => {
+              deletedSet.add(d.id);
+            });
+            localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(deletedSet)));
+            setDeletedMessageIds(new Set(deletedSet));
+          }
+        } catch (e) {
+          // offline or collection empty
+        }
+      }
 
       let data: any[] = [];
-      if (isNativeOrExternal && firestore) {
-        console.log("[App] Direct Firestore fetch for community messages...");
-        const snapshot = await firestore.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
-        snapshot.forEach((doc: any) => {
-          data.push({ id: doc.id, ...doc.data() });
-        });
-      } else {
+      let fetchSuccess = false;
+
+      // 1. First try fetching from Express backend API (which already filters deleted messages)
+      try {
         const res = await fetch("/api/community-messages");
         if (res.ok) {
           const contentType = res.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             data = await res.json();
+            fetchSuccess = true;
           }
         }
+      } catch (e) {
+        // Fall back to direct Firestore fetch
       }
 
-      if (data && data.length > 0) {
-        const sanitizedData = sanitizeCommunityMessagesList(data);
+      // 2. Direct Firestore fallback (e.g. standalone native mobile or when backend is unreachable)
+      if (!fetchSuccess && firestore) {
+        console.log("[App] Direct Firestore fetch for community messages...");
+        const snapshot = await firestore.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
+        snapshot.forEach((doc: any) => {
+          data.push({ id: doc.id, ...doc.data() });
+        });
+        fetchSuccess = true;
+      }
+
+      if (fetchSuccess && data && Array.isArray(data)) {
+        // Purge any docs in deletedSet from Firestore directly to keep Firestore clean
+        if (firestore) {
+          data.forEach((m: any) => {
+            if (deletedSet.has(m.id) || m.isDeleted || m.deleted) {
+              firestore.collection("communityMessages").doc(m.id).delete().catch(() => {});
+            }
+          });
+        }
+
+        const sanitizedData = sanitizeCommunityMessagesList(data)
+          .filter((m: any) => !deletedSet.has(m.id) && !m.isDeleted && !m.deleted)
+          .map((m: any) => ({
+            ...m,
+            replies: (m.replies || []).filter((r: any) => !deletedSet.has(r.id)),
+          }));
         const fetchedIds = new Set(sanitizedData.map((m: any) => m.id));
         const missing = sanitizeCommunityMessagesList(
-          INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id))
-        );
+          INITIAL_COMMUNITY_MESSAGES.filter((m) => !fetchedIds.has(m.id) && !deletedSet.has(m.id))
+        ).map((m: any) => ({
+          ...m,
+          replies: (m.replies || []).filter((r: any) => !deletedSet.has(r.id)),
+        }));
         const combined = [...missing, ...sanitizedData];
         setCommunityMessages(combined);
         localStorage.setItem("camper_messages", JSON.stringify(combined));
@@ -3268,74 +3329,64 @@ out center;`;
   };
 
   const handleCommunityChange = async (newMessages: CommunityMessage[]) => {
-    // 1. Instantly update UI locally for fluid UX (Optimistic Update)
-    setCommunityMessages(newMessages);
-    localStorage.setItem("camper_messages", JSON.stringify(newMessages));
-
-    // 2. Synchronise change events directly with Firestore DB
+    let deletedSet = new Set<string>();
     try {
-      const isNativeOrExternal = typeof window !== "undefined" && (
-        typeof (window as any).Capacitor !== "undefined" ||
-        window.location.protocol.startsWith("capacitor") ||
-        window.location.protocol.startsWith("file:") ||
-        !window.location.hostname.includes("run.app")
-      );
-
-      if (isNativeOrExternal && firestore) {
-        console.log("[App] Direct Firestore write for community message change...");
-        if (newMessages.length > communityMessages.length) {
-          const addedMsg = newMessages.find((nm) => !communityMessages.some((om) => om.id === nm.id)) || newMessages[0];
-          await firestore.collection("communityMessages").doc(addedMsg.id).set(addedMsg);
-        } else if (newMessages.length < communityMessages.length) {
-          const deletedMsgId = communityMessages.find((m) => !newMessages.some((nm) => nm.id === m.id))?.id;
-          if (deletedMsgId) {
-            await firestore.collection("communityMessages").doc(deletedMsgId).delete();
-          }
-        } else if (newMessages.length === communityMessages.length) {
-          for (let i = 0; i < newMessages.length; i++) {
-            const oldMsg = communityMessages.find((m) => m.id === newMessages[i].id);
-            const newMsg = newMessages[i];
-            if (!oldMsg) continue;
-
-            if (oldMsg.likes !== newMsg.likes) {
-              await firestore.collection("communityMessages").doc(newMsg.id).update({ likes: newMsg.likes });
-              break;
-            }
-            if (oldMsg.isResolved !== newMsg.isResolved) {
-              await firestore.collection("communityMessages").doc(newMsg.id).update({ isResolved: newMsg.isResolved });
-              break;
-            }
-            const oldReplies = oldMsg.replies || [];
-            const newReplies = newMsg.replies || [];
-            if (newReplies.length !== oldReplies.length) {
-              await firestore.collection("communityMessages").doc(newMsg.id).update({ replies: newReplies });
-              break;
-            }
-          }
-        }
-        return;
+      const savedDeleted = localStorage.getItem("camper_deleted_message_ids");
+      if (savedDeleted) {
+        deletedSet = new Set(JSON.parse(savedDeleted));
       }
+    } catch {}
+
+    // Check for deleted messages
+    const deletedMsgs = communityMessages.filter(
+      (m) => !newMessages.some((nm) => nm.id === m.id)
+    );
+
+    if (deletedMsgs.length > 0) {
+      const deletedIds = deletedMsgs.map((m) => m.id);
+      deletedIds.forEach((id) => deletedSet.add(id));
+      try {
+        localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(deletedSet)));
+      } catch {}
+      setDeletedMessageIds(new Set(deletedSet));
+
+      // Delete from Firestore and Server backend API simultaneously
+      for (const delId of deletedIds) {
+        if (firestore) {
+          firestore.collection("communityMessages").doc(delId).delete().catch((e: any) => console.warn("Direct Firestore delete error:", e));
+          firestore.collection("deleted_community_messages").doc(delId).set({ id: delId, deletedAt: new Date().toISOString() }).catch((e: any) => console.warn("Direct Firestore record deleted error:", e));
+        }
+        fetch("/api/community-messages/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: delId }),
+        }).catch((e: any) => console.warn("API delete error:", e));
+      }
+    }
+
+    const filteredNew = newMessages.filter((m) => !deletedSet.has(m.id)).map((m) => ({
+      ...m,
+      replies: (m.replies || []).filter((r) => !deletedSet.has(r.id)),
+    }));
+
+    // 1. Instantly update UI locally for fluid UX (Optimistic Update)
+    setCommunityMessages(filteredNew);
+    localStorage.setItem("camper_messages", JSON.stringify(filteredNew));
+
+    // 2. Synchronise change events directly with Firestore DB & backend API
+    try {
 
       if (newMessages.length > communityMessages.length) {
         // A new post was created - find the added item
         const addedMsg = newMessages.find((nm) => !communityMessages.some((om) => om.id === nm.id)) || newMessages[0];
+        if (firestore) {
+          firestore.collection("communityMessages").doc(addedMsg.id).set(addedMsg).catch((e: any) => console.warn("Direct Firestore set error:", e));
+        }
         await fetch("/api/community-messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(addedMsg),
-        });
-      } else if (newMessages.length < communityMessages.length) {
-        // A chat post was deleted
-        const deletedMsgId = communityMessages.find(
-          (m) => !newMessages.some((nm) => nm.id === m.id)
-        )?.id;
-        if (deletedMsgId) {
-          await fetch("/api/community-messages/delete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: deletedMsgId }),
-          });
-        }
+        }).catch((e: any) => console.warn("API post error:", e));
       } else if (newMessages.length === communityMessages.length) {
         // Look for likes or thread response update or thread reply deletion
         for (let i = 0; i < newMessages.length; i++) {
@@ -3346,20 +3397,26 @@ out center;`;
           if (!oldMsg) continue;
 
           if (oldMsg.likes !== newMsg.likes) {
+            if (firestore) {
+              firestore.collection("communityMessages").doc(newMsg.id).update({ likes: newMsg.likes }).catch((e: any) => console.warn("Direct Firestore like error:", e));
+            }
             await fetch("/api/community-messages/like", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, likes: newMsg.likes }),
-            });
+            }).catch((e: any) => console.warn("API like error:", e));
             break;
           }
 
           if (oldMsg.isResolved !== newMsg.isResolved) {
+            if (firestore) {
+              firestore.collection("communityMessages").doc(newMsg.id).update({ isResolved: newMsg.isResolved }).catch((e: any) => console.warn("Direct Firestore resolve error:", e));
+            }
             await fetch("/api/community-messages/resolve", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, isResolved: newMsg.isResolved }),
-            });
+            }).catch((e: any) => console.warn("API resolve error:", e));
             break;
           }
 
@@ -3367,20 +3424,37 @@ out center;`;
           const newReplies = newMsg.replies || [];
           if (newReplies.length > oldReplies.length) {
             const addedReply = newReplies[newReplies.length - 1];
+            if (firestore) {
+              firestore.collection("communityMessages").doc(newMsg.id).update({ replies: newReplies }).catch((e: any) => console.warn("Direct Firestore reply error:", e));
+            }
             await fetch("/api/community-messages/reply", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, reply: addedReply }),
-            });
+            }).catch((e: any) => console.warn("API reply error:", e));
             break;
           }
 
           if (newReplies.length < oldReplies.length) {
+            const deletedReply = oldReplies.find((r) => !newReplies.some((nr) => nr.id === r.id));
+            if (deletedReply) {
+              setDeletedMessageIds((prev) => {
+                const next = new Set(prev);
+                next.add(deletedReply.id);
+                try {
+                  localStorage.setItem("camper_deleted_message_ids", JSON.stringify(Array.from(next)));
+                } catch {}
+                return next;
+              });
+            }
+            if (firestore) {
+              firestore.collection("communityMessages").doc(newMsg.id).update({ replies: newReplies }).catch((e: any) => console.warn("Direct Firestore reply delete error:", e));
+            }
             await fetch("/api/community-messages/reply-delete", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: newMsg.id, replies: newReplies }),
-            });
+              body: JSON.stringify({ id: newMsg.id, replies: newReplies, deletedReplyId: deletedReply?.id }),
+            }).catch((e: any) => console.warn("API reply-delete error:", e));
             break;
           }
         }
@@ -4372,35 +4446,6 @@ out center;`;
               onRequestGPS={handleRequestSingleGPS}
             />
 
-            {/* Community Quick Action & Notification Button */}
-            {hasAcceptedTerms && dashboardSettings.showCommunity !== false && (
-              <button
-                onClick={() => {
-                  playTapSound();
-                  setActiveTab("settings_tools");
-                  setSettingsSubTab("community");
-                }}
-                className={`h-7.5 min-[360px]:h-8 sm:h-9.5 px-1.5 min-[360px]:px-2 sm:px-2.5 rounded-xl border transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group ${
-                  unreadCommunityCount > 0
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/40 shadow-md animate-pulse"
-                    : "bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] border-[#3E4A35]/15"
-                }`}
-                title={
-                  unreadCommunityCount > 0
-                    ? `Community (${unreadCommunityCount} nuovi messaggi non letti in Chat, Forum o SOS)`
-                    : "Bacheca Community & Chat"
-                }
-              >
-                <Users className={`w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 group-hover:scale-110 transition-transform ${unreadCommunityCount > 0 ? "text-white" : "text-[#3E4A35]"}`} />
-                <span className="sr-only">Community</span>
-                {unreadCommunityCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[9px] font-black min-w-[15px] h-[15px] px-0.5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
-                    {unreadCommunityCount > 99 ? "99+" : unreadCommunityCount}
-                  </span>
-                )}
-              </button>
-            )}
-
             {/* Dark Mode Theme Toggle */}
             <button
               onClick={() => {
@@ -4415,37 +4460,37 @@ out center;`;
                   }),
                 );
               }}
-              className="h-7.5 min-[360px]:h-8 sm:h-9.5 px-1.5 min-[360px]:px-2 sm:px-2.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
+              className="h-8.5 min-[360px]:h-9 sm:h-10 px-2 min-[360px]:px-2.5 sm:px-3.5 bg-[#F4F6F0] hover:bg-[#E7EBDC] text-[#3E4A35] rounded-xl border border-[#3E4A35]/15 transition-all cursor-pointer shadow-xs shrink-0 active:scale-95 flex items-center justify-center relative group"
               title={
                 isDarkMode ? "Passa a Vista Giorno" : "Passa a Vista Notturna"
               }
             >
               {isDarkMode ? (
-                <Sun className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 text-amber-500 animate-[spin_15s_linear_infinite]" />
+                <Sun className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-amber-500 animate-[spin_15s_linear_infinite]" />
               ) : (
-                <Moon className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 text-slate-600 group-hover:text-amber-600 transition-colors" />
+                <Moon className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-slate-600 group-hover:text-amber-600 transition-colors" />
               )}
               <span className="sr-only">Tema</span>
             </button>
 
             {/* Quick Active vehicle summary panel */}
-            <div className="h-7.5 min-[360px]:h-8 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-1.5 sm:px-2 rounded-xl border border-[#3E4A35]/15 transition-all shrink min-w-0 max-w-[75px] min-[360px]:max-w-[95px] min-[400px]:max-w-[120px] sm:max-w-[160px] shadow-2xs">
+            <div className="h-8.5 min-[360px]:h-9 sm:h-10 flex items-center gap-1.5 sm:gap-2 bg-[#D1CDBF]/50 hover:bg-[#D1CDBF]/80 backdrop-blur-xs px-2 sm:px-3 rounded-xl border border-[#3E4A35]/15 transition-all shrink min-w-0 max-w-[95px] min-[360px]:max-w-[125px] min-[400px]:max-w-[155px] sm:max-w-[200px] shadow-2xs">
               <button
                 onClick={() => {
                   setActiveTab("settings_tools");
                   setSettingsSubTab("dimensions");
                 }}
-                className="text-left group flex items-center gap-0.5 min-[360px]:gap-1 sm:gap-1.5 min-w-0 w-full cursor-pointer"
+                className="text-left group flex items-center gap-1 sm:gap-2 min-w-0 w-full cursor-pointer"
                 title={`Profilo Mezzo: ${vehicleDimensions.modelName} (${vehicleDimensions.height}m alt. x ${vehicleDimensions.length}m lung. x ${vehicleDimensions.width}m larg.)`}
               >
-                <div className="p-0.5 min-[360px]:p-1 bg-white rounded-lg border border-[#3E4A35]/15 group-hover:bg-[#E7EBDC] group-hover:border-[#3E4A35]/30 transition-all shrink-0 shadow-xs">
-                  <Truck className="w-3 h-3 min-[360px]:w-3.5 min-[360px]:h-3.5 sm:w-4 sm:h-4 text-[#3E4A35]" />
+                <div className="p-1 sm:p-1.5 bg-white rounded-lg border border-[#3E4A35]/15 group-hover:bg-[#E7EBDC] group-hover:border-[#3E4A35]/30 transition-all shrink-0 shadow-xs">
+                  <Truck className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-4.5 sm:h-4.5 text-[#3E4A35]" />
                 </div>
                 <div className="min-w-0 truncate flex-1">
-                  <div className="text-[6.5px] min-[360px]:text-[7px] sm:text-[8px] font-bold text-[#2D2926]/70 uppercase tracking-wider leading-none truncate">
+                  <div className="text-[7.5px] min-[360px]:text-[8px] sm:text-[9px] font-bold text-[#2D2926]/70 uppercase tracking-wider leading-none truncate">
                     Mezzo
                   </div>
-                  <div className="text-[8.5px] min-[360px]:text-[9.5px] min-[400px]:text-[10.5px] sm:text-[11.5px] font-extrabold text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
+                  <div className="text-[9.5px] min-[360px]:text-[10.5px] min-[400px]:text-[11.5px] sm:text-[12.5px] font-black text-[#2D2926] group-hover:text-[#3E4A35] transition-colors truncate">
                     {vehicleDimensions.modelName}
                   </div>
                 </div>
@@ -4461,14 +4506,14 @@ out center;`;
                   className="p-1 text-[#2D2926]/60 hover:text-[#3E4A35] hover:bg-[#D1CDBF] rounded-lg transition-all cursor-pointer hidden sm:block shrink-0"
                   title="Impostazioni Dimensioni Camper"
                 >
-                  <Settings className="w-3.5 h-3.5" />
+                  <Settings className="w-4 h-4" />
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Tab Controls Navigation Rail - DESKTOP ONLY (Matches exactly the three request icons) */}
+        {/* Tab Controls Navigation Rail - DESKTOP ONLY (Matches the four navigation sections) */}
         {hasAcceptedTerms && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 hidden md:block border-t border-[#3E4A35]/5">
             <nav className="flex space-x-2 py-2">
@@ -4502,19 +4547,39 @@ out center;`;
               <button
                 onClick={() => {
                   setActiveTab("settings_tools");
+                  setSettingsSubTab("community");
+                }}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap relative ${
+                  activeTab === "settings_tools" && settingsSubTab === "community"
+                    ? "bg-[#3E4A35] text-white shadow-md"
+                    : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10 hover:text-[#2D2926]"
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                3. Social & Community
+                {unreadCommunityCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[10px] font-extrabold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center border border-white shadow-xs">
+                    {unreadCommunityCount > 99 ? "99+" : unreadCommunityCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab("settings_tools");
                   setSettingsSubTab("hub");
                 }}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap relative ${
-                  activeTab === "settings_tools"
+                  activeTab === "settings_tools" && settingsSubTab !== "community"
                     ? "bg-[#3E4A35] text-white shadow-md"
                     : "text-[#2D2926]/70 hover:bg-[#3E4A35]/10"
                 }`}
               >
                 <Sliders className="w-4 h-4" />
-                3. Impostazioni & Strumenti
-                {(totalWarnings > 0 || unreadCommunityCount > 0) && (
+                4. Impostazioni & Strumenti
+                {totalWarnings > 0 && (
                   <span className="absolute -top-1 -right-1 bg-[#A45C40] text-white text-[10px] font-extrabold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center border border-white shadow-xs">
-                    {totalWarnings + unreadCommunityCount}
+                    {totalWarnings}
                   </span>
                 )}
               </button>
@@ -6692,7 +6757,33 @@ out center;`;
             )}
           </button>
 
-          {/* Tab 3: STRUMENTI */}
+          {/* Tab 3: SOCIAL */}
+          <button
+            onClick={() => {
+              playTapSound();
+              setActiveTab("settings_tools");
+              setSettingsSubTab("community");
+            }}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
+              activeTab === "settings_tools" && settingsSubTab === "community"
+                ? "text-[#1C3D2B] dark:text-emerald-400 font-black"
+                : "text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-700"
+            }`}
+          >
+            <Users
+              className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "settings_tools" && settingsSubTab === "community" ? "text-[#1C3D2B] dark:text-emerald-400 scale-110" : "text-slate-400"}`}
+            />
+            <span className="text-[10px] tracking-tight leading-none uppercase font-bold">
+              {appLang === 'en' ? 'Social' : appLang === 'fr' ? 'Social' : 'SOCIAL'}
+            </span>
+            {unreadCommunityCount > 0 && (
+              <span className="absolute top-1 right-3.5 bg-emerald-600 text-white text-[8px] font-black min-w-[16px] h-4 px-0.5 rounded-full flex items-center justify-center border border-white shadow-xs">
+                {unreadCommunityCount > 99 ? '99+' : unreadCommunityCount}
+              </span>
+            )}
+          </button>
+
+          {/* Tab 4: STRUMENTI */}
           <button
             onClick={() => {
               playTapSound();
@@ -6700,20 +6791,20 @@ out center;`;
               setSettingsSubTab("hub");
             }}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 px-1 rounded-xl transition-all relative ${
-              activeTab === "settings_tools" && settingsSubTab !== "ai_itinerary"
+              activeTab === "settings_tools" && settingsSubTab !== "community" && settingsSubTab !== "ai_itinerary"
                 ? "text-[#1C3D2B] dark:text-emerald-400 font-black"
                 : "text-slate-500 dark:text-slate-400 font-semibold hover:text-slate-700"
             }`}
           >
             <Sliders
-              className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "settings_tools" && settingsSubTab !== "ai_itinerary" ? "text-[#1C3D2B] dark:text-emerald-400 scale-110" : "text-slate-400"}`}
+              className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "settings_tools" && settingsSubTab !== "community" && settingsSubTab !== "ai_itinerary" ? "text-[#1C3D2B] dark:text-emerald-400 scale-110" : "text-slate-400"}`}
             />
             <span className="text-[10px] tracking-tight leading-none uppercase font-bold">
               {appLang === 'en' ? 'Tools' : appLang === 'fr' ? 'Outils' : 'STRUMENTI'}
             </span>
-            {(totalWarnings > 0 || unreadCommunityCount > 0) && (
+            {totalWarnings > 0 && (
               <span className="absolute top-1 right-3.5 bg-[#E56B38] text-white text-[8px] font-black min-w-[16px] h-4 px-0.5 rounded-full flex items-center justify-center border border-white">
-                {totalWarnings + unreadCommunityCount}
+                {totalWarnings}
               </span>
             )}
           </button>

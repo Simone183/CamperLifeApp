@@ -3741,10 +3741,46 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     "m1", "m2", "m3", "m4", "social_post_1", "social_post_2", "social_post_3", "social_post_4", "chat_1", "chat_2"
   ]);
 
+  // Persistent tracking of deleted community message IDs
+  const deletedCommunityMessageIds = new Set<string>();
+  const DELETED_COMMUNITY_MSGS_FILE = path.join(process.cwd(), "deleted_community_messages.json");
+
+  function loadCachedDeletedCommunityMessages() {
+    try {
+      if (fs.existsSync(DELETED_COMMUNITY_MSGS_FILE)) {
+        const raw = fs.readFileSync(DELETED_COMMUNITY_MSGS_FILE, "utf-8");
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach(id => deletedCommunityMessageIds.add(id));
+        }
+      }
+    } catch (e) {}
+  }
+  loadCachedDeletedCommunityMessages();
+
+  function saveCachedDeletedCommunityMessages() {
+    try {
+      fs.writeFileSync(DELETED_COMMUNITY_MSGS_FILE, JSON.stringify(Array.from(deletedCommunityMessageIds)), "utf-8");
+    } catch (e) {}
+  }
+
+  // Load deleted messages from Firestore on startup
+  (async () => {
+    try {
+      const snap = await firestoreDb.collection("deleted_community_messages").get();
+      if (snap && snap.docs) {
+        snap.docs.forEach((d: any) => {
+          deletedCommunityMessageIds.add(d.id);
+        });
+        saveCachedDeletedCommunityMessages();
+      }
+    } catch (e) {}
+  })();
+
   function sanitizeServerCommunityMessage(docId: string, data: any) {
     if (!data) return null;
     const msgUser = data.user || "";
-    if (FAKE_POST_IDS.has(docId) || FAKE_USERS.has(msgUser)) {
+    if (deletedCommunityMessageIds.has(docId) || FAKE_POST_IDS.has(docId) || FAKE_USERS.has(msgUser)) {
       return null;
     }
 
@@ -3753,7 +3789,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     const rawReplies = Array.isArray(data.replies) ? data.replies : [];
     const cleanReplies = rawReplies.filter((r: any) => {
       if (!r) return false;
-      if (r.id && (r.id.startsWith("r_r") || r.id.startsWith("r_soc") || r.id.startsWith("r_chat"))) return false;
+      if (r.id && (deletedCommunityMessageIds.has(r.id) || r.id.startsWith("r_r") || r.id.startsWith("r_soc") || r.id.startsWith("r_chat"))) return false;
       if (r.user && FAKE_USERS.has(r.user)) return false;
       return true;
     });
@@ -3793,14 +3829,24 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // Get all online community messages
   app.get("/api/community-messages", async (req, res) => {
     try {
+      // Always sync deleted message IDs from Firestore deleted_community_messages
+      try {
+        const delSnap = await firestoreDb.collection("deleted_community_messages").get();
+        if (delSnap && delSnap.docs) {
+          delSnap.docs.forEach((d: any) => {
+            deletedCommunityMessageIds.add(d.id);
+          });
+        }
+      } catch (e) {}
+
       const snapshot = await firestoreDb.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
       
       // If collection is empty or missing Rolly topics, fire background seed to Firestore
-      const hasRollyTopics = !snapshot.empty && snapshot.docs.some((doc: any) => doc.id && doc.id.startsWith("rolly_topic_"));
+      const hasRollyTopics = !snapshot.empty && snapshot.docs.some((doc: any) => doc.id && doc.id.startsWith("rolly_topic_") && !deletedCommunityMessageIds.has(doc.id));
       if (!hasRollyTopics) {
         console.log("[Firestore Seed] Triggering background seed for Rolly forum topics into Firestore...");
         Promise.all(
-          INITIAL_COMMUNITY_MESSAGES.map((msg) =>
+          INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedCommunityMessageIds.has(m.id)).map((msg) =>
             firestoreDb.collection("communityMessages").doc(msg.id).set(msg, { merge: true }).catch(err => console.error("Seed error:", err))
           )
         ).catch(e => console.error("Batch seed error:", e));
@@ -3809,6 +3855,12 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const messages: any[] = [];
       snapshot.forEach((doc: any) => {
         const rawData = doc.data() || {};
+        if (deletedCommunityMessageIds.has(doc.id) || rawData.isDeleted || rawData.deleted) {
+          // Immediately purge deleted message from Firestore
+          firestoreDb.collection("communityMessages").doc(doc.id).delete().catch(() => {});
+          deletedCommunityMessageIds.add(doc.id);
+          return;
+        }
         const sanitized = sanitizeServerCommunityMessage(doc.id, rawData);
         if (sanitized) {
           messages.push(sanitized);
@@ -3832,7 +3884,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       // Combine with INITIAL_COMMUNITY_MESSAGES to ensure instant full list return
       const fetchedIds = new Set(messages.map((m: any) => m.id));
       for (const initialMsg of INITIAL_COMMUNITY_MESSAGES) {
-        if (!fetchedIds.has(initialMsg.id)) {
+        if (!fetchedIds.has(initialMsg.id) && !deletedCommunityMessageIds.has(initialMsg.id)) {
           const sanitizedInitial = sanitizeServerCommunityMessage(initialMsg.id, initialMsg);
           if (sanitizedInitial) {
             messages.push(sanitizedInitial);
@@ -3843,7 +3895,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.json(messages);
     } catch (err: any) {
       console.error("Error loading community messages from Firestore:", err);
-      const fallback = INITIAL_COMMUNITY_MESSAGES.map(m => sanitizeServerCommunityMessage(m.id, m)).filter(Boolean);
+      const fallback = INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedCommunityMessageIds.has(m.id)).map(m => sanitizeServerCommunityMessage(m.id, m)).filter(Boolean);
       res.json(fallback);
     }
   });
@@ -3857,6 +3909,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       const msgId = msg.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      if (deletedCommunityMessageIds.has(msgId)) {
+        return res.json({ success: true, ignored: true, message: { id: msgId } });
+      }
       const entry = {
         user: msg.user,
         avatar: msg.avatar || "👨‍💻",
@@ -3990,28 +4045,53 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
-  // Delete a community message entirely (moderator action)
+  // Delete a community message entirely (author or moderator action)
   app.post("/api/community-messages/delete", async (req, res) => {
     try {
       const { id } = req.body;
       if (!id) {
         return res.status(400).json({ error: "ID mancante." });
       }
-      await firestoreDb.collection("communityMessages").doc(id).delete();
-      console.log(`[Firestore Chat] Message ${id} deleted by moderator`);
-      res.json({ success: true });
+      deletedCommunityMessageIds.add(id);
+      saveCachedDeletedCommunityMessages();
+
+      try {
+        await firestoreDb.collection("communityMessages").doc(id).delete();
+      } catch (delErr) {
+        console.warn("Direct Firestore doc delete warning:", delErr);
+      }
+
+      try {
+        await firestoreDb.collection("deleted_community_messages").doc(id).set({
+          id,
+          deletedAt: new Date().toISOString()
+        });
+      } catch (delPersistErr) {
+        console.warn("Deleted tracking persist warning:", delPersistErr);
+      }
+
+      console.log(`[Firestore Chat] Message ${id} permanently deleted`);
+      res.json({ success: true, id });
     } catch (err: any) {
       console.error("Error deleting community message on Firestore:", err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Delete replies or set new replies array (moderator action)
+  // Delete replies or set new replies array (author or moderator action)
   app.post("/api/community-messages/reply-delete", async (req, res) => {
     try {
-      const { id, replies } = req.body;
+      const { id, replies, deletedReplyId } = req.body;
       if (!id || !Array.isArray(replies)) {
         return res.status(400).json({ error: "Dati mancanti o non validi." });
+      }
+      if (deletedReplyId) {
+        deletedCommunityMessageIds.add(deletedReplyId);
+        saveCachedDeletedCommunityMessages();
+        firestoreDb.collection("deleted_community_messages").doc(deletedReplyId).set({
+          id: deletedReplyId,
+          deletedAt: new Date().toISOString()
+        }).catch(() => {});
       }
       await firestoreDb.collection("communityMessages").doc(id).update({
         replies: replies
