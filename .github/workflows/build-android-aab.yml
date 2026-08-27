@@ -23,6 +23,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+
+      - name: Set up Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          cache: 'gradle'
 
       - name: Install NPM Dependencies
         run: npm install --legacy-peer-deps
@@ -31,17 +39,20 @@ jobs:
         run: npm run build
 
       - name: Sync Capacitor Android
-        run: npx cap sync android
-
-      - name: Set up Java JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-          cache: 'gradle'
+        env:
+          CI: true
+        run: |
+          if [ ! -d "android" ]; then
+            echo "Android directory not found. Initializing Android platform..."
+            npx --yes @capacitor/cli add android
+          fi
+          npx --yes @capacitor/cli sync android
 
       - name: Grant Execute Permission for Gradlew
-        run: chmod +x android/gradlew
+        run: |
+          if [ -f "android/gradlew" ]; then
+            chmod +x android/gradlew
+          fi
 
       - name: Build Android Bundle (AAB)
         run: |
