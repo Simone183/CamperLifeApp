@@ -863,6 +863,20 @@ export default function GeneralSettingsTab({
           </button>
         </div>
         <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-bold text-[#2D2926] dark:text-white">Autorizzazioni Dispositivo (GPS & Fotocamera)</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Gestisci i permessi di geolocalizzazione e fotocamera per mappe e foto in diretta</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("open-permission-modal"))}
+            className="px-3.5 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] dark:bg-[#A3B896] dark:hover:bg-[#8CA37E] text-white dark:text-slate-950 text-xs font-extrabold rounded-xl transition-all cursor-pointer shrink-0 shadow-2xs"
+          >
+            Gestisci Permessi
+          </button>
+        </div>
+        <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
         <div className="flex items-center justify-between">
           <div>
             <p className="font-bold text-[#2D2926] dark:text-white">Protezione Accesso con PIN</p>

@@ -39,7 +39,8 @@ import {
   Camera,
   MapPin,
   ThumbsUp,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 
 function getRelativeTime(timestamp: string): string {
@@ -172,6 +173,167 @@ function UserMentionPickerModal({
               </button>
             ))
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveCameraModal({
+  isOpen,
+  onClose,
+  onCapture,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onCapture: (dataUrl: string) => void;
+}) {
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = React.useState<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = React.useState<'environment' | 'user'>('environment');
+  const [cameraError, setCameraError] = React.useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = React.useState(false);
+
+  const startCamera = React.useCallback(async (facing: 'environment' | 'user') => {
+    try {
+      setCameraError(null);
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      setStream(newStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+      }
+    } catch (err: any) {
+      console.warn("Live Camera Error:", err);
+      setCameraError("Impossibile avviare il video in tempo reale. Puoi scattare la foto selezionando la fotocamera diretta del tuo dispositivo.");
+    }
+  }, [stream]);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      startCamera(facingMode);
+    } else {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        setStream(null);
+      }
+    }
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [isOpen, facingMode]);
+
+  if (!isOpen) return null;
+
+  const handleTakeSnapshot = () => {
+    if (!videoRef.current) return;
+    setIsCapturing(true);
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      if (facingMode === 'user') {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      onCapture(dataUrl);
+      onClose();
+    }
+    setIsCapturing(false);
+  };
+
+  const toggleFacingMode = () => {
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[99999] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col relative">
+        {/* Header */}
+        <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-white">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-extrabold text-sm tracking-wide flex items-center gap-1.5">
+              <Camera className="w-4 h-4 text-emerald-400" />
+              <span>Fotocamera in Diretta</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Viewfinder Area */}
+        <div className="relative bg-black aspect-[4/3] sm:aspect-video flex items-center justify-center overflow-hidden">
+          {cameraError ? (
+            <div className="p-6 text-center space-y-3">
+              <Camera className="w-12 h-12 text-slate-500 mx-auto" />
+              <p className="text-xs text-rose-400 font-semibold">{cameraError}</p>
+            </div>
+          ) : (
+            <>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+              />
+              {/* Overlay target reticle */}
+              <div className="absolute inset-0 border-2 border-white/20 pointer-events-none rounded-2xl m-4 flex items-center justify-center">
+                <div className="w-14 h-14 border-2 border-emerald-400/60 rounded-full flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Controls Footer */}
+        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={toggleFacingMode}
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full transition-all active:scale-95 cursor-pointer"
+            title="Inverti fotocamera (Frontale / Posteriore)"
+          >
+            <RefreshCw className="w-5 h-5 text-emerald-400" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTakeSnapshot}
+            disabled={!!cameraError || isCapturing}
+            className="w-16 h-16 rounded-full bg-white hover:bg-slate-100 border-4 border-slate-800 shadow-xl flex items-center justify-center active:scale-90 transition-all cursor-pointer disabled:opacity-50"
+            title="Scatta foto ora"
+          >
+            <div className="w-12 h-12 rounded-full border-2 border-slate-900 bg-emerald-500 hover:bg-emerald-400 flex items-center justify-center">
+              <Camera className="w-6 h-6 text-slate-950" />
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors cursor-pointer"
+          >
+            Annulla
+          </button>
         </div>
       </div>
     </div>
@@ -359,7 +521,18 @@ export default function CommunityTab({
   const [showMentionPicker, setShowMentionPicker] = React.useState(false);
   const [activeMentionTargetKey, setActiveMentionTargetKey] = React.useState<'chat' | 'social' | 'postModal' | string>('chat');
 
+  // Direct Live Camera & File input refs
+  const [showLiveCameraModal, setShowLiveCameraModal] = React.useState(false);
   const postFileInputRef = React.useRef<HTMLInputElement>(null);
+  const postDirectCameraInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleOpenDirectCamera = () => {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      setShowLiveCameraModal(true);
+    } else {
+      postDirectCameraInputRef.current?.click();
+    }
+  };
 
   const handleFileUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -1152,7 +1325,7 @@ export default function CommunityTab({
   }).length;
 
   return (
-    <div className="space-y-5">
+    <div className="bg-[#edf0e8] dark:bg-slate-950 p-3 sm:p-5 rounded-3xl min-h-screen border border-stone-300/70 dark:border-slate-800/80 space-y-4 shadow-inner">
       {/* Hidden Profile Photo Input */}
       <input
         type="file"
@@ -1168,7 +1341,7 @@ export default function CommunityTab({
       />
 
       {/* User Profile Photo Card & Upload Banner */}
-      <div className="bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] rounded-2xl p-3 sm:p-3.5 shadow-md flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div
             onClick={() => profilePhotoInputRef.current?.click()}
@@ -1208,22 +1381,8 @@ export default function CommunityTab({
           <span className="sm:hidden">{myProfilePhoto ? 'Cambia Foto' : 'Carica Foto'}</span>
         </button>
       </div>
-      {/* Admin Mode Status Banner */}
-      {isAdmin && (
-        <div className="bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/40 rounded-2xl p-3 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-amber-900 dark:text-amber-200 font-bold shadow-xs">
-          <div className="flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-            <span>Modalità Amministratore Attiva:</span>
-            <span className="font-normal opacity-90">Puoi eliminare qualsiasi messaggio da Social, Chat Live, Forum e SOS.</span>
-          </div>
-          <span className="text-[10px] bg-amber-500/20 dark:bg-amber-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold shrink-0">
-            Admin Moderazione
-          </span>
-        </div>
-      )}
-
       {/* Rolly AI Moderation Status Banner */}
-      <div className="bg-[#3E4A35]/10 dark:bg-[#A3B896]/15 border border-[#3E4A35]/30 dark:border-[#A3B896]/30 rounded-2xl p-2.5 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-[#3E4A35] dark:text-[#A3B896] font-semibold shadow-2xs">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 border-l-4 border-l-[#3E4A35] dark:border-l-[#A3B896] rounded-2xl p-3 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-[#3E4A35] dark:text-[#A3B896] font-semibold shadow-md">
         <div className="flex items-center gap-2.5 min-w-0">
           <CartoonCamperAvatar className="w-5 h-5 shrink-0" />
           <div>
@@ -1273,14 +1432,14 @@ export default function CommunityTab({
       )}
 
       {/* Main Mode Navigation Bar: 4-column grid for Social, Forum, Chat Live, SOS */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-2 shadow-xs space-y-2">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-2.5 shadow-md">
         <div className="grid grid-cols-4 gap-1">
           <button
             onClick={() => setViewMode('social')}
             className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
               viewMode === 'social'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Camera className="w-4 h-4 shrink-0" />
@@ -1296,7 +1455,7 @@ export default function CommunityTab({
             className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
               viewMode === 'feed'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Flame className="w-4 h-4 shrink-0" />
@@ -1308,7 +1467,7 @@ export default function CommunityTab({
             className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
               viewMode === 'chat'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <div className="flex items-center gap-0.5">
@@ -1337,101 +1496,75 @@ export default function CommunityTab({
             <span className="text-[10px] sm:text-xs">SOS</span>
           </button>
         </div>
-
-        <button
-          onClick={() => {
-            const target = viewMode === 'chat' ? 'chat' : viewMode === 'social' ? 'social' : 'forum';
-            setPostTargetType(target);
-            if (viewMode === 'sos') {
-              setPostTag('SOS');
-              if (!postText) setPostText('⚠️ RICHIESTA SOS: ');
-            } else if (selectedTag !== 'Tutti') {
-              setPostTag(selectedTag);
-            } else if (postTag === 'SOS') {
-              setPostTag('Generale');
-            }
-            setShowCreatePostModal(true);
-          }}
-          className="w-full py-2.5 bg-[#5A6B4E] hover:bg-[#3E4A35] text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>
-            {viewMode === 'social'
-              ? 'Pubblica uno Scatto / Pensiero Social'
-              : viewMode === 'chat'
-              ? 'Scrivi in Chat Live'
-              : viewMode === 'sos'
-              ? 'Segnala Emergenza SOS'
-              : 'Nuovo Post nel Forum'}
-          </span>
-        </button>
       </div>
 
-      {/* Filter & Search Toolbar - Wrapped Filters, Zero Scroll */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-3 shadow-xs space-y-2.5">
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={
-              viewMode === 'chat'
-                ? "Cerca nella chat live..."
-                : viewMode === 'sos'
-                ? "Cerca nelle richieste di soccorso SOS..."
-                : "Cerca discussioni, soste, consigli..."
-            }
-            className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+      {/* Filter & Search Toolbar for non-social modes */}
+      {viewMode !== 'social' && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-3.5 shadow-md space-y-2.5">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={
+                viewMode === 'chat'
+                  ? "Cerca nella chat live..."
+                  : viewMode === 'sos'
+                  ? "Cerca nelle richieste di soccorso SOS..."
+                  : "Cerca discussioni, soste, consigli..."
+              }
+              className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all font-medium"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Category Wrap Pills - Shown ONLY for Chat mode */}
+          {viewMode === 'chat' && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <button
+                onClick={() => setSelectedTag('Tutti')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedTag === 'Tutti'
+                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                }`}
+              >
+                Tutti ({currentModeTotalCount})
+              </button>
+              {tags.map((tag) => {
+                const count = sanitizedMessages.filter((m) => m.type === 'chat' && m.tag === tag).length;
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => setSelectedTag(tag)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      selectedTag === tag
+                        ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{tag}</span>
+                    <span className="text-[10px] opacity-75">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
-
-        {/* Category Wrap Pills - Shown ONLY for Chat mode */}
-        {viewMode === 'chat' && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            <button
-              onClick={() => setSelectedTag('Tutti')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                selectedTag === 'Tutti'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-              }`}
-            >
-              Tutti ({currentModeTotalCount})
-            </button>
-            {tags.map((tag) => {
-              const count = sanitizedMessages.filter((m) => m.type === 'chat' && m.tag === tag).length;
-              return (
-                <button
-                  key={tag}
-                  onClick={() => setSelectedTag(tag)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                    selectedTag === tag
-                      ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>{tag}</span>
-                  <span className="text-[10px] opacity-75">({count})</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* SOS Banner in Emergency Mode or if Active SOS */}
       {viewMode === 'sos' && (
-        <div className="bg-red-50 dark:bg-red-950/40 border-2 border-red-300 dark:border-red-900 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="bg-red-50 dark:bg-red-950/40 border-2 border-red-300 dark:border-red-900 rounded-2xl p-4 shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex gap-3.5 items-start">
             <div className="p-3 bg-red-600 text-white rounded-2xl animate-bounce shrink-0">
               <AlertOctagon className="w-6 h-6" />
@@ -1462,8 +1595,16 @@ export default function CommunityTab({
       {viewMode === 'social' ? (
         /* SOCIAL FEED VIEW (Bacheca Foto, Video e Scatti On The Road) */
         <div className="space-y-4">
-          {/* Quick Post Composer Card */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-4 shadow-sm space-y-3">
+          {/* Quick Post Composer Card - Finestra di scrittura e pubblicazione */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700 border-t-3 border-t-[#3E4A35] dark:border-t-[#A3B896] p-4 shadow-md space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="font-extrabold text-xs text-[#3E4A35] dark:text-[#A3B896] flex items-center gap-1.5 uppercase tracking-wider">
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Scrivi e Pubblica nella Community</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">Foto, video e pensieri on the road</span>
+            </div>
+
             <div className="flex items-center gap-3">
               <div onClick={() => profilePhotoInputRef.current?.click()} className="relative group cursor-pointer shrink-0" title="Cambia foto profilo">
                 <UserAvatar
@@ -1485,55 +1626,91 @@ export default function CommunityTab({
                 onChange={(e) => setQuickSocialText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleQuickSocialSubmit(); }}
                 placeholder="Scrivi un pensiero o scatto..."
-                className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all truncate"
+                className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all truncate font-medium"
               />
             </div>
 
-            {/* Optional Location & Tags Row */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+            {/* Optional Location & Actions Row */}
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              {/* Location Input */}
+              <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <input
                   type="text"
                   value={postLocationName}
                   onChange={(e) => setPostLocationName(e.target.value)}
                   placeholder="Aggiungi posizione (es. Lago di Braies)"
-                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-[#3E4A35] truncate"
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-[#3E4A35] truncate"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2">
-                {postMedia ? (
-                  <div className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                    <span className="truncate max-w-[120px] font-bold">{postMedia.name}</span>
-                    <button onClick={() => setPostMedia(null)} className="p-0.5 text-rose-500 hover:text-rose-700 cursor-pointer">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <input
-                      type="file"
-                      ref={postFileInputRef}
-                      accept="image/*,video/*"
-                      className="hidden"
-                      onChange={(e) => handleFileUpload(e, (url, type, name) => setPostMedia({ url, type, name }))}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => postFileInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Camera className="w-3.5 h-3.5 text-[#5A6B4E]" />
-                      <span>Foto / Video</span>
-                    </button>
-                  </>
-                )}
+              {/* Actions Row: Media Upload, Direct Camera, and Publish Button */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                {/* Media Buttons Group */}
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+                  {postMedia ? (
+                    <div className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 min-w-0">
+                      <span className="truncate max-w-[130px] font-bold">{postMedia.name}</span>
+                      <button onClick={() => setPostMedia(null)} className="p-0.5 text-rose-500 hover:text-rose-700 cursor-pointer shrink-0">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="file"
+                        ref={postFileInputRef}
+                        accept="image/*,video/*"
+                        className="hidden"
+                        onChange={(e) => handleFileUpload(e, (url, type, name) => setPostMedia({ url, type, name }))}
+                      />
+                      <input
+                        type="file"
+                        ref={postDirectCameraInputRef}
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) =>
+                          handleFileUpload(e, (url, type, name) => {
+                            setPostMedia({ url, type: 'image', name: name || `foto_diretta_${Date.now()}.jpg` });
+                            window.dispatchEvent(
+                              new CustomEvent("show-toast", {
+                                detail: { message: "📸 Foto scattata in diretta ed elaborata!" },
+                              })
+                            );
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => postFileInputRef.current?.click()}
+                        className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                        title="Scegli una foto o video dalla galleria"
+                      >
+                        <Paperclip className="w-3.5 h-3.5 text-[#5A6B4E]" />
+                        <span>Foto / Video</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenDirectCamera}
+                        className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800/80 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs group shrink-0"
+                        title="Scatta una foto direttamente con la fotocamera"
+                      >
+                        <div className="relative">
+                          <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform" />
+                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                        </div>
+                        <span className="whitespace-nowrap">Foto Diretta</span>
+                      </button>
+                    </>
+                  )}
+                </div>
 
+                {/* Publish Button */}
                 <button
                   type="button"
                   onClick={handleQuickSocialSubmit}
-                  className="px-4 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer active:scale-95 shrink-0"
+                  className="px-4 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] dark:bg-[#A3B896] dark:hover:bg-[#8CA37E] dark:text-slate-950 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer active:scale-95 shrink-0 ml-auto"
                 >
                   <Send className="w-3 h-3" />
                   <span>Pubblica</span>
@@ -1553,7 +1730,7 @@ export default function CommunityTab({
                       setQuickSocialText(prev => (prev ? `${prev} ${tag}` : tag));
                     }
                   }}
-                  className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md text-[10px] font-extrabold text-[#3E4A35] dark:text-[#A3B896] transition-all cursor-pointer"
+                  className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-[10px] font-extrabold text-[#3E4A35] dark:text-[#A3B896] border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
                 >
                   {tag}
                 </button>
@@ -1561,8 +1738,31 @@ export default function CommunityTab({
             </div>
           </div>
 
+          {/* Filter & Search Toolbar - Positioned directly below the writing and publishing window in Social mode */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-3.5 shadow-md space-y-2.5">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cerca discussioni, soste, consigli..."
+                className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#3E4A35] dark:focus:border-[#A3B896] transition-all font-medium"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Social Feed Sub-filters */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-2 shadow-2xs space-y-1.5">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 p-2 shadow-md space-y-1.5">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 w-full">
               {[
                 { id: 'all', label: 'Tutti i Post', icon: '✨' },
@@ -1575,8 +1775,8 @@ export default function CommunityTab({
                   onClick={() => setSocialSubFilter(sub.id as any)}
                   className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center ${
                     socialSubFilter === sub.id
-                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100'
+                      ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-sm'
+                      : 'bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
                   }`}
                 >
                   <span className="text-sm shrink-0">{sub.icon}</span>
@@ -1587,10 +1787,10 @@ export default function CommunityTab({
           </div>
 
           {/* Social Post Feed Items */}
-          <div className="bg-[#EDE9E1] dark:bg-slate-900/40 border border-stone-300/60 dark:border-slate-800 rounded-3xl p-3.5 sm:p-5 shadow-inner space-y-4">
+          <div className="space-y-4">
             {filteredMessages.length === 0 ? (
-              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 p-8 text-center space-y-3 shadow-xs">
-                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700/50 text-slate-400 mx-auto flex items-center justify-center text-xl">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 p-8 text-center space-y-3 shadow-md">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center text-xl">
                   📸
                 </div>
                 <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Nessun post social trovato</h4>
@@ -1617,7 +1817,7 @@ export default function CommunityTab({
                   return (
                     <div
                       key={msg.id}
-                      className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm overflow-hidden transition-all hover:shadow-md space-y-3"
+                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 shadow-md overflow-hidden transition-all hover:shadow-lg space-y-3"
                     >
                     {/* Header: Author & Spot Location */}
                     <div className="p-4 pb-0 flex items-center justify-between gap-3">
@@ -3177,7 +3377,7 @@ export default function CommunityTab({
                     </button>
                   </div>
                 ) : (
-                  <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="file"
                       ref={postFileInputRef}
@@ -3188,10 +3388,21 @@ export default function CommunityTab({
                     <button
                       type="button"
                       onClick={() => postFileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                      className="py-2.5 px-3 bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 cursor-pointer transition-colors"
                     >
                       <Paperclip className="w-4 h-4 text-[#5A6B4E]" />
-                      <span>Carica una foto o un video</span>
+                      <span>Carica Foto / Video</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenDirectCamera}
+                      className="py-2.5 px-3 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-800 rounded-xl text-xs font-extrabold text-rose-700 dark:text-rose-300 flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                    >
+                      <div className="relative">
+                        <Camera className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                      </div>
+                      <span>Scatta Foto in Diretta</span>
                     </button>
                   </div>
                 )}
@@ -3309,6 +3520,24 @@ export default function CommunityTab({
         onClose={() => setShowMentionPicker(false)}
         users={communityUsersList}
         onSelectUser={(u) => handleTagUser(u, activeMentionTargetKey)}
+      />
+
+      {/* Live Camera Modal */}
+      <LiveCameraModal
+        isOpen={showLiveCameraModal}
+        onClose={() => setShowLiveCameraModal(false)}
+        onCapture={(dataUrl) => {
+          setPostMedia({
+            url: dataUrl,
+            type: 'image',
+            name: `foto_diretta_${Date.now()}.jpg`,
+          });
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: "📸 Foto scattata in diretta e allegata al post!" },
+            })
+          );
+        }}
       />
     </div>
   );

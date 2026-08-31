@@ -30,6 +30,7 @@ import {
 } from "./data/mockData";
 import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
 import { createSocialPostFromTrip } from "./utils/tripSocialShare";
+import { normalizeTrip, mergeTrips } from "./utils/tripSyncHelper";
 
 
 // Modular Tab Components
@@ -79,6 +80,7 @@ import { registerPushNotifications } from "./utils/pushNotifications";
 import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
+import { AppPermissionModal } from "./components/AppPermissionModal";
 
 // Guard to prevent multiple welcome toast/speech invocations
 let welcomeSpeechTriggered = false;
@@ -185,11 +187,23 @@ export default function App() {
   const [isInstalled, setIsInstalled] = React.useState<boolean>(false);
   const [isInIframe, setIsInIframe] = React.useState<boolean>(false);
   const [showFamilyCrewModal, setShowFamilyCrewModal] = React.useState<boolean>(false);
+  const [showPermissionModal, setShowPermissionModal] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem("viacamper_perm_configured") !== "true";
+    } catch (e) {
+      return true;
+    }
+  });
 
   React.useEffect(() => {
     const handleOpenCrew = () => setShowFamilyCrewModal(true);
+    const handleOpenPerms = () => setShowPermissionModal(true);
     window.addEventListener("open-family-crew-modal", handleOpenCrew);
-    return () => window.removeEventListener("open-family-crew-modal", handleOpenCrew);
+    window.addEventListener("open-permission-modal", handleOpenPerms);
+    return () => {
+      window.removeEventListener("open-family-crew-modal", handleOpenCrew);
+      window.removeEventListener("open-permission-modal", handleOpenPerms);
+    };
   }, []);
 
   React.useEffect(() => {
@@ -860,21 +874,21 @@ export default function App() {
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
           const parsed = JSON.parse(userSaved);
-          if (Array.isArray(parsed)) initialTrips = parsed;
+          if (Array.isArray(parsed)) initialTrips = parsed.map(normalizeTrip);
         }
       }
 
       // INJECTION: Ensure example trip exists if not deleted
       if (!initialTrips.some(t => t.id === EXAMPLE_TRIP.id) && 
           localStorage.getItem(`example_deleted_${currentUser?.email?.toLowerCase().trim()}`) !== "true") {
-        initialTrips = [EXAMPLE_TRIP, ...initialTrips];
+        initialTrips = [normalizeTrip(EXAMPLE_TRIP), ...initialTrips];
       }
       
       return initialTrips;
     } catch (e) {
       console.error("Error reading initial trips:", e);
     }
-    return [EXAMPLE_TRIP];
+    return [normalizeTrip(EXAMPLE_TRIP)];
   });
 
   const isSyncingFromFirestoreRef = React.useRef(false);
@@ -920,8 +934,9 @@ export default function App() {
         try {
           const parsed = JSON.parse(userSaved);
           if (Array.isArray(parsed)) {
-            setTrips(parsed);
-            lastSavedTripsJsonRef.current = JSON.stringify(parsed);
+            const normalized = parsed.map(normalizeTrip);
+            setTrips(normalized);
+            lastSavedTripsJsonRef.current = JSON.stringify(normalized);
             return;
           }
         } catch {}
@@ -1487,16 +1502,17 @@ export default function App() {
   const saveTripsToFirestore = React.useCallback(async (newTrips: Trip[]) => {
     if (!currentUser?.email) return;
     const cleanEmail = currentUser.email.toLowerCase().trim();
-    const tripsJson = JSON.stringify(newTrips);
+    const normalized = newTrips.map(normalizeTrip);
+    const tripsJson = JSON.stringify(normalized);
     if (tripsJson === lastSavedTripsJsonRef.current && isSyncingFromFirestoreRef.current) {
       isSyncingFromFirestoreRef.current = false;
       return;
     }
     try {
-      lastSavedTripsJsonRef.current = tripsJson;
       const docRef = doc(db, "users", cleanEmail, "data", "trips");
       const cleanedTrips = JSON.parse(tripsJson);
       await setDoc(docRef, { trips: cleanedTrips }, { merge: true });
+      lastSavedTripsJsonRef.current = tripsJson;
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);
     } finally {
@@ -1515,27 +1531,29 @@ export default function App() {
     
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       console.log("[App] Firestore snapshot received. Exists:", docSnap.exists());
+
+      // If snapshot has pending local writes, do not overwrite local state
+      if (docSnap.metadata?.hasPendingWrites) {
+        setLoadedFromFirestore(true);
+        return;
+      }
+
       if (docSnap.exists()) {
         const data = docSnap.data();
-        console.log("[App] Firestore snapshot data:", data);
-        
         let cloudTrips: Trip[] = [];
         if (data && data.trips && Array.isArray(data.trips)) {
-            cloudTrips = data.trips;
+          cloudTrips = data.trips.map(normalizeTrip);
         }
 
-        const cloudTripsJson = JSON.stringify(cloudTrips);
-
-        if (cloudTripsJson === lastSavedTripsJsonRef.current) {
-          setLoadedFromFirestore(true);
-          return;
-        }
-
-        // Strictly replace local trips with the user's Firestore cloud trips.
-        // Do NOT bleed trips from previous local state into a new/different user's cloud account.
-        isSyncingFromFirestoreRef.current = true;
-        lastSavedTripsJsonRef.current = cloudTripsJson;
-        setTrips(cloudTrips);
+        setTrips((prevTrips) => {
+          const merged = mergeTrips(prevTrips, cloudTrips);
+          const mergedJson = JSON.stringify(merged);
+          if (mergedJson !== lastSavedTripsJsonRef.current) {
+            isSyncingFromFirestoreRef.current = true;
+            lastSavedTripsJsonRef.current = mergedJson;
+          }
+          return merged;
+        });
       } else {
         // Document does not exist in cloud yet for this user.
         // DO NOT destroy local trips! Instead, upload the existing local trips to initialize the cloud.
@@ -1572,7 +1590,7 @@ export default function App() {
     }
 
     if (currentUser?.email && loadedFromFirestore) {
-      const tripsJson = JSON.stringify(trips);
+      const tripsJson = JSON.stringify(trips.map(normalizeTrip));
       if (tripsJson !== lastSavedTripsJsonRef.current) {
         saveTripsToFirestore(trips);
       }
@@ -3215,18 +3233,15 @@ out center;`;
       }
 
       if (approvedPlaces && approvedPlaces.length > 0) {
-        const userPlaces = places.filter((p) => p.id.startsWith("user_place_"));
-        const mergedMap = new globalThis.Map<string, Place>();
-        
-        // Add user places first
-        userPlaces.forEach(p => mergedMap.set(p.id, p));
-        
-        // Add approved places (overwriting if there's a match, though ideally they shouldn't conflict)
-        approvedPlaces.forEach(p => mergedMap.set(p.id, p));
-        
-        const merged = Array.from(mergedMap.values());
-        setPlaces(merged);
-        localStorage.setItem("camper_places", JSON.stringify(merged));
+        setPlaces((prevPlaces) => {
+          const mergedMap = new globalThis.Map<string, Place>();
+          INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
+          prevPlaces.forEach((p) => mergedMap.set(p.id, p));
+          approvedPlaces.forEach((p) => mergedMap.set(p.id, p));
+          const merged = Array.from(mergedMap.values());
+          localStorage.setItem("camper_places", JSON.stringify(merged));
+          return merged;
+        });
       }
     } catch (err: any) {
       if (err.message !== "Failed to fetch") {
@@ -3686,7 +3701,6 @@ out center;`;
 
           const isPermissionDenied =
             error.code === 1 ||
-            error.code === 0 ||
             error.message?.toLowerCase().includes("permission") ||
             error.message?.toLowerCase().includes("denied");
           if (isPermissionDenied) {
@@ -3790,7 +3804,6 @@ out center;`;
         (error) => {
           const isPermissionDenied =
             error.code === 1 ||
-            error.code === 0 ||
             error.message?.toLowerCase().includes("permission") ||
             error.message?.toLowerCase().includes("denied");
           if (isPermissionDenied) {
@@ -4040,12 +4053,13 @@ out center;`;
       .then((serverPlaces: Place[]) => {
         if (Array.isArray(serverPlaces)) {
           setPlaces((prevPlaces) => {
-            // Rimuove i vecchi punti "user_place_" salvati in locale per evitare duplicati
-            // e integra i punti approvati aggiornati e sincronizzati provenienti dal server.
-            const basePlaces = prevPlaces.filter(
-              (p) => !p.id.startsWith("user_place_"),
-            );
-            return [...basePlaces, ...serverPlaces];
+            const mergedMap = new globalThis.Map<string, Place>();
+            INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
+            prevPlaces.forEach((p) => mergedMap.set(p.id, p));
+            serverPlaces.forEach((p) => mergedMap.set(p.id, p));
+            const merged = Array.from(mergedMap.values());
+            localStorage.setItem("camper_places", JSON.stringify(merged));
+            return merged;
           });
         }
       })
@@ -9182,6 +9196,18 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
         isOpen={showFamilyCrewModal}
         onClose={() => setShowFamilyCrewModal(false)}
         currentUser={currentUser}
+      />
+
+      <AppPermissionModal
+        isOpen={showPermissionModal}
+        onClose={() => setShowPermissionModal(false)}
+        onApply={(perms) => {
+          if (perms.location) {
+            setHasDeniedGPS(false);
+            setIsGPSEnabled(true);
+            handleRequestSingleGPS();
+          }
+        }}
       />
     </div>
     </FamilyCrewProvider>

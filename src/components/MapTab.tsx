@@ -51,6 +51,7 @@ import {
   Map as MapIcon,
   Loader2,
   ScanLine,
+  RefreshCw,
 } from "lucide-react";
 import L from "leaflet";
 import { CategoryIllustration } from "./CategoryIllustration";
@@ -2371,14 +2372,12 @@ export default function MapTab({
         );
         matchesDistance = dist <= 15;
       } else if (activeDistanceFilter === "none") {
-        // If no proximity filter is active, hide everything unless it's selected or we're showing favorites only
-        if (
-          selectedPlace?.id === p.id ||
-          (showFavoritesOnly && favoriteIds.includes(p.id))
-        ) {
-          matchesDistance = true;
-        } else {
+        const hasSearchQuery = Boolean((searchQuery || "").trim());
+        const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
+        if (!hasSearchQuery && !isSelectedPlace) {
           matchesDistance = false;
+        } else {
+          matchesDistance = true;
         }
       }
       if (!matchesDistance) return false;
@@ -3161,9 +3160,9 @@ out center;`;
         // Check bbox size to avoid hitting Overpass memory limits
         const latDiff = north - south;
         const lngDiff = east - west;
-        if (latDiff > 1.2 || lngDiff > 1.2) {
+        if (latDiff > 3.2 || lngDiff > 3.5) {
           throw new Error(
-            "L'area della mappa inquadrata è troppo grande! Avvicina lo zoom su una città o zona specifica prima di importare.",
+            "L'area della mappa inquadrata è troppo grande! Avvicina leggermente lo zoom sulla regione desiderata prima di importare.",
           );
         }
 
@@ -4241,21 +4240,52 @@ out center;`;
         {!showFilterPanel && (
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
             {getFilteredPlaces().length === 0 ? (
-              <div className="p-6 text-center text-slate-500 space-y-2 mt-4">
-                <Compass className="w-8 h-8 mx-auto text-[#3E4A35] opacity-40 animate-pulse" />
-                <p className="font-bold text-slate-700 text-xs">
-                  Nessuna sosta visibile
-                </p>
-                <p className="text-[10.5px] text-slate-500 leading-relaxed px-2">
-                  La mappa è pulita per non affollarla. Le aree sosta vengono
-                  mostrate solo vicino a te o alla tua destinazione. Usa i
-                  pulsanti{" "}
-                  <strong className="text-[#3E4A35]">"🚐 Intorno a me"</strong>{" "}
-                  o{" "}
-                  <strong className="text-[#3E4A35]">"📍 Intorno sosta"</strong>{" "}
-                  sotto la mappa per attivarle!
-                </p>
-              </div>
+              activeDistanceFilter === "none" && !(searchQuery || "").trim() ? (
+                <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
+                  <Compass className="w-10 h-10 mx-auto text-orange-500 animate-pulse" />
+                  <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
+                    Premi "🚐 Intorno a me" o "📍 Intorno sosta"
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+                    Per garantire la massima velocità ed evitare rallentamenti, le soste vengono mostrate solo quando premi i pulsanti di vicinanza <strong>"Intorno a me"</strong> o <strong>"Intorno sosta"</strong> oppure quando cerchi una città.
+                  </p>
+                  <div className="flex gap-2 justify-center pt-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!userLocation) {
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: {
+                                message: `⚠️ Per cercare "Intorno a me", abilita prima il GPS (pulsante "Attiva GPS" sulla mappa)`,
+                              },
+                            }),
+                          );
+                          return;
+                        }
+                        mapMovedByUserRef.current = false;
+                        setActiveDistanceFilter("me");
+                        setFilterCenter({ lat: userLocation.lat, lng: userLocation.lng });
+                        mapRef.current?.setView([userLocation.lat, userLocation.lng], 10);
+                        await autoLoadOSMForProximity(userLocation.lat, userLocation.lng, "Ricerca soste intorno a te...");
+                      }}
+                      className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>🚐 Attiva "Intorno a me"</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-slate-500 space-y-2 mt-4">
+                  <Compass className="w-8 h-8 mx-auto text-[#3E4A35] opacity-40 animate-pulse" />
+                  <p className="font-bold text-slate-700 text-xs">
+                    Nessuna sosta trovata
+                  </p>
+                  <p className="text-[10.5px] text-slate-500 leading-relaxed px-2">
+                    Nessun punto sosta corrisponde ai filtri selezionati o alla ricerca corrente. Prova a modificare la parola chiave o a selezionare la scheda "Tutti".
+                  </p>
+                </div>
+              )
             ) : (
               getFilteredPlaces().map((place) => {
                 const isSelected = selectedPlace?.id === place.id;
@@ -4416,6 +4446,8 @@ out center;`;
               mapMovedByUserRef={mapMovedByUserRef}
               searchResultPins={searchResultPins}
               onSelectSuggestion={handleSelectSuggestion}
+              onImportOSM={() => handleImportFromOSM("viewport")}
+              isImporting={isImporting}
               indicatorTitle={
                 settings?.mapEngine === "leaflet" && hasValidKey && isOnline
                   ? "Mappa Leaflet Ultra-Rapida ⚡"
@@ -9477,6 +9509,8 @@ export function LeafletOfflineMap({
   mapMovedByUserRef,
   searchResultPins = [],
   onSelectSuggestion,
+  onImportOSM,
+  isImporting = false,
 }: {
   places: Place[];
   userLocation: { lat: number; lng: number } | null;
@@ -9494,6 +9528,8 @@ export function LeafletOfflineMap({
   mapMovedByUserRef?: React.MutableRefObject<boolean>;
   searchResultPins?: any[];
   onSelectSuggestion?: (sug: any) => void;
+  onImportOSM?: () => void;
+  isImporting?: boolean;
 }) {
   const settings = useAppSettings();
   const mapRef = React.useRef<L.Map | null>(null);
@@ -9880,15 +9916,19 @@ export function LeafletOfflineMap({
 
   return (
     <div className="w-full h-full relative">
-      {/* Visual top indicator telling the user they are viewing the Leaflet Offline Map */}
-      <div className="absolute top-13 md:top-14 left-1/2 -translate-x-1/2 z-[1000] bg-[#3E4A35] text-white px-4 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-md border border-white/20 select-none whitespace-nowrap">
-        <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
-        <span>
-          {indicatorTitle ||
-            (isOnline
-              ? "Mappa Leaflet Attiva 🗺️"
-              : "Mappa Offline Leaflet Attiva 🗺️")}
-        </span>
+      {/* Visual top indicator showing total places and fast OSM viewport scan */}
+      <div className="absolute top-13 md:top-14 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1.5 select-none pointer-events-auto">
+        <div className="bg-[#3E4A35] text-white px-3.5 py-1 rounded-full text-[10.5px] font-black uppercase tracking-wider flex items-center gap-2 shadow-lg border border-white/20 whitespace-nowrap">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <span>
+            {indicatorTitle ||
+              (activeDistanceFilter === "none" && places.length === 0
+                ? "📍 PREMI \"INTORNO A ME\" O CERCA PER MOSTRARE LE SOSTE 🗺️"
+                : isOnline
+                ? `📍 ${places.length.toLocaleString()} SOSTE MOSTRATE 🗺️`
+                : `📍 ${places.length.toLocaleString()} SOSTE OFFLINE MOSTRATE 🗺️`)}
+          </span>
+        </div>
       </div>
       <div
         ref={containerRef}

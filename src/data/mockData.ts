@@ -525,7 +525,7 @@ function processAllPlaces(): Place[] {
   return resultList;
 }
 
-export const INITIAL_PLACES: Place[] = HANDCRAFTED_PLACES;
+export const INITIAL_PLACES: Place[] = processAllPlaces();
 
 export const INITIAL_COMMUNITY_MESSAGES: CommunityMessage[] = [
   /* SOCIAL POSTS (Rolly Examples) */

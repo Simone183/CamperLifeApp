@@ -1,7 +1,8 @@
 import React from "react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue, formatCurrency } from "../unit-helpers";
-import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement } from "../types";
+import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement, TripMovement } from "../types";
+import { normalizeTrip, mergeTrips } from "../utils/tripSyncHelper";
 import { compressImage } from "../utils/photoCompressor";
 import { resolveMediaUrl } from "../utils/resolveMediaUrl";
 import { CamperImage } from "./CamperImage";
@@ -317,12 +318,15 @@ export default function DiaryTab({
     }
   }, [trips, currentCrew, isModuleSynced, emailKey]);
 
-  // Sync incoming trips from Family Crew
+  // Sync incoming trips from Family Crew without overwriting local trip updates
   React.useEffect(() => {
     if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips) && currentCrew.sharedData.trips.length > 0) {
-      setTrips(currentCrew.sharedData.trips);
+      const merged = mergeTrips(trips, currentCrew.sharedData.trips);
+      if (JSON.stringify(merged) !== JSON.stringify(trips)) {
+        setTrips(merged);
+      }
     }
-  }, [currentCrew, isModuleSynced]);
+  }, [currentCrew?.sharedData?.trips, isModuleSynced]);
 
   React.useEffect(() => {
     const handleOpenPlanned = (e: any) => {
@@ -617,16 +621,15 @@ export default function DiaryTab({
       amount: finalAmount,
       category: finalCategory,
       date: expenseDate || new Date().toISOString().split("T")[0],
-      ...(expenseSubMode === "refuel"
-        ? {
-            liters: litersNum,
-            pricePerLiter: pricePerLiterNum,
-            odometer: odometerNum,
-            fuelCompany: fuelCompany,
-            isFullTank: fuelIsFullTank,
-          }
-        : {}),
     };
+
+    if (expenseSubMode === "refuel") {
+      if (litersNum !== undefined && !isNaN(litersNum)) newExpense.liters = litersNum;
+      if (pricePerLiterNum !== undefined && !isNaN(pricePerLiterNum)) newExpense.pricePerLiter = pricePerLiterNum;
+      if (odometerNum !== undefined && !isNaN(odometerNum)) newExpense.odometer = odometerNum;
+      if (fuelCompany) newExpense.fuelCompany = fuelCompany;
+      if (fuelIsFullTank !== undefined) newExpense.isFullTank = fuelIsFullTank;
+    }
 
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
@@ -635,7 +638,7 @@ export default function DiaryTab({
           endOdo = odometerNum;
         }
 
-        let newExpenses = [...t.expenses];
+        let newExpenses = [...(t.expenses || [])];
         if (editingExpenseId) {
           newExpenses = newExpenses.map((e) =>
             e.id === editingExpenseId ? newExpense : e
@@ -654,6 +657,11 @@ export default function DiaryTab({
     });
 
     setTrips(updated);
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
 
     if (expenseSubMode === "refuel" && currentUser?.email) {
       fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`, {
@@ -722,7 +730,26 @@ export default function DiaryTab({
   // Handle adding/editing a new movement
   const handleAddMovement = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTripId || !movementLocation || !movementOdometer) return;
+    if (!selectedTripId) return;
+
+    if (!movementLocation.trim()) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⚠️ Inserisci la tappa / luogo dello spostamento!" },
+        }),
+      );
+      return;
+    }
+
+    const parsedOdometer = parseFloat(movementOdometer);
+    if (isNaN(parsedOdometer) || parsedOdometer < 0) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⚠️ Inserisci un chilometraggio valido!" },
+        }),
+      );
+      return;
+    }
 
     if (editingMovementId) {
       // Edit mode
@@ -732,10 +759,10 @@ export default function DiaryTab({
             m.id === editingMovementId
               ? {
                   ...m,
-                  odometer: parseFloat(movementOdometer),
-                  location: movementLocation,
+                  odometer: parsedOdometer,
+                  location: movementLocation.trim(),
                   date: movementDate || m.date,
-                  notes: movementNotes,
+                  notes: movementNotes.trim(),
                 }
               : m
           );
@@ -744,24 +771,42 @@ export default function DiaryTab({
         return t;
       });
       setTrips(updated);
+      window.dispatchEvent(
+        new CustomEvent("trip-updated", {
+          detail: { trips: updated },
+        }),
+      );
       setEditingMovementId(null);
     } else {
       // Add mode
-      const newMovement = {
-        id: Date.now().toString(),
-        odometer: parseFloat(movementOdometer),
-        location: movementLocation,
+      const newMovement: TripMovement = {
+        id: "mov_" + Date.now(),
+        odometer: parsedOdometer,
+        location: movementLocation.trim(),
         date: movementDate || new Date().toISOString(),
-        notes: movementNotes,
+        notes: movementNotes.trim(),
       };
 
       const updated = trips.map((t) => {
         if (t.id === selectedTripId) {
-          return { ...t, movements: [...(t.movements || []), newMovement] };
+          let endOdo = t.endOdometer;
+          if (!endOdo || parsedOdometer > endOdo) {
+            endOdo = parsedOdometer;
+          }
+          return {
+            ...t,
+            endOdometer: endOdo,
+            movements: [...(t.movements || []), newMovement],
+          };
         }
         return t;
       });
       setTrips(updated);
+      window.dispatchEvent(
+        new CustomEvent("trip-updated", {
+          detail: { trips: updated },
+        }),
+      );
     }
 
     setMovementLocation("");

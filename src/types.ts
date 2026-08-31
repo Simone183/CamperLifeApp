@@ -365,6 +365,8 @@ export interface DiaryMovement {
   notes?: string;
 }
 
+export type TripMovement = DiaryMovement;
+
 export interface DiaryExpense {
   id: string;
   title: string;
@@ -443,6 +445,77 @@ export interface CommunityItinerary {
   days: AIDayStop[];
 }
 
+export type TabType = 'map' | 'diary' | 'social' | 'tools' | string;
+
+export interface VehicleSpecs {
+  modelName: string;
+  heightMeters: number;
+  widthMeters: number;
+  weightTons: number;
+  lengthMeters: number;
+  maxWeightTons?: number;
+  licenseType?: string;
+  height?: number | string;
+  width?: number | string;
+  weight?: number | string;
+  length?: number | string;
+  brand?: string;
+  chassisBrand?: string;
+  vehicleType?: string;
+  registrationYear?: string;
+  licensePlate?: string;
+  vinNumber?: string;
+}
+
+export interface FuelLog {
+  id: string;
+  date: string;
+  liters: number;
+  costEuro: number;
+  pricePerLiter: number;
+  odometerKm: number;
+  location?: string;
+  fuelType?: string;
+}
+
+export interface SocialPost {
+  id: string;
+  user: string;
+  userAvatar?: string;
+  authorName?: string;
+  authorAvatar?: string;
+  locationTag?: string;
+  category?: string;
+  timeAgo?: string;
+  date?: string;
+  content?: string;
+  text?: string;
+  location?: string;
+  likesCount?: number;
+  likes?: number;
+  commentsCount?: number;
+  isLiked?: boolean;
+  tags?: string[];
+  imageUrl?: string;
+  image?: string;
+  type?: string;
+  tag?: string;
+  replies?: any[];
+}
+
+export interface TripStop {
+  id: string;
+  locationName?: string;
+  name?: string;
+  lat?: number;
+  lng?: number;
+  date?: string;
+  notes?: string;
+  priceEuro?: number;
+  expenses?: number;
+  photosUrl?: string[];
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -451,10 +524,10 @@ export interface Trip {
   description: string;
   startOdometer?: number;
   endOdometer?: number;
-  status: 'Pianificato' | 'Attivo' | 'Completato';
+  status: 'Pianificato' | 'Attivo' | 'Completato' | 'ATTIVO' | 'PIANIFICATO' | 'COMPLETATO' | string;
   expenses: DiaryExpense[];
   photos: DiaryPhoto[];
-  movements: DiaryMovement[];
+  movements?: DiaryMovement[];
   isShared?: boolean;
   includeExpenses?: boolean;
   shareToSharedTrips?: boolean;
@@ -466,6 +539,11 @@ export interface Trip {
     timestamp?: string;
   }>;
   aiItinerary?: AIItineraryResult;
+  stops?: TripStop[];
+  coverPhoto?: string;
+  photosCount?: number;
+  budgetEuro?: number;
+  kmTotal?: number;
 }
 
 export interface NavigationStep {
