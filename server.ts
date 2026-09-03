@@ -1176,8 +1176,12 @@ out center;`;
               address = `Rif OSM: ${el.id} (${elLat.toFixed(4)}, ${elLng.toFixed(4)})`;
             }
 
-            let priceEuro = tags.fee === 'no' ? 0 : 15;
-            let priceInfo = tags.fee === 'no' ? "Gratuito" : (tags.charge || "In loco / Da verificare");
+            let feeStatus = 'unknown';
+            if (tags.fee === 'no') feeStatus = 'free';
+            else if (tags.fee === 'yes') feeStatus = 'paid';
+            
+            let priceEuro = feeStatus === 'free' ? 0 : (tags.charge ? 15 : -1); 
+            let priceInfo = feeStatus === 'free' ? "Gratuito" : (tags.charge || "A pagamento (da verificare)");
 
             const facilities = ["Acqua", "Scarico"];
             if (tags.power_supply === 'yes' || tags.electricity === 'yes' || tags["power_supply:camper"] === 'yes') {
@@ -1195,6 +1199,7 @@ out center;`;
               address,
               priceEuro,
               priceInfo,
+              feeStatus,
               rating: Number((4.1 + Math.random() * 0.8).toFixed(1)),
               facilities,
               source: "OpenStreetMap",

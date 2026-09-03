@@ -10,7 +10,6 @@ import {
   Loader2,
 } from "lucide-react";
 import { User } from "../types";
-import { resolveMediaUrl } from "../utils/resolveMediaUrl";
 
 interface DeleteAccountTabProps {
   currentUser: User | null;
@@ -42,7 +41,7 @@ export const DeleteAccountTab: React.FC<DeleteAccountTabProps> = ({
     setErrorMsg(null);
 
     try {
-      const response = await fetch(resolveMediaUrl("/api/user/delete-account"), {
+      const response = await fetch(`${window.location.origin}/api/user/delete-account`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

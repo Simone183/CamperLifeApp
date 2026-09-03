@@ -25,7 +25,22 @@ try {
       isMobileNative,
     });
 
+    // Aggiungi monkey-patch per prevenire QuotaExceededError in localStorage
+    const originalSetItem = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+      try {
+        originalSetItem.apply(this, [key, value]);
+      } catch (e) {
+        if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+          console.warn('LocalStorage quota exceeded for key:', key);
+        } else {
+          throw e;
+        }
+      }
+    };
+
     if (isMobileNative && window.fetch) {
+
       const originalFetch = window.fetch;
 
       const customFetch = async function (

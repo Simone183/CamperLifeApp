@@ -18,17 +18,12 @@ export function resolveMediaUrl(url?: string): string {
   const isMobileNative =
     typeof (window as any).Capacitor !== "undefined" ||
     window.location.protocol.startsWith("capacitor") ||
-    window.location.protocol.startsWith("file:") ||
-    ((window.location.hostname === "localhost" ||
-      window.location.hostname === "127.0.0.1" ||
-      window.location.hostname === "") &&
-      window.location.port !== "3000" &&
-      window.location.port !== "5173");
+    window.location.protocol.startsWith("file:");
 
   if (isMobileNative) {
     // Public production Cloud Run URL
-    const preBase = "https://ais-pre-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
-    const devBase = "https://ais-dev-ajaitltcclogrgumjfdqkq-942333460354.europe-west2.run.app";
+    const preBase = "https://ais-pre-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
+    const devBase = "https://ais-dev-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
     
     // Default to the public production endpoint for all native mobile apps & external devices
     let base = preBase;

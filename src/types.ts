@@ -141,6 +141,7 @@ export interface Place {
   description?: string;
   priceInfo: string;
   priceEuro: number; // For interactive editing
+  feeStatus?: 'free' | 'paid' | 'unknown';
   seasonalPrices?: PlaceSeasonalPrice[];
   rating: number;
   noiseLevel?: number;

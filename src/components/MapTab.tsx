@@ -829,10 +829,11 @@ export default function MapTab({
   const [mapTypeId, setMapTypeId] = React.useState<string>("roadmap");
   const [showMapTypeMenu, setShowMapTypeMenu] = React.useState<boolean>(false);
 
-  // Distance / Radius filters states (15km)
+  // Distance / Radius filters states (30km)
   const [activeDistanceFilter, setActiveDistanceFilter] = React.useState<
     "none" | "me" | "place"
   >("none");
+  const [showAllPlaces, setShowAllPlaces] = React.useState(false);
   const [filterCenter, setFilterCenter] = React.useState<{
     lat: number;
     lng: number;
@@ -2038,7 +2039,7 @@ export default function MapTab({
     setAddressSuggestions([]);
     setAddressSearchQuery(customPlace.name);
 
-    // Imposta automaticamente il filtro prossimità e carica le strutture camper entro i 15km
+    // Imposta automaticamente il filtro prossimità e carica le strutture camper entro i 30km
     mapMovedByUserRef.current = true;
     setActiveDistanceFilter("place");
     setFilterCenter({ lat, lng });
@@ -2047,7 +2048,7 @@ export default function MapTab({
     window.dispatchEvent(
       new CustomEvent("show-toast", {
         detail: {
-          message: `📍 Centrato su: ${customPlace.name}! Mappa posizionata e raggio di 15km attivato con Google Places.`,
+          message: `📍 Centrato su: ${customPlace.name}! Mappa posizionata e raggio di 30km attivato con Google Places.`,
         },
       }),
     );
@@ -2353,7 +2354,7 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (15km)
+      // 3. Proximity Radius (30km)
       let matchesDistance = true;
       if (activeDistanceFilter === "me" && userLocation) {
         const dist = getDistanceKm(
@@ -2372,12 +2373,16 @@ export default function MapTab({
         );
         matchesDistance = dist <= 15;
       } else if (activeDistanceFilter === "none") {
-        const hasSearchQuery = Boolean((searchQuery || "").trim());
-        const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
-        if (!hasSearchQuery && !isSelectedPlace) {
-          matchesDistance = false;
-        } else {
+        if (showAllPlaces) {
           matchesDistance = true;
+        } else {
+          const hasSearchQuery = Boolean((searchQuery || "").trim());
+          const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
+          if (!hasSearchQuery && !isSelectedPlace) {
+            matchesDistance = false;
+          } else {
+            matchesDistance = true;
+          }
         }
       }
       if (!matchesDistance) return false;
@@ -3872,6 +3877,27 @@ out center;`;
                 <button
                   type="button"
                   onClick={() => {
+                    // Reset all filters and distance filtering
+                    setActiveDistanceFilter("none");
+                    setShowAllPlaces(true);
+                    setSelectedCategory("all");
+                    setShowFavoritesOnly(false);
+                    setSearchQuery("");
+                    setFilterMinRating(0);
+                    setFilterMaxPrice(100);
+                    setFilterAvoidNarrow(false);
+                    setFilterCheckVehicleDimensions(false);
+                    setFilterSelectedFacilities([]);
+                    // Also clear search result pins if any
+                    setSearchResultPins([]);
+                  }}
+                  className="text-[9px] text-blue-600 hover:underline font-bold mr-2"
+                >
+                  Visualizza tutte
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     // Reset all filters
                     setFilterMinRating(0);
                     setFilterMaxPrice(100);
@@ -4399,7 +4425,7 @@ out center;`;
                       </div>
                       <div className="flex justify-between items-center pt-1">
                         <span className="font-bold text-slate-700 font-mono text-[10px]">
-                          {place.priceInfo}
+                          {place.priceInfo} {place.feeStatus === 'free' ? '✅' : place.feeStatus === 'paid' ? '💰' : ''}
                         </span>
                         {hasLimit && (
                           <span className="bg-[#A45C40]/10 text-[#A45C40] font-extrabold text-[9px] px-1.5 py-0.5 rounded animate-pulse inline-flex items-center gap-1">
@@ -5280,7 +5306,7 @@ out center;`;
                       <span>Nuova Sosta</span>
                     </button>
 
-                    {/* 3. Carica punti OSM intorno (15km) */}
+                    {/* 3. Carica punti OSM intorno (30km) */}
                     <button
                       onClick={async () => {
                         const lat = clickedCoords.lat;
@@ -5294,7 +5320,7 @@ out center;`;
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
                             detail: {
-                              message: `🔍 Carico ed evidenzio i punti camper entro 15km da questa puntina!`,
+                              message: `🔍 Carico ed evidenzio i punti camper entro 30km da questa puntina!`,
                             },
                           }),
                         );
@@ -5302,7 +5328,7 @@ out center;`;
                         await autoLoadOSMForProximity(
                           lat,
                           lng,
-                          "Ricerca soste vicine entro 15km..."
+                          "Ricerca soste vicine entro 30km..."
                         );
                       }}
                       disabled={isAutoLoadingOSM}
@@ -5859,7 +5885,7 @@ out center;`;
                     })()}
                     {selectedPlace.id !== "current_location" && (
                       <span className="text-slate-600 font-bold font-mono text-[10px]">
-                        {selectedPlace.priceInfo}
+                        {selectedPlace.priceInfo} {selectedPlace.feeStatus === 'free' ? '✅ Gratuito' : selectedPlace.feeStatus === 'paid' ? '💰 A pagamento' : ''}
                       </span>
                     )}
                     {selectedPlace.source && (
@@ -9835,7 +9861,7 @@ export function LeafletOfflineMap({
         place.maxHeight &&
         parseDimToNumber(vehicleDimensions.height) > place.maxHeight;
 
-      const { html, iconSize, iconAnchor } = getMapPoiIconHtml(place.category, isViolation);
+      const { html, iconSize, iconAnchor } = getMapPoiIconHtml(place.category, isViolation, place.feeStatus as any);
 
       const customDivIcon = L.divIcon({
         className: "custom-div-icon",
@@ -9883,7 +9909,7 @@ export function LeafletOfflineMap({
 
     if (activeDistanceFilter === "me" && userLocation) {
       circleLayerRef.current = L.circle([userLocation.lat, userLocation.lng], {
-        radius: 15000, // 15km
+        radius: 30000, // 30km
         color: "#3E4A35",
         fillColor: "#3E4A35",
         fillOpacity: 0.08,
@@ -9891,7 +9917,7 @@ export function LeafletOfflineMap({
       }).addTo(leafletMapInstance);
     } else if (activeDistanceFilter === "place" && filterCenter) {
       circleLayerRef.current = L.circle([filterCenter.lat, filterCenter.lng], {
-        radius: 15000, // 15km
+        radius: 30000, // 30km
         color: "#A45C40",
         fillColor: "#A45C40",
         fillOpacity: 0.08,

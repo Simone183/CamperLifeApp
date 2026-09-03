@@ -13,7 +13,11 @@ export interface PoiCategoryDetails {
   svgHtml: string;
 }
 
-export function getPoiCategoryDetails(category: string, isViolation: boolean = false): PoiCategoryDetails {
+export function getPoiCategoryDetails(
+  category: string,
+  isViolation: boolean = false,
+  feeStatus?: 'free' | 'paid' | 'unknown'
+): PoiCategoryDetails {
   if (isViolation) {
     return {
       type: "poi",
@@ -39,104 +43,76 @@ export function getPoiCategoryDetails(category: string, isViolation: boolean = f
   }
 
   const normCat = (category || "").toLowerCase();
-
-  if (normCat.includes("sosta")) {
-    return {
-      type: "sosta",
-      label: "Area Sosta",
-      bgGradient: "from-amber-500 via-amber-600 to-orange-600",
-      borderBg: "border-amber-200/90",
-      glowColor: "rgba(245, 158, 11, 0.5)",
-      bgHex: "#f59e0b",
-      svgPath: (
-        <svg className="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 17h18" />
-          <path d="M4 17V8a2 2 0 0 1 2-2h9l4 4v7" fill="currentColor" fillOpacity="0.2" />
-          <circle cx="7.5" cy="17.5" r="1.5" fill="currentColor" />
-          <circle cx="16.5" cy="17.5" r="1.5" fill="currentColor" />
-          <path d="M7 9h4v3H7z" fill="white" fillOpacity="0.6" />
-          <path d="M15 9h2l2 2v2h-4z" fill="white" fillOpacity="0.4" />
-        </svg>
-      ),
-      svgHtml: `
-        <svg class="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 17h18" />
-          <path d="M4 17V8a2 2 0 0 1 2-2h9l4 4v7" fill="currentColor" fill-opacity="0.2" />
-          <circle cx="7.5" cy="17.5" r="1.5" fill="currentColor" />
-          <circle cx="16.5" cy="17.5" r="1.5" fill="currentColor" />
-          <path d="M7 9h4v3H7z" fill="white" fill-opacity="0.6" />
-          <path d="M15 9h2l2 2v2h-4z" fill="white" fill-opacity="0.4" />
-        </svg>`
-    };
-  }
+  
+  // Default base styling based on category
+  let bgGradient = "from-amber-500 via-amber-600 to-orange-600";
+  let borderBg = "border-amber-200/90";
+  let glowColor = "rgba(245, 158, 11, 0.5)";
+  let bgHex = "#f59e0b";
+  let type: PoiCategoryType = "sosta";
+  let label = "Area Sosta";
 
   if (normCat.includes("campeggio") || normCat.includes("camping")) {
-    return {
-      type: "campeggio",
-      label: "Campeggio",
-      bgGradient: "from-emerald-500 via-emerald-600 to-teal-700",
-      borderBg: "border-emerald-200/90",
-      glowColor: "rgba(16, 185, 129, 0.5)",
-      bgHex: "#10b981",
-      svgPath: (
-        <svg className="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M19 20L12 4 5 20h14z" fill="currentColor" fillOpacity="0.25" />
-          <path d="M12 4v16" />
-          <path d="M9 20l3-7 3 7" fill="white" fillOpacity="0.5" />
-        </svg>
-      ),
-      svgHtml: `
-        <svg class="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 20L12 4 5 20h14z" fill="currentColor" fill-opacity="0.25" />
-          <path d="M12 4v16" />
-          <path d="M9 20l3-7 3 7" fill="white" fill-opacity="0.5" />
-        </svg>`
-    };
+      type = "campeggio";
+      label = "Campeggio";
+      bgGradient = "from-emerald-500 via-emerald-600 to-teal-700";
+      borderBg = "border-emerald-200/90";
+      glowColor = "rgba(16, 185, 129, 0.5)";
+      bgHex = "#10b981";
+  } else if (normCat.includes("parcheggio")) {
+      type = "parcheggio";
+      label = "Parcheggio Camper";
+      bgGradient = "from-blue-600 via-indigo-600 to-indigo-700";
+      borderBg = "border-blue-200/90";
+      glowColor = "rgba(37, 99, 235, 0.5)";
+      bgHex = "#2563eb";
+  } else if (!normCat.includes("sosta")) {
+      type = "service";
+      label = "Camper Service";
+      bgGradient = "from-cyan-500 via-sky-600 to-blue-600";
+      borderBg = "border-cyan-200/90";
+      glowColor = "rgba(6, 182, 212, 0.5)";
+      bgHex = "#06b6d4";
   }
 
-  if (normCat.includes("parcheggio")) {
-    return {
-      type: "parcheggio",
-      label: "Parcheggio Camper",
-      bgGradient: "from-blue-600 via-indigo-600 to-indigo-700",
-      borderBg: "border-blue-200/90",
-      glowColor: "rgba(37, 99, 235, 0.5)",
-      bgHex: "#2563eb",
-      svgPath: (
-        <svg className="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 17V7h5a3.5 3.5 0 0 1 0 7H9" />
-          <rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" fillOpacity="0.15" />
-        </svg>
-      ),
-      svgHtml: `
-        <svg class="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 17V7h5a3.5 3.5 0 0 1 0 7H9" />
-          <rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" fill-opacity="0.15" />
-        </svg>`
-    };
+  // Override color if fee status is known
+  if (feeStatus === 'free') {
+      bgGradient = "from-green-500 via-green-600 to-emerald-600";
+      borderBg = "border-green-200/90";
+      glowColor = "rgba(16, 185, 129, 0.5)";
+      bgHex = "#10b981";
+  } else if (feeStatus === 'paid') {
+      bgGradient = "from-orange-500 via-orange-600 to-red-600";
+      borderBg = "border-orange-200/90";
+      glowColor = "rgba(249, 115, 22, 0.5)";
+      bgHex = "#f97316";
   }
 
-  // Default: Service Point / Water
   return {
-    type: "service",
-    label: "Camper Service",
-    bgGradient: "from-cyan-500 via-sky-600 to-blue-600",
-    borderBg: "border-cyan-200/90",
-    glowColor: "rgba(6, 182, 212, 0.5)",
-    bgHex: "#06b6d4",
+    type,
+    label,
+    bgGradient,
+    borderBg,
+    glowColor,
+    bgHex,
     svgPath: (
-      <svg className="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" fill="currentColor" fillOpacity="0.3" />
-        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
-      </svg>
+        <svg className="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {type === "sosta" && <><path d="M3 17h18" /><path d="M4 17V8a2 2 0 0 1 2-2h9l4 4v7" fill="currentColor" fillOpacity="0.2" /><circle cx="7.5" cy="17.5" r="1.5" fill="currentColor" /><circle cx="16.5" cy="17.5" r="1.5" fill="currentColor" /></>}
+          {type === "campeggio" && <><path d="M19 20L12 4 5 20h14z" fill="currentColor" fillOpacity="0.25" /><path d="M12 4v16" /></>}
+          {type === "parcheggio" && <><path d="M9 17V7h5a3.5 3.5 0 0 1 0 7H9" /><rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" fillOpacity="0.15" /></>}
+          {type === "service" && <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />}
+        </svg>
     ),
     svgHtml: `
-      <svg class="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" fill="currentColor" fill-opacity="0.3" />
-        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
-      </svg>`
+        <svg class="w-5 h-5 text-white drop-shadow-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          ${type === "sosta" ? '<path d="M3 17h18" /><path d="M4 17V8a2 2 0 0 1 2-2h9l4 4v7" fill="currentColor" fill-opacity="0.2" /><circle cx="7.5" cy="17.5" r="1.5" fill="currentColor" /><circle cx="16.5" cy="17.5" r="1.5" fill="currentColor" />' : ''}
+          ${type === "campeggio" ? '<path d="M19 20L12 4 5 20h14z" fill="currentColor" fill-opacity="0.25" /><path d="M12 4v16" />' : ''}
+          ${type === "parcheggio" ? '<path d="M9 17V7h5a3.5 3.5 0 0 1 0 7H9" /><rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" fill-opacity="0.15" />' : ''}
+          ${type === "service" ? '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />' : ''}
+        </svg>`
   };
 }
+
 
 export interface MapPoiIconProps {
   category: string;
