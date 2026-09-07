@@ -82,6 +82,30 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Sign Android Bundle (AAB) with Keystore
+        id: sign_aab
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            echo "🔐 Firma dell'AAB in corso con il Keystore configurato nei Secrets..."
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            KEY_PASS="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+              -keystore release.keystore \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -keypass "$KEY_PASS" \
+              "${{ steps.find_aab.outputs.aab_path }}" \
+              "$KEY_ALIAS"
+            rm -f release.keystore
+            echo "✅ AAB firmato con successo!"
+          else
+            echo "⚠️ Secret di firma non trovati. Assicurati che RELEASE_KEYSTORE_BASE64 sia presente."
+          fi
+
       - name: Prepare Named AAB Release File
         id: prep_release
         run: |
