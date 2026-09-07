@@ -2,8 +2,9 @@ import React from "react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue, formatCurrency } from "../unit-helpers";
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement, TripMovement } from "../types";
-import { normalizeTrip, mergeTrips } from "../utils/tripSyncHelper";
+import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds, isDeletedId } from "../utils/tripSyncHelper";
 import { compressImage } from "../utils/photoCompressor";
+import { savePhotoToIndexedDB } from "../utils/photoStorage";
 import { resolveMediaUrl } from "../utils/resolveMediaUrl";
 import { CamperImage } from "./CamperImage";
 import { TripRouteMap } from "./TripRouteMap";
@@ -39,6 +40,13 @@ import {
   Pencil,
   Map as MapIcon,
   Sparkles,
+  RefreshCw,
+  Cloud,
+  Database,
+  CheckCircle2,
+  AlertCircle,
+  Download,
+  FileText,
 } from "lucide-react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -186,6 +194,11 @@ export default function DiaryTab({
   const trips = propsTrips !== undefined ? propsTrips : internalTrips;
   const setTrips = propsSetTrips || setInternalTrips;
 
+  const tripsRef = React.useRef(trips);
+  React.useEffect(() => {
+    tripsRef.current = trips;
+  }, [trips]);
+
   // Selected Trip inside details view
   const [selectedTripId, setSelectedTripId] = React.useState<string | null>(
     () => {
@@ -213,6 +226,199 @@ export default function DiaryTab({
     },
   );
 
+  const [isSyncingCloud, setIsSyncingCloud] = React.useState(false);
+  const [showSyncModal, setShowSyncModal] = React.useState(false);
+  const [cloudStatusInfo, setCloudStatusInfo] = React.useState<{
+    loading: boolean;
+    expenses?: number;
+    movements?: number;
+    photos?: number;
+    trips?: number;
+    error?: string;
+  } | null>(null);
+
+  const getActiveUserEmail = () => {
+    return (
+      currentUser?.email ||
+      localStorage.getItem("camper_user_email") ||
+      (() => {
+        try {
+          const u = localStorage.getItem("camper_user");
+          return u ? JSON.parse(u).email : "";
+        } catch {
+          return "";
+        }
+      })() ||
+      "sambucci.simone@gmail.com"
+    ).toLowerCase().trim();
+  };
+
+  const handleCloudSyncClick = async () => {
+    setIsSyncingCloud(true);
+    const cleanEmail = getActiveUserEmail();
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: {
+          message: "⏳ Sincronizzazione con il Cloud in corso...",
+        },
+      })
+    );
+    try {
+      // 1. Fetch current trips from server first to merge
+      let serverTrips: Trip[] = [];
+      try {
+        const getRes = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          if (Array.isArray(getData?.trips)) serverTrips = getData.trips;
+        }
+      } catch (e) {
+        console.warn("[Cloud Sync] Server fetch warning:", e);
+      }
+
+      // 2. Merge local trips with server trips
+      const mergedTrips = mergeTrips(trips, serverTrips, cleanEmail);
+
+      // 3. Post merged trips to server sync endpoint
+      const res = await fetch("/api/user-trips/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, trips: mergedTrips }),
+      });
+
+      let finalTrips = mergedTrips;
+      if (res.ok) {
+        const resData = await res.json().catch(() => ({}));
+        if (resData.trips && Array.isArray(resData.trips)) {
+          finalTrips = resData.trips;
+        }
+      }
+
+      setTrips(finalTrips);
+      try {
+        localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(finalTrips));
+      } catch (e) {}
+
+      if (currentCrew && isModuleSynced('trips')) {
+        syncCrewSection('trips', finalTrips).catch(() => {});
+      }
+
+      // Notify App and other components
+      window.dispatchEvent(
+        new CustomEvent("trip-updated", {
+          detail: { trips: finalTrips },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent("sync-trips-now", {
+          detail: { trips: finalTrips },
+        })
+      );
+
+      const totExp = finalTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+      const totMov = finalTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
+      const totPho = finalTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
+
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `☁️ Sincronizzazione completata! ${finalTrips.length} viaggi, ${totExp} spese, ${totMov} tappe e ${totPho} foto sincronizzate.`,
+          },
+        })
+      );
+    } catch (e) {
+      console.warn("Manual sync error:", e);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: "⚠️ Errore durante la sincronizzazione.",
+          },
+        })
+      );
+    } finally {
+      setTimeout(() => setIsSyncingCloud(false), 600);
+    }
+  };
+
+  const handleExportBackupJson = () => {
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(trips, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `viaggi_camper_backup_${new Date().toISOString().split("T")[0]}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "📥 File di backup salvato! Invialo al tablet o conservalo." },
+        })
+      );
+    } catch (e) {
+      console.error("Backup export error:", e);
+    }
+  };
+
+  const handleImportBackupJson = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const imported = JSON.parse(text);
+        if (Array.isArray(imported)) {
+          const cleanEmail = getActiveUserEmail();
+          const merged = mergeTrips(trips, imported, cleanEmail);
+          setTrips(merged);
+          localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(merged));
+          
+          await fetch("/api/user-trips/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, trips: merged }),
+          }).catch(() => {});
+          
+          const totExp = merged.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: { message: `✅ Backup importato! Presenti ${totExp} spese e viaggi aggiornati.` },
+            })
+          );
+        } else {
+          alert("Il file non contiene un elenco di viaggi valido.");
+        }
+      } catch (err) {
+        alert("Errore nella lettura del file JSON di backup.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const checkCloudStatus = async () => {
+    setCloudStatusInfo({ loading: true });
+    const cleanEmail = getActiveUserEmail();
+    try {
+      const res = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const cTrips = Array.isArray(data?.trips) ? data.trips : [];
+        const exp = cTrips.reduce((acc: number, t: any) => acc + (t.expenses?.length || 0), 0);
+        const mov = cTrips.reduce((acc: number, t: any) => acc + (t.movements?.length || 0), 0);
+        const pho = cTrips.reduce((acc: number, t: any) => acc + (t.photos?.length || 0), 0);
+        setCloudStatusInfo({
+          loading: false,
+          trips: cTrips.length,
+          expenses: exp,
+          movements: mov,
+          photos: pho,
+        });
+      } else {
+        setCloudStatusInfo({ loading: false, error: "Server non raggiungibile." });
+      }
+    } catch (err: any) {
+      setCloudStatusInfo({ loading: false, error: err.message || "Errore di connessione." });
+    }
+  };
+
   // UI forms toggles
   const [showAddTrip, setShowAddTrip] = React.useState(false);
 
@@ -235,6 +441,7 @@ export default function DiaryTab({
   const [editingExpenseId, setEditingExpenseId] = React.useState<string | null>(null);
 
   // Fuel-specific states
+  const expenseFormRef = React.useRef<HTMLFormElement>(null);
   const [fuelLiters, setFuelLiters] = React.useState("");
   const [fuelPricePerLiter, setFuelPricePerLiter] = React.useState("");
   const [fuelOdometer, setFuelOdometer] = React.useState("");
@@ -313,20 +520,27 @@ export default function DiaryTab({
     }
 
     // Sync to Family Crew if member
-    if (currentCrew && isModuleSynced('trips')) {
-      syncCrewSection('trips', trips).catch(() => {});
-    }
-  }, [trips, currentCrew, isModuleSynced, emailKey]);
+    const handler = setTimeout(() => {
+      if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips)) {
+        const isAlreadySynced = JSON.stringify(trips) === JSON.stringify(currentCrew.sharedData.trips);
+        if (!isAlreadySynced) {
+          syncCrewSection('trips', trips).catch(() => {});
+        }
+      }
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [trips, currentCrew?.sharedData?.trips, isModuleSynced, emailKey]);
 
   // Sync incoming trips from Family Crew without overwriting local trip updates
   React.useEffect(() => {
-    if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips) && currentCrew.sharedData.trips.length > 0) {
-      const merged = mergeTrips(trips, currentCrew.sharedData.trips);
-      if (JSON.stringify(merged) !== JSON.stringify(trips)) {
+    if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips)) {
+      const merged = mergeTrips(tripsRef.current, currentCrew.sharedData!.trips!, emailKey);
+      if (JSON.stringify(merged) !== JSON.stringify(tripsRef.current)) {
         setTrips(merged);
       }
     }
-  }, [currentCrew?.sharedData?.trips, isModuleSynced]);
+  }, [currentCrew?.sharedData?.trips, isModuleSynced, emailKey]);
 
   React.useEffect(() => {
     const handleOpenPlanned = (e: any) => {
@@ -341,12 +555,31 @@ export default function DiaryTab({
 
   const activeTrip = trips.find((t) => t.id === selectedTripId);
 
-  // All photos aggregated across all trips
+  // Active trip photos strictly filtered from deletions and tombstones
+  const activeTripPhotos = React.useMemo(() => {
+    if (!activeTrip || !Array.isArray(activeTrip.photos)) return [];
+    const deletedPhotos = getDeletedIds('photos', emailKey);
+    return activeTrip.photos.filter((p) => {
+      if (!p || p.deleted) return false;
+      const pId = String(p.id || '');
+      const pUrl = String(p.url || '');
+      return !deletedPhotos.has(pId) && (!pUrl || !deletedPhotos.has(pUrl));
+    });
+  }, [activeTrip, emailKey]);
+
+  // All photos aggregated across all trips, strictly excluding tombstones
   const allPhotos = React.useMemo(() => {
+    const deletedPhotos = getDeletedIds('photos', emailKey);
     const photosList: Array<DiaryPhoto & { tripId: string; tripTitle: string }> = [];
     trips.forEach((trip) => {
       if (trip.photos) {
         trip.photos.forEach((photo) => {
+          if (photo.deleted) return;
+          const photoId = String(photo.id || '');
+          const photoUrl = String(photo.url || '');
+          if (deletedPhotos.has(photoId) || (photoUrl && deletedPhotos.has(photoUrl))) {
+            return;
+          }
           photosList.push({
             ...photo,
             tripId: trip.id,
@@ -364,11 +597,12 @@ export default function DiaryTab({
       }
       return b.id.localeCompare(a.id);
     });
-  }, [trips]);
+  }, [trips, emailKey]);
 
   // Filtered photos based on album search query and selected trip filter
   const filteredPhotos = React.useMemo(() => {
     return allPhotos.filter((photo) => {
+      if (photo.deleted) return false;
       const matchTrip = selectedAlbumTripId ? photo.tripId === selectedAlbumTripId : true;
       const searchLower = albumSearchQuery.toLowerCase().trim();
       const matchSearch = searchLower
@@ -521,11 +755,25 @@ export default function DiaryTab({
         "Vuoi davvero eliminare questo viaggio ed eliminare tutte le sue spese e foto?",
       )
     ) {
+      recordDeletedId('trips', tripId, emailKey);
       if (tripId === "trip-example-10-oct-2025" && currentUser?.email) {
         localStorage.setItem(`example_deleted_${currentUser.email.toLowerCase().trim()}`, "true");
       }
       const filtered = trips.filter((t) => t.id !== tripId);
       setTrips(filtered);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(filtered));
+        } catch (e) {}
+      }
+      if (currentCrew && isModuleSynced('trips')) {
+        syncCrewSection('trips', filtered).catch(() => {});
+      }
+      window.dispatchEvent(
+        new CustomEvent("trip-updated", {
+          detail: { trips: filtered },
+        }),
+      );
       if (selectedTripId === tripId) {
         const nextId = filtered.length > 0 ? filtered[0].id : null;
         setSelectedTripId(nextId);
@@ -539,12 +787,37 @@ export default function DiaryTab({
   // Delete Active Trip handler (called from custom confirm modal in details)
   const handleDeleteActiveTrip = () => {
     if (!selectedTripId) return;
+    recordDeletedId('trips', selectedTripId, emailKey);
     const filtered = trips.filter((t) => t.id !== selectedTripId);
     setTrips(filtered);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(filtered));
+      } catch (e) {}
+    }
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', filtered).catch(() => {});
+    }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: filtered },
+      }),
+    );
     const nextId = filtered.length > 0 ? filtered[0].id : null;
     setSelectedTripId(nextId);
     setDiarySubTab("list");
     setShowDeleteConfirm(false);
+  };
+
+  // Helper to parse odometer input values cleanly even if formatted with dots, spaces or commas
+  const parseOdometerInput = (val: string | number | undefined | null): number | undefined => {
+    if (val === undefined || val === null) return undefined;
+    const str = String(val).trim();
+    if (str === "") return undefined;
+    const clean = str.replace(/[^0-9]/g, "");
+    if (clean === "") return undefined;
+    const n = parseInt(clean, 10);
+    return isNaN(n) ? undefined : n;
   };
 
   // Add Expense to Trip handler
@@ -553,29 +826,23 @@ export default function DiaryTab({
     if (!selectedTripId) return;
 
     let finalTitle = expenseTitle.trim();
-    let finalAmount = parseFloat(expenseAmount);
+    let finalAmount = parseFloat(expenseAmount.toString().replace(',', '.'));
     let finalCategory = expenseCategory;
 
-    const litersNum = fuelLiters ? parseFloat(fuelLiters) : undefined;
+    const litersNum = fuelLiters ? parseFloat(fuelLiters.toString().replace(',', '.')) : undefined;
     const pricePerLiterNum = fuelPricePerLiter
-      ? parseFloat(fuelPricePerLiter)
+      ? parseFloat(fuelPricePerLiter.toString().replace(',', '.'))
       : undefined;
-    const odometerNum = fuelOdometer ? parseInt(fuelOdometer, 10) : undefined;
+    const odometerNum = parseOdometerInput(fuelOdometer);
 
     if (expenseSubMode === "refuel") {
       finalCategory = "Carburante";
-      if (!fuelCompany) {
-        window.dispatchEvent(
-          new CustomEvent("show-toast", {
-            detail: { message: "⚠️ Seleziona una compagnia di rifornimento!" },
-          }),
-        );
-        return;
-      }
+      const company = (fuelCompany || "Distributore").trim();
 
-      // Compute amount if missing
-      if (!finalAmount && litersNum && pricePerLiterNum) {
+      // Compute amount if missing but liters & price exist
+      if ((isNaN(finalAmount) || finalAmount <= 0) && litersNum && pricePerLiterNum) {
         finalAmount = Math.round(litersNum * pricePerLiterNum * 100) / 100;
+        setExpenseAmount(finalAmount.toFixed(2));
       }
 
       if (isNaN(finalAmount) || finalAmount <= 0) {
@@ -583,7 +850,7 @@ export default function DiaryTab({
           new CustomEvent("show-toast", {
             detail: {
               message:
-                "⚠️ Errore: Inserisci dei litri e prezzo al litro validi o l'importo totale!",
+                "⚠️ Inserisci l'importo speso per registrare il rifornimento!",
             },
           }),
         );
@@ -593,7 +860,7 @@ export default function DiaryTab({
       const litersText = litersNum ? ` ${litersNum}L` : "";
       const priceText = pricePerLiterNum ? ` @ ${pricePerLiterNum}${getCurrencySymbol(settings)}/L` : "";
       const pienoText = fuelIsFullTank ? " [Pieno ✓]" : "";
-      finalTitle = `Rifornimento ${fuelCompany}${litersText}${priceText}${pienoText}`;
+      finalTitle = `Rifornimento ${company}${litersText}${priceText}${pienoText}`.trim();
     } else {
       if (!finalTitle) {
         window.dispatchEvent(
@@ -615,7 +882,20 @@ export default function DiaryTab({
       }
     }
 
-    const newExpense: DiaryExpense = {
+    // Locate existing expense if in edit mode to preserve any extra properties
+    let existingExpense: DiaryExpense | undefined;
+    if (editingExpenseId) {
+      for (const t of trips) {
+        const found = (t.expenses || []).find((exp) => String(exp.id) === String(editingExpenseId));
+        if (found) {
+          existingExpense = found;
+          break;
+        }
+      }
+    }
+
+    const mergedExpense: DiaryExpense = {
+      ...(existingExpense || {}),
       id: editingExpenseId || "exp_" + Date.now(),
       title: finalTitle,
       amount: finalAmount,
@@ -624,28 +904,36 @@ export default function DiaryTab({
     };
 
     if (expenseSubMode === "refuel") {
-      if (litersNum !== undefined && !isNaN(litersNum)) newExpense.liters = litersNum;
-      if (pricePerLiterNum !== undefined && !isNaN(pricePerLiterNum)) newExpense.pricePerLiter = pricePerLiterNum;
-      if (odometerNum !== undefined && !isNaN(odometerNum)) newExpense.odometer = odometerNum;
-      if (fuelCompany) newExpense.fuelCompany = fuelCompany;
-      if (fuelIsFullTank !== undefined) newExpense.isFullTank = fuelIsFullTank;
+      if (litersNum !== undefined && !isNaN(litersNum)) mergedExpense.liters = litersNum;
+      if (pricePerLiterNum !== undefined && !isNaN(pricePerLiterNum)) mergedExpense.pricePerLiter = pricePerLiterNum;
+      if (odometerNum !== undefined) {
+        mergedExpense.odometer = odometerNum;
+      } else {
+        delete (mergedExpense as any).odometer;
+      }
+      if (fuelCompany) mergedExpense.fuelCompany = fuelCompany;
+      if (fuelIsFullTank !== undefined) mergedExpense.isFullTank = fuelIsFullTank;
     }
 
     const updated = trips.map((t) => {
-      if (t.id === selectedTripId) {
-        let endOdo = t.endOdometer;
-        if (odometerNum && (!endOdo || odometerNum > endOdo)) {
-          endOdo = odometerNum;
-        }
-
+      const hasEditingExp = editingExpenseId && (t.expenses || []).some((exp) => String(exp.id) === String(editingExpenseId));
+      if (t.id === selectedTripId || hasEditingExp) {
         let newExpenses = [...(t.expenses || [])];
         if (editingExpenseId) {
-          newExpenses = newExpenses.map((e) =>
-            e.id === editingExpenseId ? newExpense : e
+          newExpenses = newExpenses.map((exp) =>
+            String(exp.id) === String(editingExpenseId) ? mergedExpense : exp
           );
         } else {
-          newExpenses.push(newExpense);
+          newExpenses.push(mergedExpense);
         }
+
+        // Recalculate trip endOdometer safely from all movements and all expenses
+        const allOdos = [
+          t.startOdometer,
+          ...(t.movements || []).map((m: any) => Number(m.odometer) || 0),
+          ...newExpenses.map((exp: any) => Number(exp.odometer) || 0),
+        ].filter((n) => typeof n === "number" && n > 0);
+        const endOdo = allOdos.length > 0 ? Math.max(...allOdos) : (odometerNum || t.endOdometer);
 
         return {
           ...t,
@@ -657,8 +945,24 @@ export default function DiaryTab({
     });
 
     setTrips(updated);
+
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updated).catch(() => {});
+    }
+
     window.dispatchEvent(
       new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("sync-trips-now", {
         detail: { trips: updated },
       }),
     );
@@ -668,12 +972,12 @@ export default function DiaryTab({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: newExpense.id,
-          date: newExpense.date,
+          id: mergedExpense.id,
+          date: mergedExpense.date,
           liters: litersNum || 0,
           pricePerLiter: pricePerLiterNum || 0,
           totalCost: finalAmount,
-          odometer: odometerNum || 0,
+          odometer: odometerNum !== undefined ? odometerNum : 0,
           isFullTank: fuelIsFullTank,
           fuelCompany: fuelCompany || "Sconosciuta",
         }),
@@ -712,9 +1016,9 @@ export default function DiaryTab({
     if (expense.category === "Carburante") {
       setExpenseSubMode("refuel");
       setFuelCompany(expense.fuelCompany || "Eni");
-      setFuelLiters(expense.liters ? expense.liters.toString() : "");
-      setFuelPricePerLiter(expense.pricePerLiter ? expense.pricePerLiter.toString() : "");
-      setFuelOdometer(expense.odometer ? expense.odometer.toString() : "");
+      setFuelLiters(expense.liters !== undefined && expense.liters !== null ? expense.liters.toString() : "");
+      setFuelPricePerLiter(expense.pricePerLiter !== undefined && expense.pricePerLiter !== null ? expense.pricePerLiter.toString() : "");
+      setFuelOdometer(expense.odometer !== undefined && expense.odometer !== null ? expense.odometer.toString() : "");
       setFuelIsFullTank(expense.isFullTank || false);
       setExpenseAmount(expense.amount.toString());
       setExpenseDate(expense.date);
@@ -725,6 +1029,10 @@ export default function DiaryTab({
       setExpenseCategory(expense.category);
       setExpenseDate(expense.date);
     }
+
+    setTimeout(() => {
+      expenseFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
   };
 
   // Handle adding/editing a new movement
@@ -741,8 +1049,8 @@ export default function DiaryTab({
       return;
     }
 
-    const parsedOdometer = parseFloat(movementOdometer);
-    if (isNaN(parsedOdometer) || parsedOdometer < 0) {
+    const parsedOdometer = parseOdometerInput(movementOdometer);
+    if (parsedOdometer === undefined || isNaN(parsedOdometer) || parsedOdometer < 0) {
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: { message: "⚠️ Inserisci un chilometraggio valido!" },
@@ -754,7 +1062,12 @@ export default function DiaryTab({
     if (editingMovementId) {
       // Edit mode
       const updated = trips.map((t) => {
-        if (t.id === selectedTripId) {
+        const hasMovement = (t.movements || []).some((m) => m.id === editingMovementId);
+        if (t.id === selectedTripId || hasMovement) {
+          let endOdo = t.endOdometer;
+          if (!endOdo || parsedOdometer > endOdo) {
+            endOdo = parsedOdometer;
+          }
           const updatedMovements = (t.movements || []).map((m) =>
             m.id === editingMovementId
               ? {
@@ -766,16 +1079,25 @@ export default function DiaryTab({
                 }
               : m
           );
-          return { ...t, movements: updatedMovements };
+          return { ...t, endOdometer: endOdo, movements: updatedMovements };
         }
         return t;
       });
       setTrips(updated);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      if (currentCrew && isModuleSynced('trips')) {
+        syncCrewSection('trips', updated).catch(() => {});
+      }
       window.dispatchEvent(
         new CustomEvent("trip-updated", {
           detail: { trips: updated },
         }),
       );
+      window.dispatchEvent(new CustomEvent("sync-trips-now", { detail: { trips: updated } }));
       setEditingMovementId(null);
     } else {
       // Add mode
@@ -802,11 +1124,20 @@ export default function DiaryTab({
         return t;
       });
       setTrips(updated);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      if (currentCrew && isModuleSynced('trips')) {
+        syncCrewSection('trips', updated).catch(() => {});
+      }
       window.dispatchEvent(
         new CustomEvent("trip-updated", {
           detail: { trips: updated },
         }),
       );
+      window.dispatchEvent(new CustomEvent("sync-trips-now", { detail: { trips: updated } }));
     }
 
     setMovementLocation("");
@@ -823,6 +1154,7 @@ export default function DiaryTab({
   };
 
   const handleDeleteMovement = (movementId: string) => {
+    recordDeletedId('movements', movementId, emailKey);
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         const updatedMovements = (t.movements || []).filter((m) => m.id !== movementId);
@@ -834,6 +1166,24 @@ export default function DiaryTab({
       return t;
     });
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updated).catch(() => {});
+    }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: "🗑️ Spostamento rimosso definitivamente." },
+      }),
+    );
   };
 
   // Save/Update Odometer handler
@@ -849,9 +1199,15 @@ export default function DiaryTab({
     }
 
     const updated = trips.map((t) => {
-      if (t.id === selectedTripId) {
+      const hasMovement = (t.movements || []).some((m) => m.id === movementId);
+      if (t.id === selectedTripId || hasMovement) {
+        let endOdo = t.endOdometer;
+        if (!endOdo || parsed > endOdo) {
+          endOdo = parsed;
+        }
         return {
           ...t,
+          endOdometer: endOdo,
           movements: (t.movements || []).map((m) => {
             if (m.id === movementId) {
               return { ...m, odometer: parsed };
@@ -865,20 +1221,30 @@ export default function DiaryTab({
 
     setTrips(updated);
     setEditingOdoId(null);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updated).catch(() => {});
+    }
     window.dispatchEvent(
       new CustomEvent("trip-updated", {
         detail: { trips: updated },
       }),
     );
+    window.dispatchEvent(new CustomEvent("sync-trips-now", { detail: { trips: updated } }));
     window.dispatchEvent(
       new CustomEvent("show-toast", {
-        detail: { message: "✅ Chilometri salvati con successo!" },
+        detail: { message: `✅ Chilometri aggiornati a ${parsed} km!` },
       }),
     );
   };
 
   // Delete Expense handler
   const handleDeleteExpense = (expenseId: string) => {
+    recordDeletedId('expenses', expenseId, emailKey);
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         return {
@@ -889,6 +1255,24 @@ export default function DiaryTab({
       return t;
     });
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updated).catch(() => {});
+    }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: "🗑️ Spesa eliminata definitivamente." },
+      }),
+    );
 
     if (currentUser?.email) {
       fetch(
@@ -1211,7 +1595,23 @@ export default function DiaryTab({
       return t;
     });
 
+    for (const p of newPhotos) {
+      if (p.url && p.url.startsWith("data:image/")) {
+        savePhotoToIndexedDB(p.id, p.url);
+        fetch(`/api/photos/${p.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base64: p.url }),
+        }).catch(() => {});
+      }
+    }
+
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
     setPhotoDesc("");
     setPhotoLocationName("");
     setPhotoCustomUrl("");
@@ -1228,8 +1628,141 @@ export default function DiaryTab({
     );
   };
 
+  // Replace / Re-upload a single photo from gallery or camera
+  const handleReplacePhoto = async (photoId: string, file: File) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const rawBase64 = event.target?.result as string;
+        if (!rawBase64) return;
+        const compressed = await compressImage(rawBase64, "medium");
+        await savePhotoToIndexedDB(photoId, compressed);
+        fetch(`/api/photos/${photoId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base64: compressed }),
+        }).catch(() => {});
+
+        const updated = trips.map((t) => {
+          if (t.id === selectedTripId) {
+            return {
+              ...t,
+              photos: t.photos.map((p) => (p.id === photoId ? { ...p, url: compressed } : p)),
+            };
+          }
+          return t;
+        });
+
+        setTrips(updated);
+        if (emailKey) {
+          try {
+            localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+          } catch (e) {}
+        }
+        window.dispatchEvent(
+          new CustomEvent("trip-updated", {
+            detail: { trips: updated },
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: "✅ Foto ripristinata e salvata con successo nel diario!",
+            },
+          }),
+        );
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error("Error replacing photo:", err);
+    }
+  };
+
+  // Batch re-upload multiple photos from gallery to match missing photos
+  const handleBatchReloadPhotos = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+
+    const missingPhotos = (activeTripPhotos || []).filter(
+      (p) => p.url && (p.url.startsWith("/uploads/") || p.url.includes("trip_photo_"))
+    );
+
+    if (missingPhotos.length === 0) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "Tutte le foto del viaggio risultano già collegate!" },
+        }),
+      );
+      return;
+    }
+
+    const updatedPhotosMap = new Map<string, string>();
+    let count = 0;
+
+    for (let i = 0; i < Math.min(fileArray.length, missingPhotos.length); i++) {
+      const file = fileArray[i];
+      const targetPhoto = missingPhotos[i];
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const compressed = await compressImage(base64, "medium");
+        await savePhotoToIndexedDB(targetPhoto.id, compressed);
+        fetch(`/api/photos/${targetPhoto.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base64: compressed }),
+        }).catch(() => {});
+        updatedPhotosMap.set(targetPhoto.id, compressed);
+        count++;
+      } catch (e) {
+        console.warn("Error in batch photo reload:", e);
+      }
+    }
+
+    if (count > 0) {
+      const updated = trips.map((t) => {
+        if (t.id === selectedTripId) {
+          return {
+            ...t,
+            photos: t.photos.map((p) => {
+              if (updatedPhotosMap.has(p.id)) {
+                return { ...p, url: updatedPhotosMap.get(p.id)! };
+              }
+              return p;
+            }),
+          };
+        }
+        return t;
+      });
+
+      setTrips(updated);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      window.dispatchEvent(
+        new CustomEvent("trip-updated", {
+          detail: { trips: updated },
+        }),
+      );
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `✅ ${count} ${count === 1 ? 'foto ripristinata' : 'foto ripristinate'} dalla galleria!`,
+          },
+        }),
+      );
+    }
+  };
+
   // Delete Photo handler
   const handleDeletePhoto = (photoId: string) => {
+    recordDeletedId('photos', photoId, emailKey);
     const updated = trips.map((t) => {
       const containsPhoto = t.photos && t.photos.some((p) => p.id === photoId);
       if (containsPhoto) {
@@ -1241,6 +1774,24 @@ export default function DiaryTab({
       return t;
     });
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updated).catch(() => {});
+    }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: "🗑️ Foto eliminata definitivamente." },
+      }),
+    );
   };
 
   // Calculate stats for current active trip
@@ -1413,6 +1964,26 @@ export default function DiaryTab({
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
             <RollyOnboardingGuide sectionKey="diary" />
             <button
+              onClick={handleCloudSyncClick}
+              disabled={isSyncingCloud}
+              className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer disabled:opacity-50"
+              title="Sincronizza subito tutti i viaggi con Tablet e Cloud"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloud ? "animate-spin" : ""}`} />
+              <span>{isSyncingCloud ? "Sincronizzo..." : "Sincronizza Cloud ☁️"}</span>
+            </button>
+            <button
+              onClick={() => {
+                checkCloudStatus();
+                setShowSyncModal(true);
+              }}
+              className="px-3 py-2.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer backdrop-blur-xs"
+              title="Apri pannello diagnostica sincronizzazione e backup file"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>Stato & Backup</span>
+            </button>
+            <button
               onClick={() => {
                 setDiarySubTab("list");
                 setShowAddTrip(true);
@@ -1536,7 +2107,9 @@ export default function DiaryTab({
                   <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
                     <CamperImage
                       src={photo.url}
+                      photoId={photo.id}
                       alt={photo.description}
+                      onReplace={(file) => handleReplacePhoto(photo.id, file)}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                     />
@@ -1641,10 +2214,11 @@ export default function DiaryTab({
 
                 {/* Main Picture content and navigation */}
                 <div className="relative w-full aspect-video md:aspect-[4/3] bg-black flex items-center justify-center group overflow-hidden">
-                  <img
+                  <CamperImage
                     src={filteredPhotos[selectedAlbumPhotoIndex].url}
+                    photoId={filteredPhotos[selectedAlbumPhotoIndex].id}
                     alt={filteredPhotos[selectedAlbumPhotoIndex].description}
-                    referrerPolicy={filteredPhotos[selectedAlbumPhotoIndex].url?.startsWith("http") ? "no-referrer" : undefined}
+                    onReplace={(file) => handleReplacePhoto(filteredPhotos[selectedAlbumPhotoIndex].id, file)}
                     className="max-w-full max-h-[75vh] object-contain select-none"
                   />
 
@@ -2224,6 +2798,26 @@ export default function DiaryTab({
                                 <Share2 className="w-3.5 h-3.5 shrink-0" />
                                 <span className="truncate max-w-[130px] sm:max-w-none">{activeTrip.isShared ? "Pubblicato 💬" : "Condividi 👥"}</span>
                               </button>
+                              <button
+                                onClick={handleCloudSyncClick}
+                                disabled={isSyncingCloud}
+                                className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 disabled:opacity-50"
+                                title="Sincronizza questo diario e tutti i viaggi con Tablet e Cloud"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isSyncingCloud ? "animate-spin" : ""}`} />
+                                <span className="truncate max-w-[130px] sm:max-w-none">{isSyncingCloud ? "Sincronizzo..." : "Sincronizza Cloud ☁️"}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  checkCloudStatus();
+                                  setShowSyncModal(true);
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 bg-stone-100 hover:bg-stone-200 text-[#3E4A35] rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+                                title="Apri diagnostica sincronizzazione e backup file"
+                              >
+                                <Database className="w-3.5 h-3.5 shrink-0 text-[#3E4A35]" />
+                                <span className="truncate max-w-[130px] sm:max-w-none">Backup</span>
+                              </button>
                             </div>
                           </div>
                           <h2 className="text-xl font-bold tracking-tight text-[#2D2926] mt-2 break-words leading-snug w-full">
@@ -2339,7 +2933,7 @@ export default function DiaryTab({
                         }`}
                       >
                         <Camera className="w-3.5 h-3.5 text-purple-400" />
-                        Foto e ricordi ({(activeTrip.photos || []).length})
+                        Foto e ricordi ({activeTripPhotos.length})
                       </button>
                     </div>
 
@@ -2347,7 +2941,7 @@ export default function DiaryTab({
                       <div className="space-y-4 animate-fade-in">
                         <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
                           <Camera className="w-4 h-4 text-[#3E4A35]" />
-                          Scatti & Ricordi Fotografici ({activeTrip.photos.length})
+                          Scatti & Ricordi Fotografici ({activeTripPhotos.length})
                         </h3>
 
                         {/* Add Photo Form - Real Uploading interface */}
@@ -2612,16 +3206,53 @@ export default function DiaryTab({
                           </button>
                         </form>
 
+                        {/* Banner if photos need re-upload */}
+                        {(() => {
+                          const missingPhotos = (activeTripPhotos || []).filter(
+                            (p) => p.url && (p.url.startsWith("/uploads/") || p.url.includes("trip_photo_"))
+                          );
+                          if (missingPhotos.length === 0) return null;
+                          return (
+                            <div className="mb-3 bg-amber-50/90 border border-amber-200 rounded-xl p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-amber-900 shadow-xs">
+                              <div className="flex items-center gap-2">
+                                <Camera className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span className="text-[11px] font-semibold">
+                                  {missingPhotos.length} {missingPhotos.length === 1 ? "foto richiede" : "foto richiedono"} di essere ricaricate dalla galleria
+                                </span>
+                              </div>
+                              <div>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*"
+                                  id="batch-reload-photos"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files) handleBatchReloadPhotos(e.target.files);
+                                  }}
+                                />
+                                <label
+                                  htmlFor="batch-reload-photos"
+                                  className="px-2.5 py-1 bg-[#3E4A35] hover:bg-[#2d3627] text-white text-[10px] font-bold rounded-lg cursor-pointer shadow-xs active:scale-95 flex items-center gap-1.5 transition-all"
+                                >
+                                  <Upload className="w-3 h-3" />
+                                  Ricarica foto dalla galleria
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Photo logs display */}
                         <div className="grid grid-cols-2 gap-3 max-h-[225px] overflow-y-auto pr-1">
-                          {activeTrip.photos.length === 0 ? (
+                          {activeTripPhotos.length === 0 ? (
                             <div className="col-span-2 text-xs text-slate-400 py-8 text-center bg-white border border-slate-100 rounded-lg">
                               <ImageIcon className="w-8 h-8 text-slate-300 mx-auto mb-1" />
                               Nessuno scatto caricato. Scatta o simula la prima foto
                               della vacanza!
                             </div>
                           ) : (
-                            activeTrip.photos.map((photo, idx) => (
+                            activeTripPhotos.map((photo, idx) => (
                               <div
                                 key={photo.id}
                                 className="bg-stone-50 rounded-xl overflow-hidden border border-slate-150 relative group cursor-pointer"
@@ -2630,7 +3261,9 @@ export default function DiaryTab({
                                 <div className="relative w-full h-24 overflow-hidden bg-stone-100">
                                   <CamperImage
                                     src={photo.url}
+                                    photoId={photo.id}
                                     alt={photo.description}
+                                    onReplace={(file) => handleReplacePhoto(photo.id, file)}
                                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                   />
 
@@ -2653,6 +3286,32 @@ export default function DiaryTab({
                                     </span>
                                   )}
                                 </div>
+
+                                {/* Re-upload photo from gallery button */}
+                                <input
+                                  id={`replace-photo-${photo.id}`}
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleReplacePhoto(photo.id, e.target.files[0]);
+                                    }
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const input = document.getElementById(`replace-photo-${photo.id}`) as HTMLInputElement;
+                                    input?.click();
+                                  }}
+                                  className="absolute top-1.5 left-1.5 p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors z-10 opacity-80 group-hover:opacity-100"
+                                  title="Ricarica / Sostituisci foto dalla galleria"
+                                >
+                                  <Camera className="w-3 h-3" />
+                                </button>
 
                                 <button
                                   onClick={(e) => {
@@ -2833,12 +3492,13 @@ export default function DiaryTab({
                           <>
                         <div className="flex justify-between items-center">
                           <h3 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                            ⛽ Nuovo Rifornimento Carburante
+                            {editingExpenseId ? "✏️ Modifica Rifornimento Carburante" : "⛽ Nuovo Rifornimento Carburante"}
                           </h3>
                         </div>
 
                         {/* Refueling Form */}
                         <form
+                          ref={expenseFormRef}
                           onSubmit={handleAddExpense}
                           className="p-3 bg-stone-50 rounded-xl border border-stone-100 space-y-3"
                         >
@@ -2872,13 +3532,13 @@ export default function DiaryTab({
 
                             {/* Liters & Cost Per Liter */}
                             <div className="space-y-1">
-                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                Litri (L)
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                                <span>Litri (L)</span>
+                                <span className="text-[8px] text-slate-400 font-normal">Opzionale</span>
                               </label>
                               <input
                                 type="number"
                                 step="0.01"
-                                required
                                 placeholder="Es. 54.20"
                                 value={fuelLiters}
                                 onChange={(e) => {
@@ -2891,6 +3551,9 @@ export default function DiaryTab({
                                     setExpenseAmount(
                                       computed > 0 ? computed.toFixed(2) : "",
                                     );
+                                  } else if (expenseAmount && parseFloat(liters) > 0) {
+                                    const p = parseFloat(expenseAmount) / parseFloat(liters);
+                                    if (p > 0) setFuelPricePerLiter(p.toFixed(3));
                                   }
                                 }}
                                 className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-emerald-500 text-slate-800 font-bold font-mono"
@@ -2898,13 +3561,13 @@ export default function DiaryTab({
                             </div>
 
                             <div className="space-y-1">
-                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                Prezzo al litro ({getCurrencySymbol(settings)}/L)
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                                <span>Prezzo al litro ({getCurrencySymbol(settings)}/L)</span>
+                                <span className="text-[8px] text-slate-400 font-normal">Opzionale</span>
                               </label>
                               <input
                                 type="number"
                                 step="0.001"
-                                required
                                 placeholder="Es. 1.789"
                                 value={fuelPricePerLiter}
                                 onChange={(e) => {
@@ -2917,6 +3580,9 @@ export default function DiaryTab({
                                     setExpenseAmount(
                                       computed > 0 ? computed.toFixed(2) : "",
                                     );
+                                  } else if (expenseAmount && parseFloat(price) > 0) {
+                                    const l = parseFloat(expenseAmount) / parseFloat(price);
+                                    if (l > 0) setFuelLiters(l.toFixed(2));
                                   }
                                 }}
                                 className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-emerald-500 text-slate-800 font-bold font-mono"
@@ -2925,28 +3591,42 @@ export default function DiaryTab({
 
                             {/* Computed Total Cost & Current Odometer */}
                             <div className="space-y-1">
-                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                Importo Speso ({getCurrencySymbol(settings)})
+                              <label className="block text-[9px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-widest flex items-center justify-between">
+                                <span>Importo Speso ({getCurrencySymbol(settings)}) *</span>
+                                <span className="text-[8px] font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                                  Basta anche solo questo
+                                </span>
                               </label>
                               <input
                                 type="number"
                                 step="0.01"
                                 required
-                                placeholder="Totale scontrino"
+                                placeholder="Es. 50.00 (oppure calcolato)"
                                 value={expenseAmount}
-                                onChange={(e) =>
-                                  setExpenseAmount(e.target.value)
-                                }
-                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none bg-emerald-50/30 text-emerald-800 font-black font-mono focus:border-emerald-500"
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setExpenseAmount(val);
+                                  const num = parseFloat(val);
+                                  if (num > 0) {
+                                    if (fuelLiters && !fuelPricePerLiter && parseFloat(fuelLiters) > 0) {
+                                      setFuelPricePerLiter((num / parseFloat(fuelLiters)).toFixed(3));
+                                    } else if (!fuelLiters && fuelPricePerLiter && parseFloat(fuelPricePerLiter) > 0) {
+                                      setFuelLiters((num / parseFloat(fuelPricePerLiter)).toFixed(2));
+                                    }
+                                  }
+                                }}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border-2 border-emerald-500 outline-none bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-200 font-black font-mono focus:border-emerald-600 focus:bg-emerald-50"
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                Contachilometri ({getDistanceUnit(settings)})
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                                <span>Contachilometri ({getDistanceUnit(settings)})</span>
+                                <span className="text-[8px] text-slate-400 font-normal">Opzionale</span>
                               </label>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="numeric"
                                 placeholder={`Min: ${activeTrip.startOdometer || 0}`}
                                 value={fuelOdometer}
                                 onChange={(e) =>
@@ -3295,10 +3975,10 @@ export default function DiaryTab({
                                           <input
                                             type="number"
                                             step="0.1"
-                                            placeholder="Km"
+                                            placeholder="es. 128600"
                                             value={tempOdoValue}
                                             onChange={(e) => setTempOdoValue(e.target.value)}
-                                            className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[10px] font-mono focus:border-indigo-500 outline-none"
+                                            className="w-24 px-1.5 py-0.5 border border-slate-300 rounded text-[11px] font-mono focus:border-indigo-500 outline-none"
                                             autoFocus
                                           />
                                           <button
@@ -3317,24 +3997,24 @@ export default function DiaryTab({
                                         </form>
                                       ) : (
                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                          {m.odometer !== undefined && m.odometer !== null ? (
+                                          {m.odometer !== undefined && m.odometer !== null && m.odometer > 0 ? (
                                             <span className="text-[10px] font-black uppercase text-blue-800 font-mono">
                                               {m.odometer} Km
                                             </span>
                                           ) : (
-                                            <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-150 animate-pulse">
-                                              ⚠️ Inserisci Km
+                                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                              ⚠️ {m.odometer === 0 ? "Km non impostati (0)" : "Inserisci Km"}
                                             </span>
                                           )}
                                           <button
                                             onClick={() => {
                                               setEditingOdoId(m.id);
-                                              setTempOdoValue(m.odometer !== undefined ? m.odometer.toString() : "");
+                                              setTempOdoValue(m.odometer && m.odometer > 0 ? m.odometer.toString() : "");
                                             }}
                                             className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
                                             title="Modifica o inserisci i chilometri manualmente"
                                           >
-                                            {m.odometer !== undefined ? "Modifica" : "Inserisci"}
+                                            {m.odometer && m.odometer > 0 ? "Modifica" : "Inserisci Km"}
                                           </button>
                                         </div>
                                       )}
@@ -3419,9 +4099,9 @@ export default function DiaryTab({
                                       onClick={() => {
                                         // Edit functionality: fill state with m values
                                         setMovementLocation(m.location);
-                                        setMovementOdometer(String(m.odometer));
+                                        setMovementOdometer(m.odometer && m.odometer > 0 ? String(m.odometer) : "");
                                         setMovementNotes(m.notes || "");
-                                        setMovementDate(m.date || "");
+                                        setMovementDate(m.date ? (m.date.includes('T') ? m.date.split('T')[0] : m.date) : "");
                                         // Keep track of which one is being edited
                                         // For now let's reuse state or create new one if needed, 
                                         // actually let's just trigger edit mode
@@ -3602,7 +4282,7 @@ export default function DiaryTab({
       {/* GORGEOUS LIGHTBOX MODAL */}
       {selectedLightboxPhotoIndex !== null &&
         activeTrip &&
-        activeTrip.photos[selectedLightboxPhotoIndex] && (
+        activeTripPhotos[selectedLightboxPhotoIndex] && (
           <div
             className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-md transition-all animate-fade-in"
             onClick={() => setSelectedLightboxPhotoIndex(null)}
@@ -3625,14 +4305,21 @@ export default function DiaryTab({
               {/* Main Picture content and navigation */}
               <div className="relative w-full aspect-video md:aspect-[4/3] bg-black flex items-center justify-center group overflow-hidden">
                 <CamperImage
-                  src={activeTrip.photos[selectedLightboxPhotoIndex].url}
+                  src={activeTripPhotos[selectedLightboxPhotoIndex].url}
+                  photoId={activeTripPhotos[selectedLightboxPhotoIndex].id}
                   alt={
-                    activeTrip.photos[selectedLightboxPhotoIndex].description
+                    activeTripPhotos[selectedLightboxPhotoIndex].description
+                  }
+                  onReplace={(file) =>
+                    handleReplacePhoto(
+                      activeTripPhotos[selectedLightboxPhotoIndex].id,
+                      file
+                    )
                   }
                   className="max-w-full max-h-[75vh] object-contain select-none"
                 />
 
-                {activeTrip.photos.length > 1 && (
+                {activeTripPhotos.length > 1 && (
                   <>
                     {/* Left Sliding button */}
                     <button
@@ -3641,8 +4328,8 @@ export default function DiaryTab({
                         const newIdx =
                           (selectedLightboxPhotoIndex -
                             1 +
-                            activeTrip.photos.length) %
-                          activeTrip.photos.length;
+                            activeTripPhotos.length) %
+                          activeTripPhotos.length;
                         setSelectedLightboxPhotoIndex(newIdx);
                       }}
                       className="absolute left-4 p-3 bg-black/50 hover:bg-black/85 text-white rounded-full transition-all cursor-pointer shadow-md select-none border border-white/5 active:scale-90"
@@ -3656,7 +4343,7 @@ export default function DiaryTab({
                         e.stopPropagation();
                         const newIdx =
                           (selectedLightboxPhotoIndex + 1) %
-                          activeTrip.photos.length;
+                          activeTripPhotos.length;
                         setSelectedLightboxPhotoIndex(newIdx);
                       }}
                       className="absolute right-4 p-3 bg-black/50 hover:bg-black/85 text-white rounded-full transition-all cursor-pointer shadow-md select-none border border-white/5 active:scale-90"
@@ -3668,21 +4355,46 @@ export default function DiaryTab({
               </div>
 
               {/* Bottom Caption bar with descriptions and Date */}
-              <div className="w-full bg-stone-950 p-5 border-t border-stone-855 text-stone-200 text-left space-y-1.5 font-sans">
+              <div className="w-full bg-stone-950 p-5 border-t border-stone-855 text-stone-200 text-left space-y-2 font-sans">
                 <div className="flex justify-between items-center text-[10px] text-stone-400 font-bold font-mono">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-stone-500" />
                     Scattata il:{" "}
-                    {activeTrip.photos[selectedLightboxPhotoIndex].date}
+                    {activeTripPhotos[selectedLightboxPhotoIndex].date}
                   </span>
                   <span>
                     Foto {selectedLightboxPhotoIndex + 1} di{" "}
-                    {activeTrip.photos.length}
+                    {activeTripPhotos.length}
                   </span>
                 </div>
-                <p className="text-xs md:text-sm font-semibold tracking-wide text-white leading-relaxed">
-                  {activeTrip.photos[selectedLightboxPhotoIndex].description}
-                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <p className="text-xs md:text-sm font-semibold tracking-wide text-white leading-relaxed">
+                    {activeTripPhotos[selectedLightboxPhotoIndex].description}
+                  </p>
+                  <div>
+                    <input
+                      id="lightbox-replace-photo"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleReplacePhoto(
+                            activeTripPhotos[selectedLightboxPhotoIndex].id,
+                            e.target.files[0]
+                          );
+                        }
+                      }}
+                    />
+                    <label
+                      htmlFor="lightbox-replace-photo"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all border border-stone-700 shrink-0 active:scale-95"
+                    >
+                      <Camera className="w-3 h-3" />
+                      Ricarica / Sostituisci
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -4018,6 +4730,183 @@ export default function DiaryTab({
                   Elaborazione impaginazione e foto...
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Sync & Backup Modal */}
+      {showSyncModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-stone-900 w-full max-w-lg rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-gradient-to-r from-[#3E4A35] to-[#2D3725] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Cloud className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-black text-sm tracking-wide">Centro Sincronizzazione & Backup ☁️</h3>
+              </div>
+              <button
+                onClick={() => setShowSyncModal(false)}
+                className="p-1 text-white/80 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Account info */}
+              <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-xl border border-stone-200/80 dark:border-stone-700/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-mono text-stone-500 font-bold block">Account Attivo</span>
+                  <span className="font-bold text-stone-800 dark:text-stone-200">{getActiveUserEmail()}</span>
+                </div>
+                <button
+                  onClick={checkCloudStatus}
+                  className="px-2.5 py-1 bg-stone-200 dark:bg-stone-700 hover:bg-stone-300 text-stone-700 dark:text-stone-200 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${cloudStatusInfo?.loading ? "animate-spin" : ""}`} />
+                  Verifica Cloud
+                </button>
+              </div>
+
+              {/* Status Comparison Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Local device */}
+                <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50 rounded-xl">
+                  <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-bold mb-2">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Questo Dispositivo</span>
+                  </div>
+                  <div className="space-y-1 font-mono text-[11px] text-stone-600 dark:text-stone-300">
+                    <div className="flex justify-between">
+                      <span>Viaggi:</span>
+                      <span className="font-bold text-stone-800 dark:text-stone-100">{trips.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Spese:</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                        {trips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tappe:</span>
+                      <span className="font-bold text-stone-800 dark:text-stone-100">
+                        {trips.reduce((acc, t) => acc + (t.movements?.length || 0), 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Foto:</span>
+                      <span className="font-bold text-stone-800 dark:text-stone-100">
+                        {trips.reduce((acc, t) => acc + (t.photos?.length || 0), 0)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cloud Server */}
+                <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl">
+                  <div className="flex items-center gap-1.5 text-indigo-800 dark:text-indigo-300 font-bold mb-2">
+                    <Cloud className="w-3.5 h-3.5" />
+                    <span>Dati nel Cloud</span>
+                  </div>
+                  {cloudStatusInfo?.loading ? (
+                    <div className="py-3 flex items-center justify-center gap-2 text-indigo-600 font-mono text-[11px]">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Controllo...
+                    </div>
+                  ) : cloudStatusInfo?.error ? (
+                    <div className="text-rose-600 text-[10px]">{cloudStatusInfo.error}</div>
+                  ) : (
+                    <div className="space-y-1 font-mono text-[11px] text-stone-600 dark:text-stone-300">
+                      <div className="flex justify-between">
+                        <span>Viaggi:</span>
+                        <span className="font-bold text-stone-800 dark:text-stone-100">{cloudStatusInfo?.trips ?? "--"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Spese:</span>
+                        <span className="font-bold text-indigo-700 dark:text-indigo-400">
+                          {cloudStatusInfo?.expenses ?? "--"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Tappe:</span>
+                        <span className="font-bold text-stone-800 dark:text-stone-100">
+                          {cloudStatusInfo?.movements ?? "--"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Foto:</span>
+                        <span className="font-bold text-stone-800 dark:text-stone-100">
+                          {cloudStatusInfo?.photos ?? "--"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sync Action */}
+              <button
+                onClick={handleCloudSyncClick}
+                disabled={isSyncingCloud}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingCloud ? "animate-spin" : ""}`} />
+                <span>{isSyncingCloud ? "Sincronizzazione in corso..." : "Sincronizza & Unisci Dati col Cloud Ora"}</span>
+              </button>
+
+              {/* Direct File Transfer Section */}
+              <div className="pt-3 border-t border-stone-200 dark:border-stone-800">
+                <h4 className="font-bold text-stone-800 dark:text-stone-200 mb-1 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-stone-500" />
+                  Trasferimento Diretto via File (100% Garantito)
+                </h4>
+                <p className="text-[11px] text-stone-500 mb-3 leading-relaxed">
+                  Se hai già tutte le spese sul cellulare e vuoi portarle sul tablet all'istante senza passare dal Cloud:
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleExportBackupJson}
+                    className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-[#3E4A35] dark:text-stone-200 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 border border-stone-300 dark:border-stone-700 cursor-pointer active:scale-95"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Esporta Backup (.json)</span>
+                  </button>
+
+                  <label className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-[#3E4A35] dark:text-stone-200 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 border border-stone-300 dark:border-stone-700 cursor-pointer active:scale-95 text-center">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Importa Backup (.json)</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleImportBackupJson(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Help box */}
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
+                <strong>💡 Istruzioni rapide:</strong>
+                <ol className="list-decimal list-inside mt-1 space-y-1 text-[10.5px]">
+                  <li>Sul cellulare premi <strong>Esporta Backup (.json)</strong> e salva il file.</li>
+                  <li>Invia il file al tablet (via WhatsApp, Telegram, Email o Drive).</li>
+                  <li>Sul tablet premi <strong>Importa Backup (.json)</strong>: tutte le 52 spese e le foto appariranno all'istante!</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="p-3 bg-stone-100 dark:bg-stone-800 border-t border-stone-200 dark:border-stone-700 flex justify-end">
+              <button
+                onClick={() => setShowSyncModal(false)}
+                className="px-4 py-1.5 bg-stone-200 dark:bg-stone-700 hover:bg-stone-300 text-stone-700 dark:text-stone-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                Chiudi
+              </button>
             </div>
           </div>
         </div>

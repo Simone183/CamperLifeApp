@@ -108,6 +108,7 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
 
   // Form states
   const [date, setDate] = React.useState(new Date().toISOString().split('T')[0]);
+  const [totalCost, setTotalCost] = React.useState('');
   const [liters, setLiters] = React.useState('');
   const [pricePerLiter, setPricePerLiter] = React.useState('');
   const [odometer, setOdometer] = React.useState('');
@@ -238,28 +239,40 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
     }
 
     // Sanitize and support both comma and dot decimal separators
+    const cleanCostStr = String(totalCost).trim().replace(',', '.');
     const cleanLitStr = String(liters).trim().replace(',', '.');
     const cleanPriceStr = String(pricePerLiter).trim().replace(',', '.');
     const cleanOdoStr = String(odometer).trim().replace(/[^\d]/g, '');
 
+    let cost = parseFloat(cleanCostStr);
     const lit = parseFloat(cleanLitStr);
     const price = parseFloat(cleanPriceStr);
     const odo = parseInt(cleanOdoStr, 10);
 
-    if (isNaN(lit) || lit <= 0 || isNaN(price) || price <= 0 || isNaN(odo) || odo <= 0) {
-      alert("Inserisci valori numerici validi per litri, prezzo al litro e contachilometri.");
+    // Compute cost if missing but liters and price are present
+    if ((isNaN(cost) || cost <= 0) && !isNaN(lit) && lit > 0 && !isNaN(price) && price > 0) {
+      cost = Number((lit * price).toFixed(2));
+      setTotalCost(cost.toFixed(2));
+    }
+
+    if (isNaN(cost) || cost <= 0) {
+      alert("Inserisci almeno l'importo speso del rifornimento!");
       return;
     }
+
+    const finalLiters = (!isNaN(lit) && lit > 0) ? Number(lit.toFixed(2)) : (cost > 0 && !isNaN(price) && price > 0 ? Number((cost / price).toFixed(2)) : 0);
+    const finalPrice = (!isNaN(price) && price > 0) ? Number(price.toFixed(3)) : (cost > 0 && !isNaN(lit) && lit > 0 ? Number((cost / lit).toFixed(3)) : 0);
+    const finalOdo = (!isNaN(odo) && odo > 0) ? odo : 0;
 
     setIsSubmitting(true);
     const newLogId = `fuel_${Date.now()}`;
     const newLog: FuelLog = {
       id: newLogId,
       date: date || new Date().toISOString().split('T')[0],
-      liters: Number(lit.toFixed(2)),
-      pricePerLiter: Number(price.toFixed(3)),
-      totalCost: Number((lit * price).toFixed(2)),
-      odometer: odo,
+      liters: finalLiters,
+      pricePerLiter: finalPrice,
+      totalCost: Number(cost.toFixed(2)),
+      odometer: finalOdo,
       isFullTank,
       fuelCompany: fuelCompany.trim() || 'Eni',
       createdAt: new Date().toISOString()
@@ -280,20 +293,22 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
           trips = trips.map((t: any) => {
             if (t.status === 'In Corso' || t.status === 'Attivo') {
               updated = true;
+              const litText = newLog.liters > 0 ? ` ${newLog.liters}L` : '';
+              const priceText = newLog.pricePerLiter > 0 ? ` @ ${newLog.pricePerLiter}${getCurrencySymbol(settings)}/L` : '';
               return {
                 ...t,
-                endOdometer: odo > (t.endOdometer || 0) ? odo : t.endOdometer,
+                endOdometer: finalOdo > (t.endOdometer || 0) ? finalOdo : t.endOdometer,
                 expenses: [
                   ...(t.expenses || []),
                   {
                     id: newLog.id,
-                    title: `Rifornimento ${newLog.fuelCompany} ${newLog.liters}L @ ${newLog.pricePerLiter}${getCurrencySymbol(settings)}/L${isFullTank ? ' [Pieno ✓]' : ''}`,
+                    title: `Rifornimento ${newLog.fuelCompany}${litText}${priceText}${isFullTank ? ' [Pieno ✓]' : ''}`.trim(),
                     amount: newLog.totalCost,
                     category: 'Carburante',
                     date: newLog.date,
-                    liters: newLog.liters,
-                    pricePerLiter: newLog.pricePerLiter,
-                    odometer: odo,
+                    liters: newLog.liters > 0 ? newLog.liters : undefined,
+                    pricePerLiter: newLog.pricePerLiter > 0 ? newLog.pricePerLiter : undefined,
+                    odometer: finalOdo > 0 ? finalOdo : undefined,
                     fuelCompany: newLog.fuelCompany,
                     isFullTank: isFullTank
                   }
@@ -362,7 +377,7 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
                           date: newLog.date,
                           liters: newLog.liters,
                           pricePerLiter: newLog.pricePerLiter,
-                          odometer: odo,
+                          odometer: finalOdo > 0 ? finalOdo : undefined,
                           fuelCompany: newLog.fuelCompany,
                           isFullTank: isFullTank
                         }
@@ -384,6 +399,7 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
       })().catch(() => {});
 
       // Reset form
+      setTotalCost('');
       setLiters('');
       setPricePerLiter('');
       setOdometer('');
@@ -597,16 +613,68 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
               </div>
             </div>
 
+            {/* Total Cost - Can be entered alone */}
+            <div className="bg-emerald-50/60 dark:bg-emerald-950/20 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-black uppercase text-emerald-800 dark:text-emerald-300">
+                  Importo Speso ({getCurrencySymbol(settings)}) *
+                </label>
+                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded">
+                  Basta anche solo questo
+                </span>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  required
+                  value={totalCost}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setTotalCost(val);
+                    const clean = parseFloat(val.replace(',', '.'));
+                    if (!isNaN(clean) && clean > 0) {
+                      const cleanLit = parseFloat(String(liters).replace(',', '.'));
+                      const cleanPrice = parseFloat(String(pricePerLiter).replace(',', '.'));
+                      if (!isNaN(cleanLit) && cleanLit > 0 && isNaN(cleanPrice)) {
+                        setPricePerLiter((clean / cleanLit).toFixed(3));
+                      } else if (!isNaN(cleanPrice) && cleanPrice > 0 && isNaN(cleanLit)) {
+                        setLiters((clean / cleanPrice).toFixed(2));
+                      }
+                    }
+                  }}
+                  placeholder="es. 50,00"
+                  className="w-full bg-white border-2 border-emerald-500 py-2 pl-3 pr-8 rounded-xl text-base font-mono font-black text-emerald-900 dark:text-emerald-200 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                />
+                <span className="absolute right-3 top-2.5 text-emerald-600 font-black text-sm">{getCurrencySymbol(settings)}</span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Litri inseriti</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Litri inseriti</label>
+                  <span className="text-[8.5px] text-slate-400">Opzionale</span>
+                </div>
                 <div className="relative">
                   <input
                     type="text"
                     inputMode="decimal"
-                    required
                     value={liters}
-                    onChange={e => setLiters(e.target.value)}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setLiters(val);
+                      const cleanLit = parseFloat(val.replace(',', '.'));
+                      const cleanPrice = parseFloat(String(pricePerLiter).replace(',', '.'));
+                      if (!isNaN(cleanLit) && cleanLit > 0 && !isNaN(cleanPrice) && cleanPrice > 0) {
+                        setTotalCost((cleanLit * cleanPrice).toFixed(2));
+                      } else if (!isNaN(cleanLit) && cleanLit > 0 && totalCost) {
+                        const cleanCost = parseFloat(String(totalCost).replace(',', '.'));
+                        if (!isNaN(cleanCost) && cleanCost > 0 && !pricePerLiter) {
+                          setPricePerLiter((cleanCost / cleanLit).toFixed(3));
+                        }
+                      }
+                    }}
                     placeholder="es. 48,73"
                     className="w-full bg-white border border-slate-300 py-2 pl-3 pr-8 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none"
                   />
@@ -614,14 +682,29 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Prezzo al Litro</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500">Prezzo al Litro</label>
+                  <span className="text-[8.5px] text-slate-400">Opzionale</span>
+                </div>
                 <div className="relative">
                   <input
                     type="text"
                     inputMode="decimal"
-                    required
                     value={pricePerLiter}
-                    onChange={e => setPricePerLiter(e.target.value)}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setPricePerLiter(val);
+                      const cleanPrice = parseFloat(val.replace(',', '.'));
+                      const cleanLit = parseFloat(String(liters).replace(',', '.'));
+                      if (!isNaN(cleanPrice) && cleanPrice > 0 && !isNaN(cleanLit) && cleanLit > 0) {
+                        setTotalCost((cleanLit * cleanPrice).toFixed(2));
+                      } else if (!isNaN(cleanPrice) && cleanPrice > 0 && totalCost) {
+                        const cleanCost = parseFloat(String(totalCost).replace(',', '.'));
+                        if (!isNaN(cleanCost) && cleanCost > 0 && !liters) {
+                          setLiters((cleanCost / cleanPrice).toFixed(2));
+                        }
+                      }
+                    }}
                     placeholder="es. 2,099"
                     className="w-full bg-white border border-slate-300 py-2 pl-3 pr-8 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none"
                   />
@@ -631,12 +714,14 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
             </div>
 
             <div>
-              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Contachilometri (Odo)</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">Contachilometri (Odo)</label>
+                <span className="text-[8.5px] text-slate-400">Opzionale</span>
+              </div>
               <div className="relative">
                 <input
                   type="text"
                   inputMode="numeric"
-                  required
                   value={odometer}
                   onChange={e => setOdometer(e.target.value)}
                   placeholder="es. 127894"

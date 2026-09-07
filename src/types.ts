@@ -387,6 +387,7 @@ export interface DiaryPhoto {
   description: string;
   date: string;
   locationName?: string; // Tappa in cui è stata scattata la foto
+  deleted?: boolean; // Flag per soft delete sincronizzato
 }
 
 export interface AIDayStop {

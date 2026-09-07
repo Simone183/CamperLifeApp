@@ -159,8 +159,12 @@ export const MapPoiIcon: React.FC<MapPoiIconProps> = ({
 /**
  * Leaflet L.divIcon HTML string generator
  */
-export function getMapPoiIconHtml(category: string, isViolation: boolean = false): { html: string; iconSize: [number, number]; iconAnchor: [number, number] } {
-  const details = getPoiCategoryDetails(category, isViolation);
+export function getMapPoiIconHtml(
+  category: string, 
+  isViolation: boolean = false,
+  feeStatus?: 'free' | 'paid' | 'unknown'
+): { html: string; iconSize: [number, number]; iconAnchor: [number, number] } {
+  const details = getPoiCategoryDetails(category, isViolation, feeStatus);
 
   const html = `
     <div class="relative group cursor-pointer flex flex-col items-center select-none transition-transform duration-200 hover:scale-110">

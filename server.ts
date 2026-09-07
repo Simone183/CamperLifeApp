@@ -1363,9 +1363,9 @@ async function startServer() {
     }
   })();
 
-  // Middleware for parsing body
-  app.use(express.json({ limit: "25mb" }));
-  app.use(express.urlencoded({ limit: "25mb", extended: true }));
+  // Middleware for parsing body (100mb to safely support trips with photos)
+  app.use(express.json({ limit: "100mb" }));
+  app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
   // CORS middleware to support native mobile apps, web preview, and cross-origin preflights
   app.use((req, res, next) => {
@@ -3312,7 +3312,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       // 1. Immediately update cache and sort descending (newest on top)
       const current = getCachedFuelLogs(email);
-      const filtered = current.filter(l => l.id !== newLog.id);
+      const filtered = current.filter(l => 
+        String(l.id) !== String(newLog.id) &&
+        !(l.date === newLog.date && Math.abs(Number(l.totalCost) - Number(newLog.totalCost)) < 0.01 && Math.abs(Number(l.liters) - Number(newLog.liters)) < 0.01)
+      );
       const updated = [newLog, ...filtered];
       updated.sort((a, b) => {
         const dateA = a.date || '';
@@ -3735,6 +3738,370 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       res.json({ success: true, crew });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // USER TRIPS API: Direct, guaranteed Firestore & Crew synchronization
+  // ----------------------------------------------------
+  app.get("/api/user-trips/:email", async (req, res) => {
+    try {
+      const cleanEmail = (req.params.email || "").toLowerCase().trim();
+      if (!cleanEmail) {
+        return res.status(400).json({ error: "Email richiesta." });
+      }
+      
+      let firestoreTrips: any[] = [];
+      let firestoreUpdatedAt = "";
+
+      // 1. Fetch from Firestore users/{cleanEmail}/data/trips
+      try {
+        const docSnap = await firestoreDb.collection(`users/${cleanEmail}/data`).doc("trips").get();
+        if (docSnap && docSnap.exists) {
+          const data = docSnap.data();
+          if (data && Array.isArray(data.trips)) {
+            firestoreTrips = data.trips;
+            firestoreUpdatedAt = data.updatedAt || "";
+          }
+        }
+      } catch (fsErr) {
+        console.warn("[User Trips API] Notice reading trips from Firestore:", fsErr);
+      }
+
+      // 2. Check local disk backup
+      let diskTrips: any[] = [];
+      const sanitized = cleanEmail.replace(/[^a-z0-9]/g, '_');
+      const backupPath = path.join(process.cwd(), "user_backups", `trips_${sanitized}.json`);
+      try {
+        if (fs.existsSync(backupPath)) {
+          const rawBackup = JSON.parse(fs.readFileSync(backupPath, "utf-8"));
+          if (rawBackup && Array.isArray(rawBackup.trips)) {
+            diskTrips = rawBackup.trips;
+          }
+        }
+      } catch (bErr) {
+        console.warn("[User Trips API] Notice reading disk backup:", bErr);
+      }
+
+      // Determine best trips between Firestore and Disk (merge smartly so non-zero odometers and user edits are preserved)
+      let combinedTrips = firestoreTrips;
+      if (diskTrips.length > 0 && firestoreTrips.length === 0) {
+        combinedTrips = diskTrips;
+      } else if (diskTrips.length > 0 && firestoreTrips.length > 0) {
+        const cMap = new Map<string, any>();
+        for (const t of firestoreTrips) {
+          if (t && t.id) cMap.set(t.id, t);
+        }
+        for (const dt of diskTrips) {
+          if (!dt || !dt.id) continue;
+          if (cMap.has(dt.id)) {
+            const ft = cMap.get(dt.id);
+            // Merge movements
+            const movs = new Map<string, any>();
+            for (const m of (ft.movements || [])) {
+              if (m && m.id) movs.set(m.id, m);
+            }
+            for (const m of (dt.movements || [])) {
+              if (m && m.id) {
+                if (movs.has(m.id)) {
+                  const existingM = movs.get(m.id);
+                  const exOdo = typeof existingM.odometer === 'number' ? existingM.odometer : parseFloat(existingM.odometer);
+                  const dtOdo = typeof m.odometer === 'number' ? m.odometer : parseFloat(m.odometer);
+                  let bestOdo = exOdo;
+                  if ((isNaN(exOdo) || exOdo <= 0) && !isNaN(dtOdo) && dtOdo > 0) {
+                    bestOdo = dtOdo;
+                  }
+                  movs.set(m.id, { ...existingM, ...m, odometer: bestOdo });
+                } else {
+                  movs.set(m.id, m);
+                }
+              }
+            }
+            cMap.set(dt.id, {
+              ...ft,
+              ...dt,
+              movements: Array.from(movs.values()),
+            });
+          } else {
+            cMap.set(dt.id, dt);
+          }
+        }
+        combinedTrips = Array.from(cMap.values());
+      }
+
+      if (combinedTrips.length > 0) {
+        return res.json({ trips: combinedTrips });
+      }
+
+      // 3. Fallback to Family Crew if available
+      const allCrews = getCachedFamilyCrews();
+      for (const crew of Object.values(allCrews)) {
+        const isMember = (crew.members || []).some((m: any) => (m.email || "").toLowerCase().trim() === cleanEmail) ||
+                         (crew.ownerEmail || "").toLowerCase().trim() === cleanEmail;
+        if (isMember && crew.sharedData?.trips && Array.isArray(crew.sharedData.trips) && crew.sharedData.trips.length > 0) {
+          return res.json({ trips: crew.sharedData.trips });
+        }
+      }
+
+      return res.json({ trips: [] });
+    } catch (err: any) {
+      console.error("[User Trips API] Error fetching trips:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/user-trips/sync", async (req, res) => {
+    try {
+      const { email, trips } = req.body || {};
+      const cleanEmail = (email || "").toLowerCase().trim();
+      if (!cleanEmail || !Array.isArray(trips)) {
+        return res.status(400).json({ error: "Email e array trips validi richiesti." });
+      }
+
+      // Ensure permanent photos storage directory exists in user_backups
+      const BACKUP_DIR = path.join(process.cwd(), "user_backups");
+      const PHOTOS_DIR = path.join(BACKUP_DIR, "photos");
+      if (!fs.existsSync(BACKUP_DIR)) {
+        fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      }
+      if (!fs.existsSync(PHOTOS_DIR)) {
+        fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+      }
+      const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+
+      // Convert heavy base64 photos to permanent, stable ID-backed files
+      for (const trip of trips) {
+        if (Array.isArray(trip.photos)) {
+          for (const photo of trip.photos) {
+            if (photo && typeof photo.url === "string" && photo.url.startsWith("data:image/")) {
+              try {
+                const match = photo.url.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+                if (match) {
+                  const ext = match[1] === "jpeg" ? "jpg" : match[1];
+                  const base64Data = match[2];
+                  const buffer = Buffer.from(base64Data, "base64");
+                  const photoId = (photo.id || `photo_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_");
+                  const filename = `${photoId}.jpg`;
+                  const persistentPath = path.join(PHOTOS_DIR, filename);
+                  const uploadPath = path.join(UPLOADS_DIR, filename);
+                  
+                  // Use sharp if possible to optimize, or write directly
+                  try {
+                    const optBuffer = await sharp(buffer)
+                      .resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true })
+                      .jpeg({ quality: 80 })
+                      .toBuffer();
+                    fs.writeFileSync(persistentPath, optBuffer);
+                    fs.writeFileSync(uploadPath, optBuffer);
+                  } catch (sErr) {
+                    fs.writeFileSync(persistentPath, buffer);
+                    fs.writeFileSync(uploadPath, buffer);
+                  }
+
+                  // Permanent stable URL by photo ID
+                  photo.url = `/api/photos/${photoId}`;
+
+                  // Also try storing in Firestore shared_photos if available
+                  if (firestoreDb) {
+                    firestoreDb.collection("shared_photos").doc(photoId).set({
+                      base64: base64Data,
+                      mimeType: `image/${ext}`,
+                      updatedAt: new Date().toISOString(),
+                    }).catch(() => {});
+                  }
+                }
+              } catch (photoErr) {
+                console.error("[User Trips Sync] Error processing photo:", photoErr);
+              }
+            }
+          }
+        }
+      }
+
+      // 1. Direct server-side write to local disk backup with deep merge
+      const sanitized = cleanEmail.replace(/[^a-z0-9]/g, '_');
+      const backupPath = path.join(BACKUP_DIR, `trips_${sanitized}.json`);
+
+      let existingTrips: any[] = [];
+      try {
+        if (fs.existsSync(backupPath)) {
+          const raw = JSON.parse(fs.readFileSync(backupPath, "utf-8"));
+          if (Array.isArray(raw?.trips)) existingTrips = raw.trips;
+        }
+      } catch (e) {}
+
+      // If disk has no trips, load from Firestore to ensure we merge against existing state
+      if (existingTrips.length === 0) {
+        try {
+          const docSnap = await firestoreDb.collection(`users/${cleanEmail}/data`).doc("trips").get();
+          if (docSnap && docSnap.exists) {
+            const data = docSnap.data();
+            if (data && Array.isArray(data.trips)) {
+              existingTrips = data.trips;
+            }
+          }
+        } catch (fErr) {}
+      }
+
+      // Server-side deep merge helper to guarantee no device loses expenses, movements, or photos
+      // AND crucially: incoming user updates (like edited odometers, expenses, stops) take precedence over stale existing records!
+      const mergedTripsMap = new Map<string, any>();
+      for (const t of existingTrips) {
+        if (t && t.id) mergedTripsMap.set(t.id, t);
+      }
+      for (const incTrip of trips) {
+        if (!incTrip || !incTrip.id) continue;
+        if (mergedTripsMap.has(incTrip.id)) {
+          const exTrip = mergedTripsMap.get(incTrip.id);
+          // Merge expenses
+          const expMap = new Map<string, any>();
+          for (const e of (exTrip.expenses || [])) {
+            if (e && e.id) expMap.set(String(e.id), e);
+          }
+          for (const e of (incTrip.expenses || [])) {
+            if (e && e.id) {
+              const strId = String(e.id);
+              if (expMap.has(strId)) {
+                // Incoming expense updates existing expense
+                const existing = expMap.get(strId);
+                expMap.set(strId, { ...existing, ...e });
+              } else {
+                const dupEntry = Array.from(expMap.entries()).find(
+                  ([_, x]) => x.date === e.date && Math.abs(Number(x.amount) - Number(e.amount)) < 0.01 && x.title === e.title
+                );
+                if (dupEntry) {
+                  const [dupId, existing] = dupEntry;
+                  expMap.set(dupId, { ...existing, ...e, id: dupId });
+                } else {
+                  expMap.set(strId, e);
+                }
+              }
+            }
+          }
+          // Merge movements: existing movements + incoming updates
+          const movMap = new Map<string, any>();
+          for (const m of (exTrip.movements || [])) {
+            if (m && m.id) movMap.set(m.id, m);
+          }
+          for (const m of (incTrip.movements || [])) {
+            if (m && m.id) {
+              const existing = movMap.get(m.id);
+              if (existing) {
+                // Incoming movement is the latest user submission: update all fields from incoming!
+                movMap.set(m.id, {
+                  ...existing,
+                  ...m,
+                });
+              } else {
+                movMap.set(m.id, m);
+              }
+            }
+          }
+          // Merge photos
+          const phoMap = new Map<string, any>();
+          for (const p of (exTrip.photos || [])) {
+            if (p && (p.id || p.url)) phoMap.set(p.id || p.url, p);
+          }
+          for (const p of (incTrip.photos || [])) {
+            if (p && (p.id || p.url)) {
+              const key = p.id || p.url;
+              if (phoMap.has(key)) {
+                const existing = phoMap.get(key);
+                if (p.url && !p.url.startsWith("/uploads/") && existing?.url?.startsWith("/uploads/")) {
+                  phoMap.set(key, { ...existing, ...p, url: p.url });
+                } else {
+                  phoMap.set(key, { ...existing, ...p });
+                }
+              } else {
+                phoMap.set(key, p);
+              }
+            }
+          }
+          // Merge stops
+          const stopMap = new Map<string, any>();
+          for (const s of (exTrip.stops || [])) {
+            if (s && s.id) stopMap.set(s.id, s);
+          }
+          for (const s of (incTrip.stops || [])) {
+            if (s && s.id) {
+              if (stopMap.has(s.id)) {
+                const existing = stopMap.get(s.id);
+                stopMap.set(s.id, { ...existing, ...s });
+              } else {
+                stopMap.set(s.id, s);
+              }
+            }
+          }
+
+          const startOdometers = [exTrip.startOdometer, incTrip.startOdometer].filter(n => typeof n === 'number' && n > 0);
+          const endOdometers = [exTrip.endOdometer, incTrip.endOdometer].filter(n => typeof n === 'number' && n > 0);
+
+          mergedTripsMap.set(incTrip.id, {
+            ...exTrip,
+            ...incTrip,
+            expenses: Array.from(expMap.values()),
+            movements: Array.from(movMap.values()),
+            photos: Array.from(phoMap.values()),
+            stops: Array.from(stopMap.values()),
+            startOdometer: incTrip.startOdometer !== undefined ? incTrip.startOdometer : exTrip.startOdometer,
+            endOdometer: incTrip.endOdometer !== undefined ? incTrip.endOdometer : exTrip.endOdometer,
+          });
+        } else {
+          mergedTripsMap.set(incTrip.id, incTrip);
+        }
+      }
+
+      const finalTrips = Array.from(mergedTripsMap.values());
+
+      try {
+        fs.writeFileSync(backupPath, JSON.stringify({ email: cleanEmail, trips: finalTrips, updatedAt: new Date().toISOString() }, null, 2));
+      } catch (wbErr) {
+        console.warn("[User Trips Sync] Notice writing disk backup:", wbErr);
+      }
+
+      // 2. Direct server-side write to Firestore users/{cleanEmail}/data/trips
+      try {
+        await firestoreDb.collection(`users/${cleanEmail}/data`).doc("trips").set({
+          trips: finalTrips,
+          updatedAt: new Date().toISOString(),
+          updatedBy: cleanEmail
+        });
+      } catch (fsErr) {
+        console.error("[User Trips Sync] Firestore write error:", fsErr);
+      }
+
+      // 3. Also keep Family Crew in sync
+      const allCrews = getCachedFamilyCrews();
+      let crewUpdated = false;
+      for (const [crewId, crew] of Object.entries(allCrews)) {
+        const isMember = (crew.members || []).some((m: any) => (m.email || "").toLowerCase().trim() === cleanEmail) ||
+                         (crew.ownerEmail || "").toLowerCase().trim() === cleanEmail;
+        if (isMember) {
+          if (!crew.sharedData) crew.sharedData = {};
+          crew.sharedData.trips = finalTrips;
+          crew.lastUpdated = new Date().toISOString();
+          crew.updatedBy = cleanEmail;
+          allCrews[crewId] = crew;
+          crewUpdated = true;
+          (async () => {
+            try {
+              await firestoreDb.collection("family_crews").doc(crewId).set(crew);
+            } catch (e) {}
+          })().catch(() => {});
+        }
+      }
+
+      if (crewUpdated) {
+        saveCachedFamilyCrews(allCrews);
+      }
+
+      return res.json({ success: true, count: finalTrips.length, trips: finalTrips });
+    } catch (err: any) {
+      console.error("[User Trips API] Error syncing trips:", err);
+      return res.status(500).json({ error: err.message });
     }
   });
 
@@ -4711,12 +5078,168 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
   });
 
   // --- REAL IMAGE UPLOADING & STORAGE ROUTE ---
-  // Ensure uploads directory exists and serve statically
+  // Ensure uploads and permanent photos directories exist
   const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+  const PHOTOS_STORAGE_DIR = path.join(process.cwd(), "user_backups", "photos");
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
+  if (!fs.existsSync(PHOTOS_STORAGE_DIR)) {
+    fs.mkdirSync(PHOTOS_STORAGE_DIR, { recursive: true });
+  }
   app.use("/uploads", express.static(UPLOADS_DIR));
+  app.use("/uploads", express.static(PHOTOS_STORAGE_DIR));
+
+  // Permanent Photo API by Stable Photo ID
+  app.get("/api/photos/:photoId", async (req, res) => {
+    try {
+      const rawId = req.params.photoId;
+      const photoId = rawId.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+      // 1. Check persistent disk in user_backups/photos/
+      const diskPath = path.join(PHOTOS_STORAGE_DIR, `${photoId}.jpg`);
+      if (fs.existsSync(diskPath)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.sendFile(diskPath);
+      }
+
+      // 2. Check uploads directory
+      const uploadPath = path.join(UPLOADS_DIR, `${photoId}.jpg`);
+      if (fs.existsSync(uploadPath)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.sendFile(uploadPath);
+      }
+
+      // 3. Try checking Firestore shared_photos
+      if (firestoreDb) {
+        try {
+          const docSnap = await firestoreDb.collection("shared_photos").doc(photoId).get();
+          if (docSnap && docSnap.exists) {
+            const data = docSnap.data();
+            if (data && data.base64) {
+              const buffer = Buffer.from(data.base64, "base64");
+              try { fs.writeFileSync(diskPath, buffer); } catch(e) {}
+              res.setHeader("Content-Type", data.mimeType || "image/jpeg");
+              res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+              return res.send(buffer);
+            }
+          }
+        } catch (fErr) {}
+      }
+
+      // 4. Return clean SVG placeholder
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.setHeader("Cache-Control", "no-cache");
+      return res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+        <rect width="100%" height="100%" fill="#f8fafc"/>
+        <g transform="translate(180, 115)" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+          <circle cx="12" cy="13" r="3"/>
+        </g>
+        <text x="50%" y="175" dominant-baseline="middle" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600">Foto</text>
+      </svg>`);
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message });
+    }
+  });
+
+  app.post("/api/photos/:photoId", async (req, res) => {
+    try {
+      const rawId = req.params.photoId;
+      const photoId = rawId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const { base64, mimeType } = req.body || {};
+      if (!base64) {
+        return res.status(400).json({ error: "base64 required" });
+      }
+
+      const match = base64.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+      const rawBase64 = match ? match[2] : base64;
+      const ext = match ? (match[1] === "jpeg" ? "jpg" : match[1]) : "jpg";
+      const buffer = Buffer.from(rawBase64, "base64");
+      const diskPath = path.join(PHOTOS_STORAGE_DIR, `${photoId}.jpg`);
+      const uploadPath = path.join(UPLOADS_DIR, `${photoId}.jpg`);
+
+      try {
+        const optBuffer = await sharp(buffer)
+          .resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+        fs.writeFileSync(diskPath, optBuffer);
+        fs.writeFileSync(uploadPath, optBuffer);
+      } catch (sErr) {
+        fs.writeFileSync(diskPath, buffer);
+        fs.writeFileSync(uploadPath, buffer);
+      }
+
+      if (firestoreDb) {
+        firestoreDb.collection("shared_photos").doc(photoId).set({
+          base64: rawBase64,
+          mimeType: mimeType || `image/${ext}`,
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+
+      return res.json({ success: true, url: `/api/photos/${photoId}` });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message });
+    }
+  });
+
+  // Custom fallback for /uploads/ to prevent missing images from returning HTML SPA pages
+  app.get("/uploads/:filename", async (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(UPLOADS_DIR, filename);
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+    const storagePath = path.join(PHOTOS_STORAGE_DIR, filename);
+    if (fs.existsSync(storagePath)) {
+      return res.sendFile(storagePath);
+    }
+
+    // Try checking if this filename was a trip_photo with a numeric ID
+    const match = filename.match(/trip_photo_(\d+)_/);
+    if (match) {
+      const pId = `photo_${match[1]}`;
+      const directDisk = path.join(PHOTOS_STORAGE_DIR, `${pId}.jpg`);
+      if (fs.existsSync(directDisk)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.sendFile(directDisk);
+      }
+
+      if (firestoreDb) {
+        try {
+          const docSnap = await firestoreDb.collection("shared_photos").doc(pId).get();
+          if (docSnap && docSnap.exists) {
+            const data = docSnap.data();
+            if (data && data.base64) {
+              const buffer = Buffer.from(data.base64, "base64");
+              try { fs.writeFileSync(directDisk, buffer); } catch(e) {}
+              res.setHeader("Content-Type", data.mimeType || "image/jpeg");
+              res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+              return res.send(buffer);
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Graceful SVG placeholder so <img> tags never render broken image icons or receive HTML
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "no-cache");
+    return res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+      <rect width="100%" height="100%" fill="#f8fafc"/>
+      <g transform="translate(180, 115)" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+        <circle cx="12" cy="13" r="3"/>
+      </g>
+      <text x="50%" y="175" dominant-baseline="middle" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600">Foto del diario</text>
+    </svg>`);
+  });
+
   app.use(express.static(path.join(process.cwd(), "public")));
 
   // Base64 based local storage photo uploader

@@ -151,7 +151,7 @@ import {
 
 import { ClientFirestoreAdapter } from "./client-firestore";
 import { useFirestoreSync } from "./lib/firestoreSync";
-import { doc, onSnapshot, setDoc, query, collection, where } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc, query, collection, where } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import firebaseConfig from "../firebase-applet-config.json";
 import { resolveMediaUrl } from "./utils/resolveMediaUrl";
@@ -874,25 +874,27 @@ export default function App() {
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
           const parsed = JSON.parse(userSaved);
-          if (Array.isArray(parsed)) initialTrips = parsed.map(normalizeTrip);
+          if (Array.isArray(parsed)) initialTrips = parsed.map((t: Trip) => normalizeTrip(t, cleanEmail));
         }
       }
 
       // INJECTION: Ensure example trip exists if not deleted
       if (!initialTrips.some(t => t.id === EXAMPLE_TRIP.id) && 
           localStorage.getItem(`example_deleted_${currentUser?.email?.toLowerCase().trim()}`) !== "true") {
-        initialTrips = [normalizeTrip(EXAMPLE_TRIP), ...initialTrips];
+        initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
       }
       
       return initialTrips;
     } catch (e) {
       console.error("Error reading initial trips:", e);
     }
-    return [normalizeTrip(EXAMPLE_TRIP)];
+    return [normalizeTrip(EXAMPLE_TRIP, currentUser?.email ? currentUser.email.toLowerCase().trim() : '')];
   });
 
   const isSyncingFromFirestoreRef = React.useRef(false);
   const lastSavedTripsJsonRef = React.useRef<string>("");
+  const tripsRef = React.useRef(trips);
+  tripsRef.current = trips;
 
   // When currentUser changes (e.g. login, switch account, logout), isolate trips instantly
   React.useEffect(() => {
@@ -934,7 +936,7 @@ export default function App() {
         try {
           const parsed = JSON.parse(userSaved);
           if (Array.isArray(parsed)) {
-            const normalized = parsed.map(normalizeTrip);
+            const normalized = parsed.map((t: Trip) => normalizeTrip(t, cleanEmail));
             setTrips(normalized);
             lastSavedTripsJsonRef.current = JSON.stringify(normalized);
             return;
@@ -975,10 +977,12 @@ export default function App() {
   React.useEffect(() => {
     const handleTripUpdated = (e: any) => {
       if (e.detail && Array.isArray(e.detail.trips)) {
-        const newStr = JSON.stringify(e.detail.trips);
+        const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+        const normalized = e.detail.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+        const newStr = JSON.stringify(normalized);
         const curStr = JSON.stringify(trips);
         if (newStr !== curStr) {
-          setTrips(e.detail.trips);
+          setTrips(normalized);
         }
       }
     };
@@ -986,7 +990,7 @@ export default function App() {
     return () => {
       window.removeEventListener("trip-updated", handleTripUpdated);
     };
-  }, [trips]);
+  }, [trips, currentUser?.email]);
 
   // Active navigation tab: ONLY THREE primary sections as requested!
   const [activeTab, setActiveTab] = React.useState<
@@ -1502,16 +1506,53 @@ export default function App() {
   const saveTripsToFirestore = React.useCallback(async (newTrips: Trip[]) => {
     if (!currentUser?.email) return;
     const cleanEmail = currentUser.email.toLowerCase().trim();
-    const normalized = newTrips.map(normalizeTrip);
+    const normalized = newTrips.map((t: Trip) => normalizeTrip(t, cleanEmail));
     const tripsJson = JSON.stringify(normalized);
     if (tripsJson === lastSavedTripsJsonRef.current && isSyncingFromFirestoreRef.current) {
       isSyncingFromFirestoreRef.current = false;
       return;
     }
+    
+    // 1. Direct server-side API write to ensure cross-device, AI Studio sync, and base64 photo offloading
+    try {
+      const res = await fetch("/api/user-trips/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, trips: normalized }),
+      });
+      if (res.ok) {
+        const resData = await res.json().catch(() => ({}));
+        if (resData.trips && Array.isArray(resData.trips)) {
+          // Merge safely: preserve local data:image or /api/photos/ URLs so they are never lost
+          const cleanTripsFromServ = resData.trips.map((t: any) => {
+            const norm = normalizeTrip(t, cleanEmail);
+            const localMatch = normalized.find((lt: any) => lt.id === norm.id);
+            if (localMatch && Array.isArray(localMatch.photos)) {
+              norm.photos = norm.photos.map((sp: any) => {
+                const lp = localMatch.photos.find((p: any) => p.id === sp.id);
+                if (lp && lp.url && (lp.url.startsWith("data:image/") || lp.url.startsWith("/api/photos/"))) {
+                  return { ...sp, url: lp.url };
+                }
+                return sp;
+              });
+            }
+            return norm;
+          });
+          setTrips(cleanTripsFromServ);
+          try {
+            localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
+          } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.warn("[App] user-trips sync server notice:", e);
+    }
+
+    // 2. Client Firestore write
     try {
       const docRef = doc(db, "users", cleanEmail, "data", "trips");
       const cleanedTrips = JSON.parse(tripsJson);
-      await setDoc(docRef, { trips: cleanedTrips }, { merge: true });
+      await setDoc(docRef, { trips: cleanedTrips, updatedAt: new Date().toISOString() }, { merge: true });
       lastSavedTripsJsonRef.current = tripsJson;
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);
@@ -1529,47 +1570,76 @@ export default function App() {
     const cleanEmail = currentUser.email.toLowerCase().trim();
     const docRef = doc(db, "users", cleanEmail, "data", "trips");
     
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      console.log("[App] Firestore snapshot received. Exists:", docSnap.exists());
-
-      // If snapshot has pending local writes, do not overwrite local state
-      if (docSnap.metadata?.hasPendingWrites) {
-        setLoadedFromFirestore(true);
-        return;
+    const loadCloudData = async () => {
+      let cloudTrips: Trip[] = [];
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.trips && Array.isArray(data.trips)) {
+            cloudTrips = data.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+          }
+        }
+      } catch (error: any) {
+        console.warn("[App] Client Firestore load notice:", error?.message);
       }
 
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        let cloudTrips: Trip[] = [];
-        if (data && data.trips && Array.isArray(data.trips)) {
-          cloudTrips = data.trips.map(normalizeTrip);
+      // Query server-side API as well (guarantees data availability in AI Studio preview)
+      try {
+        const res = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
+        if (res.ok) {
+          const apiData = await res.json();
+          if (apiData && Array.isArray(apiData.trips) && apiData.trips.length > 0) {
+            const apiTrips = apiData.trips.map((t: any) => normalizeTrip(t, cleanEmail));
+            cloudTrips = mergeTrips(cloudTrips, apiTrips, cleanEmail);
+          }
+        }
+      } catch (apiErr) {
+        console.warn("[App] Server user-trips API notice:", apiErr);
+      }
+
+      setTrips((prevTrips) => {
+        const merged = mergeTrips(prevTrips, cloudTrips, cleanEmail);
+        try {
+          localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(merged));
+        } catch (e) {}
+
+        // Check if local device has more items (e.g. phone has 52 expenses vs cloud 23)
+        // If so, automatically sync to Cloud so tablet and preview receive the full data!
+        const localExpensesCount = prevTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+        const cloudExpensesCount = cloudTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+        const localMovsCount = prevTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
+        const cloudMovsCount = cloudTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
+        const localPhotosCount = prevTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
+        const cloudPhotosCount = cloudTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
+
+        if (localExpensesCount > cloudExpensesCount || localMovsCount > cloudMovsCount || localPhotosCount > cloudPhotosCount) {
+          console.log("[App] Local device has more trip data than Cloud, auto-syncing to Cloud...");
+          setTimeout(() => {
+            saveTripsToFirestore(merged);
+          }, 800);
         }
 
-        setTrips((prevTrips) => {
-          const merged = mergeTrips(prevTrips, cloudTrips);
-          const mergedJson = JSON.stringify(merged);
-          if (mergedJson !== lastSavedTripsJsonRef.current) {
-            isSyncingFromFirestoreRef.current = true;
-            lastSavedTripsJsonRef.current = mergedJson;
-          }
-          return merged;
-        });
-      } else {
-        // Document does not exist in cloud yet for this user.
-        // DO NOT destroy local trips! Instead, upload the existing local trips to initialize the cloud.
+        lastSavedTripsJsonRef.current = JSON.stringify(merged);
+        return merged;
+      });
+
+      if (cloudTrips.length === 0 && trips.length > 0) {
         saveTripsToFirestore(trips);
       }
       setLoadedFromFirestore(true);
-    }, (error) => {
-      const isOffline = error?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
-      if (isOffline) {
-        console.warn("Trips Firestore sync deferred (app is offline):", error.message);
-      } else {
-        console.error("App.tsx Firestore sync error:", error);
-      }
-      setLoadedFromFirestore(true);
-    });
-    return unsubscribe;
+    };
+
+    loadCloudData();
+
+    const handleSyncTripsNow = (e?: any) => {
+      const tripsToSync = (e?.detail && Array.isArray(e.detail.trips)) ? e.detail.trips : tripsRef.current;
+      saveTripsToFirestore(tripsToSync);
+    };
+    window.addEventListener("sync-trips-now", handleSyncTripsNow);
+    return () => {
+      window.removeEventListener("sync-trips-now", handleSyncTripsNow);
+    };
   }, [currentUser?.email, saveTripsToFirestore]);
 
   // Persist trips to localStorage scoped by user email, and sync to Firestore
@@ -1590,7 +1660,7 @@ export default function App() {
     }
 
     if (currentUser?.email && loadedFromFirestore) {
-      const tripsJson = JSON.stringify(trips.map(normalizeTrip));
+      const tripsJson = JSON.stringify(trips.map((t: Trip) => normalizeTrip(t, cleanEmail)));
       if (tripsJson !== lastSavedTripsJsonRef.current) {
         saveTripsToFirestore(trips);
       }
@@ -1689,56 +1759,62 @@ export default function App() {
     };
 
     // 1. Try Firestore onSnapshot listener first
-    let unsubscribeFirestore: (() => void) | null = null;
-    try {
-      const docRef = doc(db, "system_metadata", "last_promo_push");
-      let isInitialLoad = true;
-
-      unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
-        if (isInitialLoad) {
-          isInitialLoad = false;
-          // Capture initial load timestamp to prevent displaying historic push notifications
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data?.sentAt) {
-              lastDisplayedTime = new Date(data.sentAt).getTime();
-            }
-          }
-          return;
-        }
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data && data.title && data.body && data.sentAt) {
-            handleNewPushNotification(data.title, data.body, data.sentAt);
-          }
-        }
-      }, (error) => {
-        console.warn("[Push Simulation] Firestore onSnapshot simulation listener failed (quota/limits):", error);
-      });
-    } catch (err) {
-      console.warn("[Push Simulation] Failed initializing Firestore listener:", err);
-    }
+    // let unsubscribeFirestore: (() => void) | null = null;
+    // try {
+    //   const docRef = doc(db, "system_metadata", "last_promo_push");
+    //   let isInitialLoad = true;
+    //
+    //   unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
+    //     if (isInitialLoad) {
+    //       isInitialLoad = false;
+    //       // Capture initial load timestamp to prevent displaying historic push notifications
+    //       if (docSnap.exists()) {
+    //         const data = docSnap.data();
+    //         if (data?.sentAt) {
+    //           lastDisplayedTime = new Date(data.sentAt).getTime();
+    //         }
+    //       }
+    //       return;
+    //     }
+    //
+    //     if (docSnap.exists()) {
+    //       const data = docSnap.data();
+    //       if (data && data.title && data.body && data.sentAt) {
+    //         handleNewPushNotification(data.title, data.body, data.sentAt);
+    //       }
+    //     }
+    //   }, (error) => {
+    //     console.warn("[Push Simulation] Firestore onSnapshot simulation listener failed (quota/limits):", error);
+    //   });
+    // } catch (err) {
+    //   console.warn("[Push Simulation] Failed initializing Firestore listener:", err);
+    // }
 
     // 2. Setup safe Local Polling fallback that bypasses all Firestore quotas/limits (runs every 4 seconds)
-    const intervalId = setInterval(async () => {
-      try {
-        const res = await fetch("/api/push-simulation/latest");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data && data.title && data.body && data.sentAt) {
-          handleNewPushNotification(data.title, data.body, data.sentAt);
-        }
-      } catch (pollErr) {
-        // Silent catch for network or dev server restart situations
-      }
-    }, 4000);
-
+    // const intervalId = setInterval(async () => {
+    //   try {
+    //     const res = await fetch("/api/push-simulation/latest");
+    //     if (!res.ok) return;
+    //     const data = await res.json();
+    //     if (data && data.title && data.body && data.sentAt) {
+    //       handleNewPushNotification(data.title, data.body, data.sentAt);
+    //     }
+    //   } catch (pollErr) {
+    //     // Silent catch for network or dev server restart situations
+    //   }
+    // }, 4000);
+    //
+    // return () => {
+    //   if (unsubscribeFirestore) {
+    //     unsubscribeFirestore();
+    //   }
+    //   clearInterval(intervalId);
+    // };
     return () => {
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-      }
-      clearInterval(intervalId);
+      // if (unsubscribeFirestore) {
+      //   unsubscribeFirestore();
+      // }
+      // clearInterval(intervalId);
     };
   }, []);
 
@@ -3562,6 +3638,7 @@ out center;`;
   }, []);
 
   // Automatic Backup background runner
+  const lastAutoBackupPayloadRef = React.useRef<string>("");
   React.useEffect(() => {
     let backupInterval: any = null;
 
@@ -3595,37 +3672,46 @@ out center;`;
       if (currentUser?.email) {
         try {
           const backupData = {
-            timestamp: new Date().toISOString(),
             trips: trips,
             deadlines: deadlines,
             checklistItems: checklistItems,
             dimensions: vehicleDimensions,
           };
           
-          // Sanitize to remove undefined fields that Firestore doesn't support
-          const sanitizedBackupData = JSON.parse(JSON.stringify(backupData));
+          const payloadString = JSON.stringify(backupData);
+          if (payloadString === lastAutoBackupPayloadRef.current) {
+            return; // Data has not changed, do not waste Firestore quota!
+          }
+
+          const sanitizedBackupData = {
+            ...JSON.parse(payloadString),
+            timestamp: new Date().toISOString(),
+          };
 
           await firestore
             .collection("users/" + currentUser.email + "/backups")
             .doc("latest")
             .set(sanitizedBackupData);
 
-          console.log("[Auto Backup] Sincronizzazione diari, spese e scadenze completata con successo nel Cloud!");
-        } catch (err) {
-          console.error("[Auto Backup] Errore durante il salvataggio del backup:", err);
+          lastAutoBackupPayloadRef.current = payloadString;
+          console.log("[Auto Backup] Sincronizzazione dati completata con successo nel Cloud!");
+        } catch (err: any) {
+          if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota')) {
+            console.warn("[Auto Backup] Quota giornaliera Cloud raggiunta. Dati salvati in sicurezza localmente.");
+          } else {
+            console.warn("[Auto Backup] Notifica salvataggio Cloud:", err?.message || err);
+          }
         }
-      } else {
-        console.log("[Auto Backup] Nessun utente loggato. I dati sono salvati in sicurezza localmente.");
       }
     };
 
-    // Run every 45 seconds
-    backupInterval = setInterval(performBackup, 45000);
+    // Debounced trigger after data modification (15 seconds), avoiding aggressive 45s polling loops
+    const debounceTimer = setTimeout(performBackup, 15000);
 
     return () => {
-      if (backupInterval) clearInterval(backupInterval);
+      clearTimeout(debounceTimer);
     };
-  }, [isOnline, currentUser, trips, deadlines, checklistItems, vehicleDimensions]);
+  }, [isOnline, currentUser?.email, trips, deadlines, checklistItems, vehicleDimensions]);
 
   // --- Dark Mode State ---
   const [isDarkMode, setIsDarkMode] = React.useState<boolean>(() => {
