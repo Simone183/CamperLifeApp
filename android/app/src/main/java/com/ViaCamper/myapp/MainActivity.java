@@ -1,4 +1,4 @@
-package com.camperlife.app;
+package com.ViaCamper.myapp;
 
 import com.getcapacitor.BridgeActivity;
 
