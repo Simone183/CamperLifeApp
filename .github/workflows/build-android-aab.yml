@@ -49,12 +49,50 @@ jobs:
 
       - name: Ensure Google Services Configuration
         run: |
+          mkdir -p android/app
           if [ -f "google-services.json" ]; then
             cp google-services.json android/app/google-services.json
-            echo "Copied google-services.json to android/app/"
-          elif [ -f "android/app/google-services.json" ]; then
-            echo "android/app/google-services.json already present"
+            echo "Copied google-services.json from root to android/app/"
           fi
+          if [ ! -s "android/app/google-services.json" ]; then
+            echo "Creating android/app/google-services.json directly..."
+            cat << 'EOF' > android/app/google-services.json
+          {
+            "project_info": {
+              "project_number": "17441453721",
+              "project_id": "calm-light-fg02f",
+              "storage_bucket": "calm-light-fg02f.firebasestorage.app"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:17441453721:android:b0f4028724ea2bb276aa08",
+                  "android_client_info": {
+                    "package_name": "com.ViaCamper.myapp"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyBrLUDywyD1lgs6WyS1fd6dvegBjExJxTM"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+            cp android/app/google-services.json google-services.json
+            echo "Successfully generated google-services.json in android/app/ and workspace root."
+          else
+            echo "android/app/google-services.json is present and valid."
+          fi
+          ls -la android/app/google-services.json
 
       - name: Generate & Verify Clean Android Assets
         run: node generate-assets.js
