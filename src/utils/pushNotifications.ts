@@ -179,6 +179,8 @@ export async function registerPushNotifications(userEmail: string) {
 
     // 5. Register with APNs / FCM for push notifications
     try {
+      // Small pause to guarantee native activity lifecycle and providers have fully settled
+      await new Promise((resolve) => setTimeout(resolve, 600));
       await PushNotifications.register();
       console.log('[Push] PushNotifications.register() called successfully');
     } catch (regErr) {
