@@ -6,7 +6,7 @@
 import React from 'react';
 import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
 import { sanitizeCommunityMessagesList } from '../utils/communitySanitizer';
-import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+import { resolveMediaUrl, resolveApiUrl } from '../utils/resolveMediaUrl';
 import { CamperImage } from './CamperImage';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
@@ -515,6 +515,7 @@ export default function CommunityTab({
   const [postMedia, setPostMedia] = React.useState<{ url: string; type: 'image' | 'video'; name: string } | null>(null);
   const [replyMedia, setReplyMedia] = React.useState<{ [msgId: string]: { url: string; type: 'image' | 'video'; name: string } }>({});
   const [mediaModal, setMediaModal] = React.useState<{ url: string; type: 'image' | 'video' } | null>(null);
+  const [isUploadingMedia, setIsUploadingMedia] = React.useState(false);
 
   // Quoted Reply & User Tagging States
   const [quotedTarget, setQuotedTarget] = React.useState<{ id: string; user: string; text: string; msgId?: string } | null>(null);
@@ -562,10 +563,57 @@ export default function CommunityTab({
       return;
     }
 
+    setIsUploadingMedia(true);
     const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        onSuccess(event.target.result as string, isVideo ? 'video' : 'image', file.name);
+    reader.onload = async (event) => {
+      const rawResult = event.target?.result as string;
+      if (!rawResult) {
+        setIsUploadingMedia(false);
+        return;
+      }
+
+      if (isVideo) {
+        onSuccess(rawResult, 'video', file.name);
+        setIsUploadingMedia(false);
+        return;
+      }
+
+      try {
+        // 1. High-fidelity compression (1920px max Full HD, 85% quality: crystal clear, zero blurriness, ~150-250KB)
+        const compressedBase64 = await compressImage(rawResult, 'high');
+        let finalUrl = compressedBase64;
+
+        // 2. Upload to Cloud Storage via /api/upload
+        try {
+          const uploadRes = await fetch(resolveApiUrl('/api/upload'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: file.name || `community_${Date.now()}.jpg`,
+              base64: compressedBase64,
+            }),
+          });
+          if (uploadRes.ok) {
+            const data = await uploadRes.json();
+            if (data && data.url) {
+              finalUrl = data.url;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn('[Community] Cloud upload failed, using compressed base64 fallback:', uploadErr);
+        }
+
+        onSuccess(finalUrl, 'image', file.name);
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: "✨ Foto ottimizzata in Full HD e pronta per la pubblicazione!" },
+          })
+        );
+      } catch (err) {
+        console.error('[Community] Photo process error:', err);
+        onSuccess(rawResult, 'image', file.name);
+      } finally {
+        setIsUploadingMedia(false);
       }
     };
     reader.readAsDataURL(file);
@@ -941,6 +989,14 @@ export default function CommunityTab({
   };
 
   const handleQuickSocialSubmit = () => {
+    if (isUploadingMedia) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⏳ Ottimizzazione foto in corso, attendi qualche secondo..." },
+        })
+      );
+      return;
+    }
     if (!quickSocialText.trim() && !postMedia) return;
     const userPhoto = myProfilePhoto || currentUser?.profilePhoto || (currentUser as any)?.avatarUrl;
     
@@ -1002,6 +1058,14 @@ export default function CommunityTab({
 
   const handleCreatePost = (e?: React.FormEvent, overrideTargetType?: 'social' | 'forum' | 'chat') => {
     if (e) e.preventDefault();
+    if (isUploadingMedia) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⏳ Ottimizzazione foto in corso, attendi qualche secondo..." },
+        })
+      );
+      return;
+    }
     if (!postText.trim() && !postMedia) return;
 
     const targetType: 'social' | 'forum' | 'chat' =
@@ -1186,6 +1250,14 @@ export default function CommunityTab({
   const handleCreateReply = (msgId: string) => {
     const targetMsg = messages.find(m => m.id === msgId);
     if (targetMsg?.isResolved) return;
+    if (isUploadingMedia) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⏳ Ottimizzazione allegato in corso, attendi qualche secondo..." },
+        })
+      );
+      return;
+    }
 
     const text = replyTexts[msgId] || '';
     const currentMedia = replyMedia[msgId];
@@ -1710,10 +1782,20 @@ export default function CommunityTab({
                 <button
                   type="button"
                   onClick={handleQuickSocialSubmit}
-                  className="px-4 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] dark:bg-[#A3B896] dark:hover:bg-[#8CA37E] dark:text-slate-950 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer active:scale-95 shrink-0 ml-auto"
+                  disabled={isUploadingMedia}
+                  className="px-4 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] dark:bg-[#A3B896] dark:hover:bg-[#8CA37E] dark:text-slate-950 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0 ml-auto disabled:opacity-50"
                 >
-                  <Send className="w-3 h-3" />
-                  <span>Pubblica</span>
+                  {isUploadingMedia ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span>Ottimizzo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3 h-3" />
+                      <span>Pubblica</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -3418,10 +3500,20 @@ export default function CommunityTab({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-extrabold rounded-xl text-xs cursor-pointer shadow-md flex items-center gap-1.5"
+                  disabled={isUploadingMedia}
+                  className="px-5 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-extrabold rounded-xl text-xs cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  Pubblica
+                  {isUploadingMedia ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Ottimizzazione...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Pubblica</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -3526,17 +3618,48 @@ export default function CommunityTab({
       <LiveCameraModal
         isOpen={showLiveCameraModal}
         onClose={() => setShowLiveCameraModal(false)}
-        onCapture={(dataUrl) => {
-          setPostMedia({
-            url: dataUrl,
-            type: 'image',
-            name: `foto_diretta_${Date.now()}.jpg`,
-          });
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: { message: "📸 Foto scattata in diretta e allegata al post!" },
-            })
-          );
+        onCapture={async (dataUrl) => {
+          setIsUploadingMedia(true);
+          const photoName = `foto_diretta_${Date.now()}.jpg`;
+          try {
+            const compressed = await compressImage(dataUrl, 'high');
+            let finalUrl = compressed;
+            try {
+              const res = await fetch(resolveApiUrl('/api/upload'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: photoName,
+                  base64: compressed,
+                }),
+              });
+              if (res.ok) {
+                const uploadData = await res.json();
+                if (uploadData?.url) finalUrl = uploadData.url;
+              }
+            } catch (upErr) {
+              console.warn('[LiveCamera] Cloud upload error fallback:', upErr);
+            }
+            setPostMedia({
+              url: finalUrl,
+              type: 'image',
+              name: photoName,
+            });
+            window.dispatchEvent(
+              new CustomEvent("show-toast", {
+                detail: { message: "📸 Foto scattata in Full HD e pronta per il Cloud!" },
+              })
+            );
+          } catch (e) {
+            console.error('[LiveCamera] Process error:', e);
+            setPostMedia({
+              url: dataUrl,
+              type: 'image',
+              name: photoName,
+            });
+          } finally {
+            setIsUploadingMedia(false);
+          }
         }}
       />
     </div>

@@ -14,11 +14,15 @@ export function resolveMediaUrl(url?: string): string {
     return url;
   }
 
-  // Detect if the app is running in a mobile native WebView
+  // Detect if the app is running in a mobile native WebView (Capacitor/Cordova)
   const isMobileNative =
     typeof (window as any).Capacitor !== "undefined" ||
     window.location.protocol.startsWith("capacitor") ||
-    window.location.protocol.startsWith("file:");
+    window.location.protocol.startsWith("file:") ||
+    (typeof window !== "undefined" &&
+      window.location.hostname === "localhost" &&
+      window.location.port !== "3000" &&
+      window.location.port !== "5173");
 
   if (isMobileNative) {
     // Public production Cloud Run URL
@@ -29,7 +33,7 @@ export function resolveMediaUrl(url?: string): string {
     let base = preBase;
     
     // Only use devBase when explicitly running in AI Studio dev environment
-    if (window.location.hostname.includes("ais-dev-") || window.location.href.includes("ais-dev-")) {
+    if (typeof window !== "undefined" && (window.location.hostname.includes("ais-dev-") || window.location.href.includes("ais-dev-"))) {
       base = devBase;
     }
     
@@ -39,4 +43,11 @@ export function resolveMediaUrl(url?: string): string {
   }
 
   return url;
+}
+
+/**
+ * Resolves an API path (e.g. /api/user-trips/sync) to full URL when on native mobile
+ */
+export function resolveApiUrl(apiPath: string): string {
+  return resolveMediaUrl(apiPath);
 }

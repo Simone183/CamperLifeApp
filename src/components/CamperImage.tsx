@@ -8,7 +8,7 @@ import { Camera, RefreshCw } from "lucide-react";
 // In-memory cache to avoid refetching the same photo multiple times during the session
 const base64Cache = new Map<string, string>();
 
-export function useResolvedPhotoUrl(url?: string, photoId?: string): string {
+export function useResolvedPhotoUrl(url?: string, photoId?: string, thumbnail?: boolean): string {
   const [resolvedUrl, setResolvedUrl] = useState<string>("");
 
   useEffect(() => {
@@ -31,14 +31,21 @@ export function useResolvedPhotoUrl(url?: string, photoId?: string): string {
     const resolve = async () => {
       // Derive effective photo ID from props or URL
       const effectivePhotoId = photoId || (() => {
-        if (url?.startsWith("/api/photos/")) return url.replace("/api/photos/", "");
+        if (url?.startsWith("/api/photos/")) return url.replace("/api/photos/", "").split("?")[0];
         const match = url?.match(/trip_photo_(\d+)_/);
         if (match) return `photo_${match[1]}`;
         return undefined;
       })();
 
+      const cacheKey = effectivePhotoId ? (thumbnail ? `${effectivePhotoId}_thumb` : effectivePhotoId) : null;
+
       // 1. Check in-memory session cache
-      if (effectivePhotoId && base64Cache.has(effectivePhotoId)) {
+      if (cacheKey && base64Cache.has(cacheKey)) {
+        if (active) setResolvedUrl(base64Cache.get(cacheKey)!);
+        return;
+      }
+      // If thumbnail requested but full is already in memory, full can be used immediately
+      if (thumbnail && effectivePhotoId && base64Cache.has(effectivePhotoId)) {
         if (active) setResolvedUrl(base64Cache.get(effectivePhotoId)!);
         return;
       }
@@ -57,10 +64,12 @@ export function useResolvedPhotoUrl(url?: string, photoId?: string): string {
         }
       }
 
-      // 3. Check permanent /api/photos/ endpoint
+      // 3. Check permanent /api/photos/ endpoint (with optional ?thumb=1)
       if (effectivePhotoId) {
         try {
-          const resp = await fetch(`/api/photos/${effectivePhotoId}`);
+          const queryParam = thumbnail ? "?thumb=1" : "";
+          const endpoint = resolveMediaUrl(`/api/photos/${effectivePhotoId}${queryParam}`);
+          const resp = await fetch(endpoint);
           if (resp.ok) {
             const contentType = resp.headers.get("content-type") || "";
             if (contentType.includes("image/jpeg") || contentType.includes("image/png") || contentType.includes("image/webp")) {
@@ -69,8 +78,10 @@ export function useResolvedPhotoUrl(url?: string, photoId?: string): string {
               reader.onloadend = () => {
                 const base64Data = reader.result as string;
                 if (base64Data && active) {
-                  base64Cache.set(effectivePhotoId, base64Data);
-                  savePhotoToIndexedDB(effectivePhotoId, base64Data).catch(() => {});
+                  if (cacheKey) base64Cache.set(cacheKey, base64Data);
+                  if (!thumbnail) {
+                    savePhotoToIndexedDB(effectivePhotoId, base64Data).catch(() => {});
+                  }
                   setResolvedUrl(base64Data);
                 }
               };
@@ -113,7 +124,7 @@ export function useResolvedPhotoUrl(url?: string, photoId?: string): string {
     return () => {
       active = false;
     };
-  }, [url, photoId]);
+  }, [url, photoId, thumbnail]);
 
   return resolvedUrl;
 }
@@ -121,6 +132,7 @@ export function useResolvedPhotoUrl(url?: string, photoId?: string): string {
 export interface CamperImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src?: string;
   photoId?: string;
+  thumbnail?: boolean;
   onReplace?: (file: File) => void;
   showReplacePrompt?: boolean;
 }
@@ -128,13 +140,16 @@ export interface CamperImageProps extends React.ImgHTMLAttributes<HTMLImageEleme
 export const CamperImage: React.FC<CamperImageProps> = ({
   src,
   photoId,
+  thumbnail = false,
   onReplace,
   showReplacePrompt = true,
   className,
   alt,
+  loading = "lazy",
+  decoding = "async",
   ...props
 }) => {
-  const resolvedSrc = useResolvedPhotoUrl(src, photoId);
+  const resolvedSrc = useResolvedPhotoUrl(src, photoId, thumbnail);
   const [hasError, setHasError] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -192,6 +207,8 @@ export const CamperImage: React.FC<CamperImageProps> = ({
     <img
       src={resolvedSrc}
       alt={alt}
+      loading={loading}
+      decoding={decoding}
       className={className}
       onError={() => setHasError(true)}
       referrerPolicy="no-referrer"

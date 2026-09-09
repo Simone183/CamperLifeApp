@@ -1,4 +1,5 @@
 import { Trip, DiaryExpense, TripMovement, TripStop, DiaryPhoto } from "../types";
+import { savePhotoToIndexedDB } from "./photoStorage";
 
 export type DeletionType = 'photos' | 'trips' | 'expenses' | 'movements';
 
@@ -135,9 +136,16 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
           return true;
         })
         .map((p: any, idx: number) => {
+          const photoId = String(p?.id || `photo_${Date.now()}_${idx}`);
+          let photoUrl = String(p?.url || "");
+          if (photoUrl.startsWith("data:image/")) {
+            // Offload base64 data to IndexedDB to keep trip documents ultra-lightweight (<1MB)
+            savePhotoToIndexedDB(photoId, photoUrl).catch(() => {});
+            photoUrl = `/api/photos/${photoId}`;
+          }
           const photoItem: DiaryPhoto = {
-            id: String(p?.id || `photo_${Date.now()}_${idx}`),
-            url: String(p?.url || ""),
+            id: photoId,
+            url: photoUrl,
             description: String(p?.description || ""),
             date: String(p?.date || new Date().toISOString().split("T")[0]),
           };

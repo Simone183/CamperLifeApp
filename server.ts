@@ -5090,15 +5090,37 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
   app.use("/uploads", express.static(UPLOADS_DIR));
   app.use("/uploads", express.static(PHOTOS_STORAGE_DIR));
 
-  // Permanent Photo API by Stable Photo ID
+  // Permanent Photo API by Stable Photo ID with High-Performance Thumbnail Support
   app.get("/api/photos/:photoId", async (req, res) => {
     try {
       const rawId = req.params.photoId;
       const photoId = rawId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const isThumb = req.query.thumb === "1" || req.query.size === "thumb";
+      const thumbDiskPath = path.join(PHOTOS_STORAGE_DIR, `${photoId}_thumb.jpg`);
+
+      // 0. If thumbnail requested and exists on disk, serve immediately
+      if (isThumb && fs.existsSync(thumbDiskPath)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.sendFile(thumbDiskPath);
+      }
 
       // 1. Check persistent disk in user_backups/photos/
       const diskPath = path.join(PHOTOS_STORAGE_DIR, `${photoId}.jpg`);
       if (fs.existsSync(diskPath)) {
+        if (isThumb) {
+          try {
+            const fullBuf = fs.readFileSync(diskPath);
+            const thumbBuf = await sharp(fullBuf)
+              .resize({ width: 360, height: 360, fit: "cover", position: "center" })
+              .jpeg({ quality: 72 })
+              .toBuffer();
+            try { fs.writeFileSync(thumbDiskPath, thumbBuf); } catch(e) {}
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            return res.send(thumbBuf);
+          } catch(e) {}
+        }
         res.setHeader("Content-Type", "image/jpeg");
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         return res.sendFile(diskPath);
@@ -5107,6 +5129,19 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       // 2. Check uploads directory
       const uploadPath = path.join(UPLOADS_DIR, `${photoId}.jpg`);
       if (fs.existsSync(uploadPath)) {
+        if (isThumb) {
+          try {
+            const fullBuf = fs.readFileSync(uploadPath);
+            const thumbBuf = await sharp(fullBuf)
+              .resize({ width: 360, height: 360, fit: "cover", position: "center" })
+              .jpeg({ quality: 72 })
+              .toBuffer();
+            try { fs.writeFileSync(thumbDiskPath, thumbBuf); } catch(e) {}
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            return res.send(thumbBuf);
+          } catch(e) {}
+        }
         res.setHeader("Content-Type", "image/jpeg");
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         return res.sendFile(uploadPath);
@@ -5121,6 +5156,18 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
             if (data && data.base64) {
               const buffer = Buffer.from(data.base64, "base64");
               try { fs.writeFileSync(diskPath, buffer); } catch(e) {}
+              if (isThumb) {
+                try {
+                  const thumbBuf = await sharp(buffer)
+                    .resize({ width: 360, height: 360, fit: "cover", position: "center" })
+                    .jpeg({ quality: 72 })
+                    .toBuffer();
+                  try { fs.writeFileSync(thumbDiskPath, thumbBuf); } catch(e) {}
+                  res.setHeader("Content-Type", "image/jpeg");
+                  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+                  return res.send(thumbBuf);
+                } catch(e) {}
+              }
               res.setHeader("Content-Type", data.mimeType || "image/jpeg");
               res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
               return res.send(buffer);
@@ -5160,6 +5207,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       const buffer = Buffer.from(rawBase64, "base64");
       const diskPath = path.join(PHOTOS_STORAGE_DIR, `${photoId}.jpg`);
       const uploadPath = path.join(UPLOADS_DIR, `${photoId}.jpg`);
+      const thumbDiskPath = path.join(PHOTOS_STORAGE_DIR, `${photoId}_thumb.jpg`);
 
       try {
         const optBuffer = await sharp(buffer)
@@ -5168,6 +5216,13 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           .toBuffer();
         fs.writeFileSync(diskPath, optBuffer);
         fs.writeFileSync(uploadPath, optBuffer);
+
+        // Generate fast 360x360 thumbnail (~15-20KB)
+        const thumbBuffer = await sharp(buffer)
+          .resize({ width: 360, height: 360, fit: "cover", position: "center" })
+          .jpeg({ quality: 72 })
+          .toBuffer();
+        fs.writeFileSync(thumbDiskPath, thumbBuffer);
       } catch (sErr) {
         fs.writeFileSync(diskPath, buffer);
         fs.writeFileSync(uploadPath, buffer);

@@ -138,7 +138,7 @@
         },
         {
           "id": "photo_1788033005909",
-          "url": "/uploads/trip_photo_1788629495185_54421.jpg",
+          "url": "/api/photos/photo_1788033005909",
           "description": "Traversata Stretto",
           "date": "2026-08-29",
           "locationName": "Messina"
@@ -282,6 +282,33 @@
           "description": "Scala dei turchi dalla distanza ",
           "date": "2026-08-29",
           "locationName": "Scala dei turchi "
+        },
+        {
+          "id": "photo_1788862587466",
+          "url": "/api/photos/photo_1788862587466",
+          "description": "Stretto di Messina ",
+          "date": "2026-09-08",
+          "locationName": "Messina"
+        },
+        {
+          "id": "photo_1788862587467",
+          "url": "/api/photos/photo_1788862587467",
+          "description": "Stretto di Messina ",
+          "date": "2026-09-08",
+          "locationName": "Messina"
+        },
+        {
+          "id": "photo_1788862587468",
+          "url": "/api/photos/photo_1788862587468",
+          "description": "Stretto di Messina ",
+          "date": "2026-09-08",
+          "locationName": "Messina"
+        },
+        {
+          "id": "photo_1787987361869_90433",
+          "url": "/api/photos/photo_1787987361869_90433",
+          "description": "Tappa Sicilia",
+          "date": "2026-08-29"
         }
       ],
       "startDate": "2026-08-21",
@@ -741,6 +768,42 @@
           "amount": 16.8,
           "category": "Autostrada",
           "date": "2026-09-05"
+        },
+        {
+          "id": "exp_1788860362733",
+          "title": "Rifornimento Altro 45.68L @ 2.189€/L",
+          "amount": 99.99,
+          "category": "Carburante",
+          "date": "2026-09-05",
+          "liters": 45.68,
+          "pricePerLiter": 2.189,
+          "odometer": 129574,
+          "fuelCompany": "Altro",
+          "isFullTank": false
+        },
+        {
+          "id": "exp_1788860388168",
+          "title": "Rifornimento Altro 13.7L @ 2.189€/L",
+          "amount": 29.99,
+          "category": "Carburante",
+          "date": "2026-09-05",
+          "liters": 13.7,
+          "pricePerLiter": 2.189,
+          "odometer": 130042,
+          "fuelCompany": "Altro",
+          "isFullTank": false
+        },
+        {
+          "id": "exp_1788860234524",
+          "title": "Rifornimento Altro 21.75L @ 2.229€/L",
+          "amount": 48.48,
+          "category": "Carburante",
+          "date": "2026-09-04",
+          "liters": 21.75,
+          "pricePerLiter": 2.229,
+          "odometer": 129398,
+          "fuelCompany": "Altro",
+          "isFullTank": false
         }
       ],
       "id": "trip_1787575589438",
@@ -819,5 +882,5 @@
       "stops": []
     }
   ],
-  "updatedAt": "2026-09-06T16:42:04.875Z"
+  "updatedAt": "2026-09-08T16:02:34.502Z"
 }

@@ -4,8 +4,8 @@ import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUn
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement, TripMovement } from "../types";
 import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds, isDeletedId } from "../utils/tripSyncHelper";
 import { compressImage } from "../utils/photoCompressor";
-import { savePhotoToIndexedDB } from "../utils/photoStorage";
-import { resolveMediaUrl } from "../utils/resolveMediaUrl";
+import { savePhotoToIndexedDB, getAllPhotosFromIndexedDB, pruneIndexedDBCache } from "../utils/photoStorage";
+import { resolveMediaUrl, resolveApiUrl } from "../utils/resolveMediaUrl";
 import { CamperImage } from "./CamperImage";
 import { TripRouteMap } from "./TripRouteMap";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
@@ -23,6 +23,8 @@ import {
   Image as ImageIcon,
   Share2,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   MapPin,
   Clock,
   ArrowRight,
@@ -42,6 +44,7 @@ import {
   Sparkles,
   RefreshCw,
   Cloud,
+  CloudOff,
   Database,
   CheckCircle2,
   AlertCircle,
@@ -227,6 +230,11 @@ export default function DiaryTab({
   );
 
   const [isSyncingCloud, setIsSyncingCloud] = React.useState(false);
+  const [autoSyncState, setAutoSyncState] = React.useState<"idle" | "saving" | "synced" | "offline" | "error">("idle");
+  const [lastSyncedTime, setLastSyncedTime] = React.useState<string>("");
+  const isInitialSyncMounted = React.useRef(false);
+  const lastSyncedTripsHashRef = React.useRef<string>("");
+  const autoSyncDebounceTimerRef = React.useRef<any>(null);
   const [showSyncModal, setShowSyncModal] = React.useState(false);
   const [cloudStatusInfo, setCloudStatusInfo] = React.useState<{
     loading: boolean;
@@ -253,91 +261,135 @@ export default function DiaryTab({
     ).toLowerCase().trim();
   };
 
-  const handleCloudSyncClick = async () => {
-    setIsSyncingCloud(true);
-    const cleanEmail = getActiveUserEmail();
-    window.dispatchEvent(
-      new CustomEvent("show-toast", {
-        detail: {
-          message: "⏳ Sincronizzazione con il Cloud in corso...",
-        },
-      })
-    );
-    try {
-      // 1. Fetch current trips from server first to merge
-      let serverTrips: Trip[] = [];
+  const syncWithCloud = React.useCallback(
+    async (tripsToSync: Trip[], isManual = false) => {
+      const cleanEmail = getActiveUserEmail();
+      if (!cleanEmail) return;
+
+      if (!navigator.onLine) {
+        setAutoSyncState("offline");
+        if (isManual) {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: "📴 Dispositivo offline: i dati sono salvati al sicuro sul telefono e verranno sincronizzati appena torni online.",
+              },
+            })
+          );
+        }
+        return;
+      }
+
+      if (isManual) {
+        setIsSyncingCloud(true);
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: "⏳ Sincronizzazione con il Cloud in corso...",
+            },
+          })
+        );
+      }
+      setAutoSyncState("saving");
+
       try {
-        const getRes = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
-        if (getRes.ok) {
-          const getData = await getRes.json();
-          if (Array.isArray(getData?.trips)) serverTrips = getData.trips;
+        // 1. Fetch current trips from server first to safely merge
+        let serverTrips: Trip[] = [];
+        try {
+          const getRes = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
+          if (getRes.ok) {
+            const getData = await getRes.json();
+            if (Array.isArray(getData?.trips)) serverTrips = getData.trips;
+          }
+        } catch (e) {
+          console.warn("[Cloud Sync] Server fetch warning:", e);
+        }
+
+        // 2. Merge local trips with server trips
+        const mergedTrips = mergeTrips(tripsToSync, serverTrips, cleanEmail);
+
+        // 3. Post merged trips to server sync endpoint
+        const res = await fetch("/api/user-trips/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: cleanEmail, trips: mergedTrips }),
+        });
+
+        let finalTrips = mergedTrips;
+        if (res.ok) {
+          const resData = await res.json().catch(() => ({}));
+          if (resData.trips && Array.isArray(resData.trips)) {
+            finalTrips = resData.trips;
+          }
+        }
+
+        if (JSON.stringify(tripsRef.current) !== JSON.stringify(finalTrips)) {
+          setTrips(finalTrips);
+        }
+        lastSyncedTripsHashRef.current = JSON.stringify(finalTrips);
+
+        try {
+          localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(finalTrips));
+        } catch (e) {}
+
+        if (currentCrew && isModuleSynced("trips")) {
+          syncCrewSection("trips", finalTrips).catch(() => {});
+        }
+
+        // Record last sync time & state
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setLastSyncedTime(timeStr);
+        setAutoSyncState("synced");
+
+        // Notify App and other components
+        window.dispatchEvent(
+          new CustomEvent("trip-updated", {
+            detail: { trips: finalTrips },
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent("sync-trips-now", {
+            detail: { trips: finalTrips },
+          })
+        );
+
+        if (isManual) {
+          const totExp = finalTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+          const totMov = finalTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
+          const totPho = finalTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
+
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: `☁️ Sincronizzazione completata! ${finalTrips.length} viaggi, ${totExp} spese, ${totMov} tappe e ${totPho} foto sincronizzate.`,
+              },
+            })
+          );
         }
       } catch (e) {
-        console.warn("[Cloud Sync] Server fetch warning:", e);
-      }
-
-      // 2. Merge local trips with server trips
-      const mergedTrips = mergeTrips(trips, serverTrips, cleanEmail);
-
-      // 3. Post merged trips to server sync endpoint
-      const res = await fetch("/api/user-trips/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail, trips: mergedTrips }),
-      });
-
-      let finalTrips = mergedTrips;
-      if (res.ok) {
-        const resData = await res.json().catch(() => ({}));
-        if (resData.trips && Array.isArray(resData.trips)) {
-          finalTrips = resData.trips;
+        console.warn("Manual sync error:", e);
+        setAutoSyncState(navigator.onLine ? "error" : "offline");
+        if (isManual) {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: "⚠️ Errore durante la sincronizzazione.",
+              },
+            })
+          );
+        }
+      } finally {
+        if (isManual) {
+          setTimeout(() => setIsSyncingCloud(false), 500);
         }
       }
+    },
+    [currentCrew, isModuleSynced, emailKey]
+  );
 
-      setTrips(finalTrips);
-      try {
-        localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(finalTrips));
-      } catch (e) {}
-
-      if (currentCrew && isModuleSynced('trips')) {
-        syncCrewSection('trips', finalTrips).catch(() => {});
-      }
-
-      // Notify App and other components
-      window.dispatchEvent(
-        new CustomEvent("trip-updated", {
-          detail: { trips: finalTrips },
-        })
-      );
-      window.dispatchEvent(
-        new CustomEvent("sync-trips-now", {
-          detail: { trips: finalTrips },
-        })
-      );
-
-      const totExp = finalTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
-      const totMov = finalTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
-      const totPho = finalTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
-
-      window.dispatchEvent(
-        new CustomEvent("show-toast", {
-          detail: {
-            message: `☁️ Sincronizzazione completata! ${finalTrips.length} viaggi, ${totExp} spese, ${totMov} tappe e ${totPho} foto sincronizzate.`,
-          },
-        })
-      );
-    } catch (e) {
-      console.warn("Manual sync error:", e);
-      window.dispatchEvent(
-        new CustomEvent("show-toast", {
-          detail: {
-            message: "⚠️ Errore durante la sincronizzazione.",
-          },
-        })
-      );
-    } finally {
-      setTimeout(() => setIsSyncingCloud(false), 600);
-    }
+  const handleCloudSyncClick = () => {
+    syncWithCloud(tripsRef.current, true);
   };
 
   const handleExportBackupJson = () => {
@@ -532,6 +584,59 @@ export default function DiaryTab({
     return () => clearTimeout(handler);
   }, [trips, currentCrew?.sharedData?.trips, isModuleSynced, emailKey]);
 
+  // Autonomous Background Auto-Sync to Cloud whenever trips change (photos, expenses, stages, etc.)
+  React.useEffect(() => {
+    const currentHash = JSON.stringify(trips);
+
+    // Skip on initial mount
+    if (!isInitialSyncMounted.current) {
+      isInitialSyncMounted.current = true;
+      lastSyncedTripsHashRef.current = currentHash;
+      return;
+    }
+
+    // Don't sync if data hasn't changed
+    if (lastSyncedTripsHashRef.current === currentHash) {
+      return;
+    }
+
+    if (!navigator.onLine) {
+      setAutoSyncState("offline");
+      return;
+    }
+
+    setAutoSyncState("saving");
+
+    if (autoSyncDebounceTimerRef.current) {
+      clearTimeout(autoSyncDebounceTimerRef.current);
+    }
+
+    // Debounce by 1800ms to batch sequential user actions (typing, adding multiple photos/expenses)
+    autoSyncDebounceTimerRef.current = setTimeout(() => {
+      syncWithCloud(tripsRef.current, false);
+    }, 1800);
+
+    return () => {
+      if (autoSyncDebounceTimerRef.current) {
+        clearTimeout(autoSyncDebounceTimerRef.current);
+      }
+    };
+  }, [trips, syncWithCloud]);
+
+  // When device recovers internet connectivity, automatically sync pending local updates
+  React.useEffect(() => {
+    const handleOnline = () => {
+      if (
+        lastSyncedTripsHashRef.current !== JSON.stringify(tripsRef.current) ||
+        autoSyncState === "offline"
+      ) {
+        syncWithCloud(tripsRef.current, false);
+      }
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [autoSyncState, syncWithCloud]);
+
   // Sync incoming trips from Family Crew without overwriting local trip updates
   React.useEffect(() => {
     if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips)) {
@@ -555,6 +660,37 @@ export default function DiaryTab({
 
   const activeTrip = trips.find((t) => t.id === selectedTripId);
 
+  // Local storage orphan photos state and scanner
+  const [localOrphanPhotosCount, setLocalOrphanPhotosCount] = React.useState<number>(0);
+  const [isRestoringLocalPhotos, setIsRestoringLocalPhotos] = React.useState<boolean>(false);
+  const [isBatchImporting, setIsBatchImporting] = React.useState<boolean>(false);
+  const [batchImportProgress, setBatchImportProgress] = React.useState<{ current: number; total: number } | null>(null);
+
+  // Scan IndexedDB for photos stored locally on this device that are missing from activeTrip.photos
+  const scanLocalOrphanPhotos = React.useCallback(async () => {
+    if (!activeTrip) return 0;
+    try {
+      const idbPhotos = await getAllPhotosFromIndexedDB();
+      const storedIds = Object.keys(idbPhotos);
+      if (storedIds.length === 0) {
+        setLocalOrphanPhotosCount(0);
+        return 0;
+      }
+      const currentIds = new Set((activeTrip?.photos || []).map((p) => p.id));
+      const deletedPhotos = getDeletedIds('photos', emailKey);
+      const orphanIds = storedIds.filter((id) => !currentIds.has(id) && !deletedPhotos.has(id));
+      setLocalOrphanPhotosCount(orphanIds.length);
+      return orphanIds.length;
+    } catch (e) {
+      console.warn("Scan local photos error:", e);
+      return 0;
+    }
+  }, [activeTrip, emailKey]);
+
+  React.useEffect(() => {
+    scanLocalOrphanPhotos();
+  }, [scanLocalOrphanPhotos]);
+
   // Active trip photos strictly filtered from deletions and tombstones
   const activeTripPhotos = React.useMemo(() => {
     if (!activeTrip || !Array.isArray(activeTrip.photos)) return [];
@@ -566,6 +702,23 @@ export default function DiaryTab({
       return !deletedPhotos.has(pId) && (!pUrl || !deletedPhotos.has(pUrl));
     });
   }, [activeTrip, emailKey]);
+
+  // Gallery pagination: loads 24 photos at a time for 60fps mobile fluid rendering
+  const [visiblePhotosCount, setVisiblePhotosCount] = React.useState<number>(24);
+
+  // Reset pagination when selected trip changes
+  React.useEffect(() => {
+    setVisiblePhotosCount(24);
+  }, [selectedTripId]);
+
+  // Periodic LRU cleanup of old cached photos to keep mobile device memory optimal
+  React.useEffect(() => {
+    pruneIndexedDBCache(350).catch(() => {});
+  }, []);
+
+  const displayedTripPhotos = React.useMemo(() => {
+    return activeTripPhotos.slice(0, visiblePhotosCount);
+  }, [activeTripPhotos, visiblePhotosCount]);
 
   // All photos aggregated across all trips, strictly excluding tombstones
   const allPhotos = React.useMemo(() => {
@@ -613,6 +766,17 @@ export default function DiaryTab({
       return matchTrip && matchSearch;
     });
   }, [allPhotos, selectedAlbumTripId, albumSearchQuery]);
+
+  // Global album pagination
+  const [visibleAlbumPhotosCount, setVisibleAlbumPhotosCount] = React.useState<number>(36);
+
+  React.useEffect(() => {
+    setVisibleAlbumPhotosCount(36);
+  }, [albumSearchQuery, selectedAlbumTripId]);
+
+  const displayedAlbumPhotos = React.useMemo(() => {
+    return filteredPhotos.slice(0, visibleAlbumPhotosCount);
+  }, [filteredPhotos, visibleAlbumPhotosCount]);
 
   // Refuel / expense stats memo
   const fuelStats = React.useMemo(() => {
@@ -1576,9 +1740,10 @@ export default function DiaryTab({
         const nameWithoutExt = img.name.split(".")[0];
         finalDesc = nameWithoutExt || "Nessuna descrizione inserita.";
       }
+      const photoId = "photo_" + (Date.now() + idx);
       return {
-        id: "photo_" + (Date.now() + idx),
-        url: img.url,
+        id: photoId,
+        url: `/api/photos/${photoId}`,
         description: finalDesc,
         date: new Date().toISOString().split("T")[0],
         locationName: photoLocationName || undefined,
@@ -1595,14 +1760,33 @@ export default function DiaryTab({
       return t;
     });
 
-    for (const p of newPhotos) {
-      if (p.url && p.url.startsWith("data:image/")) {
-        savePhotoToIndexedDB(p.id, p.url);
-        fetch(`/api/photos/${p.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64: p.url }),
-        }).catch(() => {});
+    for (let i = 0; i < urls.length; i++) {
+      const img = urls[i];
+      const p = newPhotos[i];
+      if (img.url && img.url.startsWith("data:image/")) {
+        // 1. Persistent local IndexedDB storage (instant display)
+        savePhotoToIndexedDB(p.id, img.url);
+
+        // 2. Direct Firestore shared_photos upload for multi-device sync
+        try {
+          const match = img.url.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+          const rawData = match ? match[2] : img.url;
+          const mimeType = match ? `image/${match[1] === "jpeg" ? "jpg" : match[1]}` : "image/jpeg";
+          setDoc(doc(db, "shared_photos", p.id), {
+            base64: rawData,
+            mimeType,
+            updatedAt: new Date().toISOString(),
+          }).catch((err) => console.warn("Firestore photo upload notice:", err));
+        } catch (fErr) {}
+
+        // 3. Server-side API with resolved mobile URL
+        try {
+          fetch(resolveApiUrl(`/api/photos/${p.id}`), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ base64: img.url }),
+          }).catch(() => {});
+        } catch (sErr) {}
       }
     }
 
@@ -1612,6 +1796,13 @@ export default function DiaryTab({
         localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
       } catch (e) {}
     }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", { detail: { trips: updated } })
+    );
+    window.dispatchEvent(
+      new CustomEvent("sync-trips-now", { detail: { trips: updated } })
+    );
+
     setPhotoDesc("");
     setPhotoLocationName("");
     setPhotoCustomUrl("");
@@ -1637,17 +1828,33 @@ export default function DiaryTab({
         if (!rawBase64) return;
         const compressed = await compressImage(rawBase64, "medium");
         await savePhotoToIndexedDB(photoId, compressed);
-        fetch(`/api/photos/${photoId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64: compressed }),
-        }).catch(() => {});
+
+        // Upload to Firestore shared_photos for cross-device sync
+        try {
+          const match = compressed.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+          const rawData = match ? match[2] : compressed;
+          const mimeType = match ? `image/${match[1] === "jpeg" ? "jpg" : match[1]}` : "image/jpeg";
+          setDoc(doc(db, "shared_photos", photoId), {
+            base64: rawData,
+            mimeType,
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {});
+        } catch (e) {}
+
+        // Upload to server
+        try {
+          fetch(resolveApiUrl(`/api/photos/${photoId}`), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ base64: compressed }),
+          }).catch(() => {});
+        } catch (e) {}
 
         const updated = trips.map((t) => {
           if (t.id === selectedTripId) {
             return {
               ...t,
-              photos: t.photos.map((p) => (p.id === photoId ? { ...p, url: compressed } : p)),
+              photos: t.photos.map((p) => (p.id === photoId ? { ...p, url: `/api/photos/${photoId}` } : p)),
             };
           }
           return t;
@@ -1660,14 +1867,15 @@ export default function DiaryTab({
           } catch (e) {}
         }
         window.dispatchEvent(
-          new CustomEvent("trip-updated", {
-            detail: { trips: updated },
-          }),
+          new CustomEvent("trip-updated", { detail: { trips: updated } })
+        );
+        window.dispatchEvent(
+          new CustomEvent("sync-trips-now", { detail: { trips: updated } })
         );
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: "✅ Foto ripristinata e salvata con successo nel diario!",
+              message: "✅ Foto ripristinata e sincronizzata con successo nel diario!",
             },
           }),
         );
@@ -1676,6 +1884,204 @@ export default function DiaryTab({
     } catch (err) {
       console.error("Error replacing photo:", err);
     }
+  };
+
+  // Restore orphan photos found in local IndexedDB into this trip
+  const handleRestoreOrphanPhotos = async () => {
+    if (!selectedTripId || !activeTrip) return;
+    setIsRestoringLocalPhotos(true);
+    try {
+      const idbPhotos = await getAllPhotosFromIndexedDB();
+      const currentIds = new Set((activeTrip?.photos || []).map((p) => p.id));
+      const deletedPhotos = getDeletedIds('photos', emailKey);
+
+      const recovered: DiaryPhoto[] = [];
+      const entries = Object.entries(idbPhotos);
+      for (const [id, base64] of entries) {
+        if (!currentIds.has(id) && !deletedPhotos.has(id)) {
+          const match = id.match(/photo_(\d+)/);
+          let photoDate = activeTrip?.startDate || new Date().toISOString().split("T")[0];
+          if (match) {
+            const ts = Number(match[1]);
+            if (!isNaN(ts) && ts > 1000000000000) {
+              photoDate = new Date(ts).toISOString().split("T")[0];
+            }
+          }
+          recovered.push({
+            id,
+            url: `/api/photos/${id}`,
+            description: "Foto recuperata dalla memoria",
+            date: photoDate,
+          });
+
+          // Upload to Firestore shared_photos for cross-device sync
+          try {
+            const matchB64 = base64.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+            const rawData = matchB64 ? matchB64[2] : base64;
+            const mimeType = matchB64 ? `image/${matchB64[1] === "jpeg" ? "jpg" : matchB64[1]}` : "image/jpeg";
+            setDoc(doc(db, "shared_photos", id), {
+              base64: rawData,
+              mimeType,
+              updatedAt: new Date().toISOString(),
+            }).catch(() => {});
+          } catch (e) {}
+
+          // Post to server
+          try {
+            fetch(resolveApiUrl(`/api/photos/${id}`), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ base64 }),
+            }).catch(() => {});
+          } catch (e) {}
+        }
+      }
+
+      if (recovered.length > 0) {
+        const updated = trips.map((t) => {
+          if (t.id === selectedTripId) {
+            return {
+              ...t,
+              photos: [...t.photos, ...recovered],
+            };
+          }
+          return t;
+        });
+
+        setTrips(updated);
+        if (emailKey) {
+          try {
+            localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+          } catch (e) {}
+        }
+        window.dispatchEvent(
+          new CustomEvent("trip-updated", { detail: { trips: updated } })
+        );
+        window.dispatchEvent(
+          new CustomEvent("sync-trips-now", { detail: { trips: updated } })
+        );
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: `🎉 Ripristinate con successo ${recovered.length} foto dalla memoria locale!`,
+            },
+          })
+        );
+        setLocalOrphanPhotosCount(0);
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: "Nessuna foto aggiuntiva trovata nella memoria locale." },
+          })
+        );
+      }
+    } catch (err: any) {
+      console.error("Error restoring orphan photos:", err);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "Errore durante il ripristino delle foto: " + (err?.message || "") },
+        })
+      );
+    } finally {
+      setIsRestoringLocalPhotos(false);
+    }
+  };
+
+  // Batch import multiple photos directly from gallery into this trip
+  const handleBatchAddGalleryPhotos = async (files: FileList | File[]) => {
+    if (!files || files.length === 0 || !selectedTripId) return;
+    const fileArray = Array.from(files);
+    setIsBatchImporting(true);
+    setBatchImportProgress({ current: 0, total: fileArray.length });
+
+    const newPhotosToAdd: DiaryPhoto[] = [];
+    const now = Date.now();
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      setBatchImportProgress({ current: i + 1, total: fileArray.length });
+      try {
+        const rawBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        if (!rawBase64) continue;
+
+        const compressed = await compressImage(rawBase64, "medium");
+        const photoId = `photo_${now}_${i}`;
+
+        // 1. Save locally to IndexedDB
+        await savePhotoToIndexedDB(photoId, compressed);
+
+        // 2. Upload to Firestore shared_photos for cross-device sync
+        try {
+          const match = compressed.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+          const rawData = match ? match[2] : compressed;
+          const mimeType = match ? `image/${match[1] === "jpeg" ? "jpg" : match[1]}` : "image/jpeg";
+          setDoc(doc(db, "shared_photos", photoId), {
+            base64: rawData,
+            mimeType,
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {});
+        } catch (e) {}
+
+        // 3. Upload to server
+        try {
+          fetch(resolveApiUrl(`/api/photos/${photoId}`), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ base64: compressed }),
+          }).catch(() => {});
+        } catch (e) {}
+
+        const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+
+        newPhotosToAdd.push({
+          id: photoId,
+          url: `/api/photos/${photoId}`,
+          description: cleanName || "Foto ricordo di viaggio",
+          date: activeTrip?.startDate || new Date().toISOString().split("T")[0],
+        });
+      } catch (err) {
+        console.warn("Error processing gallery photo:", err);
+      }
+    }
+
+    if (newPhotosToAdd.length > 0) {
+      const updated = trips.map((t) => {
+        if (t.id === selectedTripId) {
+          return {
+            ...t,
+            photos: [...t.photos, ...newPhotosToAdd],
+          };
+        }
+        return t;
+      });
+
+      setTrips(updated);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      window.dispatchEvent(
+        new CustomEvent("trip-updated", { detail: { trips: updated } })
+      );
+      window.dispatchEvent(
+        new CustomEvent("sync-trips-now", { detail: { trips: updated } })
+      );
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `🎉 Aggiunte con successo ${newPhotosToAdd.length} foto al viaggio!`,
+          },
+        })
+      );
+    }
+    setIsBatchImporting(false);
+    setBatchImportProgress(null);
   };
 
   // Batch re-upload multiple photos from gallery to match missing photos
@@ -1696,7 +2102,6 @@ export default function DiaryTab({
       return;
     }
 
-    const updatedPhotosMap = new Map<string, string>();
     let count = 0;
 
     for (let i = 0; i < Math.min(fileArray.length, missingPhotos.length); i++) {
@@ -1711,12 +2116,28 @@ export default function DiaryTab({
         });
         const compressed = await compressImage(base64, "medium");
         await savePhotoToIndexedDB(targetPhoto.id, compressed);
-        fetch(`/api/photos/${targetPhoto.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64: compressed }),
-        }).catch(() => {});
-        updatedPhotosMap.set(targetPhoto.id, compressed);
+
+        // Upload to Firestore shared_photos
+        try {
+          const match = compressed.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+          const rawData = match ? match[2] : compressed;
+          const mimeType = match ? `image/${match[1] === "jpeg" ? "jpg" : match[1]}` : "image/jpeg";
+          setDoc(doc(db, "shared_photos", targetPhoto.id), {
+            base64: rawData,
+            mimeType,
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {});
+        } catch (e) {}
+
+        // Upload to server
+        try {
+          fetch(resolveApiUrl(`/api/photos/${targetPhoto.id}`), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ base64: compressed }),
+          }).catch(() => {});
+        } catch (e) {}
+
         count++;
       } catch (e) {
         console.warn("Error in batch photo reload:", e);
@@ -1729,8 +2150,9 @@ export default function DiaryTab({
           return {
             ...t,
             photos: t.photos.map((p) => {
-              if (updatedPhotosMap.has(p.id)) {
-                return { ...p, url: updatedPhotosMap.get(p.id)! };
+              const wasMissing = p.url && (p.url.startsWith("/uploads/") || p.url.includes("trip_photo_"));
+              if (wasMissing) {
+                return { ...p, url: `/api/photos/${p.id}` };
               }
               return p;
             }),
@@ -1746,9 +2168,10 @@ export default function DiaryTab({
         } catch (e) {}
       }
       window.dispatchEvent(
-        new CustomEvent("trip-updated", {
-          detail: { trips: updated },
-        }),
+        new CustomEvent("trip-updated", { detail: { trips: updated } })
+      );
+      window.dispatchEvent(
+        new CustomEvent("sync-trips-now", { detail: { trips: updated } })
       );
       window.dispatchEvent(
         new CustomEvent("show-toast", {
@@ -1966,11 +2389,46 @@ export default function DiaryTab({
             <button
               onClick={handleCloudSyncClick}
               disabled={isSyncingCloud}
-              className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer disabled:opacity-50"
-              title="Sincronizza subito tutti i viaggi con Tablet e Cloud"
+              className={`px-3.5 py-2.5 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm shrink-0 active:scale-95 cursor-pointer disabled:opacity-80 ${
+                autoSyncState === "saving" || isSyncingCloud
+                  ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
+                  : autoSyncState === "offline"
+                  ? "bg-stone-700/80 hover:bg-stone-700 text-amber-200 border border-amber-300/30"
+                  : autoSyncState === "synced"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }`}
+              title={
+                autoSyncState === "saving" || isSyncingCloud
+                  ? "Salvataggio e sincronizzazione Cloud automatica in corso..."
+                  : autoSyncState === "offline"
+                  ? "Dispositivo offline: le tue foto e spese sono salvate sul telefono e si sincronizzeranno in automatico appena torni sotto rete."
+                  : lastSyncedTime
+                  ? `Sincronizzato automaticamente col Cloud alle ${lastSyncedTime}. Clicca per sincronizzare subito.`
+                  : "Sincronizzazione Cloud automatica attiva. Clicca per sincronizzare subito."
+              }
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloud ? "animate-spin" : ""}`} />
-              <span>{isSyncingCloud ? "Sincronizzo..." : "Sincronizza Cloud ☁️"}</span>
+              {autoSyncState === "saving" || isSyncingCloud ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span>Salvo nel Cloud... ☁️</span>
+                </>
+              ) : autoSyncState === "offline" ? (
+                <>
+                  <CloudOff className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Salvato Offline 📴</span>
+                </>
+              ) : autoSyncState === "synced" ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Sincronizzato {lastSyncedTime ? `(${lastSyncedTime})` : "☁️"}</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-white" />
+                  <span>Sincronizza Cloud ☁️</span>
+                </>
+              )}
             </button>
             <button
               onClick={() => {
@@ -2097,17 +2555,20 @@ export default function DiaryTab({
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {filteredPhotos.map((photo, idx) => (
+              {displayedAlbumPhotos.map((photo) => {
+                const originalIdx = filteredPhotos.findIndex((p) => p.id === photo.id);
+                return (
                 <div
                   key={photo.id}
                   className="group bg-white rounded-xl border border-slate-100 overflow-hidden shadow-xs hover:shadow-md transition-all duration-300 flex flex-col justify-between relative cursor-pointer font-sans"
-                  onClick={() => setSelectedAlbumPhotoIndex(idx)}
+                  onClick={() => setSelectedAlbumPhotoIndex(originalIdx >= 0 ? originalIdx : 0)}
                 >
                   {/* Photo Container */}
                   <div className="relative aspect-square w-full overflow-hidden bg-slate-50">
                     <CamperImage
                       src={photo.url}
                       photoId={photo.id}
+                      thumbnail={true}
                       alt={photo.description}
                       onReplace={(file) => handleReplacePhoto(photo.id, file)}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -2174,7 +2635,47 @@ export default function DiaryTab({
                     </p>
                   </div>
                 </div>
-              ))}
+              );
+              })}
+            </div>
+          )}
+
+          {/* Pagination controls for album gallery */}
+          {filteredPhotos.length > 36 && (
+            <div className="mt-4 pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2 bg-stone-50/80 p-3 rounded-xl text-stone-600 animate-fade-in">
+              <span className="text-xs font-medium text-stone-600">
+                Mostrati <strong className="text-stone-900 font-bold">{displayedAlbumPhotos.length}</strong> di <strong className="text-stone-900 font-bold">{filteredPhotos.length}</strong> scatti
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {displayedAlbumPhotos.length < filteredPhotos.length ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleAlbumPhotosCount((prev) => Math.min(prev + 36, filteredPhotos.length))}
+                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-800 text-xs font-bold rounded-lg border border-stone-200 shadow-2xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      Carica altri 36
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleAlbumPhotosCount(filteredPhotos.length)}
+                      className="px-3 py-1.5 bg-[#3E4A35] hover:bg-[#2d3627] text-white text-xs font-bold rounded-lg shadow-2xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Mostra tutti ({filteredPhotos.length})
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setVisibleAlbumPhotosCount(36)}
+                    className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-700 text-xs font-bold rounded-lg border border-stone-200 shadow-2xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    Riduci a 36
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -2801,11 +3302,39 @@ export default function DiaryTab({
                               <button
                                 onClick={handleCloudSyncClick}
                                 disabled={isSyncingCloud}
-                                className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 disabled:opacity-50"
-                                title="Sincronizza questo diario e tutti i viaggi con Tablet e Cloud"
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 disabled:opacity-80 ${
+                                  autoSyncState === "saving" || isSyncingCloud
+                                    ? "bg-amber-500 text-white animate-pulse"
+                                    : autoSyncState === "offline"
+                                    ? "bg-stone-600 text-amber-200"
+                                    : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                }`}
+                                title={
+                                  autoSyncState === "saving" || isSyncingCloud
+                                    ? "Salvataggio Cloud automatico in corso..."
+                                    : autoSyncState === "offline"
+                                    ? "Offline: salvato localmente"
+                                    : lastSyncedTime
+                                    ? `Cloud sincronizzato (${lastSyncedTime})`
+                                    : "Sincronizza Cloud"
+                                }
                               >
-                                <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isSyncingCloud ? "animate-spin" : ""}`} />
-                                <span className="truncate max-w-[130px] sm:max-w-none">{isSyncingCloud ? "Sincronizzo..." : "Sincronizza Cloud ☁️"}</span>
+                                {autoSyncState === "saving" || isSyncingCloud ? (
+                                  <>
+                                    <RefreshCw className="w-3 h-3 shrink-0 animate-spin" />
+                                    <span className="truncate max-w-[130px] sm:max-w-none">Salvataggio...</span>
+                                  </>
+                                ) : autoSyncState === "offline" ? (
+                                  <>
+                                    <CloudOff className="w-3 h-3 shrink-0 text-amber-300" />
+                                    <span className="truncate max-w-[130px] sm:max-w-none">Offline</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-200" />
+                                    <span className="truncate max-w-[130px] sm:max-w-none">{lastSyncedTime ? `Cloud ✓ (${lastSyncedTime})` : "Cloud ✓"}</span>
+                                  </>
+                                )}
                               </button>
                               <button
                                 onClick={() => {
@@ -3206,6 +3735,103 @@ export default function DiaryTab({
                           </button>
                         </form>
 
+                        {/* Banner: Local Storage Photo Recovery */}
+                        {localOrphanPhotosCount > 0 && (
+                          <div className="mb-3 bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-emerald-900 shadow-xs animate-fade-in">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-emerald-100 rounded-lg text-emerald-700 shrink-0">
+                                <Sparkles className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-emerald-950">
+                                  Trovate {localOrphanPhotosCount} {localOrphanPhotosCount === 1 ? 'foto salvata' : 'foto salvate'} nella memoria locale
+                                </h4>
+                                <p className="text-[11px] text-emerald-800">
+                                  Foto presenti nella memoria interna del dispositivo non ancora visibili in questo diario.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isRestoringLocalPhotos}
+                              onClick={handleRestoreOrphanPhotos}
+                              className="px-3 py-1.5 bg-[#3E4A35] hover:bg-[#2d3627] text-white text-[11px] font-bold rounded-lg shadow-xs active:scale-95 flex items-center gap-1.5 transition-all shrink-0 cursor-pointer disabled:opacity-50"
+                            >
+                              {isRestoringLocalPhotos ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  Ripristino...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  Ripristina Tutte ({localOrphanPhotosCount})
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Batch Import Progress indicator */}
+                        {isBatchImporting && batchImportProgress && (
+                          <div className="mb-3 bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-900 shadow-xs animate-fade-in">
+                            <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+                              <span className="flex items-center gap-1.5">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                                Elaborazione e salvataggio foto...
+                              </span>
+                              <span>
+                                {batchImportProgress.current} / {batchImportProgress.total} (
+                                {Math.round((batchImportProgress.current / batchImportProgress.total) * 100)}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-blue-200/60 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="bg-[#3E4A35] h-full transition-all duration-200"
+                                style={{
+                                  width: `${(batchImportProgress.current / batchImportProgress.total) * 100}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Gallery Fast Actions Bar */}
+                        <div className="flex items-center justify-between gap-2 mb-2 px-1">
+                          <span className="text-[11px] font-bold text-slate-600">
+                            Scatti nel diario ({activeTripPhotos.length})
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              id="batch-add-photos"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files) handleBatchAddGalleryPhotos(e.target.files);
+                                e.target.value = "";
+                              }}
+                            />
+                            <label
+                              htmlFor="batch-add-photos"
+                              className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold rounded-lg cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1 transition-all"
+                              title="Seleziona e aggiungi molteplici foto dalla galleria"
+                            >
+                              <Upload className="w-3 h-3 text-[#3E4A35]" />
+                              Carica Multiplo
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => scanLocalOrphanPhotos()}
+                              className="p-1 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg text-[10px] font-medium transition-colors"
+                              title="Scansiona memoria locale per foto non collegate"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
                         {/* Banner if photos need re-upload */}
                         {(() => {
                           const missingPhotos = (activeTripPhotos || []).filter(
@@ -3243,8 +3869,8 @@ export default function DiaryTab({
                           );
                         })()}
 
-                        {/* Photo logs display */}
-                        <div className="grid grid-cols-2 gap-3 max-h-[225px] overflow-y-auto pr-1">
+                        {/* Photo logs display with Fast Thumbnails and Lazy Rendering */}
+                        <div className="grid grid-cols-2 gap-3 max-h-[450px] overflow-y-auto pr-1">
                           {activeTripPhotos.length === 0 ? (
                             <div className="col-span-2 text-xs text-slate-400 py-8 text-center bg-white border border-slate-100 rounded-lg">
                               <ImageIcon className="w-8 h-8 text-slate-300 mx-auto mb-1" />
@@ -3252,81 +3878,124 @@ export default function DiaryTab({
                               della vacanza!
                             </div>
                           ) : (
-                            activeTripPhotos.map((photo, idx) => (
-                              <div
-                                key={photo.id}
-                                className="bg-stone-50 rounded-xl overflow-hidden border border-slate-150 relative group cursor-pointer"
-                                onClick={() => setSelectedLightboxPhotoIndex(idx)}
-                              >
-                                <div className="relative w-full h-24 overflow-hidden bg-stone-100">
-                                  <CamperImage
-                                    src={photo.url}
-                                    photoId={photo.id}
-                                    alt={photo.description}
-                                    onReplace={(file) => handleReplacePhoto(photo.id, file)}
-                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                  />
+                            displayedTripPhotos.map((photo) => {
+                              const originalIdx = activeTripPhotos.findIndex((p) => p.id === photo.id);
+                              return (
+                                <div
+                                  key={photo.id}
+                                  className="bg-stone-50 rounded-xl overflow-hidden border border-slate-150 relative group cursor-pointer"
+                                  onClick={() => setSelectedLightboxPhotoIndex(originalIdx >= 0 ? originalIdx : 0)}
+                                >
+                                  <div className="relative w-full h-24 overflow-hidden bg-stone-100">
+                                    <CamperImage
+                                      src={photo.url}
+                                      photoId={photo.id}
+                                      thumbnail={true}
+                                      alt={photo.description}
+                                      onReplace={(file) => handleReplacePhoto(photo.id, file)}
+                                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                    />
 
-                                  {/* Hover overlay with Eye zoom icon */}
-                                  <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <span className="p-1.5 bg-white/10 backdrop-blur-xs text-white rounded-full border border-white/20">
-                                      <Eye className="w-3.5 h-3.5" />
-                                    </span>
+                                    {/* Hover overlay with Eye zoom icon */}
+                                    <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                      <span className="p-1.5 bg-white/10 backdrop-blur-xs text-white rounded-full border border-white/20">
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </span>
+                                    </div>
                                   </div>
+
+                                  <div className="p-1.5 space-y-1">
+                                    <p className="text-[10px] text-slate-700 leading-tight line-clamp-2">
+                                      {photo.description}
+                                    </p>
+                                    {photo.locationName && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 text-blue-800 rounded text-[9px] font-bold">
+                                        <MapPin className="w-2.5 h-2.5" />
+                                        {photo.locationName}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Re-upload photo from gallery button */}
+                                  <input
+                                    id={`replace-photo-${photo.id}`}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        handleReplacePhoto(photo.id, e.target.files[0]);
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const input = document.getElementById(`replace-photo-${photo.id}`) as HTMLInputElement;
+                                      input?.click();
+                                    }}
+                                    className="absolute top-1.5 left-1.5 p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors z-10 opacity-80 group-hover:opacity-100"
+                                    title="Ricarica / Sostituisci foto dalla galleria"
+                                  >
+                                    <Camera className="w-3 h-3" />
+                                  </button>
+
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPhotoToDelete(photo.id);
+                                    }}
+                                    className="absolute top-1.5 right-1.5 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-lg transition-colors z-10"
+                                    title="Rimuovi foto"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
-
-                                <div className="p-1.5 space-y-1">
-                                  <p className="text-[10px] text-slate-700 leading-tight line-clamp-2">
-                                    {photo.description}
-                                  </p>
-                                  {photo.locationName && (
-                                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 text-blue-800 rounded text-[9px] font-bold">
-                                      <MapPin className="w-2.5 h-2.5" />
-                                      {photo.locationName}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Re-upload photo from gallery button */}
-                                <input
-                                  id={`replace-photo-${photo.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      handleReplacePhoto(photo.id, e.target.files[0]);
-                                    }
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const input = document.getElementById(`replace-photo-${photo.id}`) as HTMLInputElement;
-                                    input?.click();
-                                  }}
-                                  className="absolute top-1.5 left-1.5 p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors z-10 opacity-80 group-hover:opacity-100"
-                                  title="Ricarica / Sostituisci foto dalla galleria"
-                                >
-                                  <Camera className="w-3 h-3" />
-                                </button>
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPhotoToDelete(photo.id);
-                                  }}
-                                  className="absolute top-1.5 right-1.5 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-lg transition-colors z-10"
-                                  title="Rimuovi foto"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
+
+                        {/* Pagination controls for large photo collections */}
+                        {activeTripPhotos.length > 24 && (
+                          <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2 bg-stone-50/80 p-2.5 rounded-xl text-stone-600 animate-fade-in">
+                            <span className="text-[11px] font-medium text-stone-600">
+                              Mostrati <strong className="text-stone-900 font-bold">{displayedTripPhotos.length}</strong> di <strong className="text-stone-900 font-bold">{activeTripPhotos.length}</strong> scatti
+                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {displayedTripPhotos.length < activeTripPhotos.length ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisiblePhotosCount((prev) => Math.min(prev + 24, activeTripPhotos.length))}
+                                    className="px-2.5 py-1.5 bg-white hover:bg-stone-100 text-stone-800 text-[10px] font-bold rounded-lg border border-stone-200 shadow-2xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                    Carica altri 24
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisiblePhotosCount(activeTripPhotos.length)}
+                                    className="px-2.5 py-1.5 bg-[#3E4A35] hover:bg-[#2d3627] text-white text-[10px] font-bold rounded-lg shadow-2xs transition-all active:scale-95 cursor-pointer"
+                                  >
+                                    Mostra tutti ({activeTripPhotos.length})
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setVisiblePhotosCount(24)}
+                                  className="px-2.5 py-1.5 bg-white hover:bg-stone-100 text-stone-700 text-[10px] font-bold rounded-lg border border-stone-200 shadow-2xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                  Riduci a 24
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : expenseSubMode === "general" ? (
                       /* ---------------- GENERAL EXPENSES VIEW ---------------- */
@@ -4843,14 +5512,34 @@ export default function DiaryTab({
                 </div>
               </div>
 
+              {/* Autonomous Sync Status Banner */}
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Sincronizzazione Automatica Attiva ⚡</span>
+                </div>
+                <p className="text-emerald-700 dark:text-emerald-400 text-[11px] leading-relaxed">
+                  Ogni volta che aggiungi foto, spese o tappe di viaggio, ViaCamper le salva sul telefono e le sincronizza automaticamente in Cloud in background, senza che tu debba premere nulla.
+                  {lastSyncedTime && (
+                    <span className="block mt-0.5 font-semibold">
+                      Ultima sincronizzazione automatica: ore {lastSyncedTime}
+                    </span>
+                  )}
+                </p>
+              </div>
+
               {/* Sync Action */}
               <button
                 onClick={handleCloudSyncClick}
                 disabled={isSyncingCloud}
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
               >
-                <RefreshCw className={`w-4 h-4 ${isSyncingCloud ? "animate-spin" : ""}`} />
-                <span>{isSyncingCloud ? "Sincronizzazione in corso..." : "Sincronizza & Unisci Dati col Cloud Ora"}</span>
+                <RefreshCw className={`w-4 h-4 ${isSyncingCloud || autoSyncState === "saving" ? "animate-spin" : ""}`} />
+                <span>
+                  {isSyncingCloud || autoSyncState === "saving"
+                    ? "Sincronizzazione in corso..."
+                    : "Forza Sincronizzazione Subito (Manuale)"}
+                </span>
               </button>
 
               {/* Direct File Transfer Section */}

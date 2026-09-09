@@ -100,3 +100,38 @@ export async function getAllPhotosFromIndexedDB(): Promise<Record<string, string
     return {};
   }
 }
+
+/**
+ * Automatically cleans up older cached photos from IndexedDB if the count exceeds maxEntries (LRU cache).
+ * Keeps the most recent photos locally for lightning-fast offline access while avoiding phone storage overflow.
+ */
+export async function pruneIndexedDBCache(maxEntries = 300): Promise<number> {
+  try {
+    const db = await getDB();
+    return await new Promise<number>((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const items = req.result || [];
+        if (items.length <= maxEntries) {
+          resolve(0);
+          return;
+        }
+        // Sort oldest first
+        items.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+        const toRemove = items.slice(0, items.length - maxEntries);
+        for (const item of toRemove) {
+          if (item && item.id) {
+            store.delete(item.id);
+          }
+        }
+        resolve(toRemove.length);
+      };
+      req.onerror = () => resolve(0);
+    });
+  } catch (e) {
+    return 0;
+  }
+}
+

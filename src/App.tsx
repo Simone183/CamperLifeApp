@@ -3410,7 +3410,11 @@ out center;`;
         }));
         const combined = [...missing, ...sanitizedData];
         setCommunityMessages(combined);
-        localStorage.setItem("camper_messages", JSON.stringify(combined));
+        try {
+          localStorage.setItem("camper_messages", JSON.stringify(combined));
+        } catch (storageErr) {
+          console.warn("[App] camper_messages localStorage write failed or quota exceeded:", storageErr);
+        }
       }
     } catch (err: any) {
       if (err.message !== "Failed to fetch") {
@@ -3462,7 +3466,11 @@ out center;`;
 
     // 1. Instantly update UI locally for fluid UX (Optimistic Update)
     setCommunityMessages(filteredNew);
-    localStorage.setItem("camper_messages", JSON.stringify(filteredNew));
+    try {
+      localStorage.setItem("camper_messages", JSON.stringify(filteredNew));
+    } catch (storageErr) {
+      console.warn("[App] camper_messages localStorage write failed or quota exceeded:", storageErr);
+    }
 
     // 2. Synchronise change events directly with Firestore DB & backend API
     try {
