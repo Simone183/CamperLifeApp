@@ -3181,11 +3181,11 @@ export default function DiaryTab({
 
                         <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-2">
                           <div className="flex gap-2 sm:gap-2.5 items-center text-slate-600 font-mono">
-                            {/* Foto */}
-                            <div className="flex flex-col items-center justify-center text-center" title="Foto scattate">
-                              <span className="text-xs leading-none">📷</span>
-                              <span className="text-[10px] font-bold mt-0.5 leading-tight whitespace-nowrap">
-                                {trip.photos.length}
+                            {/* KM percorsi */}
+                            <div className="flex flex-col items-center justify-center text-center" title="Chilometri percorsi">
+                              <span className="text-xs leading-none">🛣️</span>
+                              <span className="text-[9.5px] font-bold mt-1 leading-tight whitespace-nowrap">
+                                {formatDistance(getTripDistance(trip), settings)}
                               </span>
                             </div>
 
@@ -3194,18 +3194,18 @@ export default function DiaryTab({
                             {/* Soldi spesi */}
                             <div className="flex flex-col items-center justify-center text-center" title="Spese totali">
                               <span className="text-xs leading-none">💶</span>
-                              <span className="text-[10px] font-bold mt-0.5 leading-tight whitespace-nowrap">
+                              <span className="text-[9.5px] font-bold mt-1 leading-tight whitespace-nowrap">
                                 {totalSpent.toFixed(0)}{getCurrencySymbol(settings)}
                               </span>
                             </div>
 
                             <span className="text-slate-300 font-sans select-none">•</span>
 
-                            {/* KM percorsi */}
-                            <div className="flex flex-col items-center justify-center text-center" title="Chilometri percorsi">
-                              <span className="text-xs leading-none">🛣️</span>
-                              <span className="text-[10px] font-bold mt-0.5 leading-tight whitespace-nowrap">
-                                {formatDistance(getTripDistance(trip), settings)}
+                            {/* Foto */}
+                            <div className="flex flex-col items-center justify-center text-center" title="Foto scattate">
+                              <span className="text-xs leading-none">📷</span>
+                              <span className="text-[9.5px] font-bold mt-1 leading-tight whitespace-nowrap">
+                                {trip.photos.length}
                               </span>
                             </div>
                           </div>
@@ -3221,17 +3221,17 @@ export default function DiaryTab({
                                   })
                                 );
                               }}
-                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold transition-all flex items-center gap-0.5 uppercase shadow-xs cursor-pointer active:scale-95 ${
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-all flex items-center gap-0.5 uppercase shadow-2xs cursor-pointer active:scale-95 ${
                                 trip.isShared
                                   ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
                                   : "bg-amber-100 text-amber-900 hover:bg-amber-200"
                               }`}
                               title="Condividi questo viaggio sulla Bacheca Social"
                             >
-                              <Share2 className="w-2.5 h-2.5 shrink-0" />
+                              <Share2 className="w-2 h-2 shrink-0" />
                               <span>{trip.isShared ? "Social 💬" : "Condividi 🚀"}</span>
                             </button>
-                            <span className="px-1.5 py-0.5 bg-[#3E4A35]/5 group-hover:bg-[#3E4A35] text-[#3E4A35] group-hover:text-white rounded-md text-[9px] font-extrabold transition-all flex items-center gap-0.5 uppercase shadow-xs">
+                            <span className="px-1.5 py-0.5 bg-[#3E4A35]/5 group-hover:bg-[#3E4A35] text-[#3E4A35] group-hover:text-white rounded-md text-[8.5px] font-extrabold transition-all flex items-center gap-0.5 uppercase shadow-xs">
                               Apri 📖
                             </span>
                           </div>

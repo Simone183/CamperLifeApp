@@ -846,6 +846,11 @@ export default function MapTab({
     lng: number;
   }>({ lat: 44.5, lng: 11.5 });
 
+  const placesRef = React.useRef(places);
+  React.useEffect(() => {
+    placesRef.current = places;
+  }, [places]);
+
   // Address search query states
   const [addressSearchQuery, setAddressSearchQuery] = React.useState("");
   const [addressSuggestions, setAddressSuggestions] = React.useState<any[]>([]);
@@ -1941,23 +1946,68 @@ export default function MapTab({
             }
             return { ...p, lat: pLat, lng: pLng, distanceKm };
           });
+        }
 
-          // Sort in ascending order of distance (closest to furthest)
-          placesList.sort((a, b) => {
-            if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
-              return a.distanceKm - b.distanceKm;
+        // Identifica la località target da centrare sulla mappa
+        const queryLower = query.toLowerCase().trim();
+        const targetLocality =
+          placesList.find((p: any) => {
+            const types = p.types || [];
+            const isLocalityType =
+              types.includes("locality") ||
+              types.includes("administrative_area_level_3") ||
+              types.includes("administrative_area_level_2") ||
+              types.includes("administrative_area_level_1") ||
+              types.includes("political") ||
+              types.includes("city") ||
+              types.includes("town") ||
+              types.includes("village");
+            return isLocalityType && (p.name || "").toLowerCase().includes(queryLower);
+          }) ||
+          placesList.find((p: any) => (p.name || "").toLowerCase() === queryLower) ||
+          placesList.find((p: any) => (p.name || "").toLowerCase().startsWith(queryLower)) ||
+          placesList[0];
+
+        // Centra la mappa sulla località trovata
+        if (targetLocality) {
+          const targetLat =
+            typeof targetLocality.lat === 'number'
+              ? targetLocality.lat
+              : parseFloat(targetLocality.lat || targetLocality.lon);
+          const targetLng =
+            typeof targetLocality.lng === 'number'
+              ? targetLocality.lng
+              : parseFloat(targetLocality.lng || targetLocality.lon);
+
+          if (!isNaN(targetLat) && !isNaN(targetLng)) {
+            mapMovedByUserRef.current = true;
+
+            const targetZoom = 12;
+
+            if (mapRef.current) {
+              mapRef.current.setView([targetLat, targetLng], targetZoom);
             }
-            if (a.distanceKm !== undefined) return -1;
-            if (b.distanceKm !== undefined) return 1;
-            return 0;
-          });
+            if (googleMapInstance) {
+              googleMapInstance.panTo({ lat: targetLat, lng: targetLng });
+              googleMapInstance.setZoom(targetZoom);
+            }
+
+            setMapCenterCoords({ lat: targetLat, lng: targetLng });
+            setFilterCenter({ lat: targetLat, lng: targetLng });
+            handleMapCenterChange(targetLat, targetLng);
+          }
         }
 
         setAddressSuggestions(placesList);
         setSearchResultPins(placesList);
-        if (e) {
-          // Auto-fit map bounds to show all search result pins when user manually searches
-          setTimeout(() => fitBoundsToSearchResults(placesList), 200);
+        if (e && targetLocality) {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: `📍 Mappa centrata su: ${targetLocality.name || query}`,
+              },
+            }),
+          );
         }
       } else {
         setAddressSuggestions([]);
@@ -1981,7 +2031,7 @@ export default function MapTab({
     }
     const timer = setTimeout(() => {
       handleAddressSearch(undefined, addressSearchQuery);
-    }, 350);
+    }, 400);
     return () => clearTimeout(timer);
   }, [addressSearchQuery]);
 
@@ -2043,6 +2093,8 @@ export default function MapTab({
     mapMovedByUserRef.current = true;
     setActiveDistanceFilter("place");
     setFilterCenter({ lat, lng });
+    setMapCenterCoords({ lat, lng });
+    handleMapCenterChange(lat, lng);
     autoLoadOSMForProximity(lat, lng);
 
     window.dispatchEvent(
@@ -2354,36 +2406,25 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (30km)
+      // 3. Proximity Radius (20 km dal centro della mappa visualizzato - Stile Park4night)
       let matchesDistance = true;
-      if (activeDistanceFilter === "me" && userLocation) {
-        const dist = getDistanceKm(
-          userLocation.lat,
-          userLocation.lng,
-          p.lat,
-          p.lng,
-        );
-        matchesDistance = dist <= 15;
-      } else if (activeDistanceFilter === "place" && filterCenter) {
-        const dist = getDistanceKm(
-          filterCenter.lat,
-          filterCenter.lng,
-          p.lat,
-          p.lng,
-        );
-        matchesDistance = dist <= 15;
-      } else if (activeDistanceFilter === "none") {
-        if (showAllPlaces) {
-          matchesDistance = true;
-        } else {
-          const hasSearchQuery = Boolean((searchQuery || "").trim());
-          const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
-          if (!hasSearchQuery && !isSelectedPlace) {
-            matchesDistance = false;
-          } else {
-            matchesDistance = true;
-          }
-        }
+      const hasSearchQuery = Boolean((searchQuery || "").trim());
+      const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
+
+      if (hasSearchQuery) {
+        // Se l'utente sta cercando un nome o indirizzo, mostra tutti i risultati corrispondenti
+        matchesDistance = true;
+      } else if (isSelectedPlace) {
+        // La sosta attualmente selezionata resta sempre visibile
+        matchesDistance = true;
+      } else if (showAllPlaces) {
+        matchesDistance = true;
+      } else {
+        // Mostra le aree sosta entro 20 km dal centro della mappa visualizzato
+        const centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 44.5);
+        const centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 11.5);
+        const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
+        matchesDistance = dist <= 20;
       }
       if (!matchesDistance) return false;
 
@@ -2873,17 +2914,20 @@ out center;`;
   const autoLoadOSMForProximity = async (
     lat: number,
     lng: number,
-    customSubtext?: string
+    customSubtext?: string,
+    quiet = false
   ) => {
-    if (customSubtext) {
-      setSearchOverlaySubtext(customSubtext);
+    if (!quiet) {
+      if (customSubtext) {
+        setSearchOverlaySubtext(customSubtext);
+      }
+      setIsAutoLoadingOSM(true);
     }
-    setIsAutoLoadingOSM(true);
 
     // Auto-search notification silenced on user request
 
     try {
-      const radiusMeters = 15 * 1000;
+      const radiusMeters = 20 * 1000;
       const dLat = radiusMeters / 111000;
       const dLng = radiusMeters / (111000 * Math.cos((lat * Math.PI) / 180));
       const bbox = `${lat - dLat},${lng - dLng},${lat + dLat},${lng + dLng}`;
@@ -2949,7 +2993,6 @@ out center;`;
       }
 
       if (!result.elements || result.elements.length === 0) {
-        // Silenced notification on user request: "Nessun punto sosta aggiuntivo trovato..."
         return;
       }
 
@@ -2966,7 +3009,8 @@ out center;`;
         if (!pLat || !pLng) continue;
 
         // Skip duplicate places
-        const isDuplicate = places.some((p) => {
+        const currentPlacesList = placesRef.current || places;
+        const isDuplicate = currentPlacesList.some((p) => {
           if (p.id === `osm-${el.id}`) return true;
           const d = getDistanceKm(p.lat, p.lng, pLat, pLng);
           return d < 0.055; // 55 meters
@@ -3126,18 +3170,56 @@ out center;`;
       }
 
       if (importedPlaces.length > 0) {
-        onPlacesChange([...places, ...importedPlaces]);
-        // Silenced notification on user request: "Importati con successo..."
-      } else {
-        // Silenced notification on user request: "Tutti i punti OSM in quest'area sono già presenti..."
+        const currentList = placesRef.current || places;
+        onPlacesChange([...currentList, ...importedPlaces]);
       }
     } catch (err: any) {
       console.warn("Overpass Autoload error:", err);
-      // Silenced notification on user request: "Server OSM occupato..."
     } finally {
-      setIsAutoLoadingOSM(false);
+      if (!quiet) {
+        setIsAutoLoadingOSM(false);
+      }
     }
   };
+
+  const centerDebounceRef = React.useRef<any>(null);
+  const fetchedOSMCentersRef = React.useRef<Array<{ lat: number; lng: number }>>([]);
+
+  const handleMapCenterChange = React.useCallback(
+    (lat: number, lng: number) => {
+      if (centerDebounceRef.current) {
+        clearTimeout(centerDebounceRef.current);
+      }
+      centerDebounceRef.current = setTimeout(async () => {
+        setMapCenterCoords({ lat, lng });
+
+        // Auto-fetch OSM camper spots for this 20km area in background if online
+        if (!isOnline) return;
+
+        const alreadyFetched = fetchedOSMCentersRef.current.some(
+          (c) => getDistanceKm(c.lat, c.lng, lat, lng) < 12
+        );
+        if (alreadyFetched) return;
+
+        fetchedOSMCentersRef.current.push({ lat, lng });
+        if (fetchedOSMCentersRef.current.length > 60) {
+          fetchedOSMCentersRef.current = fetchedOSMCentersRef.current.slice(-40);
+        }
+
+        try {
+          await autoLoadOSMForProximity(
+            lat,
+            lng,
+            "Ricerca soste entro 20 km...",
+            true
+          );
+        } catch (err) {
+          console.warn("[AutoOSM] Background proximity scan failed:", err);
+        }
+      }, 300);
+    },
+    [isOnline]
+  );
 
   const handleImportFromOSM = async (
     mode: "viewport" | "radius",
@@ -4069,135 +4151,7 @@ out center;`;
             </div>
           )}
 
-          {/* Swapped Proximity Distance Filters Block: Intorno a me / Intorno a questo luogo */}
-          <div className="flex gap-2 items-center justify-between pt-0.5">
-            <button
-              type="button"
-              disabled={isAutoLoadingOSM}
-              onClick={async () => {
-                if (activeDistanceFilter === "me") {
-                  setActiveDistanceFilter("none");
-                  setFilterCenter(null);
-                  onPlacesChange(places.filter((p) => p.source !== "osm"));
-                } else {
-                  if (!userLocation) {
-                    window.dispatchEvent(
-                      new CustomEvent("show-toast", {
-                        detail: {
-                          message: `⚠️ Per cercare "Intorno a me", abilita prima il GPS (pulsante "Attiva GPS" in alto a destra sulla mappa)`,
-                        },
-                      }),
-                    );
-                    return;
-                  }
-                  mapMovedByUserRef.current = false;
-                  setActiveDistanceFilter("me");
-                  setFilterCenter({
-                    lat: userLocation.lat,
-                    lng: userLocation.lng,
-                  });
-                  mapRef.current?.setView(
-                    [userLocation.lat, userLocation.lng],
-                    10,
-                  );
-
-                  // Automatically trigger live Overpass QL fetch on-demand! 🚀
-                  await autoLoadOSMForProximity(
-                    userLocation.lat,
-                    userLocation.lng,
-                    "Ricerca soste intorno a te..."
-                  );
-                }
-              }}
-              className={`flex-1 py-2 px-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none border ${
-                activeDistanceFilter === "me"
-                  ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent shadow"
-                  : "bg-white hover:bg-slate-50 text-[#3E4A35] border-slate-200"
-              } disabled:opacity-50`}
-            >
-              <span>
-                {isAutoLoadingOSM && activeDistanceFilter === "me"
-                  ? "⏳ Ricerca..."
-                  : "🚐 Intorno a me"}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isAutoLoadingOSM}
-              onClick={async () => {
-                if (activeDistanceFilter === "place") {
-                  setActiveDistanceFilter("none");
-                  setFilterCenter(null);
-                  onPlacesChange(places.filter((p) => p.source !== "osm"));
-                } else {
-                  let centerLat: number;
-                  let centerLng: number;
-                  let centerName: string;
-
-                  if (mapMovedByUserRef.current && mapRef.current) {
-                    const mapCenter = mapRef.current.getCenter();
-                    centerLat =
-                      typeof mapCenter.lat === "function"
-                        ? mapCenter.lat()
-                        : mapCenter.lat;
-                    centerLng =
-                      typeof mapCenter.lng === "function"
-                        ? mapCenter.lng()
-                        : mapCenter.lng;
-                    centerName = `Centro mappa (${Number(centerLat).toFixed(4)}, ${Number(centerLng).toFixed(4)})`;
-                  } else if (clickedCoords) {
-                    centerLat = clickedCoords.lat;
-                    centerLng = clickedCoords.lng;
-                    centerName = `Punto personalizzato (${Number(clickedCoords.lat).toFixed(4)}, ${Number(clickedCoords.lng).toFixed(4)})`;
-                  } else if (selectedPlace) {
-                    centerLat = selectedPlace.lat;
-                    centerLng = selectedPlace.lng;
-                    centerName = selectedPlace.name;
-                  } else {
-                    const mapCenter = mapRef.current
-                      ? mapRef.current.getCenter()
-                      : null;
-                    centerLat = mapCenter
-                      ? typeof mapCenter.lat === "function"
-                        ? mapCenter.lat()
-                        : mapCenter.lat
-                      : userLocation?.lat || 44.5;
-                    centerLng = mapCenter
-                      ? typeof mapCenter.lng === "function"
-                        ? mapCenter.lng()
-                        : mapCenter.lng
-                      : userLocation?.lng || 11.5;
-                    centerName = `Posizione corrente (${Number(centerLat).toFixed(4)}, ${Number(centerLng).toFixed(4)})`;
-                  }
-
-                  mapMovedByUserRef.current = false;
-                  setActiveDistanceFilter("place");
-                  setFilterCenter({ lat: centerLat, lng: centerLng });
-                  mapRef.current?.setView([centerLat, centerLng], 10);
-
-                  // Automatically trigger live Overpass QL fetch around the target place on-demand! 🚀
-                  await autoLoadOSMForProximity(
-                    centerLat,
-                    centerLng,
-                    "Ricerca soste nell'area selezionata..."
-                  );
-                }
-              }}
-              className={`flex-1 py-2 px-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none border ${
-                activeDistanceFilter === "place"
-                  ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent shadow"
-                  : "bg-white hover:bg-slate-50 text-[#3E4A35] border-slate-200"
-              } disabled:opacity-50`}
-            >
-              <span>
-                {isAutoLoadingOSM && activeDistanceFilter === "place"
-                  ? "⏳ Ricerca..."
-                  : "📍 Intorno a questo"}
-              </span>
-            </button>
-          </div>
-
+          {/* Category filter tabs */}
           <div className="flex flex-wrap items-center gap-1.5 py-1.5 w-full shrink-0 px-0.5">
             <button
               onClick={() => setSelectedCategory("all")}
@@ -4266,52 +4220,27 @@ out center;`;
         {!showFilterPanel && (
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
             {getFilteredPlaces().length === 0 ? (
-              activeDistanceFilter === "none" && !(searchQuery || "").trim() ? (
-                <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
-                  <Compass className="w-10 h-10 mx-auto text-orange-500 animate-pulse" />
-                  <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
-                    Premi "🚐 Intorno a me" o "📍 Intorno sosta"
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
-                    Per garantire la massima velocità ed evitare rallentamenti, le soste vengono mostrate solo quando premi i pulsanti di vicinanza <strong>"Intorno a me"</strong> o <strong>"Intorno sosta"</strong> oppure quando cerchi una città.
-                  </p>
-                  <div className="flex gap-2 justify-center pt-1">
+              <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
+                <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
+                <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
+                  Nessuna sosta trovata entro 20 km
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+                  Trascina la mappa per esplorare un'altra zona (le soste si caricano automaticamente), oppure cerca una città specifica nella barra di ricerca.
+                </p>
+                {userLocation && (
+                  <div className="flex gap-2 justify-center pt-2">
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (!userLocation) {
-                          window.dispatchEvent(
-                            new CustomEvent("show-toast", {
-                              detail: {
-                                message: `⚠️ Per cercare "Intorno a me", abilita prima il GPS (pulsante "Attiva GPS" sulla mappa)`,
-                              },
-                            }),
-                          );
-                          return;
-                        }
-                        mapMovedByUserRef.current = false;
-                        setActiveDistanceFilter("me");
-                        setFilterCenter({ lat: userLocation.lat, lng: userLocation.lng });
-                        mapRef.current?.setView([userLocation.lat, userLocation.lng], 10);
-                        await autoLoadOSMForProximity(userLocation.lat, userLocation.lng, "Ricerca soste intorno a te...");
-                      }}
-                      className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                      onClick={handleCenterOnUser}
+                      className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#2F3828] text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                     >
-                      <span>🚐 Attiva "Intorno a me"</span>
+                      <Navigation className="w-3.5 h-3.5 text-white" />
+                      <span>Torna alla mia posizione</span>
                     </button>
                   </div>
-                </div>
-              ) : (
-                <div className="p-6 text-center text-slate-500 space-y-2 mt-4">
-                  <Compass className="w-8 h-8 mx-auto text-[#3E4A35] opacity-40 animate-pulse" />
-                  <p className="font-bold text-slate-700 text-xs">
-                    Nessuna sosta trovata
-                  </p>
-                  <p className="text-[10.5px] text-slate-500 leading-relaxed px-2">
-                    Nessun punto sosta corrisponde ai filtri selezionati o alla ricerca corrente. Prova a modificare la parola chiave o a selezionare la scheda "Tutti".
-                  </p>
-                </div>
-              )
+                )}
+              </div>
             ) : (
               getFilteredPlaces().map((place) => {
                 const isSelected = selectedPlace?.id === place.id;
@@ -4474,6 +4403,7 @@ out center;`;
               onSelectSuggestion={handleSelectSuggestion}
               onImportOSM={() => handleImportFromOSM("viewport")}
               isImporting={isImporting}
+              onCenterChange={handleMapCenterChange}
               indicatorTitle={
                 settings?.mapEngine === "leaflet" && hasValidKey && isOnline
                   ? "Mappa Leaflet Ultra-Rapida ⚡"
@@ -4585,7 +4515,7 @@ out center;`;
                           });
                     }}
                     onIdle={(lat, lng) => {
-                      setMapCenterCoords({ lat, lng });
+                      handleMapCenterChange(lat, lng);
                     }}
                     mapMovedByUserRef={mapMovedByUserRef}
                   />
@@ -5552,139 +5482,12 @@ out center;`;
           </AnimatePresence>
         </div>
 
-        {/* Proximity Distance Filters Block - Rendered safely right below the map (First Row) */}
-        <div className="flex gap-1.5 w-full justify-center shrink-0 pt-0">
-          <button
-            type="button"
-            disabled={isAutoLoadingOSM}
-            onClick={async () => {
-              if (activeDistanceFilter === "me") {
-                setActiveDistanceFilter("none");
-                setFilterCenter(null);
-                onPlacesChange(places.filter((p) => p.source !== "osm"));
-              } else {
-                if (!userLocation) {
-                  window.dispatchEvent(
-                    new CustomEvent("show-toast", {
-                      detail: {
-                        message: `⚠️ Per cercare "Intorno a me", abilita prima il GPS (pulsante "Attiva GPS" in alto a destra sulla mappa)`,
-                      },
-                    }),
-                  );
-                  return;
-                }
-                mapMovedByUserRef.current = false;
-                setActiveDistanceFilter("me");
-                setFilterCenter({
-                  lat: userLocation.lat,
-                  lng: userLocation.lng,
-                });
-                mapRef.current?.setView(
-                  [userLocation.lat, userLocation.lng],
-                  10,
-                );
-
-                // Automatically trigger live Overpass QL fetch on-demand! 🚀
-                await autoLoadOSMForProximity(
-                  userLocation.lat,
-                  userLocation.lng,
-                  "Ricerca soste intorno a te..."
-                );
-              }
-            }}
-            className={`flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[10px] sm:text-[10.5px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none border h-8 ${
-              activeDistanceFilter === "me"
-                ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent shadow shadow-sm active:scale-98"
-                : "bg-white hover:bg-slate-50 text-[#3E4A35] border border-slate-200"
-            } disabled:opacity-50`}
-          >
-            <span>
-              {isAutoLoadingOSM && activeDistanceFilter === "me"
-                ? "⏳ Ricerca..."
-                : "🚐 Intorno a me"}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isAutoLoadingOSM}
-            onClick={async () => {
-              if (activeDistanceFilter === "place") {
-                setActiveDistanceFilter("none");
-                setFilterCenter(null);
-                onPlacesChange(places.filter((p) => p.source !== "osm"));
-              } else {
-                let centerLat: number;
-                let centerLng: number;
-                let centerName: string;
-
-                if (mapMovedByUserRef.current && mapRef.current) {
-                  const mapCenter = mapRef.current.getCenter();
-                  centerLat =
-                    typeof mapCenter.lat === "function"
-                      ? mapCenter.lat()
-                      : mapCenter.lat;
-                  centerLng =
-                    typeof mapCenter.lng === "function"
-                      ? mapCenter.lng()
-                      : mapCenter.lng;
-                  centerName = `Centro mappa (${Number(centerLat).toFixed(4)}, ${Number(centerLng).toFixed(4)})`;
-                } else if (clickedCoords) {
-                  centerLat = clickedCoords.lat;
-                  centerLng = clickedCoords.lng;
-                  centerName = `Punto personalizzato (${Number(clickedCoords.lat).toFixed(4)}, ${Number(clickedCoords.lng).toFixed(4)})`;
-                } else if (selectedPlace) {
-                  centerLat = selectedPlace.lat;
-                  centerLng = selectedPlace.lng;
-                  centerName = selectedPlace.name;
-                } else {
-                  const mapCenter = mapRef.current
-                    ? mapRef.current.getCenter()
-                    : null;
-                  centerLat = mapCenter
-                    ? typeof mapCenter.lat === "function"
-                      ? mapCenter.lat()
-                      : mapCenter.lat
-                    : userLocation?.lat || 44.5;
-                  centerLng = mapCenter
-                    ? typeof mapCenter.lng === "function"
-                      ? mapCenter.lng()
-                      : mapCenter.lng
-                    : userLocation?.lng || 11.5;
-                  centerName = `Posizione corrente (${Number(centerLat).toFixed(4)}, ${Number(centerLng).toFixed(4)})`;
-                }
-
-                mapMovedByUserRef.current = false;
-                setActiveDistanceFilter("place");
-                setFilterCenter({ lat: centerLat, lng: centerLng });
-                mapRef.current?.setView([centerLat, centerLng], 10);
-
-                // Automatically trigger live Overpass QL fetch around the target place on-demand! 🚀
-                await autoLoadOSMForProximity(
-                  centerLat,
-                  centerLng,
-                  "Ricerca soste nell'area selezionata..."
-                );
-              }
-            }}
-            className={`flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[10px] sm:text-[10.5px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none border h-8 ${
-              activeDistanceFilter === "place"
-                ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent shadow shadow-md active:scale-98"
-                : "bg-white hover:bg-slate-50 text-[#3E4A35] border border-slate-200"
-            } disabled:opacity-50`}
-          >
-            <span>
-              {isAutoLoadingOSM && activeDistanceFilter === "place"
-                ? "⏳ Ricerca..."
-                : "📍 Intorno sosta"}
-            </span>
-          </button>
-
-          {/* Mobile-only Smaller "Filtri ed Elenco" Button */}
+        {/* Mobile Action Controls Bar - Clean single row: Filtri ed Elenco + Proponi Sosta */}
+        <div className="lg:hidden flex gap-2 w-full justify-between items-center shrink-0 px-1 pt-0">
           <button
             type="button"
             onClick={() => setMobileView("list")}
-            className={`lg:hidden flex-1 px-2 py-1.5 rounded-lg text-[9.5px] font-bold shadow-xs flex items-center justify-center gap-1 cursor-pointer transition-all relative shrink-0 border h-8 ${
+            className={`flex-1 px-3 py-2 rounded-xl text-[11px] font-black shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all relative border h-9 ${
               filterMinRating > 0 ||
               filterMaxPrice < 100 ||
               filterAvoidNarrow ||
@@ -5693,7 +5496,7 @@ out center;`;
                 ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent"
                 : "bg-white hover:bg-slate-50 text-[#3E4A35] border border-slate-200"
             }`}
-            title="Apri filtri ed elenco"
+            title="Apri filtri ed elenco delle soste entro 20 km"
           >
             <Filter
               className={`w-3.5 h-3.5 ${
@@ -5706,8 +5509,7 @@ out center;`;
                   : "text-[#3E4A35]"
               }`}
             />
-            <span>Filtri ed Elenco</span>
-            {/* Active filters badge counts indicator */}
+            <span>Filtri ed Elenco ({getFilteredPlaces().length})</span>
             {filterMinRating > 0 ||
             filterMaxPrice < 100 ||
             filterAvoidNarrow ||
@@ -5723,10 +5525,7 @@ out center;`;
               <span className="w-1.5 h-1.5 bg-rose-500 rounded-full absolute -top-0.5 -right-0.5 px-0 inline-block border border-white" />
             ) : null}
           </button>
-        </div>
 
-        {/* Global actions bar (Proponi Nuova Sosta) - Rendered safely under the proximity filters (Second Row) */}
-        <div className="flex shrink-0 px-1 mt-0">
           <button
             type="button"
             onClick={() => {
@@ -5748,16 +5547,8 @@ out center;`;
               setNewPlaceForm({
                 name: "",
                 category: "area_sosta",
-                lat: mapRef.current
-                  ? typeof mapRef.current.getCenter().lat === "function"
-                    ? mapRef.current.getCenter().lat()
-                    : mapRef.current.getCenter().lat
-                  : 45.864,
-                lng: mapRef.current
-                  ? typeof mapRef.current.getCenter().lng === "function"
-                    ? mapRef.current.getCenter().lng()
-                    : mapRef.current.getCenter().lng
-                  : 10.869,
+                lat: mapCenterCoords?.lat || (userLocation?.lat ?? 44.5),
+                lng: mapCenterCoords?.lng || (userLocation?.lng ?? 11.5),
                 address: "",
                 description: "",
                 priceInfo: "Gratuito",
@@ -5781,11 +5572,12 @@ out center;`;
               });
               setShowAddPlaceModal(true);
             }}
-            className={`w-full py-1.5 px-3 font-extrabold text-[10.5px] rounded-lg h-8 transition-all flex items-center justify-center gap-1 cursor-pointer border shadow-xs ${
+            className={`flex-1 px-3 py-2 rounded-xl text-[11px] font-black shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all border h-9 ${
               showAddPlaceModal
                 ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent"
                 : "bg-[#3E4A35] hover:bg-[#2c3526] text-white border-transparent shadow shadow-[#3E4A35]/15 active:scale-98"
             }`}
+            title="Proponi una nuova area sosta per la community"
           >
             <Plus className="w-3.5 h-3.5 text-white" />
             <span>Proponi Nuova Sosta</span>
@@ -9537,6 +9329,7 @@ export function LeafletOfflineMap({
   onSelectSuggestion,
   onImportOSM,
   isImporting = false,
+  onCenterChange,
 }: {
   places: Place[];
   userLocation: { lat: number; lng: number } | null;
@@ -9556,12 +9349,18 @@ export function LeafletOfflineMap({
   onSelectSuggestion?: (sug: any) => void;
   onImportOSM?: () => void;
   isImporting?: boolean;
+  onCenterChange?: (lat: number, lng: number) => void;
 }) {
   const settings = useAppSettings();
   const mapRef = React.useRef<L.Map | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [leafletMapInstance, setLeafletMapInstance] = React.useState<L.Map | null>(null);
   const circleLayerRef = React.useRef<L.Circle | null>(null);
+
+  const onCenterChangeRef = React.useRef(onCenterChange);
+  React.useEffect(() => {
+    onCenterChangeRef.current = onCenterChange;
+  }, [onCenterChange]);
 
   const onMapClickRef = React.useRef(onMapClick);
   React.useEffect(() => {
@@ -9625,6 +9424,13 @@ export function LeafletOfflineMap({
     setLeafletMapInstance(map);
     onMapInstanceRef.current?.(map);
 
+    // Initial center notification
+    try {
+      if (onCenterChangeRef.current) {
+        onCenterChangeRef.current(initialLat, initialLng);
+      }
+    } catch (e) {}
+
     map.on("click", (e: any) => {
       if (onMapClickRef.current) {
         onMapClickRef.current(e.latlng.lat, e.latlng.lng);
@@ -9651,6 +9457,15 @@ export function LeafletOfflineMap({
       if (!(map as any)._isProgrammatic) {
         movedRef.current = true;
       }
+    });
+
+    map.on("moveend", () => {
+      try {
+        const center = map.getCenter();
+        if (center && onCenterChangeRef.current) {
+          onCenterChangeRef.current(center.lat, center.lng);
+        }
+      } catch (e) {}
     });
 
     setTimeout(() => {
@@ -9948,11 +9763,9 @@ export function LeafletOfflineMap({
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           <span>
             {indicatorTitle ||
-              (activeDistanceFilter === "none" && places.length === 0
-                ? "📍 PREMI \"INTORNO A ME\" O CERCA PER MOSTRARE LE SOSTE 🗺️"
-                : isOnline
-                ? `📍 ${places.length.toLocaleString()} SOSTE MOSTRATE 🗺️`
-                : `📍 ${places.length.toLocaleString()} SOSTE OFFLINE MOSTRATE 🗺️`)}
+              (isOnline
+                ? `📍 ${places.length.toLocaleString()} SOSTE NEL RAGGIO DI 20 KM 🗺️`
+                : `📍 ${places.length.toLocaleString()} SOSTE OFFLINE NEL RAGGIO DI 20 KM 🗺️`)}
           </span>
         </div>
       </div>

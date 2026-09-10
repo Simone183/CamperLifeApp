@@ -4565,16 +4565,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const hasUserCoords = !isNaN(userLatNum) && !isNaN(userLngNum);
 
       if (googleKey && googleKey !== "YOUR_API_KEY") {
-        let placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${googleKey}&language=it`;
-        if (hasUserCoords) {
-          placesUrl += `&location=${userLatNum},${userLngNum}&radius=50000`;
-        }
+        const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${googleKey}&language=it`;
 
         const googleRes = await fetch(placesUrl);
         if (googleRes.ok) {
           const googleData: any = await googleRes.json();
           if (googleData.status === "OK" && Array.isArray(googleData.results) && googleData.results.length > 0) {
-            let places = googleData.results.map((p: any) => {
+            const places = googleData.results.map((p: any) => {
               const photoRef = p.photos?.[0]?.photo_reference;
               const photoUrl = photoRef
                 ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photo_reference=${photoRef}&key=${googleKey}`
@@ -4600,15 +4597,6 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 distanceKm
               };
             });
-
-            if (hasUserCoords) {
-              places.sort((a: any, b: any) => {
-                if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
-                  return a.distanceKm - b.distanceKm;
-                }
-                return 0;
-              });
-            }
 
             return res.json({ source: "google", places });
           }
