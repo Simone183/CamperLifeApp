@@ -3852,11 +3852,16 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
   app.post("/api/user-trips/sync", async (req, res) => {
     try {
-      const { email, trips } = req.body || {};
+      const { email, trips, deletedIds } = req.body || {};
       const cleanEmail = (email || "").toLowerCase().trim();
       if (!cleanEmail || !Array.isArray(trips)) {
         return res.status(400).json({ error: "Email e array trips validi richiesti." });
       }
+
+      const deletedPhotoIds = new Set<string>((deletedIds?.photos || []).map((x: any) => String(x || '')));
+      const deletedExpIds = new Set<string>((deletedIds?.expenses || []).map((x: any) => String(x || '')));
+      const deletedMovIds = new Set<string>((deletedIds?.movements || []).map((x: any) => String(x || '')));
+      const deletedTripIds = new Set<string>((deletedIds?.trips || []).map((x: any) => String(x || '')));
 
       // Ensure permanent photos storage directory exists in user_backups
       const BACKUP_DIR = path.join(process.cwd(), "user_backups");
@@ -3870,6 +3875,22 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const UPLOADS_DIR = path.join(process.cwd(), "uploads");
       if (!fs.existsSync(UPLOADS_DIR)) {
         fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+
+      // Clean up physical photo files and Firestore records for deleted photos
+      if (deletedPhotoIds.size > 0) {
+        for (const pId of deletedPhotoIds) {
+          try {
+            const filename = `${pId.replace(/[^a-zA-Z0-9_-]/g, "_")}.jpg`;
+            const persistentPath = path.join(PHOTOS_DIR, filename);
+            const uploadPath = path.join(UPLOADS_DIR, filename);
+            if (fs.existsSync(persistentPath)) fs.unlinkSync(persistentPath);
+            if (fs.existsSync(uploadPath)) fs.unlinkSync(uploadPath);
+            if (firestoreDb) {
+              firestoreDb.collection("shared_photos").doc(pId).delete().catch(() => {});
+            }
+          } catch (e) {}
+        }
       }
 
       // Convert heavy base64 photos to permanent, stable ID-backed files
@@ -3950,19 +3971,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       // AND crucially: incoming user updates (like edited odometers, expenses, stops) take precedence over stale existing records!
       const mergedTripsMap = new Map<string, any>();
       for (const t of existingTrips) {
-        if (t && t.id) mergedTripsMap.set(t.id, t);
+        if (t && t.id && !deletedTripIds.has(t.id)) mergedTripsMap.set(t.id, t);
       }
       for (const incTrip of trips) {
-        if (!incTrip || !incTrip.id) continue;
+        if (!incTrip || !incTrip.id || deletedTripIds.has(incTrip.id)) continue;
         if (mergedTripsMap.has(incTrip.id)) {
           const exTrip = mergedTripsMap.get(incTrip.id);
           // Merge expenses
           const expMap = new Map<string, any>();
           for (const e of (exTrip.expenses || [])) {
-            if (e && e.id) expMap.set(String(e.id), e);
+            if (e && e.id && !deletedExpIds.has(String(e.id))) expMap.set(String(e.id), e);
           }
           for (const e of (incTrip.expenses || [])) {
-            if (e && e.id) {
+            if (e && e.id && !deletedExpIds.has(String(e.id))) {
               const strId = String(e.id);
               if (expMap.has(strId)) {
                 // Incoming expense updates existing expense
@@ -3984,10 +4005,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           // Merge movements: existing movements + incoming updates
           const movMap = new Map<string, any>();
           for (const m of (exTrip.movements || [])) {
-            if (m && m.id) movMap.set(m.id, m);
+            if (m && m.id && !deletedMovIds.has(String(m.id))) movMap.set(m.id, m);
           }
           for (const m of (incTrip.movements || [])) {
-            if (m && m.id) {
+            if (m && m.id && !deletedMovIds.has(String(m.id))) {
               const existing = movMap.get(m.id);
               if (existing) {
                 // Incoming movement is the latest user submission: update all fields from incoming!
@@ -4000,14 +4021,20 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               }
             }
           }
-          // Merge photos
+          // Merge photos: strictly respect tombstones and intentional deletions
           const phoMap = new Map<string, any>();
           for (const p of (exTrip.photos || [])) {
-            if (p && (p.id || p.url)) phoMap.set(p.id || p.url, p);
+            const pId = String(p?.id || '');
+            const pUrl = String(p?.url || '');
+            if (p && (pId || pUrl) && !deletedPhotoIds.has(pId) && !deletedPhotoIds.has(pUrl)) {
+              phoMap.set(pId || pUrl, p);
+            }
           }
           for (const p of (incTrip.photos || [])) {
-            if (p && (p.id || p.url)) {
-              const key = p.id || p.url;
+            const pId = String(p?.id || '');
+            const pUrl = String(p?.url || '');
+            if (p && (pId || pUrl) && !deletedPhotoIds.has(pId) && !deletedPhotoIds.has(pUrl)) {
+              const key = pId || pUrl;
               if (phoMap.has(key)) {
                 const existing = phoMap.get(key);
                 if (p.url && !p.url.startsWith("/uploads/") && existing?.url?.startsWith("/uploads/")) {

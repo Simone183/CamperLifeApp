@@ -18,14 +18,14 @@ export function createSocialPostFromTrip(
 
   // Calculate total distance for the trip
   const validMovements = (trip.movements || [])
-    .filter((m) => typeof m.odometer === "number" && !isNaN(m.odometer))
+    .filter((m) => typeof m.odometer === "number" && !isNaN(m.odometer) && m.odometer > 0)
     .map((m) => m.odometer!);
   const refuelOdometers = (trip.expenses || [])
-    .filter((e) => e.category === "Carburante" && typeof e.odometer === "number" && !isNaN(e.odometer))
+    .filter((e) => e.category === "Carburante" && typeof e.odometer === "number" && !isNaN(e.odometer) && e.odometer > 0)
     .map((e) => e.odometer!);
   const allOdos = [...validMovements, ...refuelOdometers];
-  if (typeof trip.startOdometer === "number" && !isNaN(trip.startOdometer)) allOdos.push(trip.startOdometer);
-  if (typeof trip.endOdometer === "number" && !isNaN(trip.endOdometer)) allOdos.push(trip.endOdometer);
+  if (typeof trip.startOdometer === "number" && !isNaN(trip.startOdometer) && trip.startOdometer > 0) allOdos.push(trip.startOdometer);
+  if (typeof trip.endOdometer === "number" && !isNaN(trip.endOdometer) && trip.endOdometer > 0) allOdos.push(trip.endOdometer);
 
   let distanceKm = 0;
   if (allOdos.length >= 2) {

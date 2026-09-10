@@ -219,18 +219,18 @@ export const generateTripPDF = async (
   const totalDistance = (() => {
     const movements = trip.movements || [];
     const validMovements = movements.filter(
-      (m) => typeof m.odometer === "number" && !isNaN(m.odometer)
+      (m) => typeof m.odometer === "number" && !isNaN(m.odometer) && m.odometer > 0
     ).map((m) => m.odometer);
     
     const refuelOdometers = (trip.expenses || [])
-      .filter((e) => e.category === "Carburante" && typeof e.odometer === "number" && !isNaN(e.odometer))
+      .filter((e) => e.category === "Carburante" && typeof e.odometer === "number" && !isNaN(e.odometer) && e.odometer > 0)
       .map((e) => e.odometer as number);
 
     const allOdometers = [...validMovements, ...refuelOdometers];
-    if (typeof trip.startOdometer === "number" && !isNaN(trip.startOdometer)) {
+    if (typeof trip.startOdometer === "number" && !isNaN(trip.startOdometer) && trip.startOdometer > 0) {
       allOdometers.push(trip.startOdometer);
     }
-    if (typeof trip.endOdometer === "number" && !isNaN(trip.endOdometer)) {
+    if (typeof trip.endOdometer === "number" && !isNaN(trip.endOdometer) && trip.endOdometer > 0) {
       allOdometers.push(trip.endOdometer);
     }
 

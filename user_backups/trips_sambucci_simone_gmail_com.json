@@ -6,7 +6,7 @@
         {
           "id": "auto_1787658824655",
           "location": "Porto Empedocle",
-          "odometer": 0,
+          "odometer": 128912,
           "date": "2026-08-25",
           "notes": "Registrato in tempo reale alle coordinate 37.2893, 13.5161. Inserisci i chilometri manualmente."
         },
@@ -121,196 +121,7 @@
       "description": "",
       "status": "Attivo",
       "endDate": "2026-09-06",
-      "photos": [
-        {
-          "id": "photo_1788033005906",
-          "url": "/uploads/trip_photo_1788629495128_85702.jpg",
-          "description": "Traversata Stretto",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788033005908",
-          "url": "/uploads/trip_photo_1788629495158_85368.jpg",
-          "description": "Traversata Stretto",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788033005909",
-          "url": "/api/photos/photo_1788033005909",
-          "description": "Traversata Stretto",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788033092991",
-          "url": "/uploads/trip_photo_1788629495222_65342.jpg",
-          "description": "Mare e Borgo Capo Peloro ",
-          "date": "2026-08-29",
-          "locationName": "Capo Peloro "
-        },
-        {
-          "id": "photo_1788033092993",
-          "url": "/uploads/trip_photo_1788629495255_73076.jpg",
-          "description": "Mare e Borgo Capo Peloro ",
-          "date": "2026-08-29",
-          "locationName": "Capo Peloro "
-        },
-        {
-          "id": "photo_1788033092994",
-          "url": "/uploads/trip_photo_1788629495286_64891.jpg",
-          "description": "Mare e Borgo Capo Peloro ",
-          "date": "2026-08-29",
-          "locationName": "Capo Peloro "
-        },
-        {
-          "id": "photo_1788033092995",
-          "url": "/uploads/trip_photo_1788629495315_18901.jpg",
-          "description": "Mare e Borgo Capo Peloro ",
-          "date": "2026-08-29",
-          "locationName": "Capo Peloro "
-        },
-        {
-          "id": "photo_1788033092996",
-          "url": "/uploads/trip_photo_1788629495345_74562.jpg",
-          "description": "Mare e Borgo Capo Peloro ",
-          "date": "2026-08-29",
-          "locationName": "Capo Peloro "
-        },
-        {
-          "id": "photo_1788033092997",
-          "url": "/uploads/trip_photo_1788629495377_15392.jpg",
-          "description": "Mare e Borgo Capo Peloro ",
-          "date": "2026-08-29",
-          "locationName": "Capo Peloro "
-        },
-        {
-          "id": "photo_1788036717262",
-          "url": "/uploads/trip_photo_1788629495409_97560.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717263",
-          "url": "/uploads/trip_photo_1788629495435_36648.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717264",
-          "url": "/uploads/trip_photo_1788629495468_29120.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717265",
-          "url": "/uploads/trip_photo_1788629495497_44764.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717266",
-          "url": "/uploads/trip_photo_1788629495528_83864.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717267",
-          "url": "/uploads/trip_photo_1788629495559_33871.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717268",
-          "url": "/uploads/trip_photo_1788629495589_64595.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717269",
-          "url": "/uploads/trip_photo_1788629495621_36136.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036717270",
-          "url": "/uploads/trip_photo_1788629495651_64771.jpg",
-          "description": "Visita a Messina",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036780651",
-          "url": "/uploads/trip_photo_1788629495680_91478.jpg",
-          "description": "Famulari ed Eden a Messina ",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036780652",
-          "url": "/uploads/trip_photo_1788629495707_20430.jpg",
-          "description": "Famulari ed Eden a Messina ",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036780654",
-          "url": "/uploads/trip_photo_1788629495736_91941.jpg",
-          "description": "Famulari ed Eden a Messina ",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036780655",
-          "url": "/uploads/trip_photo_1788629495768_7496.jpg",
-          "description": "Famulari ed Eden a Messina ",
-          "date": "2026-08-29",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788036815709",
-          "url": "/uploads/trip_photo_1788629495802_62017.jpg",
-          "description": "Scala dei turchi dalla distanza ",
-          "date": "2026-08-29",
-          "locationName": "Scala dei turchi "
-        },
-        {
-          "id": "photo_1788862587466",
-          "url": "/api/photos/photo_1788862587466",
-          "description": "Stretto di Messina ",
-          "date": "2026-09-08",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788862587467",
-          "url": "/api/photos/photo_1788862587467",
-          "description": "Stretto di Messina ",
-          "date": "2026-09-08",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1788862587468",
-          "url": "/api/photos/photo_1788862587468",
-          "description": "Stretto di Messina ",
-          "date": "2026-09-08",
-          "locationName": "Messina"
-        },
-        {
-          "id": "photo_1787987361869_90433",
-          "url": "/api/photos/photo_1787987361869_90433",
-          "description": "Tappa Sicilia",
-          "date": "2026-08-29"
-        }
-      ],
+      "photos": [],
       "startDate": "2026-08-21",
       "expenses": [
         {
@@ -882,5 +693,5 @@
       "stops": []
     }
   ],
-  "updatedAt": "2026-09-08T16:02:34.502Z"
+  "updatedAt": "2026-09-10T11:08:11.505Z"
 }

@@ -1503,15 +1503,17 @@ export default function App() {
   }, [currentUser?.email]);
 
   // Save trips to Firestore
+  const isSavingTripsRef = React.useRef(false);
   const saveTripsToFirestore = React.useCallback(async (newTrips: Trip[]) => {
     if (!currentUser?.email) return;
     const cleanEmail = currentUser.email.toLowerCase().trim();
     const normalized = newTrips.map((t: Trip) => normalizeTrip(t, cleanEmail));
     const tripsJson = JSON.stringify(normalized);
-    if (tripsJson === lastSavedTripsJsonRef.current && isSyncingFromFirestoreRef.current) {
-      isSyncingFromFirestoreRef.current = false;
+    if (tripsJson === lastSavedTripsJsonRef.current || isSavingTripsRef.current) {
       return;
     }
+    isSavingTripsRef.current = true;
+    lastSavedTripsJsonRef.current = tripsJson;
     
     // 1. Direct server-side API write to ensure cross-device, AI Studio sync, and base64 photo offloading
     try {
@@ -1519,6 +1521,7 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanEmail, trips: normalized }),
+        signal: AbortSignal.timeout(15000),
       });
       if (res.ok) {
         const resData = await res.json().catch(() => ({}));
@@ -1538,6 +1541,8 @@ export default function App() {
             }
             return norm;
           });
+          const serverTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
+          lastSavedTripsJsonRef.current = serverTripsJson;
           setTrips(cleanTripsFromServ);
           try {
             localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
@@ -1553,10 +1558,10 @@ export default function App() {
       const docRef = doc(db, "users", cleanEmail, "data", "trips");
       const cleanedTrips = JSON.parse(tripsJson);
       await setDoc(docRef, { trips: cleanedTrips, updatedAt: new Date().toISOString() }, { merge: true });
-      lastSavedTripsJsonRef.current = tripsJson;
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);
     } finally {
+      isSavingTripsRef.current = false;
       isSyncingFromFirestoreRef.current = false;
     }
   }, [currentUser?.email]);
