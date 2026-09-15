@@ -60,9 +60,10 @@ import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { CamperLifeIcon } from "./CamperLifeIcon";
-import { MapPoiIcon, getMapPoiIconHtml } from "./MapPoiIcon";
+import { MapPoiIcon, getMapPoiIconHtml, MapCategoryPinMini, MapCategoryBadge } from "./MapPoiIcon";
 import { PlaceOccupancyWidget } from "./PlaceOccupancyWidget";
 import { PlaceOccupancyBadge } from "./PlaceOccupancyBadge";
+import { OsmReportModal } from "./OsmReportModal";
 import {
   getTile,
   getBestTile,
@@ -967,6 +968,7 @@ export default function MapTab({
   const [showOsmObstacles, setShowOsmObstacles] = React.useState(true);
   const [osmObstacles, setOsmObstacles] = React.useState<OSMObstacle[]>([]);
   const [loadingOsmObstacles, setLoadingOsmObstacles] = React.useState(false);
+  const [isOsmReportOpen, setIsOsmReportOpen] = React.useState(false);
 
   // States for OpenStreetMap Importer
   const [showImportOSMForm, setShowImportOSMForm] = React.useState(false);
@@ -1332,24 +1334,31 @@ export default function MapTab({
       if (p.id === selectedPlace.id) {
         const filteredReviews = (p.reviews || []).filter(r => r.id !== reviewId);
         
-        let average = 3;
-        let avgNoise = 3;
-        let avgManeuver = 3;
-        let avgSignal = 3;
-        let avgGround = 3;
-        let avgShade = 3;
-        let avgClean = 3;
+        let average = 0;
+        let avgNoise: number | undefined = undefined;
+        let avgManeuver: number | undefined = undefined;
+        let avgSignal: number | undefined = undefined;
+        let avgGround: number | undefined = undefined;
+        let avgShade: number | undefined = undefined;
+        let avgClean: number | undefined = undefined;
         
         if (filteredReviews.length > 0) {
           const totalRating = filteredReviews.reduce((sum, r) => sum + r.rating, 0);
           average = parseFloat((totalRating / filteredReviews.length).toFixed(1));
           
-          avgNoise = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.noiseLevel ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
-          avgManeuver = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.maneuverability ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
-          avgSignal = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.cellularSignal ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
-          avgGround = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.groundLevelness ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
-          avgShade = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.shade ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
-          avgClean = parseFloat((filteredReviews.reduce((sum, r) => sum + (r.cleanliness ?? 3), 0) / filteredReviews.length).toFixed(1)) || 3;
+          const calcMetric = (key: keyof Review) => {
+            const list = filteredReviews.filter(
+              (r) => typeof r[key] === "number" && (r[key] as number) > 0
+            );
+            if (list.length === 0) return undefined;
+            return parseFloat((list.reduce((sum, r) => sum + (r[key] as number), 0) / list.length).toFixed(1));
+          };
+          avgNoise = calcMetric("noiseLevel");
+          avgManeuver = calcMetric("maneuverability");
+          avgSignal = calcMetric("cellularSignal");
+          avgGround = calcMetric("groundLevelness");
+          avgShade = calcMetric("shade");
+          avgClean = calcMetric("cleanliness");
         }
         
         targetPlace = {
@@ -1999,7 +2008,7 @@ export default function MapTab({
         }
 
         setAddressSuggestions(placesList);
-        setSearchResultPins(placesList);
+        setSearchResultPins([]);
         if (e && targetLocality) {
           window.dispatchEvent(
             new CustomEvent("show-toast", {
@@ -2049,58 +2058,23 @@ export default function MapTab({
       googleMapInstance.setZoom(13);
     }
 
-    // Determine appropriate category and human-readable label
-    const detected = detectPlaceCategoryAndLabel(sug);
+    const title = sug.name || sug.display_name?.split(",")[0] || "Località Ricercata";
 
-    const distText = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm)
-      ? (sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)}m dalla tua posizione` : `${sug.distanceKm.toFixed(1)}km dalla tua posizione`)
-      : null;
-
-    const customPlace: Place = {
-      id: sug.id || `google-${Date.now()}`,
-      name: sug.name || sug.display_name?.split(",")[0] || "Località Ricercata",
-      category: detected.category,
-      categoryLabel: detected.categoryLabel,
-      lat: lat,
-      lng: lng,
-      address: sug.address || sug.display_name || "Indirizzo trovato tramite la ricerca",
-      priceInfo: distText
-        ? `📍 ${distText}${sug.rating ? ` • ⭐ ${sug.rating} (${sug.user_ratings_total || 0} recensioni)` : ''}`
-        : (sug.rating ? `⭐ ${sug.rating} (${sug.user_ratings_total || 0} recensioni)` : "Risultato Ricerca"),
-      priceEuro: 0,
-      rating: sug.rating || 5,
-      facilities: ["Parcheggio", "Località Trovata", distText ? distText : "Barra di Ricerca"].filter(Boolean),
-      reviews: [],
-      imageUrl: sug.photoUrl || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=400",
-      source: (sug.source || "google_places") as any,
-      maxHeight: 4.0,
-      maxWeight: 5.0,
-      isNarrowAccess: false,
-    };
-
-    setSelectedPlace(customPlace);
-    setIsMobileDetailsOpen(true);
-
-    // Add to current places list if not existing nearby
-    if (!places.some(p => p.id === customPlace.id || (Math.abs(p.lat - lat) < 0.0001 && Math.abs(p.lng - lng) < 0.0001))) {
-      onPlacesChange([customPlace, ...places]);
-    }
-
+    // Chiude i suggerimenti e sposta il centro mappa
     setAddressSuggestions([]);
-    setAddressSearchQuery(customPlace.name);
+    setSearchResultPins([]);
+    setAddressSearchQuery(title);
 
-    // Imposta automaticamente il filtro prossimità e carica le strutture camper entro i 30km
     mapMovedByUserRef.current = true;
     setActiveDistanceFilter("place");
     setFilterCenter({ lat, lng });
     setMapCenterCoords({ lat, lng });
     handleMapCenterChange(lat, lng);
-    autoLoadOSMForProximity(lat, lng);
 
     window.dispatchEvent(
       new CustomEvent("show-toast", {
         detail: {
-          message: `📍 Centrato su: ${customPlace.name}! Mappa posizionata e raggio di 30km attivato con Google Places.`,
+          message: `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel diametro di 15 km.`,
         },
       }),
     );
@@ -2119,6 +2093,7 @@ export default function MapTab({
   const [priceUpdated, setPriceUpdated] = React.useState("");
   const [photoSimulation, setPhotoSimulation] = React.useState("");
   const [reviewSuccess, setReviewSuccess] = React.useState(false);
+  const [isAddingReview, setIsAddingReview] = React.useState(false);
 
   // Puntina cliccata personalizzata sulla mappa
   const [clickedCoords, setClickedCoords] = React.useState<{
@@ -2406,7 +2381,7 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (20 km dal centro della mappa visualizzato - Stile Park4night)
+      // 3. Proximity Radius (15 km di diametro / 7.5 km di raggio dal centro della mappa visualizzato)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
@@ -2420,11 +2395,11 @@ export default function MapTab({
       } else if (showAllPlaces) {
         matchesDistance = true;
       } else {
-        // Mostra le aree sosta entro 20 km dal centro della mappa visualizzato
+        // Mostra le aree sosta entro 15 km di diametro (7.5 km di raggio) dal centro della mappa visualizzato
         const centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 44.5);
         const centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 11.5);
         const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
-        matchesDistance = dist <= 20;
+        matchesDistance = dist <= 7.5;
       }
       if (!matchesDistance) return false;
 
@@ -2748,6 +2723,7 @@ out center;`;
     const saved = localStorage.getItem(`camper_reviews_${selectedPlace.id}`);
     console.log(`[MapTab] Updating localReviews for ${selectedPlace.id}:`, saved);
     setLocalReviews(saved ? JSON.parse(saved) : []);
+    setIsAddingReview(false);
   }, [selectedPlace?.id]);
 
   const combinedReviews = React.useMemo(() => {
@@ -2762,6 +2738,88 @@ out center;`;
     });
     return combined;
   }, [selectedPlace?.reviews, localReviews]);
+
+  // Compute actual rating averages or null ("—") if no votes have been submitted
+  const placeRatings = React.useMemo(() => {
+    if (!selectedPlace) {
+      return {
+        overall: null,
+        noise: null,
+        maneuver: null,
+        signal: null,
+        ground: null,
+        shade: null,
+        clean: null,
+        hasVotes: false,
+        totalVotes: 0,
+      };
+    }
+
+    const validReviews = (combinedReviews || []).filter(
+      (r) => r && typeof r.rating === "number" && r.rating > 0
+    );
+
+    let overall: number | null = null;
+    let hasVotes = false;
+    const totalVotes = validReviews.length;
+
+    if (validReviews.length > 0) {
+      const sum = validReviews.reduce((acc, r) => acc + r.rating, 0);
+      overall = parseFloat((sum / validReviews.length).toFixed(1));
+      hasVotes = true;
+    } else if (
+      selectedPlace.rating &&
+      selectedPlace.rating > 0 &&
+      selectedPlace.source !== "osm" &&
+      selectedPlace.source !== "OpenStreetMap" &&
+      selectedPlace.source !== "open_data_italia" &&
+      selectedPlace.source !== "open_data_francia"
+    ) {
+      overall = parseFloat(Number(selectedPlace.rating).toFixed(1));
+      hasVotes = true;
+    }
+
+    const calcSubMetricAvg = (key: keyof Review, placeVal?: number) => {
+      const withMetric = validReviews.filter(
+        (r) =>
+          typeof r[key] === "number" &&
+          (r[key] as number) >= 1 &&
+          (r[key] as number) <= 5
+      );
+      if (withMetric.length > 0) {
+        const sum = withMetric.reduce(
+          (acc, r) => acc + (r[key] as number),
+          0
+        );
+        return parseFloat((sum / withMetric.length).toFixed(1));
+      }
+      if (
+        typeof placeVal === "number" &&
+        placeVal > 0 &&
+        placeVal !== 3 &&
+        selectedPlace.source !== "osm" &&
+        selectedPlace.source !== "OpenStreetMap" &&
+        selectedPlace.source !== "open_data_italia" &&
+        selectedPlace.source !== "open_data_francia" &&
+        validReviews.length > 0
+      ) {
+        return parseFloat(placeVal.toFixed(1));
+      }
+      return null;
+    };
+
+    return {
+      overall,
+      noise: calcSubMetricAvg("noiseLevel", selectedPlace.noiseLevel),
+      maneuver: calcSubMetricAvg("maneuverability", selectedPlace.maneuverability),
+      signal: calcSubMetricAvg("cellularSignal", selectedPlace.cellularSignal),
+      ground: calcSubMetricAvg("groundLevelness", selectedPlace.groundLevelness),
+      shade: calcSubMetricAvg("shade", selectedPlace.shade),
+      clean: calcSubMetricAvg("cleanliness", selectedPlace.cleanliness),
+      hasVotes,
+      totalVotes,
+    };
+  }, [selectedPlace, combinedReviews]);
 
   const allAlbumPhotos = React.useMemo(() => {
     if (!selectedPlace) return [];
@@ -2843,14 +2901,21 @@ out center;`;
       (totalRating / expandedReviews.length).toFixed(1),
     );
 
-    // Compute updated averages for sub-metrics
-    const validReviews = expandedReviews;
-    const avgNoise = parseFloat((validReviews.reduce((sum, r) => sum + (r.noiseLevel ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
-    const avgManeuver = parseFloat((validReviews.reduce((sum, r) => sum + (r.maneuverability ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
-    const avgSignal = parseFloat((validReviews.reduce((sum, r) => sum + (r.cellularSignal ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
-    const avgGround = parseFloat((validReviews.reduce((sum, r) => sum + (r.groundLevelness ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
-    const avgShade = parseFloat((validReviews.reduce((sum, r) => sum + (r.shade ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
-    const avgClean = parseFloat((validReviews.reduce((sum, r) => sum + (r.cleanliness ?? 3), 0) / validReviews.length).toFixed(1)) || 3;
+    // Compute updated averages for sub-metrics from reviews that provided them
+    const calcSubMetric = (key: keyof Review) => {
+      const withMetric = expandedReviews.filter(
+        (r) => typeof r[key] === "number" && (r[key] as number) > 0
+      );
+      if (withMetric.length === 0) return undefined;
+      const sum = withMetric.reduce((acc, r) => acc + (r[key] as number), 0);
+      return parseFloat((sum / withMetric.length).toFixed(1));
+    };
+    const avgNoise = calcSubMetric("noiseLevel");
+    const avgManeuver = calcSubMetric("maneuverability");
+    const avgSignal = calcSubMetric("cellularSignal");
+    const avgGround = calcSubMetric("groundLevelness");
+    const avgShade = calcSubMetric("shade");
+    const avgClean = calcSubMetric("cleanliness");
 
     // Update place
     const updatedPlaces = places.map((p) => {
@@ -2878,7 +2943,7 @@ out center;`;
 
     onPlacesChange(updatedPlaces);
 
-    // Clear form
+    // Clear form and close form view
     setReviewerName("");
     setCommentText("");
     setPriceUpdated("");
@@ -2889,6 +2954,7 @@ out center;`;
     setGroundLevelness(5);
     setShade(5);
     setCleanliness(5);
+    setIsAddingReview(false);
     setReviewSuccess(true);
     setTimeout(() => setReviewSuccess(false), 3000);
   };
@@ -2931,6 +2997,26 @@ out center;`;
       const dLat = radiusMeters / 111000;
       const dLng = radiusMeters / (111000 * Math.cos((lat * Math.PI) / 180));
       const bbox = `${lat - dLat},${lng - dLng},${lat + dLat},${lng + dLng}`;
+
+      const minLat = lat - dLat;
+      const maxLat = lat + dLat;
+      const minLng = lng - dLng;
+      const maxLng = lng + dLng;
+
+      // Query Firestore soste collection in parallel for this 20km area
+      let firestoreSoste: Place[] = [];
+      try {
+        const sosteRes = await fetch(`/api/soste?minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&limit=500`);
+        if (sosteRes.ok) {
+          const rawSoste = await sosteRes.json();
+          if (Array.isArray(rawSoste)) {
+            firestoreSoste = rawSoste;
+          }
+        }
+      } catch (fErr) {
+        console.warn("[Firestore soste query] fetch warning:", fErr);
+      }
+
       const query = `[out:json][timeout:10];
 (
   node["tourism"="camp_site"](${bbox});
@@ -3169,6 +3255,18 @@ out center;`;
         });
       }
 
+      // Also merge firestoreSoste places from the 39,000 collection
+      if (firestoreSoste && firestoreSoste.length > 0) {
+        const currentPlacesList = placesRef.current || places;
+        for (const s of firestoreSoste) {
+          const isDup = currentPlacesList.some((p) => p.id === s.id || (Math.abs(p.lat - s.lat) < 0.0005 && Math.abs(p.lng - s.lng) < 0.0005)) ||
+                        importedPlaces.some((p) => p.id === s.id || (Math.abs(p.lat - s.lat) < 0.0005 && Math.abs(p.lng - s.lng) < 0.0005));
+          if (!isDup) {
+            importedPlaces.push(s);
+          }
+        }
+      }
+
       if (importedPlaces.length > 0) {
         const currentList = placesRef.current || places;
         onPlacesChange([...currentList, ...importedPlaces]);
@@ -3193,11 +3291,11 @@ out center;`;
       centerDebounceRef.current = setTimeout(async () => {
         setMapCenterCoords({ lat, lng });
 
-        // Auto-fetch OSM camper spots for this 20km area in background if online
+        // Auto-fetch OSM camper spots for this 15km diameter area in background if online
         if (!isOnline) return;
 
         const alreadyFetched = fetchedOSMCentersRef.current.some(
-          (c) => getDistanceKm(c.lat, c.lng, lat, lng) < 12
+          (c) => getDistanceKm(c.lat, c.lng, lat, lng) < 6
         );
         if (alreadyFetched) return;
 
@@ -3210,7 +3308,7 @@ out center;`;
           await autoLoadOSMForProximity(
             lat,
             lng,
-            "Ricerca soste entro 20 km...",
+            "Ricerca soste entro 15 km...",
             true
           );
         } catch (err) {
@@ -3511,7 +3609,7 @@ out center;`;
           address: addressStr,
           priceInfo: priceStr,
           priceEuro: priceNum,
-          rating: 4.1 + Math.random() * 0.8,
+          rating: 0,
           facilities: facilitiesList,
           imageUrl: pictureUrl,
           source: "osm",
@@ -3521,16 +3619,7 @@ out center;`;
           hasMaxWeightLimit: hasMaxWeightLim,
           maxWeight: maxWeightVal,
           isNarrowAccess: isNarrowAcc,
-          reviews: [
-            {
-              id: `rev-osm-${el.id}-1`,
-              user: "Community OpenStreetMap",
-              date: new Date().toISOString().split("T")[0],
-              rating: 4,
-              comment: `Struttura camper importata via OpenStreetMap (ID: ${el.id}). Ricorda di inviare valutazioni aggiornate se visiti il posto!`,
-              vehicleType: "Qualsiasi camper",
-            },
-          ],
+          reviews: [],
         });
       }
 
@@ -4155,14 +4244,14 @@ out center;`;
           <div className="flex flex-wrap items-center gap-1.5 py-1.5 w-full shrink-0 px-0.5">
             <button
               onClick={() => setSelectedCategory("all")}
-              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
+              className={`py-1.5 px-3 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "all"
-                  ? "bg-[#1C3D2B] text-white shadow-xs"
+                  ? "bg-slate-900 text-white shadow-xs"
                   : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
               }`}
               title={`Tutti (${places.length})`}
             >
-              <span>🔍 Tutti</span>
+              <span>Tutti</span>
               <span className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-mono ${
                 selectedCategory === "all" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
               }`}>
@@ -4170,48 +4259,52 @@ out center;`;
               </span>
             </button>
             <button
-              onClick={() => setSelectedCategory("campeggio")}
-              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "campeggio"
-                  ? "bg-[#1C3D2B] text-white shadow-xs"
-                  : "bg-white text-[#1C3D2B] border border-[#1C3D2B]/30 hover:bg-[#1C3D2B]/10"
-              }`}
-              title="Campeggi"
-            >
-              <span>⛺ Camping</span>
-            </button>
-            <button
               onClick={() => setSelectedCategory("area_sosta")}
-              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
+              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "area_sosta"
-                  ? "bg-[#1D5E85] text-white shadow-xs"
-                  : "bg-white text-[#1D5E85] border border-[#1D5E85]/30 hover:bg-[#1D5E85]/10"
+                  ? "bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-xs border border-sky-400"
+                  : "bg-white text-sky-950 border border-sky-300 hover:bg-sky-50"
               }`}
-              title="Aree Sosta"
+              title="Aree Sosta Camper"
             >
-              <span>🚐 Area sosta</span>
-            </button>
-            <button
-              onClick={() => setSelectedCategory("camper_service")}
-              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "camper_service"
-                  ? "bg-[#C85E28] text-white shadow-xs"
-                  : "bg-white text-[#C85E28] border border-[#C85E28]/30 hover:bg-[#C85E28]/10"
-              }`}
-              title="Service"
-            >
-              <span>🚰 Service</span>
+              <MapCategoryPinMini category="area_sosta" size={17} />
+              <span>Area Sosta</span>
             </button>
             <button
               onClick={() => setSelectedCategory("parcheggio_camper")}
-              className={`py-1.5 px-3 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
+              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
                 selectedCategory === "parcheggio_camper"
-                  ? "bg-[#1E738B] text-white shadow-xs"
-                  : "bg-white text-[#1E738B] border border-[#1E738B]/30 hover:bg-[#1E738B]/10"
+                  ? "bg-gradient-to-r from-blue-700 to-blue-900 text-white shadow-xs border border-blue-600"
+                  : "bg-white text-blue-950 border border-blue-300 hover:bg-blue-50"
               }`}
-              title="Parcheggi"
+              title="Parcheggi Camper"
             >
-              <span>🅿️ Parcheggi</span>
+              <MapCategoryPinMini category="parcheggio_camper" size={17} />
+              <span>Parcheggi</span>
+            </button>
+            <button
+              onClick={() => setSelectedCategory("campeggio")}
+              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
+                selectedCategory === "campeggio"
+                  ? "bg-gradient-to-r from-[#1C3D2B] to-[#14291E] text-white shadow-xs border border-[#1C3D2B]"
+                  : "bg-white text-[#1C3D2B] border border-[#1C3D2B]/35 hover:bg-[#1C3D2B]/10"
+              }`}
+              title="Campeggi"
+            >
+              <MapCategoryPinMini category="campeggio" size={17} />
+              <span>Camping</span>
+            </button>
+            <button
+              onClick={() => setSelectedCategory("camper_service")}
+              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
+                selectedCategory === "camper_service"
+                  ? "bg-gradient-to-r from-violet-600 to-purple-800 text-white shadow-xs border border-violet-500"
+                  : "bg-white text-purple-950 border border-purple-300 hover:bg-purple-50"
+              }`}
+              title="Camper Service"
+            >
+              <MapCategoryPinMini category="camper_service" size={17} />
+              <span>Service</span>
             </button>
           </div>
         </div>
@@ -4223,7 +4316,7 @@ out center;`;
               <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
                 <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
                 <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
-                  Nessuna sosta trovata entro 20 km
+                  Nessuna sosta trovata entro 15 km di diametro
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
                   Trascina la mappa per esplorare un'altra zona (le soste si caricano automaticamente), oppure cerca una città specifica nella barra di ricerca.
@@ -4270,6 +4363,7 @@ out center;`;
                       ) : isImageFallback(place.category, place.imageUrl) ? (
                         <CategoryIllustration
                           category={place.category}
+                          feeStatus={place.feeStatus as any}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -4314,19 +4408,7 @@ out center;`;
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex justify-between items-start gap-1">
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                            place.category === "area_sosta"
-                              ? "bg-[#5A6B4E]/15 text-[#3E4A35]"
-                              : place.category === "campeggio"
-                                ? "bg-[#3E4A35]/15 text-[#3E4A35]"
-                                : place.category === "parcheggio_camper"
-                                  ? "bg-sky-100 text-sky-800"
-                                  : "bg-[#A45C40]/15 text-[#A45C40]"
-                          }`}
-                        >
-                          {place.category.replace("_", " ")}
-                        </span>
+                        <MapCategoryBadge category={place.category} feeStatus={place.feeStatus as any} pinSize={14} />
                         <span className="flex items-center gap-1 font-bold text-[#2D2926]">
                           <Star className="w-3 h-3 text-amber-500 fill-current" />
                           {Number(place.rating).toFixed(1)}
@@ -4448,7 +4530,7 @@ out center;`;
                         address: `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
                         priceInfo: "Punto d'interesse",
                         priceEuro: 0,
-                        rating: 5,
+                        rating: 0,
                         facilities: ["Carico acqua", "Scarico reflui"],
                         reviews: [],
                         imageUrl:
@@ -4597,6 +4679,7 @@ out center;`;
                           category={place.category}
                           isViolation={heightViolation}
                           isSelected={selectedPlace?.id === place.id}
+                          feeStatus={place.feeStatus as any}
                         />
                       </AdvancedMarker>
                     );
@@ -5496,7 +5579,7 @@ out center;`;
                 ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent"
                 : "bg-white hover:bg-slate-50 text-[#3E4A35] border border-slate-200"
             }`}
-            title="Apri filtri ed elenco delle soste entro 20 km"
+            title="Apri filtri ed elenco delle soste entro 15 km di diametro"
           >
             <Filter
               className={`w-3.5 h-3.5 ${
@@ -5581,6 +5664,18 @@ out center;`;
           >
             <Plus className="w-3.5 h-3.5 text-white" />
             <span>Proponi Nuova Sosta</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsOsmReportOpen(true)}
+            className="w-9 h-9 rounded-xl shadow-xs flex items-center justify-center cursor-pointer transition-all bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white border border-red-500 shrink-0 active:scale-95"
+            title="Segnala ostacolo, sottopasso o limiti altezza/larghezza per OpenStreetMap"
+            aria-label="Segnala ostacolo per OpenStreetMap"
+          >
+            <div className="w-4.5 h-4.5 rounded-full bg-white text-rose-600 flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+              !
+            </div>
           </button>
         </div>
 
@@ -5678,6 +5773,12 @@ out center;`;
                     {selectedPlace.id !== "current_location" && (
                       <span className="text-slate-600 font-bold font-mono text-[10px]">
                         {selectedPlace.priceInfo} {selectedPlace.feeStatus === 'free' ? '✅ Gratuito' : selectedPlace.feeStatus === 'paid' ? '💰 A pagamento' : ''}
+                      </span>
+                    )}
+                    {selectedPlace.id !== "current_location" && (
+                      <span className="flex items-center gap-1 bg-[#5A6B4E]/10 px-2 py-0.5 rounded-lg text-[10px] font-extrabold font-mono text-slate-800">
+                        <Star className={`w-3 h-3 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-400"}`} />
+                        <span>{placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}</span>
                       </span>
                     )}
                     {selectedPlace.source && (
@@ -5999,7 +6100,7 @@ out center;`;
                     Silenziosità
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.noiseLevel || 3}/5
+                    {placeRatings.noise !== null ? placeRatings.noise.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center">
@@ -6007,7 +6108,7 @@ out center;`;
                     Manovre
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.maneuverability || 3}/5
+                    {placeRatings.maneuver !== null ? placeRatings.maneuver.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center">
@@ -6015,7 +6116,7 @@ out center;`;
                     Segnale
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.cellularSignal || 3}/5
+                    {placeRatings.signal !== null ? placeRatings.signal.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
@@ -6023,7 +6124,7 @@ out center;`;
                     Terreno
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.groundLevelness || 3}/5
+                    {placeRatings.ground !== null ? placeRatings.ground.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
@@ -6031,7 +6132,7 @@ out center;`;
                     Ombra
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.shade || 3}/5
+                    {placeRatings.shade !== null ? placeRatings.shade.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
@@ -6039,7 +6140,7 @@ out center;`;
                     Pulizia
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.cleanliness || 3}/5
+                    {placeRatings.clean !== null ? placeRatings.clean.toFixed(1) : "—"}
                   </div>
                 </div>
               </div>
@@ -6156,8 +6257,8 @@ out center;`;
                     💬 Recensioni Community ({combinedReviews.length})
                   </h4>
                   <div className="flex items-center gap-1 font-bold text-[#3E4A35] dark:text-emerald-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs shadow-2xs">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
-                    <span>{Number(selectedPlace.rating).toFixed(1)} / 5.0</span>
+                    <Star className={`w-3.5 h-3.5 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-300 dark:text-slate-600"}`} />
+                    <span>{placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}</span>
                   </div>
                 </div>
 
@@ -6619,9 +6720,9 @@ out center;`;
                   </h2>
                   {selectedPlace.id !== "current_location" && (
                     <div className="flex items-center gap-1 bg-[#5A6B4E]/10 px-2 py-1 rounded-lg shrink-0">
-                      <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                      <Star className={`w-3.5 h-3.5 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-400"}`} />
                       <span className="font-extrabold text-slate-800 font-mono text-xs">
-                        {Number(selectedPlace.rating).toFixed(1)}
+                        {placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}
                       </span>
                     </div>
                   )}
@@ -6757,7 +6858,7 @@ out center;`;
                     Silenziosità
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.noiseLevel || 3}/5
+                    {placeRatings.noise !== null ? placeRatings.noise.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center">
@@ -6765,7 +6866,7 @@ out center;`;
                     Manovre
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.maneuverability || 3}/5
+                    {placeRatings.maneuver !== null ? placeRatings.maneuver.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center">
@@ -6773,7 +6874,7 @@ out center;`;
                     Segnale
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.cellularSignal || 3}/5
+                    {placeRatings.signal !== null ? placeRatings.signal.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
@@ -6781,7 +6882,7 @@ out center;`;
                     Terreno
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.groundLevelness || 3}/5
+                    {placeRatings.ground !== null ? placeRatings.ground.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
@@ -6789,7 +6890,7 @@ out center;`;
                     Ombra
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.shade || 3}/5
+                    {placeRatings.shade !== null ? placeRatings.shade.toFixed(1) : "—"}
                   </div>
                 </div>
                 <div className="text-center border-t border-slate-200 dark:border-slate-700/60 pt-2">
@@ -6797,7 +6898,7 @@ out center;`;
                     Pulizia
                   </div>
                   <div className="text-sm font-black text-[#3E4A35] dark:text-emerald-400">
-                    {selectedPlace.cleanliness || 3}/5
+                    {placeRatings.clean !== null ? placeRatings.clean.toFixed(1) : "—"}
                   </div>
                 </div>
               </div>
@@ -7101,9 +7202,9 @@ out center;`;
                     💬 Recensioni ({combinedReviews.length})
                   </h4>
                   <div className="flex items-center gap-1 font-bold text-[#3E4A35] dark:text-emerald-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs shadow-2xs">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                    <Star className={`w-3.5 h-3.5 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-300 dark:text-slate-600"}`} />
                     <span className="text-xs">
-                      {Number(selectedPlace.rating).toFixed(1)} / 5.0
+                      {placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}
                     </span>
                   </div>
                 </div>
@@ -9307,6 +9408,24 @@ out center;`;
           </div>
         </div>
       )}
+
+      {/* Modal Segnalazione Ostacolo / Modifica OSM */}
+      <OsmReportModal
+        isOpen={isOsmReportOpen}
+        onClose={() => setIsOsmReportOpen(false)}
+        currentLat={mapCenterCoords?.lat ?? userLocation?.lat ?? 44.5}
+        currentLng={mapCenterCoords?.lng ?? userLocation?.lng ?? 11.5}
+        currentUser={currentUser}
+        onReportSubmitted={(report) => {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: "🚩 Segnalazione OSM inviata all'amministratore con successo!",
+              },
+            }),
+          );
+        }}
+      />
     </div>
   );
 }

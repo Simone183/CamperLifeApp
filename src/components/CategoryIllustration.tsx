@@ -4,58 +4,62 @@
  */
 
 import React from 'react';
-import { MapPin, Tent, Droplets } from 'lucide-react';
+import { getPoiCategoryDetails } from './MapPoiIcon';
 
 interface CategoryIllustrationProps {
   category: string;
   className?: string;
+  feeStatus?: 'free' | 'paid' | 'unknown';
 }
 
-export const CategoryIllustration: React.FC<CategoryIllustrationProps> = ({ category, className = "w-full h-full" }) => {
-  // Normalize category key
-  const normCategory = category?.toLowerCase().trim() || 'default';
+export const CategoryIllustration: React.FC<CategoryIllustrationProps> = ({
+  category,
+  className = "w-full h-full",
+  feeStatus,
+}) => {
+  const details = getPoiCategoryDetails(category, false, feeStatus);
+  const gradId = React.useId().replace(/:/g, "_");
 
-  // Soste (Area Sosta) -> Peach/Orange gradient
-  if (normCategory.includes('sosta')) {
-    return (
-      <div className={`flex items-center justify-center text-white bg-gradient-to-br from-[#FF9E79] to-[#FF8552] ${className}`}>
-        <MapPin className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
-      </div>
-    );
-  }
-
-  // Campeggio -> Green gradient
-  if (normCategory.includes('campeggio') || normCategory.includes('camping')) {
-    return (
-      <div className={`flex items-center justify-center text-white bg-gradient-to-br from-[#5A6B4E] to-[#3E4A35] ${className}`}>
-        <Tent className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
-      </div>
-    );
-  }
-
-  // Camper Service -> Light Blue gradient
-  if (normCategory.includes('service')) {
-    return (
-      <div className={`flex items-center justify-center text-white bg-gradient-to-br from-[#4EA8DE] to-[#0077B6] ${className}`}>
-        <Droplets className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
-      </div>
-    );
-  }
-
-  // Parcheggio -> Italian-style Blue Parking Sign (P)
-  if (normCategory.includes('parcheggio') || normCategory.includes('camper')) {
-    return (
-      <div className={`flex items-center justify-center text-white bg-[#0056b3] font-bold select-none ${className}`}>
-        <span className="text-2xl md:text-3xl font-sans tracking-normal leading-none">P</span>
-      </div>
-    );
-  }
-
-  // Default Fallback
   return (
-    <div className={`flex items-center justify-center text-white bg-gradient-to-br from-slate-400 to-slate-600 ${className}`}>
-      <MapPin className="w-1/2 h-1/2 min-w-[20px] min-h-[20px]" />
+    <div
+      className={`relative flex items-center justify-center overflow-hidden select-none ${className}`}
+      style={{
+        background: `linear-gradient(135deg, ${details.gradientColors[0]}, ${details.gradientColors[1]})`,
+      }}
+      title={details.label}
+    >
+      {/* Subtle radial lighting texture */}
+      <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-white via-transparent to-black pointer-events-none" />
+
+      {/* Identical vector map pin with white outline and centered silhouette */}
+      <div
+        className="relative z-10 flex items-center justify-center"
+        style={{ filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.35))" }}
+      >
+        <svg
+          className="w-10 h-12 md:w-11 md:h-13"
+          viewBox="0 0 38 44"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient id={`illustr-grad-${gradId}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={details.gradientColors[0]} />
+              <stop offset="100%" stopColor={details.gradientColors[1]} />
+            </linearGradient>
+          </defs>
+          <path
+            d="M 19 43 C 17.2 40 5.5 26.5 5.5 17 A 13.5 13.5 0 1 1 32.5 17 C 32.5 26.5 20.8 40 19 43 Z"
+            fill={`url(#illustr-grad-${gradId})`}
+            stroke="#FFFFFF"
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+          />
+          {details.svgPath}
+        </svg>
+      </div>
     </div>
   );
 };
+
 

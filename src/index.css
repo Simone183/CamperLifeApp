@@ -140,6 +140,27 @@ body {
   background-color: #161E14 !important;
 }
 
+/* Custom Map Pin Styling for Leaflet and Google Maps */
+.custom-map-pin {
+  display: block;
+  transform-origin: 19px 43px;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.18s ease;
+  will-change: transform;
+}
+
+.custom-map-pin:hover,
+.custom-map-pin.selected {
+  transform: scale(1.18);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+  z-index: 1000 !important;
+}
+
+.custom-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
 /* Forest Night Theme Overrides for smooth fully styled ViaCamper night mode experience */
 .dark body,
 .dark #root-container {

@@ -6,6 +6,7 @@
 import type { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem } from '../types.ts';
 import { FRANCE_RAW_PLACES } from './francePlaces.ts';
 import { ITALIA_RAW_PLACES } from './italiaPlaces.ts';
+import { USER_PROVIDED_PLACES } from './userPlacesDataset.ts';
 
 export const INITIAL_VEHICLE_DIMENSIONS: VehicleDimensions = {
   modelName: 'Mio Camper',
@@ -347,7 +348,7 @@ function parseRawFrancePlace(index: number, lng: number, lat: number, rawLabel: 
     address: `${coreName}, Francia`,
     priceInfo,
     priceEuro,
-    rating: Number((4.0 + (hashIdx % 10) / 10).toFixed(1)),
+    rating: 0,
     facilities,
     imageUrl,
     source: 'open_data_francia',
@@ -435,7 +436,7 @@ function parseRawItaliaPlace(index: number, lng: number, lat: number, rawLabel: 
     address: `${coreName}, Italia`,
     priceInfo,
     priceEuro,
-    rating: Number((4.1 + (hashIdx % 10) / 10).toFixed(1)),
+    rating: 0,
     facilities,
     imageUrl,
     source: 'open_data_italia',
@@ -518,6 +519,21 @@ function processAllPlaces(): Place[] {
         existing.priceEuro = freshPlace.priceEuro;
       }
     } else {
+      resultList.push(freshPlace);
+    }
+  });
+
+  // 3. Process User Provided Places
+  USER_PROVIDED_PLACES.forEach((freshPlace) => {
+    let duplicateIndex = -1;
+    for (let i = 0; i < resultList.length; i++) {
+      const dist = calculateDistance(resultList[i].lat, resultList[i].lng, freshPlace.lat, freshPlace.lng);
+      if (dist < 1.0) {
+        duplicateIndex = i;
+        break;
+      }
+    }
+    if (duplicateIndex === -1) {
       resultList.push(freshPlace);
     }
   });

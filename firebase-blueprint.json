@@ -115,9 +115,35 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "Notification creation timestamp" }
       },
       "required": ["type", "reason", "author", "content", "timestamp"]
+    },
+    "OsmMapReport": {
+      "title": "OsmMapReport",
+      "description": "A user-submitted map modification or road obstacle report (underpass, height/width/weight limit, missing road data) to update OSM",
+      "type": "object",
+      "properties": {
+        "reportType": { "type": "string", "description": "Type: height_limit, width_limit, weight_limit, camper_ban, narrow_road, road_error, other" },
+        "reportTypeLabel": { "type": "string", "description": "Human-readable label of the obstacle" },
+        "value": { "type": "number", "description": "Numeric limit value (meters or tons)" },
+        "unit": { "type": "string", "description": "Unit of measurement: m or t" },
+        "lat": { "type": "number", "description": "Latitude coordinate" },
+        "lng": { "type": "number", "description": "Longitude coordinate" },
+        "address": { "type": "string", "description": "Nearby road or address" },
+        "description": { "type": "string", "description": "Detailed description or notes from the camper" },
+        "photoUrl": { "type": "string", "description": "Photo of the sign or obstacle (data URL or uploaded image)" },
+        "reporterEmail": { "type": "string", "description": "Email of reporting camper" },
+        "reporterName": { "type": "string", "description": "Name or nickname of reporting camper" },
+        "status": { "type": "string", "description": "Status: pending, verified_on_osm, rejected" },
+        "osmNodeOrWayUrl": { "type": "string", "description": "Optional OSM node/way link added by admin" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["reportType", "lat", "lng", "status", "createdAt"]
     }
   },
   "firestore": {
+    "osmMapReports/{reportId}": {
+      "schema": { "$ref": "#/entities/OsmMapReport" },
+      "description": "Collection of road obstacles, underpasses and limits reported by campers for OSM synchronization"
+    },
     "places/{placeId}": {
       "schema": { "$ref": "#/entities/Place" },
       "description": "Collection of camper stops and places"

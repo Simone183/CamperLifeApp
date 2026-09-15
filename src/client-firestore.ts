@@ -100,6 +100,33 @@ function fromFirestoreFields(fields: any): any {
   return obj;
 }
 
+function mapFirestoreOp(op: string): string {
+  switch (op) {
+    case "==":
+      return "EQUAL";
+    case "!=":
+      return "NOT_EQUAL";
+    case "<":
+      return "LESS_THAN";
+    case "<=":
+      return "LESS_THAN_OR_EQUAL";
+    case ">":
+      return "GREATER_THAN";
+    case ">=":
+      return "GREATER_THAN_OR_EQUAL";
+    case "array-contains":
+      return "ARRAY_CONTAINS";
+    case "array-contains-any":
+      return "ARRAY_CONTAINS_ANY";
+    case "in":
+      return "IN";
+    case "not-in":
+      return "NOT_IN";
+    default:
+      return op;
+  }
+}
+
 // --- SERVER-SIDE REST IMPLEMENTATION ---
 class ServerRESTFirestoreAdapter {
   private projectId: string;
@@ -138,7 +165,7 @@ class ServerRESTFirestoreAdapter {
     const filters = constraints.map(c => ({
       fieldFilter: {
         field: { fieldPath: c.field },
-        op: c.op === "==" ? "EQUAL" : c.op,
+        op: mapFirestoreOp(c.op),
         value: toFirestoreValue(c.value)
       }
     }));
@@ -178,6 +205,10 @@ class ServerRESTFirestoreAdapter {
     });
 
     if (!res.ok) {
+      if (res.status === 429) {
+        console.warn(`[Firestore] Daily quota reached for runQuery (${collectionPath}). Returning empty/fallback snapshot.`);
+        return [];
+      }
       const errText = await res.text();
       throw new Error(`REST Firestore runQuery failed: ${res.statusText} - ${errText}`);
     }
@@ -196,7 +227,7 @@ class ServerRESTFirestoreAdapter {
   async getDoc(docPath: string) {
     const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents/${docPath}?key=${this.apiKey}`;
     const res = await fetch(url);
-    if (res.status === 404) {
+    if (res.status === 404 || res.status === 429) {
       return new DocumentSnapshotWrapper(docPath.split("/").pop() || "", false, null);
     }
     if (!res.ok) {
@@ -385,21 +416,20 @@ class BrowserFirestoreAdapter {
 
   constructor(firebaseConfig: any, databaseId: string) {
     try {
-      if (getApps().length > 0) {
-        this.app = getApp();
-        this.db = getFirestore(this.app, databaseId);
+      this.app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+      const effectiveDbId = databaseId && databaseId !== "(default)" ? databaseId : undefined;
+      if (effectiveDbId) {
+        this.db = getFirestore(this.app, effectiveDbId);
       } else {
-        const appName = "client-" + Date.now();
-        this.app = initializeApp(firebaseConfig, appName);
-        this.db = initializeFirestore(this.app, { experimentalForceLongPolling: true }, databaseId);
+        this.db = getFirestore(this.app);
       }
     } catch (err) {
-      console.error("[BrowserFirestoreAdapter] Safe init failed, using default fallback:", err);
+      console.warn("[BrowserFirestoreAdapter] Standard init fallback:", err);
       try {
         this.app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-        this.db = getFirestore(this.app, databaseId);
+        this.db = getFirestore(this.app);
       } catch (innerErr) {
-        console.error("[BrowserFirestoreAdapter] Safe fallback failed:", innerErr);
+        console.error("[BrowserFirestoreAdapter] Init error:", innerErr);
       }
     }
   }

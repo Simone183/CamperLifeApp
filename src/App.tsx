@@ -111,6 +111,7 @@ import {
   MapPin,
   Database,
   Download,
+  Upload,
   Scale,
   Globe,
   Smartphone,
@@ -156,6 +157,7 @@ import { db } from "./lib/firebase";
 import firebaseConfig from "../firebase-applet-config.json";
 import { resolveMediaUrl } from "./utils/resolveMediaUrl";
 import { EXAMPLE_TRIP } from "./data/exampleTrip";
+import { RoadSignGraphic, OsmReportData } from "./components/OsmReportModal";
 const firestore = new ClientFirestoreAdapter(
   firebaseConfig,
   firebaseConfig.firestoreDatabaseId,
@@ -242,7 +244,9 @@ export default function App() {
           INITIAL_PLACES.map((p) => [p.id, p]),
         );
         savedList.forEach((savedPlace) => {
-          initialMap.set(savedPlace.id, savedPlace);
+          if (savedPlace.id && !savedPlace.id.startsWith("google-")) {
+            initialMap.set(savedPlace.id, savedPlace);
+          }
         });
         parsed = Array.from(initialMap.values());
       } catch (e) {
@@ -1392,14 +1396,20 @@ export default function App() {
     | "pending"
     | "all_places"
     | "osm"
+    | "osm_reports"
     | "feedback"
     | "community_itineraries"
     | "users"
     | "notifications"
     | "crash_reports"
     | "ai-discovery"
+    | "bulk-import"
     | "debug"
   >("pending");
+  const [osmReports, setOsmReports] = React.useState<OsmReportData[]>([]);
+  const [osmReportsLoading, setOsmReportsLoading] = React.useState(false);
+  const [selectedReportPhoto, setSelectedReportPhoto] = React.useState<string | null>(null);
+  const [osmReportFilter, setOsmReportFilter] = React.useState<"all" | "pending" | "verified" | "rejected">("all");
   const [feedbacks, setFeedbacks] = React.useState<any[]>([]);
   const [adminNotifications, setAdminNotifications] = React.useState<any[]>([]);
   const [adminNotificationsLoading, setAdminNotificationsLoading] = React.useState(false);
@@ -1434,6 +1444,27 @@ export default function App() {
   const [userProposalsLoading, setUserProposalsLoading] = React.useState(false);
   const [showUserProposalsModal, setShowUserProposalsModal] =
     React.useState(false);
+
+  // In-app Bulk Soste JSON Importer
+  const [bulkImportProgress, setBulkImportProgress] = React.useState<{
+    running: boolean;
+    currentBatch: number;
+    totalBatches: number;
+    imported: number;
+    total: number;
+    statusText: string;
+    error: string | null;
+    success: boolean;
+  }>({
+    running: false,
+    currentBatch: 0,
+    totalBatches: 0,
+    imported: 0,
+    total: 0,
+    statusText: "",
+    error: null,
+    success: false,
+  });
 
   // Custom confirmation and loading state for Admin actions to avoid native confirm() blocking/iframe issues
   const [adminPendingAction, setAdminPendingAction] = React.useState<{
@@ -1476,11 +1507,17 @@ export default function App() {
           window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: settings }));
         }
       } catch (err: any) {
-        const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
-        if (isOffline) {
-          console.warn("Settings loading from Firestore deferred (app is offline):", err?.message || err);
+        const isOfflineOrQuota = 
+          err?.message?.includes("offline") || 
+          err?.message?.includes("Quota") || 
+          err?.message?.includes("quota") ||
+          err?.message?.includes("RESOURCE_EXHAUSTED") ||
+          !navigator.onLine || 
+          isSimulatedOffline;
+        if (isOfflineOrQuota) {
+          console.warn("Settings loading from Firestore deferred (offline/quota fallback active):", err?.message || err);
         } else {
-          console.error("Error loading settings from Firestore:", err);
+          console.warn("Error loading settings from Firestore, using local defaults:", err);
         }
       }
     };
@@ -1494,7 +1531,10 @@ export default function App() {
         firestore
           .collection("users/" + currentUser.email + "/settings")
           .doc("general")
-          .set(settings, { merge: true });
+          .set(settings, { merge: true })
+          .catch((err: any) => {
+            console.warn("Settings save deferred (offline/quota fallback active):", err?.message || err);
+          });
       }
     };
 
@@ -1693,11 +1733,17 @@ export default function App() {
           }
         })
         .catch((err: any) => {
-          const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
-          if (isOffline) {
-            console.warn("Camper settings loading deferred (app is offline):", err?.message || err);
+          const isOfflineOrQuota = 
+            err?.message?.includes("offline") || 
+            err?.message?.includes("Quota") || 
+            err?.message?.includes("quota") ||
+            err?.message?.includes("RESOURCE_EXHAUSTED") ||
+            !navigator.onLine || 
+            isSimulatedOffline;
+          if (isOfflineOrQuota) {
+            console.warn("Camper settings loading deferred (offline/quota fallback active):", err?.message || err);
           } else {
-            console.error("Error loading camper settings from Firestore:", err);
+            console.warn("Error loading camper settings from Firestore, using local defaults:", err);
           }
         });
     }
@@ -1726,11 +1772,17 @@ export default function App() {
           );
         })
         .catch((err: any) => {
-          const isOffline = err?.message?.includes("offline") || !navigator.onLine || isSimulatedOffline;
-          if (isOffline) {
-            console.warn("Camper settings saving to Firestore deferred (app is offline):", err?.message || err);
+          const isOfflineOrQuota = 
+            err?.message?.includes("offline") || 
+            err?.message?.includes("Quota") || 
+            err?.message?.includes("quota") ||
+            err?.message?.includes("RESOURCE_EXHAUSTED") ||
+            !navigator.onLine || 
+            isSimulatedOffline;
+          if (isOfflineOrQuota) {
+            console.warn("Camper settings saving to Firestore deferred (offline/quota fallback active):", err?.message || err);
           } else {
-            console.error("Error saving camper settings to Firestore:", err);
+            console.warn("Camper settings save to Firestore failed, stored in localStorage:", err);
           }
         });
     } else {
@@ -2534,6 +2586,98 @@ export default function App() {
     }
   };
 
+  const fetchOsmReports = async () => {
+    setOsmReportsLoading(true);
+    const reportsList: OsmReportData[] = [];
+    if (firestore) {
+      try {
+        const snap = await firestore.collection("osmMapReports").get();
+        snap.forEach((docSnap) => {
+          reportsList.push({ id: docSnap.id, ...(docSnap.data() as any) });
+        });
+      } catch (err) {
+        console.warn("Error fetching osmMapReports from Firestore:", err);
+      }
+    }
+    try {
+      const local = JSON.parse(localStorage.getItem("osm_map_reports_cache") || "[]");
+      if (Array.isArray(local) && local.length > 0) {
+        local.forEach((locItem: any) => {
+          if (!reportsList.find((r) => r.id === locItem.id)) {
+            reportsList.push(locItem);
+          }
+        });
+      }
+    } catch {
+      // ignore
+    }
+    reportsList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    setOsmReports(reportsList);
+    setOsmReportsLoading(false);
+  };
+
+  const handleUpdateOsmReportStatus = async (
+    reportId: string,
+    newStatus: "verified_on_osm" | "rejected" | "pending"
+  ) => {
+    try {
+      if (firestore) {
+        await firestore.collection("osmMapReports").doc(reportId).update({
+          status: newStatus,
+          reviewedAt: new Date().toISOString(),
+          reviewedBy: currentUser?.email || "admin",
+        });
+      }
+      setOsmReports((prev) =>
+        prev.map((r) => (r.id === reportId ? { ...r, status: newStatus } : r))
+      );
+      try {
+        const local = JSON.parse(localStorage.getItem("osm_map_reports_cache") || "[]");
+        const updatedLocal = local.map((r: any) =>
+          r.id === reportId ? { ...r, status: newStatus } : r
+        );
+        localStorage.setItem("osm_map_reports_cache", JSON.stringify(updatedLocal));
+      } catch {}
+
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message:
+              newStatus === "verified_on_osm"
+                ? "✅ Segnalazione contrassegnata come registrata su OpenStreetMap!"
+                : "Segnalazione archiviata/rifiutata",
+          },
+        })
+      );
+    } catch (err) {
+      console.error("Error updating osm report status:", err);
+    }
+  };
+
+  const handleDeleteOsmReport = async (reportId: string) => {
+    if (!window.confirm("Vuoi davvero eliminare questa segnalazione?")) return;
+    try {
+      if (firestore) {
+        await firestore.collection("osmMapReports").doc(reportId).delete();
+      }
+      setOsmReports((prev) => prev.filter((r) => r.id !== reportId));
+      try {
+        const local = JSON.parse(localStorage.getItem("osm_map_reports_cache") || "[]");
+        const updatedLocal = local.filter((r: any) => r.id !== reportId);
+        localStorage.setItem("osm_map_reports_cache", JSON.stringify(updatedLocal));
+      } catch {}
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: "🗑️ Segnalazione eliminata",
+          },
+        })
+      );
+    } catch (err) {
+      console.error("Error deleting osm report:", err);
+    }
+  };
+
   const fetchAdminUsers = async () => {
     setAdminUsersLoading(true);
     setAdminUsersError(null);
@@ -3283,33 +3427,31 @@ out center;`;
       return;
     }
     try {
-      const isNativeOrExternal = typeof window !== "undefined" && (
-        typeof (window as any).Capacitor !== "undefined" ||
-        window.location.protocol.startsWith("capacitor") ||
-        window.location.protocol.startsWith("file:") ||
-        !window.location.hostname.includes("run.app")
-      );
-
       let approvedPlaces: any[] = [];
-      if (isNativeOrExternal && firestore) {
-        console.log("[App] Direct Firestore fetch for approved places...");
-        const snapshot = await firestore.collection("places").where("status", "==", "approved").get();
-        snapshot.forEach((doc: any) => {
-          approvedPlaces.push({ id: doc.id, ...doc.data() });
-        });
-      } else {
+      let fetchedSuccessfully = false;
+
+      try {
         const res = await fetch("/api/public-places");
-        console.log("[App] Fetch public places response status:", res.status);
         if (res.ok) {
           const contentType = res.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             approvedPlaces = await res.json();
-          } else {
-            console.warn(
-              "Refresh public places returned non-JSON:",
-              await res.text(),
-            );
+            fetchedSuccessfully = true;
           }
+        }
+      } catch (fetchErr) {
+        console.warn("[App] /api/public-places fetch attempt error:", fetchErr);
+      }
+
+      // If backend API wasn't available, fallback to direct Firestore if available
+      if (!fetchedSuccessfully && firestore) {
+        try {
+          const snapshot = await firestore.collection("places").where("status", "==", "approved").get();
+          snapshot.forEach((doc: any) => {
+            approvedPlaces.push({ id: doc.id, ...doc.data() });
+          });
+        } catch (fsErr) {
+          console.warn("[App] Direct Firestore fallback for places warning:", fsErr);
         }
       }
 
@@ -3326,7 +3468,7 @@ out center;`;
       }
     } catch (err: any) {
       if (err.message !== "Failed to fetch") {
-        console.error("Refresh public places error:", err);
+        console.warn("Refresh public places non-blocking notice:", err);
       }
     }
   };
@@ -7147,6 +7289,27 @@ out center;`;
                   <button
                     type="button"
                     onClick={() => {
+                      fetchOsmReports();
+                      setAdminSubTab("osm_reports");
+                    }}
+                    className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      adminSubTab === "osm_reports"
+                        ? "bg-rose-600 text-white shadow-xs"
+                        : "text-slate-600 hover:bg-rose-50 hover:text-rose-800"
+                    }`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>🚩 Segnalazioni Mappa ({osmReports.filter((r) => r.status !== "verified_on_osm" && r.status !== "rejected").length})</span>
+                    {osmReports.filter((r) => r.status === "pending" || !r.status).length > 0 && (
+                      <span className="bg-amber-400 text-slate-900 font-extrabold text-[9px] px-1.5 py-0.2 rounded-full select-none ml-1 animate-pulse">
+                        {osmReports.filter((r) => r.status === "pending" || !r.status).length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
                       fetchAdminUsers();
                       setAdminSubTab("users");
                     }}
@@ -7195,6 +7358,19 @@ out center;`;
                   >
                     <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
                     <span>🚨 Crash Logs ({crashReports.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAdminSubTab("bulk-import")}
+                    className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      adminSubTab === "bulk-import"
+                        ? "bg-emerald-700 text-white shadow-xs"
+                        : "text-slate-600 hover:bg-emerald-50 hover:text-emerald-900"
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>📥 Carica JSON 39k</span>
                   </button>
 
                   <button
@@ -7826,6 +8002,354 @@ out center;`;
                             )}
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sub Tab: Community OSM Map Reports */}
+                {adminSubTab === "osm_reports" && (
+                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 bg-slate-50/50">
+                    {/* Header Banner */}
+                    <div className="bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-orange-500/10 rounded-2xl p-4 border border-rose-200/80 text-xs leading-relaxed space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-extrabold text-sm text-rose-950 flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            Segnalazioni Mappa & Modifiche OpenStreetMap
+                          </h4>
+                          <p className="text-slate-600 text-[11px] mt-0.5">
+                            Verifica e registra su OpenStreetMap i limiti di sagoma (altezza, larghezza, peso), sottopassi bassi, strettoie e divieti camper inviati dalla community con coordinate GPS e foto.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={fetchOsmReports}
+                          disabled={osmReportsLoading}
+                          className="px-3 py-1.5 bg-white active:scale-95 border border-slate-200 text-slate-700 rounded-xl text-[11px] font-black hover:bg-slate-100 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all disabled:opacity-50 shrink-0"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${osmReportsLoading ? "animate-spin text-rose-600" : ""}`} />
+                          <span>{osmReportsLoading ? "Caricamento..." : "Ricarica"}</span>
+                        </button>
+                      </div>
+
+                      {/* Filter Chips */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-rose-200/50">
+                        <button
+                          type="button"
+                          onClick={() => setOsmReportFilter("all")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                            osmReportFilter === "all"
+                              ? "bg-rose-600 text-white shadow-xs"
+                              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                          }`}
+                        >
+                          Tutte ({osmReports.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOsmReportFilter("pending")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center gap-1 ${
+                            osmReportFilter === "pending"
+                              ? "bg-amber-500 text-white shadow-xs"
+                              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                          }`}
+                        >
+                          <span>⏳ In Attesa</span>
+                          <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.2 rounded-full font-extrabold">
+                            {osmReports.filter((r) => r.status === "pending" || !r.status).length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOsmReportFilter("verified")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center gap-1 ${
+                            osmReportFilter === "verified"
+                              ? "bg-emerald-600 text-white shadow-xs"
+                              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                          }`}
+                        >
+                          <span>✅ Registrate su OSM</span>
+                          <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.2 rounded-full font-extrabold">
+                            {osmReports.filter((r) => r.status === "verified_on_osm").length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOsmReportFilter("rejected")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer flex items-center gap-1 ${
+                            osmReportFilter === "rejected"
+                              ? "bg-slate-700 text-white shadow-xs"
+                              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                          }`}
+                        >
+                          <span>❌ Archiviate / Rifiutate</span>
+                          <span className="bg-slate-200 text-slate-700 text-[9px] px-1.5 py-0.2 rounded-full font-extrabold">
+                            {osmReports.filter((r) => r.status === "rejected").length}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Reports List */}
+                    {osmReports.filter((r) => {
+                      if (osmReportFilter === "pending") return r.status === "pending" || !r.status;
+                      if (osmReportFilter === "verified") return r.status === "verified_on_osm";
+                      if (osmReportFilter === "rejected") return r.status === "rejected";
+                      return true;
+                    }).length === 0 ? (
+                      <div className="text-center py-16 flex flex-col items-center justify-center space-y-3 bg-white rounded-2xl border border-slate-200/80 p-8 shadow-xs">
+                        <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xl shadow-xs">
+                          <CheckCircle className="w-7 h-7 text-emerald-600" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-slate-800 text-sm">
+                            Nessuna Segnalazione in questa vista
+                          </h4>
+                          <p className="text-xs text-slate-500 max-w-sm mt-1">
+                            {osmReportFilter === "pending"
+                              ? "Ottimo lavoro! Tutte le segnalazioni dei camperisti sono state revisionate e gestite."
+                              : "Non ci sono segnalazioni registrate con questo filtro."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4">
+                        {osmReports
+                          .filter((r) => {
+                            if (osmReportFilter === "pending") return r.status === "pending" || !r.status;
+                            if (osmReportFilter === "verified") return r.status === "verified_on_osm";
+                            if (osmReportFilter === "rejected") return r.status === "rejected";
+                            return true;
+                          })
+                          .map((report) => {
+                            const isPending = report.status === "pending" || !report.status;
+                            const isVerified = report.status === "verified_on_osm";
+                            const isRejected = report.status === "rejected";
+
+                            // Links for OSM editor and maps
+                            const osmEditUrl = `https://www.openstreetmap.org/edit?editor=id#map=19/${report.lat}/${report.lng}`;
+                            const osmViewUrl = `https://www.openstreetmap.org/#map=19/${report.lat}/${report.lng}`;
+                            const gmapsUrl = `https://www.google.com/maps?q=${report.lat},${report.lng}`;
+
+                            return (
+                              <div
+                                key={report.id || `${report.lat}-${report.lng}`}
+                                className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all space-y-3 relative overflow-hidden"
+                              >
+                                {/* Top Status Color Bar */}
+                                <div
+                                  className={`absolute top-0 left-0 right-0 h-1.5 ${
+                                    isVerified
+                                      ? "bg-emerald-500"
+                                      : isRejected
+                                      ? "bg-slate-300"
+                                      : "bg-amber-500"
+                                  }`}
+                                />
+
+                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 pt-1">
+                                  {/* Left: Road Sign Graphic & Title */}
+                                  <div className="flex items-start gap-3">
+                                    <div className="shrink-0 p-1 bg-slate-50 rounded-xl border border-slate-200 shadow-2xs">
+                                      <RoadSignGraphic
+                                        type={report.reportType}
+                                        value={report.value}
+                                        unit={report.unit}
+                                        size={54}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h5 className="font-black text-sm text-slate-800">
+                                          {report.reportTypeLabel}
+                                        </h5>
+                                        {report.value && (
+                                          <span className="bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-md text-xs font-black">
+                                            Valore: {report.value} {report.unit || "m"}
+                                          </span>
+                                        )}
+                                        {isVerified && (
+                                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
+                                            <Check className="w-3 h-3" /> Registrato su OSM
+                                          </span>
+                                        )}
+                                        {isPending && (
+                                          <span className="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
+                                            ⏳ Da Verificare
+                                          </span>
+                                        )}
+                                        {isRejected && (
+                                          <span className="bg-slate-100 text-slate-600 border border-slate-300 px-2 py-0.5 rounded-full text-[10px] font-black">
+                                            Archiviato / Rifiutato
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Location & Address */}
+                                      <div className="flex items-center gap-1 text-slate-600 text-xs">
+                                        <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                        <span className="font-medium">
+                                          {report.address || `${report.lat.toFixed(5)}, ${report.lng.toFixed(5)}`}
+                                        </span>
+                                      </div>
+
+                                      {/* Coordinates & Reporter */}
+                                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 font-mono pt-0.5">
+                                        <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-bold">
+                                          GPS: {report.lat.toFixed(6)}, {report.lng.toFixed(6)}
+                                        </span>
+                                        <span>
+                                          📅 {new Date(report.createdAt).toLocaleString("it-IT")}
+                                        </span>
+                                        {report.reporterName && (
+                                          <span className="text-slate-600 font-sans">
+                                            👤 {report.reporterName} {report.reporterEmail ? `(${report.reporterEmail})` : ""}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Attached Photo Thumbnail */}
+                                  {report.photoUrl && (
+                                    <div className="shrink-0 flex flex-col items-center gap-1">
+                                      <div
+                                        onClick={() => setSelectedReportPhoto(report.photoUrl || null)}
+                                        className="relative w-24 h-24 md:w-28 md:h-28 rounded-xl overflow-hidden border-2 border-slate-200 cursor-pointer group shadow-xs hover:border-rose-400 transition-all bg-slate-100"
+                                        title="Clicca per ingrandire la foto allegata"
+                                      >
+                                        <img
+                                          src={report.photoUrl}
+                                          alt="Foto segnalazione"
+                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                        />
+                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white font-bold text-[10px] gap-1">
+                                          <Eye className="w-3.5 h-3.5" />
+                                          <span>Zoom</span>
+                                        </div>
+                                      </div>
+                                      <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1">
+                                        <Camera className="w-3 h-3 text-slate-400" />
+                                        Foto Cartello
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Description from Reporter */}
+                                {report.description && (
+                                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 text-xs text-slate-700 leading-relaxed italic">
+                                    <span className="not-italic font-black text-slate-900 block text-[10.5px] uppercase tracking-wider mb-1">
+                                      Note del Camperista:
+                                    </span>
+                                    "{report.description}"
+                                  </div>
+                                )}
+
+                                {/* Bottom Bar: OpenStreetMap Tools & Admin Actions */}
+                                <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                                  {/* OSM & Maps Action Links */}
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <a
+                                      href={osmEditUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                                      title="Apri l'editor iD di OpenStreetMap alle coordinate esatte per inserire il tag maxheight o divieto"
+                                    >
+                                      <Globe className="w-3.5 h-3.5" />
+                                      <span>Registra su OSM (iD Editor)</span>
+                                      <ExternalLink className="w-3 h-3 opacity-70" />
+                                    </a>
+
+                                    <a
+                                      href={osmViewUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                      title="Visualizza le coordinate su OpenStreetMap"
+                                    >
+                                      <span>Vedi su OSM</span>
+                                      <ExternalLink className="w-3 h-3 text-slate-400" />
+                                    </a>
+
+                                    <a
+                                      href={gmapsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                      title="Apri Street View su Google Maps per verificare la segnaletica"
+                                    >
+                                      <span>Street View / Maps</span>
+                                      <ExternalLink className="w-3 h-3 text-slate-400" />
+                                    </a>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(`${report.lat}, ${report.lng}`);
+                                        window.dispatchEvent(
+                                          new CustomEvent("show-toast", {
+                                            detail: { message: "📋 Coordinate GPS copiate negli appunti!" },
+                                          })
+                                        );
+                                      }}
+                                      className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                      title="Copia Coordinate GPS"
+                                    >
+                                      <Copy className="w-3 h-3 text-slate-400" />
+                                      <span>Copia GPS</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Admin Status Controls */}
+                                  <div className="flex items-center gap-1.5 shrink-0 justify-end">
+                                    {!isVerified ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOsmReportStatus(report.id!, "verified_on_osm")}
+                                        className="px-3 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-xs transition-all cursor-pointer"
+                                        title="Contrassegna come confermata e registrata su OSM"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>Conferma su OSM</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOsmReportStatus(report.id!, "pending")}
+                                        className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                        title="Riporta in stato di verifica"
+                                      >
+                                        Riporta In Attesa
+                                      </button>
+                                    )}
+
+                                    {!isRejected ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOsmReportStatus(report.id!, "rejected")}
+                                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                        title="Archivia o contrassegna come non rilevante"
+                                      >
+                                        Archivia
+                                      </button>
+                                    ) : null}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteOsmReport(report.id!)}
+                                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                                      title="Elimina definitivamente segnalazione"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                       </div>
                     )}
                   </div>
@@ -8736,6 +9260,189 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                   </div>
                 )}
 
+                {/* Sub Tab: Bulk JSON Importer */}
+                {adminSubTab === "bulk-import" && (
+                  <div className="p-5 flex-1 overflow-y-auto space-y-5 shrink min-h-0 bg-emerald-50/20 font-sans">
+                    <div className="bg-white p-6 rounded-2xl border border-emerald-150 shadow-xs space-y-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h4 className="font-extrabold text-emerald-950 text-base flex items-center gap-2">
+                            <Upload className="w-5 h-5 text-emerald-700 shrink-0" />
+                            Caricamento Diretto File Soste JSON (39.000+ Soste)
+                          </h4>
+                          <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                            Carica direttamente dal tuo computer/dispositivo il file <strong>soste_pronte_firestore.json</strong>. L'app invierà le soste al catalogo interno a blocchi progressivi con barra di avanzamento in tempo reale, senza bisogno di usare Cloud Shell o terminali esterni.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-amber-50/80 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                        <p className="font-bold flex items-center gap-1.5">
+                          💡 Istruzioni rapide:
+                        </p>
+                        <ul className="list-disc pl-5 space-y-1 text-[11px] text-amber-950">
+                          <li>Fai clic su <strong>"Seleziona File JSON"</strong> e scegli il file <code>soste_pronte_firestore.json</code> dal tuo PC.</li>
+                          <li>L'elaborazione viene eseguita in locale nel browser ed inviata al server a pacchetti da 1.000 elementi.</li>
+                          <li>Al termine, tutte le 39.000 soste saranno immediatamente consultabili e ricercabili nella mappa.</li>
+                        </ul>
+                      </div>
+
+                      {/* File selector zone */}
+                      <div className="border-2 border-dashed border-emerald-300 rounded-2xl p-6 text-center bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
+                        <input
+                          type="file"
+                          id="bulk-json-file-input"
+                          accept=".json,application/json"
+                          disabled={bulkImportProgress.running}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+
+                            setBulkImportProgress({
+                              running: true,
+                              currentBatch: 0,
+                              totalBatches: 0,
+                              imported: 0,
+                              total: 0,
+                              statusText: `Lettura e analisi di ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`,
+                              error: null,
+                              success: false,
+                            });
+
+                            try {
+                              const text = await file.text();
+                              let cleanText = text;
+                              if (cleanText.charCodeAt(0) === 0xfeff) {
+                                cleanText = cleanText.slice(1);
+                              }
+                              const parsed = JSON.parse(cleanText);
+                              const items: any[] = Array.isArray(parsed)
+                                ? parsed
+                                : (parsed.places || parsed.soste || parsed.items || Object.values(parsed));
+
+                              if (!Array.isArray(items) || items.length === 0) {
+                                throw new Error("Il file JSON non contiene un array valido di soste.");
+                              }
+
+                              const BATCH_SIZE = 1000;
+                              const totalBatches = Math.ceil(items.length / BATCH_SIZE);
+                              let totalImported = 0;
+
+                              for (let i = 0; i < items.length; i += BATCH_SIZE) {
+                                const batch = items.slice(i, i + BATCH_SIZE);
+                                const batchIdx = Math.floor(i / BATCH_SIZE) + 1;
+
+                                setBulkImportProgress(prev => ({
+                                  ...prev,
+                                  currentBatch: batchIdx,
+                                  totalBatches,
+                                  total: items.length,
+                                  imported: totalImported,
+                                  statusText: `Invio blocco ${batchIdx} di ${totalBatches} (${batch.length} soste)...`,
+                                }));
+
+                                const res = await fetch("/api/admin/import-soste-bulk", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(batch),
+                                });
+
+                                if (!res.ok) {
+                                  const errTxt = await res.text();
+                                  throw new Error(`Errore server HTTP ${res.status}: ${errTxt.slice(0, 100)}`);
+                                }
+
+                                const data = await res.json();
+                                totalImported += (data.newAdded || batch.length);
+
+                                setBulkImportProgress(prev => ({
+                                  ...prev,
+                                  currentBatch: batchIdx,
+                                  totalBatches,
+                                  total: items.length,
+                                  imported: totalImported,
+                                  statusText: `Blocco ${batchIdx}/${totalBatches} registrato con successo. Totale catalogo: ${data.totalInCatalog}`,
+                                }));
+                              }
+
+                              setBulkImportProgress(prev => ({
+                                ...prev,
+                                running: false,
+                                success: true,
+                                statusText: `🎉 Importazione completata con successo! ${items.length} soste caricate e attive nel catalogo.`,
+                              }));
+
+                              // Trigger refresh in background
+                              window.dispatchEvent(new CustomEvent("refresh-places"));
+                            } catch (err: any) {
+                              console.error("Bulk import failed:", err);
+                              setBulkImportProgress(prev => ({
+                                ...prev,
+                                running: false,
+                                error: err?.message || "Errore durante l'importazione del file.",
+                              }));
+                            }
+                          }}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="bulk-json-file-input"
+                          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white shadow-md transition-all ${
+                            bulkImportProgress.running
+                              ? "bg-slate-400 cursor-not-allowed"
+                              : "bg-emerald-700 hover:bg-emerald-800 active:scale-95 cursor-pointer"
+                          }`}
+                        >
+                          <Upload className="w-4 h-4" />
+                          <span>{bulkImportProgress.running ? "Importazione in corso..." : "📁 Seleziona soste_pronte_firestore.json"}</span>
+                        </label>
+                        <p className="text-[11px] text-slate-500 mt-2 font-medium">
+                          Supporta file JSON grandi (fino a 100 MB)
+                        </p>
+                      </div>
+
+                      {/* Progress bar and details */}
+                      {(bulkImportProgress.running || bulkImportProgress.success || bulkImportProgress.error) && (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                            <span>{bulkImportProgress.statusText}</span>
+                            {bulkImportProgress.totalBatches > 0 && (
+                              <span className="font-mono text-emerald-800">
+                                {Math.round((bulkImportProgress.currentBatch / bulkImportProgress.totalBatches) * 100)}%
+                              </span>
+                            )}
+                          </div>
+
+                          {bulkImportProgress.totalBatches > 0 && (
+                            <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                              <div
+                                className="bg-emerald-600 h-3 rounded-full transition-all duration-300 ease-out"
+                                style={{
+                                  width: `${Math.min(100, (bulkImportProgress.currentBatch / bulkImportProgress.totalBatches) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {bulkImportProgress.success && (
+                            <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-950 flex items-center gap-2">
+                              <CheckCircle className="w-5 h-5 text-emerald-700 shrink-0" />
+                              <span>Tutte le 39.000 soste sono ora caricate e visibili nella mappa e nella ricerca!</span>
+                            </div>
+                          )}
+
+                          {bulkImportProgress.error && (
+                            <div className="p-3 bg-rose-105 border border-rose-300 rounded-lg text-xs font-bold text-rose-900 flex items-center gap-2">
+                              <AlertTriangle className="w-5 h-5 text-rose-700 shrink-0" />
+                              <span>{bulkImportProgress.error}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {adminSubTab === "debug" && (
                   <div className="p-4 flex-1 flex flex-col min-h-0 bg-slate-50 overflow-hidden">
                     <DebugPanelContent />
@@ -9308,6 +10015,53 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
           }
         }}
       />
+
+      {/* Lightbox Modal per Ingrandimento Foto Segnalazione OSM */}
+      {selectedReportPhoto && (
+        <div
+          className="fixed inset-0 z-[11000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setSelectedReportPhoto(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[92vh] bg-slate-900 border border-white/20 rounded-2xl overflow-hidden p-2 shadow-2xl flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-2 px-2 text-white">
+              <span className="text-xs font-bold flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-rose-400" />
+                Dettaglio Foto Segnalazione Cartello / Limite
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedReportPhoto(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+                title="Chiudi visualizzazione"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[80vh] flex items-center justify-center rounded-xl bg-black">
+              <img
+                src={selectedReportPhoto}
+                alt="Foto Segnalazione OSM Cartello"
+                className="max-w-full max-h-[78vh] object-contain rounded-lg"
+              />
+            </div>
+            <div className="w-full flex items-center justify-between pt-2 px-2 text-slate-400 text-[11px]">
+              <span>Clicca fuori o sulla 'X' per chiudere</span>
+              <a
+                href={selectedReportPhoto}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sky-400 hover:underline flex items-center gap-1"
+              >
+                <span>Apri a piena risoluzione</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </FamilyCrewProvider>
   );

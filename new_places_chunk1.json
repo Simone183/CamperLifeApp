@@ -1,0 +1,1856 @@
+[
+    {
+        "id": "320726",
+        "titolo": "Armeno,Via Mottarone",
+        "tipo": "PN",
+        "lat": 45.87023,
+        "lng": 8.457164,
+        "voto": 4.73,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "609093",
+        "titolo": "Omegna, 16 Via XI Settembre",
+        "tipo": "P",
+        "lat": 45.88051,
+        "lng": 8.412845,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "541486",
+        "titolo": "Nebbiuno ,Case Sparse Circonvallazione",
+        "tipo": "P",
+        "lat": 45.81436,
+        "lng": 8.516543,
+        "voto": 4.4,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "381299",
+        "titolo": "Nebbiuno, 14 Via Provinciale Alto Vergante",
+        "tipo": "P",
+        "lat": 45.80334,
+        "lng": 8.519448,
+        "voto": 1.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "376712",
+        "titolo": "Omegna,",
+        "tipo": "PN",
+        "lat": 45.875851,
+        "lng": 8.455924,
+        "voto": 4.58,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "48240",
+        "titolo": "Arona,Unnamed Road",
+        "tipo": "P",
+        "lat": 45.880199,
+        "lng": 8.45052,
+        "voto": 4.62,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "303138",
+        "titolo": "Biandronno, 23 Via Vittorio Veneto",
+        "tipo": "P",
+        "lat": 45.801018,
+        "lng": 8.704282,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "27040",
+        "titolo": "Ternate, Via Roma, 83",
+        "tipo": "ACC_P",
+        "lat": 45.7794,
+        "lng": 8.69721,
+        "voto": 3.22,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "115783",
+        "titolo": "Varano Borghi, 31 Viale Vittorio Veneto",
+        "tipo": "DS",
+        "lat": 45.779279,
+        "lng": 8.7026,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "668930",
+        "titolo": "Via Guglielmo Marconi, Biandronno",
+        "tipo": "DS",
+        "lat": 45.820068,
+        "lng": 8.715377,
+        "voto": 4.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "266173",
+        "titolo": "Cazzago Brabbia, 16 Via Pascoli",
+        "tipo": "P",
+        "lat": 45.796348,
+        "lng": 8.732484,
+        "voto": 1.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "138613",
+        "titolo": "Comabbio ,497 Via Lago di Monate",
+        "tipo": "C",
+        "lat": 45.783242,
+        "lng": 8.677483,
+        "voto": 4.13,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "591425",
+        "titolo": "Varano Borghi, 1 Via Fratelli Cervi",
+        "tipo": "P",
+        "lat": 45.773617,
+        "lng": 8.700662,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "242540",
+        "titolo": "Inarzo, 1 Piazza Concilio E. V.",
+        "tipo": "P",
+        "lat": 45.785993,
+        "lng": 8.732932,
+        "voto": 3.25,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "76027",
+        "titolo": "Biandronno, 44 Via Giuseppe Mazzini",
+        "tipo": "P",
+        "lat": 45.831484,
+        "lng": 8.705573,
+        "voto": 3.21,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "438656",
+        "titolo": "Bodio Lomnago, 13 Via Scerèe",
+        "tipo": "DS",
+        "lat": 45.793128,
+        "lng": 8.745754,
+        "voto": 2.5,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "510810",
+        "titolo": "Bodio Lomnago, 9 Via delle Favie",
+        "tipo": "DS",
+        "lat": 45.79162,
+        "lng": 8.745316,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "687028",
+        "titolo": "Via della Cava, Casale Litta",
+        "tipo": "P",
+        "lat": 45.770338,
+        "lng": 8.720715,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "618112",
+        "titolo": "Via Primo Maggio, Casale Litta",
+        "tipo": "P",
+        "lat": 45.77848,
+        "lng": 8.73589,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "48157",
+        "titolo": "Bodio, 34 Via Scerèe",
+        "tipo": "P",
+        "lat": 45.793499,
+        "lng": 8.74725,
+        "voto": 4.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "479619",
+        "titolo": "Comabbio ,250 Via Sotto Campagna",
+        "tipo": "P",
+        "lat": 45.768661,
+        "lng": 8.6816,
+        "voto": 4.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "277494",
+        "titolo": "Bodio Lomnago, 1 Via dei Canneti",
+        "tipo": "P",
+        "lat": 45.794163,
+        "lng": 8.74921,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "372102",
+        "titolo": "Comabbio, 674 Via Labiena",
+        "tipo": "PJ",
+        "lat": 45.76768,
+        "lng": 8.67713,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "606699",
+        "titolo": "Bodio Lomnago, 292 Via Acquadro",
+        "tipo": "P",
+        "lat": 45.79354,
+        "lng": 8.755004,
+        "voto": 4.36,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "354282",
+        "titolo": "Varano Borghi, 12 Via dei Martiri",
+        "tipo": "C",
+        "lat": 45.76085,
+        "lng": 8.699903,
+        "voto": 3.1,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": false }
+    },
+    {
+        "id": "301367",
+        "titolo": "Gavirate, 16 Via al Lido",
+        "tipo": "P",
+        "lat": 45.83899,
+        "lng": 8.715151,
+        "voto": 2.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "13314",
+        "titolo": "Gavirate, 3 Via Lungolago Isola Virginia",
+        "tipo": "ACC_P",
+        "lat": 45.8395,
+        "lng": 8.72046,
+        "voto": 3.6,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "493147",
+        "titolo": "Bodio Lomnago, 252 Via Giacomo Matteotti",
+        "tipo": "PJ",
+        "lat": 45.78897,
+        "lng": 8.758279,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "675524",
+        "titolo": "Via Enrico Fermi, Cadrezzate",
+        "tipo": "P",
+        "lat": 45.798552,
+        "lng": 8.634948,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "538744",
+        "titolo": "Corgeno, 14 Via Vigna",
+        "tipo": "P",
+        "lat": 45.75206,
+        "lng": 8.690487,
+        "voto": 3.53,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "312725",
+        "titolo": "Lombardy,28 Via Ines Franzetti",
+        "tipo": "P",
+        "lat": 45.75149,
+        "lng": 8.688669,
+        "voto": 4.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "311995",
+        "titolo": "Corgeno, 31B Via Lago",
+        "tipo": "P",
+        "lat": 45.75095,
+        "lng": 8.688745,
+        "voto": 3.95,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": true, "wifi": false }
+    },
+    {
+        "id": "504616",
+        "titolo": "Galliate Lombardo, 8 Via Belvedere",
+        "tipo": "DS",
+        "lat": 45.782238,
+        "lng": 8.770372,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "421985",
+        "titolo": "Corgeno, 9 Via Sant'Agnese",
+        "tipo": "PJ",
+        "lat": 45.74797,
+        "lng": 8.687321,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "349989",
+        "titolo": "Vergiate ,Via Lombardia",
+        "tipo": "PJ",
+        "lat": 45.743891,
+        "lng": 8.686772,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "446162",
+        "titolo": "Varese, 12 Via dei Canottieri",
+        "tipo": "PJ",
+        "lat": 45.802851,
+        "lng": 8.783046,
+        "voto": 2.67,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "570745",
+        "titolo": "Varese, 1 Piazzale Roma",
+        "tipo": "ACC_P",
+        "lat": 45.80336,
+        "lng": 8.783662,
+        "voto": 3.93,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "53302",
+        "titolo": "Ispra, 1085 Via Giosuè Carducci",
+        "tipo": "C",
+        "lat": 45.8265,
+        "lng": 8.62513,
+        "voto": 3.34,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": false }
+    },
+    {
+        "id": "333815",
+        "titolo": "Cocquio-Trevisago,60 Via Milano",
+        "tipo": "PSS",
+        "lat": 45.85923,
+        "lng": 8.690468,
+        "voto": 3.83,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": true }
+    },
+    {
+        "id": "611937",
+        "titolo": "Taino, 1 Via Valle del Sole",
+        "tipo": "P",
+        "lat": 45.764029,
+        "lng": 8.630344,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "582761",
+        "titolo": "Ispra, 45A Via Calabria",
+        "tipo": "DS",
+        "lat": 45.81274,
+        "lng": 8.615129,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "95021",
+        "titolo": "Ispra, 124 Via Milano",
+        "tipo": "P",
+        "lat": 45.811091,
+        "lng": 8.609529,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "344194",
+        "titolo": "Ispra, 327 Via Luigi Cadorna",
+        "tipo": "P",
+        "lat": 45.804404,
+        "lng": 8.606441,
+        "voto": 4.24,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "548151",
+        "titolo": "Ispra, 297 Via Valcanale",
+        "tipo": "P",
+        "lat": 45.82407,
+        "lng": 8.612481,
+        "voto": 3.88,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "698068",
+        "titolo": "Piazzale Rapazzini, Ispra",
+        "tipo": "P",
+        "lat": 45.812694,
+        "lng": 8.607485,
+        "voto": 4.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "559890",
+        "titolo": "Mornago, 18 Via Stazione",
+        "tipo": "DS",
+        "lat": 45.745132,
+        "lng": 8.752242,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "95002",
+        "titolo": "Ispra, 58 Piazzale Cesare Rapazzini",
+        "tipo": "PJ",
+        "lat": 45.813608,
+        "lng": 8.607311,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "551379",
+        "titolo": "Besozzo ,35 Via Lago",
+        "tipo": "P",
+        "lat": 45.83929,
+        "lng": 8.623782,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "716884",
+        "titolo": "Buguggiate,Via Giuseppe Verdi 9",
+        "tipo": "P",
+        "lat": 45.791482,
+        "lng": 8.79523,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "430948",
+        "titolo": "Besozzo ,Via Lago",
+        "tipo": "P",
+        "lat": 45.84071,
+        "lng": 8.623753,
+        "voto": 3.6,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "571286",
+        "titolo": "Luvinate, 20 Via al Poggio",
+        "tipo": "P",
+        "lat": 45.84413,
+        "lng": 8.773533,
+        "voto": 2.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "212285",
+        "titolo": "Azzate, 13 Piazza Antonio Ghiringhelli",
+        "tipo": "PJ",
+        "lat": 45.78136,
+        "lng": 8.79469,
+        "voto": 2.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "442980",
+        "titolo": "Monvalle, 16 Strada Provinciale 32 delle Due Pievi",
+        "tipo": "PJ",
+        "lat": 45.852433,
+        "lng": 8.635601,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "574741",
+        "titolo": "Varese ,45 km 9+600 Lungolago di Capolago",
+        "tipo": "DS",
+        "lat": 45.7989,
+        "lng": 8.801147,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "414855",
+        "titolo": "Azzate, 18 Via San Giorgio",
+        "tipo": "P",
+        "lat": 45.765746,
+        "lng": 8.790373,
+        "voto": 4.19,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "663021",
+        "titolo": "Via De Maddalena, Cocquio Trevisago",
+        "tipo": "P",
+        "lat": 45.871875,
+        "lng": 8.692053,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "395190",
+        "titolo": "Brunello ,12 Via Chiesa",
+        "tipo": "P",
+        "lat": 45.766902,
+        "lng": 8.793178,
+        "voto": 4.2,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "61969",
+        "titolo": "Monvalle, 92 Via Montenero",
+        "tipo": "C",
+        "lat": 45.847301,
+        "lng": 8.62023,
+        "voto": 3.46,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": false }
+    },
+    {
+        "id": "648379",
+        "titolo": "Via alla Piana, Sesto Calende",
+        "tipo": "PJ",
+        "lat": 45.739621,
+        "lng": 8.640999,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "538140",
+        "titolo": "Monvalle, 30 Via delle Piane",
+        "tipo": "P",
+        "lat": 45.84814,
+        "lng": 8.620153,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "336185",
+        "titolo": "Monvalle,Unnamed Road",
+        "tipo": "PJ",
+        "lat": 45.851148,
+        "lng": 8.619548,
+        "voto": 3.69,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": true, "wifi": false }
+    },
+    {
+        "id": "328725",
+        "titolo": "Gemonio, 18 Via Clivio",
+        "tipo": "P",
+        "lat": 45.873803,
+        "lng": 8.673847,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "464843",
+        "titolo": "Varese, 101 Via Aurelio Saffi",
+        "tipo": "DS",
+        "lat": 45.83713,
+        "lng": 8.79571,
+        "voto": 1.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "467747",
+        "titolo": "Varese,Via Francesco Daverio",
+        "tipo": "PJ",
+        "lat": 45.81525,
+        "lng": 8.807703,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "312976",
+        "titolo": "Varese,Via Case Nuove",
+        "tipo": "P",
+        "lat": 45.841276,
+        "lng": 8.792626,
+        "voto": 3.6,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "204283",
+        "titolo": "Ranco, 27 Via Quassa",
+        "tipo": "ACC_PR",
+        "lat": 45.794171,
+        "lng": 8.58981,
+        "voto": 4.69,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "187397",
+        "titolo": "Varese,",
+        "tipo": "P",
+        "lat": 45.832954,
+        "lng": 8.800105,
+        "voto": 4.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "15375",
+        "titolo": "Ranco,2 Via Cascina Boschi",
+        "tipo": "PJ",
+        "lat": 45.794308,
+        "lng": 8.588643,
+        "voto": 3.7,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "574662",
+        "titolo": "Varese,Via Nicostrato Castellini",
+        "tipo": "P",
+        "lat": 45.81308,
+        "lng": 8.812327,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "408096",
+        "titolo": "Varese, 12 Via Pista Vecchia",
+        "tipo": "P",
+        "lat": 45.836967,
+        "lng": 8.800931,
+        "voto": 3.75,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "586303",
+        "titolo": "Angera, 29 Via Caduti Angeresi",
+        "tipo": "PJ",
+        "lat": 45.774908,
+        "lng": 8.591274,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "434789",
+        "titolo": "Angera, 46 Via Campaccino",
+        "tipo": "DS",
+        "lat": 45.7691,
+        "lng": 8.593405,
+        "voto": 4.09,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "284268",
+        "titolo": "Arolo, 17 Via Al Porto",
+        "tipo": "P",
+        "lat": 45.85568,
+        "lng": 8.611115,
+        "voto": 3.6,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "417413",
+        "titolo": "Varese, 37 Viale Sant'Antonio",
+        "tipo": "P",
+        "lat": 45.814347,
+        "lng": 8.817798,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "608419",
+        "titolo": "Vergiate, 52 Via P. Treves",
+        "tipo": "P",
+        "lat": 45.71651,
+        "lng": 8.689711,
+        "voto": 1.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "63748",
+        "titolo": "Angera, 18 Via Arena",
+        "tipo": "P",
+        "lat": 45.773201,
+        "lng": 8.58597,
+        "voto": 3.25,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "171132",
+        "titolo": "Sesto Calende,1 Via Liutardo dei Conti",
+        "tipo": "P",
+        "lat": 45.730328,
+        "lng": 8.63202,
+        "voto": 3.67,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "159964",
+        "titolo": "Orino, 30 Via San Lorenzo",
+        "tipo": "P",
+        "lat": 45.883843,
+        "lng": 8.718916,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "227426",
+        "titolo": "Mornago,62 Via Goffredo Mameli",
+        "tipo": "PJ",
+        "lat": 45.72184,
+        "lng": 8.747998,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "523107",
+        "titolo": "Arolo, 21 Via San Carlo",
+        "tipo": "P",
+        "lat": 45.86176,
+        "lng": 8.611562,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "56827",
+        "titolo": "Angera ,15 Via Soldani",
+        "tipo": "P",
+        "lat": 45.771883,
+        "lng": 8.580966,
+        "voto": 3.41,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "614466",
+        "titolo": "Via Campo dei Fiori, Varese",
+        "tipo": "P",
+        "lat": 45.862512,
+        "lng": 8.788951,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "153444",
+        "titolo": "Lisanza, 111 Via Angera",
+        "tipo": "C",
+        "lat": 45.748229,
+        "lng": 8.595618,
+        "voto": 3.67,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": false }
+    },
+    {
+        "id": "643574",
+        "titolo": "Via Angera, Sesto Calende",
+        "tipo": "C",
+        "lat": 45.730023,
+        "lng": 8.619951,
+        "voto": 2.1,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "554962",
+        "titolo": "Angera,99 Via Bruschera",
+        "tipo": "C",
+        "lat": 45.76166,
+        "lng": 8.583591,
+        "voto": 3.5,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "466179",
+        "titolo": "Angera, 2 Piazzale Alessandro Volta",
+        "tipo": "DS",
+        "lat": 45.77158,
+        "lng": 8.577419,
+        "voto": 2.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "116313",
+        "titolo": "Varese, 4 Via Paolo Veronese",
+        "tipo": "P",
+        "lat": 45.827632,
+        "lng": 8.823091,
+        "voto": 3.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "333051",
+        "titolo": "Angera,Via Bruschera, 99",
+        "tipo": "C",
+        "lat": 45.75778,
+        "lng": 8.585463,
+        "voto": 3.27,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "31179",
+        "titolo": "Varese,Piazzale Pogliaghi Lodovico",
+        "tipo": "PJ",
+        "lat": 45.8638,
+        "lng": 8.79184,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "120230",
+        "titolo": "Angera, 9 Viale Ungheria",
+        "tipo": "P",
+        "lat": 45.771077,
+        "lng": 8.576972,
+        "voto": 4.24,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "584238",
+        "titolo": "Varese,Via Mulini Grassi",
+        "tipo": "P",
+        "lat": 45.843046,
+        "lng": 8.814455,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "471514",
+        "titolo": "Castelletto sopra Ticino, 36 Via Armando Diaz",
+        "tipo": "P",
+        "lat": 45.719906,
+        "lng": 8.639088,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "429026",
+        "titolo": "Sangiano ,Via Monte Nero",
+        "tipo": "PN",
+        "lat": 45.87962,
+        "lng": 8.637179,
+        "voto": 4.27,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "286710",
+        "titolo": "Lisanza, 5 Via Crocera",
+        "tipo": "PJ",
+        "lat": 45.740712,
+        "lng": 8.600793,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "410518",
+        "titolo": "Ranco,SP4",
+        "tipo": "PJ",
+        "lat": 45.79741,
+        "lng": 8.568642,
+        "voto": 4.75,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "366210",
+        "titolo": "Varese, 9 Via Andrea Appiani",
+        "tipo": "PJ",
+        "lat": 45.833151,
+        "lng": 8.82466,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "461956",
+        "titolo": "Angera, 2 Via Rocca Castello",
+        "tipo": "PJ",
+        "lat": 45.774848,
+        "lng": 8.570994,
+        "voto": 3.67,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "32220",
+        "titolo": "Golasecca,26 Strada Provinciale 27",
+        "tipo": "C",
+        "lat": 45.7118,
+        "lng": 8.65592,
+        "voto": 3.28,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "438344",
+        "titolo": "Varese, 24 Via Isonzo",
+        "tipo": "PJ",
+        "lat": 45.829833,
+        "lng": 8.82794,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "309504",
+        "titolo": "Lisanza, 9 Via Al Lago",
+        "tipo": "P",
+        "lat": 45.73907,
+        "lng": 8.597105,
+        "voto": 3.97,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "161628",
+        "titolo": "Castelletto sopra Ticino, 1 Via Valle Nord",
+        "tipo": "P",
+        "lat": 45.715329,
+        "lng": 8.640873,
+        "voto": 1.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "197981",
+        "titolo": "Sangiano ,Via Monte Nero",
+        "tipo": "PN",
+        "lat": 45.882257,
+        "lng": 8.633509,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "50398",
+        "titolo": "Sesto Calende,36 Via Ferriera",
+        "tipo": "PJ",
+        "lat": 45.727901,
+        "lng": 8.6107,
+        "voto": 3.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "185959",
+        "titolo": "Angera, 5 Viale Pietro Martire",
+        "tipo": "P",
+        "lat": 45.771251,
+        "lng": 8.569188,
+        "voto": 2.92,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "577706",
+        "titolo": "Angera, 2 Piazzale della Vittoria",
+        "tipo": "DS",
+        "lat": 45.77075,
+        "lng": 8.569046,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "466679",
+        "titolo": "Golasecca,79 Viale Europa",
+        "tipo": "P",
+        "lat": 45.70871,
+        "lng": 8.657317,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "202859",
+        "titolo": "Gironico ,Via del Pascolo",
+        "tipo": "PN",
+        "lat": 45.798332,
+        "lng": 8.996438,
+        "voto": 4.1,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "549404",
+        "titolo": "Parè, 4a Via Pisqurei",
+        "tipo": "DS",
+        "lat": 45.810035,
+        "lng": 9.011602,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "704758",
+        "titolo": "Via Pisqurei, Colverde",
+        "tipo": "P",
+        "lat": 45.810127,
+        "lng": 9.01401,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "529589",
+        "titolo": "Parè, 1 Via San Giovanni Battista",
+        "tipo": "P",
+        "lat": 45.812021,
+        "lng": 9.013839,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "160001",
+        "titolo": "Camnago-boscone, 17 Strada Provinciale 45",
+        "tipo": "P",
+        "lat": 45.805262,
+        "lng": 8.976641,
+        "voto": 3.75,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "572664",
+        "titolo": "Colverde,289 Via alla Guasta",
+        "tipo": "PJ",
+        "lat": 45.81876,
+        "lng": 8.99495,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "715739",
+        "titolo": "Viale rimembranze, Lurate Caccivio",
+        "tipo": "P",
+        "lat": 45.777095,
+        "lng": 9.00266,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "34004",
+        "titolo": "Villa Guardia,Via Monte Grappa",
+        "tipo": "P",
+        "lat": 45.7808,
+        "lng": 9.02198,
+        "voto": 4.15,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "646845",
+        "titolo": "Vicolo Primo Maggio, San Fermo della Battaglia",
+        "tipo": "P",
+        "lat": 45.8117,
+        "lng": 9.034216,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "226661",
+        "titolo": "Villa Guardia, 4 Via Vittorio Veneto",
+        "tipo": "PJ",
+        "lat": 45.775033,
+        "lng": 9.023091,
+        "voto": 2.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "554101",
+        "titolo": "Olgiate Comasco, 99 Via Roma",
+        "tipo": "DS",
+        "lat": 45.784312,
+        "lng": 8.963585,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "589661",
+        "titolo": "Valtorta, 19 Via Bizzarone",
+        "tipo": "DS",
+        "lat": 45.79147,
+        "lng": 8.958308,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "687656",
+        "titolo": "Olgiate Comasco,Via Repubblica",
+        "tipo": "P",
+        "lat": 45.774844,
+        "lng": 8.975385,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473402",
+        "titolo": "Lurate Caccivio, 16 Via G. Galilei",
+        "tipo": "P",
+        "lat": 45.76902,
+        "lng": 8.995808,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "59525",
+        "titolo": "Villa Guardia, 22 Via Tevere",
+        "tipo": "PJ",
+        "lat": 45.774601,
+        "lng": 9.02754,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "310631",
+        "titolo": "Lucino, 7A Via Manzoni",
+        "tipo": "P",
+        "lat": 45.78311,
+        "lng": 9.043611,
+        "voto": 3.64,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "34006",
+        "titolo": "Lurate Caccivio, 38 Via Leonardo Da Vinci",
+        "tipo": "P",
+        "lat": 45.7644,
+        "lng": 8.99115,
+        "voto": 3.2,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "501182",
+        "titolo": "Chiasso, 10 Via C.Cattaneo",
+        "tipo": "P",
+        "lat": 45.831584,
+        "lng": 9.02735,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "365205",
+        "titolo": "Olgiate Comasco, 37B Via Liancourt",
+        "tipo": "DS",
+        "lat": 45.78802,
+        "lng": 8.947136,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "398745",
+        "titolo": "Como, 1 Via Colombo Cristoforo",
+        "tipo": "DS",
+        "lat": 45.78553,
+        "lng": 9.052302,
+        "voto": 3.31,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "33878",
+        "titolo": "Como, 21 Via Colombo Cristoforo",
+        "tipo": "PJ",
+        "lat": 45.786999,
+        "lng": 9.05407,
+        "voto": 2.64,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "474801",
+        "titolo": "Como, 15 Via Brogeda",
+        "tipo": "P",
+        "lat": 45.832255,
+        "lng": 9.03812,
+        "voto": 1.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "513733",
+        "titolo": "Como, 21 Via Colombo",
+        "tipo": "P",
+        "lat": 45.78209,
+        "lng": 9.055023,
+        "voto": 2.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "678599",
+        "titolo": "Via Bonifacio da Modena, Como",
+        "tipo": "P",
+        "lat": 45.786221,
+        "lng": 9.057579,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "618368",
+        "titolo": "Via Bonifacio da Modena, Como",
+        "tipo": "ACC_PR",
+        "lat": 45.78473,
+        "lng": 9.057014,
+        "voto": 4.54,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": true, "docce": true, "wifi": true }
+    },
+    {
+        "id": "321947",
+        "titolo": "Chiasso, 10 Via Maestri Comacini",
+        "tipo": "DS",
+        "lat": 45.834759,
+        "lng": 9.035754,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "294112",
+        "titolo": "Como, 92 Via Bellinzona",
+        "tipo": "DS",
+        "lat": 45.824353,
+        "lng": 9.052243,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "620133",
+        "titolo": "Via Michelangelo, Luisago",
+        "tipo": "P",
+        "lat": 45.76241,
+        "lng": 9.033833,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "643902",
+        "titolo": "Via del Dos, Como",
+        "tipo": "DS",
+        "lat": 45.785874,
+        "lng": 9.060417,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "546079",
+        "titolo": "Balerna, 49A Viale Attilio Tarchini",
+        "tipo": "P",
+        "lat": 45.845631,
+        "lng": 8.996464,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473403",
+        "titolo": "Grandate, 2 Via Eugenio Montale",
+        "tipo": "P",
+        "lat": 45.77486,
+        "lng": 9.054746,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473570",
+        "titolo": "Grandate, 43 Via Madonna",
+        "tipo": "P",
+        "lat": 45.7723,
+        "lng": 9.052518,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "535389",
+        "titolo": "Como, 45-49 Via Giovanni Segantini",
+        "tipo": "P",
+        "lat": 45.833673,
+        "lng": 9.045705,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "468958",
+        "titolo": "Como, 1 Via Cecilio",
+        "tipo": "P",
+        "lat": 45.78469,
+        "lng": 9.063644,
+        "voto": 4.09,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "426049",
+        "titolo": "Como, 31 Via San Giacomo",
+        "tipo": "P",
+        "lat": 45.838914,
+        "lng": 9.039107,
+        "voto": 4.38,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "158379",
+        "titolo": "Como,",
+        "tipo": "P",
+        "lat": 45.837252,
+        "lng": 9.043086,
+        "voto": 3.08,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "34005",
+        "titolo": "Grandate, 30 Via Repubblica",
+        "tipo": "PJ",
+        "lat": 45.771301,
+        "lng": 9.05507,
+        "voto": 3.2,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "245022",
+        "titolo": "Como, 16 Via Palma Giovanni",
+        "tipo": "P",
+        "lat": 45.78735,
+        "lng": 9.066592,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "348694",
+        "titolo": "Como, 18 Via Nino Bixio",
+        "tipo": "P",
+        "lat": 45.81321,
+        "lng": 9.066438,
+        "voto": 2.82,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "215779",
+        "titolo": "Como, 1 Largo Spluga",
+        "tipo": "P",
+        "lat": 45.81732,
+        "lng": 9.065076,
+        "voto": 3.83,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "485214",
+        "titolo": "Solbiate, 9 Via San Quirico",
+        "tipo": "PJ",
+        "lat": 45.78938,
+        "lng": 8.931791,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "158378",
+        "titolo": "Como, 73 Via Giovanni Segantini",
+        "tipo": "P",
+        "lat": 45.838809,
+        "lng": 9.042699,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "66445",
+        "titolo": "Como, 2 Via Negretti",
+        "tipo": "P",
+        "lat": 45.785999,
+        "lng": 9.06732,
+        "voto": 4.24,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "100715",
+        "titolo": "Como, 2 Via Museo Giovio",
+        "tipo": "PJ",
+        "lat": 45.816069,
+        "lng": 9.066843,
+        "voto": 3.24,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "315306",
+        "titolo": "Como, 48 Via Antonio Giussani",
+        "tipo": "P",
+        "lat": 45.787564,
+        "lng": 9.068891,
+        "voto": 3.91,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "319209",
+        "titolo": "Como, 2 Via Nino Bixio",
+        "tipo": "PJ",
+        "lat": 45.812163,
+        "lng": 9.069014,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "430873",
+        "titolo": "Como, 1 Via Simone Cantoni",
+        "tipo": "DS",
+        "lat": 45.819058,
+        "lng": 9.065828,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473571",
+        "titolo": "Grandate, 22 Via Prealpi",
+        "tipo": "P",
+        "lat": 45.77457,
+        "lng": 9.061609,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "691592",
+        "titolo": "Valmorea,Unnamed Road",
+        "tipo": "P",
+        "lat": 45.817896,
+        "lng": 8.933076,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "475405",
+        "titolo": "Luisago, 1 Via Francesco Petrarca",
+        "tipo": "P",
+        "lat": 45.76079,
+        "lng": 9.0448,
+        "voto": 3.2,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "625360",
+        "titolo": "Via Pietro da Breggia, Como",
+        "tipo": "DS",
+        "lat": 45.813609,
+        "lng": 9.06926,
+        "voto": 2.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "541201",
+        "titolo": "Coldrerio, 14 Via Fornasette",
+        "tipo": "AR",
+        "lat": 45.849564,
+        "lng": 8.985568,
+        "voto": 3.67,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": true }
+    },
+    {
+        "id": "459628",
+        "titolo": "Cassina Rizzardi,80 Via dell'Industria",
+        "tipo": "P",
+        "lat": 45.754315,
+        "lng": 9.031534,
+        "voto": 2.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "64236",
+        "titolo": "Morbio Inferiore, 9 Via Maestri Comacini",
+        "tipo": "PJ",
+        "lat": 45.850101,
+        "lng": 9.01149,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "21361",
+        "titolo": "Como, 81 Via Antonio Giussani",
+        "tipo": "P",
+        "lat": 45.785599,
+        "lng": 9.06985,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "648471",
+        "titolo": "SP ex SS35 Statale dei Giovi, Grandate",
+        "tipo": "P",
+        "lat": 45.769919,
+        "lng": 9.059526,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": true }
+    },
+    {
+        "id": "21218",
+        "titolo": "Coldrerio, 37 Via San Giorgio",
+        "tipo": "AR",
+        "lat": 45.849701,
+        "lng": 8.98167,
+        "voto": 3.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "256649",
+        "titolo": "Como, 71 Via Asiago",
+        "tipo": "P",
+        "lat": 45.840516,
+        "lng": 9.045349,
+        "voto": 2.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473574",
+        "titolo": "Grandate, 25 Strada Statale dei Giovi",
+        "tipo": "P",
+        "lat": 45.77518,
+        "lng": 9.065145,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "196138",
+        "titolo": "Morbio Inferiore, 4 Via Maestri Comacini",
+        "tipo": "PJ",
+        "lat": 45.84878,
+        "lng": 9.024917,
+        "voto": 4.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "622822",
+        "titolo": "Via Borgo Vico, Como",
+        "tipo": "PJ",
+        "lat": 45.810224,
+        "lng": 9.073777,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473221",
+        "titolo": "Grandate ,59 Strada Provinciale 35 dei Giovi",
+        "tipo": "P",
+        "lat": 45.76982,
+        "lng": 9.061503,
+        "voto": 1.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "378086",
+        "titolo": "Bulgarograsso, 22B Via Sant'Anna",
+        "tipo": "PJ",
+        "lat": 45.748427,
+        "lng": 9.014463,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473573",
+        "titolo": "Grandate ,7 Via Tornese",
+        "tipo": "P",
+        "lat": 45.76519,
+        "lng": 9.05666,
+        "voto": 3.4,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "553470",
+        "titolo": "Maslianico, 41 Via Folla",
+        "tipo": "PJ",
+        "lat": 45.84217,
+        "lng": 9.046542,
+        "voto": 4.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "312767",
+        "titolo": "Como, 10 Viale Vittorio Veneto",
+        "tipo": "P",
+        "lat": 45.81351,
+        "lng": 9.073937,
+        "voto": 2.67,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "618039",
+        "titolo": "Grandate,Via Dei Giovi",
+        "tipo": "P",
+        "lat": 45.769014,
+        "lng": 9.062261,
+        "voto": 2.5,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "103261",
+        "titolo": "Como, 12 Via Regina Teodolinda",
+        "tipo": "P",
+        "lat": 45.80715,
+        "lng": 9.075981,
+        "voto": 3.96,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "473572",
+        "titolo": "Zappa, 6 Via Monte Rosa",
+        "tipo": "P",
+        "lat": 45.77184,
+        "lng": 9.065236,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "660151",
+        "titolo": "Via per Cernobbio, Como",
+        "tipo": "P",
+        "lat": 45.825284,
+        "lng": 9.068272,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "163353",
+        "titolo": "Como, 61 Via Innocenzo XI",
+        "tipo": "P",
+        "lat": 45.806543,
+        "lng": 9.077661,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "29563",
+        "titolo": "Como, 7 Via Brennero",
+        "tipo": "ACC_P",
+        "lat": 45.83505,
+        "lng": 9.060684,
+        "voto": 3.61,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": true, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "619387",
+        "titolo": "Via Francesco Benzi, Como",
+        "tipo": "PJ",
+        "lat": 45.806364,
+        "lng": 9.07874,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "306616",
+        "titolo": "Como, 7 Via Brennero",
+        "tipo": "P",
+        "lat": 45.835261,
+        "lng": 9.061338,
+        "voto": 3.98,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "17945",
+        "titolo": "Rodero ,Strada Provinciale 20",
+        "tipo": "P",
+        "lat": 45.820599,
+        "lng": 8.92563,
+        "voto": 3.7,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "460854",
+        "titolo": "Cassina Rizzardi,483 Via Agostino Monti",
+        "tipo": "P",
+        "lat": 45.746861,
+        "lng": 9.026088,
+        "voto": 3.95,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "439476",
+        "titolo": "Como, 76 Via Reg. di Ponente",
+        "tipo": "DS",
+        "lat": 45.808254,
+        "lng": 9.079952,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "153528",
+        "titolo": "Como, 18 Via Regina Teodolinda",
+        "tipo": "PJ",
+        "lat": 45.802131,
+        "lng": 9.080852,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "152046",
+        "titolo": "Como, 31 Via Asiago",
+        "tipo": "P",
+        "lat": 45.837433,
+        "lng": 9.062158,
+        "voto": 3.65,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": true, "docce": false, "wifi": false }
+    },
+    {
+        "id": "212338",
+        "titolo": "Como,",
+        "tipo": "PJ",
+        "lat": 45.80639,
+        "lng": 9.081709,
+        "voto": 3.67,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "386234",
+        "titolo": "Como, 4 Via Sant'Abbondio",
+        "tipo": "P",
+        "lat": 45.803072,
+        "lng": 9.082281,
+        "voto": 3.6,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "404516",
+        "titolo": "Fino Mornasco, 25 Via Adda",
+        "tipo": "PJ",
+        "lat": 45.755126,
+        "lng": 9.05163,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "558585",
+        "titolo": "Cernobbio, 29 Viale Giacomo Matteotti",
+        "tipo": "P",
+        "lat": 45.83851,
+        "lng": 9.061491,
+        "voto": 3.57,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "448324",
+        "titolo": "Como,33 Piazza Camillo Benso Conte di Cavour",
+        "tipo": "DS",
+        "lat": 45.81286,
+        "lng": 9.081356,
+        "voto": null,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "531336",
+        "titolo": "Como, 26 Via Polano",
+        "tipo": "P",
+        "lat": 45.833209,
+        "lng": 9.068526,
+        "voto": 3.8,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "150409",
+        "titolo": "Como, 11 Viale Franklin Delano Roosevelt",
+        "tipo": "PJ",
+        "lat": 45.802666,
+        "lng": 9.083475,
+        "voto": 3.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "619724",
+        "titolo": "Via Regina Teodolinda, Como",
+        "tipo": "P",
+        "lat": 45.80042,
+        "lng": 9.083878,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "378168",
+        "titolo": "Cernobbio, 18 Viale Giacomo Matteotti",
+        "tipo": "P",
+        "lat": 45.83838,
+        "lng": 9.063379,
+        "voto": 4.1,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "445118",
+        "titolo": "Como, 9 Via Silvio Pellico",
+        "tipo": "P",
+        "lat": 45.83664,
+        "lng": 9.066183,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "606190",
+        "titolo": "Como, 18 Via Trau",
+        "tipo": "P",
+        "lat": 45.83411,
+        "lng": 9.068902,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "31781",
+        "titolo": "Como, 7 Via Sebenico",
+        "tipo": "P",
+        "lat": 45.83279,
+        "lng": 9.070344,
+        "voto": 3.33,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "459986",
+        "titolo": "Como, 2 Via Pasquale Paoli",
+        "tipo": "DS",
+        "lat": 45.79015,
+        "lng": 9.083492,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "557792",
+        "titolo": "Coldrerio, 16 Via Valletta",
+        "tipo": "PJ",
+        "lat": 45.857839,
+        "lng": 8.982891,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "386479",
+        "titolo": "Como, 22 Via Pellegrino Tibaldi",
+        "tipo": "DS",
+        "lat": 45.83577,
+        "lng": 9.067762,
+        "voto": 5.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "450043",
+        "titolo": "Como, 8 Viale Geno",
+        "tipo": "P",
+        "lat": 45.820144,
+        "lng": 9.079996,
+        "voto": 3.93,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "643756",
+        "titolo": "Viale Geno, Como",
+        "tipo": "DS",
+        "lat": 45.823507,
+        "lng": 9.078112,
+        "voto": 3.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "537466",
+        "titolo": "Como, 22 Via Pellegrino Tibaldi",
+        "tipo": "PJ",
+        "lat": 45.835908,
+        "lng": 9.068113,
+        "voto": null,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "211183",
+        "titolo": "Como, 55 Via Regina Teodolinda",
+        "tipo": "P",
+        "lat": 45.79868,
+        "lng": 9.085572,
+        "voto": 3.18,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": true, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "392731",
+        "titolo": "Binago, 110 Via Cavalier Edoardo Baietti",
+        "tipo": "P",
+        "lat": 45.779675,
+        "lng": 8.919337,
+        "voto": 4.0,
+        "servizi": { "acqua": false, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    },
+    {
+        "id": "369141",
+        "titolo": "Como, 1 Via Vincenzo Bellini",
+        "tipo": "DS",
+        "lat": 45.811629,
+        "lng": 9.084248,
+        "voto": 1.0,
+        "servizi": { "acqua": true, "scarico_grigie": false, "scarico_nere": false, "elettricita": false, "rifiuti": false, "wc": false, "docce": false, "wifi": false }
+    }
+]

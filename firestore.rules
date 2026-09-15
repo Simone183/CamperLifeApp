@@ -1,18 +1,24 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
-    function isOwner(email) { return isSignedIn() && request.auth.token.email == email; }
-
-    match /users/{email}/camperSettings/{settingsId} {
-      allow read, write: if isOwner(email);
+    match /soste/{sostaId} {
+      allow read, write: if true;
     }
-    
-    match /users/{email}/itineraries/{itineraryId} {
-      allow read, write: if isOwner(email);
+    match /places/{placeId} {
+      allow read, write: if true;
     }
-    
-    // Keep temporary access to others for now until full hardening is done
+    match /community_messages/{msgId} {
+      allow read, write: if true;
+    }
+    match /users/{email}/{document=**} {
+      allow read, write: if true;
+    }
+    match /adminNotifications/{notifId} {
+      allow read, write: if true;
+    }
+    match /promoPush/{promoId} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }

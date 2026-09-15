@@ -11,15 +11,16 @@ import { getMessaging } from "firebase-admin/messaging";
 import { ClientFirestoreAdapter } from "./src/client-firestore.ts";
 import { INITIAL_COMMUNITY_MESSAGES } from "./src/data/mockData.ts";
 import { PROMO_MESSAGES } from "./src/data/promoMessages.ts";
+import { parseSostaFirestoreDoc } from "./src/data/userPlacesDataset.ts";
 
 // Use dynamic Firebase Project configuration from our provisioned workspace
 let firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
+  apiKey: "AIzaSyBrLUDywyD1lgs6WyS1fd6dvegBjExJxTM",
+  authDomain: "calm-light-fg02f.firebaseapp.com",
   projectId: "calm-light-fg02f",
-  appId: ""
+  appId: "1:17441453721:web:b0f4028724ea2bb276aa08"
 };
-let firebaseDbId = "ai-studio-fbcd1f6d-679b-4649-8f91-6a9b5a40d0b9";
+let firebaseDbId = "ai-studio-camperlifeapp-fbcd1f6d-679b-4649-8f91-6a9b5a40d0b9";
 
 try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
@@ -613,6 +614,8 @@ async function checkAndSendPromotionalPush() {
   } catch (err: any) {
     if (err.message?.includes("Too Many Requests") || err.message?.includes("Quota exceeded")) {
       console.warn("[Promo Push] Warning: Firestore read limit hit during scheduler check (will retry later).");
+    } else if (err.message?.includes("Forbidden") || err.message?.includes("Missing or insufficient permissions")) {
+      console.warn("[Promo Push] Firestore access pending rule propagation, skipping promo check.");
     } else {
       console.error("[Promo Push] Error in checkAndSendPromotionalPush:", err);
     }
@@ -1200,7 +1203,7 @@ out center;`;
               priceEuro,
               priceInfo,
               feeStatus,
-              rating: Number((4.1 + Math.random() * 0.8).toFixed(1)),
+              rating: 0,
               facilities,
               source: "OpenStreetMap",
               nearestCity: findNearestCity(Number(elLat.toFixed(5)), Number(elLng.toFixed(5)))
@@ -1896,22 +1899,259 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
-  // --- USER PROPOSED PLACES SYSTEM IN FIRESTORE ---
-  // Get all approved custom places
+  // --- FIRESTORE SOSTE (39,000 PUNTI SOSTA) & LOCAL CATALOG CACHE ---
+  const SOSTE_CATALOG_FILE = path.join(process.cwd(), "data", "soste_catalog.json");
+  let memorySosteCatalog: any[] = [];
+
+  function loadLocalSosteCatalog(forceReload = false): any[] {
+    if (!forceReload && memorySosteCatalog.length > 0) return memorySosteCatalog;
+    try {
+      if (fs.existsSync(SOSTE_CATALOG_FILE)) {
+        const raw = fs.readFileSync(SOSTE_CATALOG_FILE, "utf-8");
+        memorySosteCatalog = JSON.parse(raw);
+        console.log(`[Soste Catalog] Loaded ${memorySosteCatalog.length} points from local catalog.`);
+      }
+    } catch (e) {
+      console.error("[Soste Catalog] Error reading local catalog:", e);
+    }
+    return memorySosteCatalog;
+  }
+
+  function saveLocalSosteCatalog(items: any[]) {
+    try {
+      const dataDir = path.join(process.cwd(), "data");
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(SOSTE_CATALOG_FILE, JSON.stringify(items), "utf-8");
+      memorySosteCatalog = items;
+      console.log(`[Soste Catalog] Saved ${items.length} points to ${SOSTE_CATALOG_FILE}`);
+    } catch (e) {
+      console.error("[Soste Catalog] Error saving catalog file:", e);
+    }
+  }
+
+  // Pre-load catalog on boot
+  loadLocalSosteCatalog(true);
+
+  // Endpoint to reload catalog into memory
+  app.get("/api/admin/reload-soste-catalog", (req, res) => {
+    const catalog = loadLocalSosteCatalog(true);
+    res.json({ success: true, count: catalog.length });
+  });
+
+  // Endpoint to bulk import soste from Cloud Shell, script, or JSON upload
+  app.post("/api/admin/import-soste-bulk", async (req, res) => {
+    try {
+      const rawList = Array.isArray(req.body) ? req.body : (req.body.places || req.body.soste || req.body.items || []);
+      if (!Array.isArray(rawList) || rawList.length === 0) {
+        return res.status(400).json({ error: "Invalid payload. Array of places expected." });
+      }
+
+      console.log(`[Import Soste] Received batch of ${rawList.length} items to import.`);
+      const currentCatalog = loadLocalSosteCatalog();
+      const existingMap = new Map<string, any>();
+      currentCatalog.forEach(item => {
+        if (item.id) existingMap.set(String(item.id), item);
+        else if (item.lat && item.lng) existingMap.set(`${Number(item.lat).toFixed(4)}_${Number(item.lng).toFixed(4)}`, item);
+      });
+
+      let addedCount = 0;
+      const normalizedBatch: any[] = [];
+
+      for (let i = 0; i < rawList.length; i++) {
+        const raw = rawList[i];
+        const lat = parseFloat(raw.lat || raw.latitude || raw.latitudine || raw.y);
+        const lng = parseFloat(raw.lng || raw.lon || raw.longitude || raw.longitudine || raw.x);
+        if (isNaN(lat) || isNaN(lng)) continue;
+
+        const id = String(raw.id || `sosta_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`);
+        const item = {
+          id,
+          name: String(raw.name || raw.titolo || raw.title || raw.denominazione || "Punto Sosta Camper").trim(),
+          lat,
+          lng,
+          type: String(raw.type || raw.tipo || raw.category || "area_sosta"),
+          address: String(raw.address || raw.indirizzo || raw.via || raw.comune || "").trim(),
+          city: String(raw.city || raw.comune || raw.citta || "").trim(),
+          province: String(raw.province || raw.provincia || "").trim(),
+          region: String(raw.region || raw.regione || "").trim(),
+          country: String(raw.country || raw.nazione || raw.paese || "IT").trim(),
+          services: Array.isArray(raw.services || raw.servizi) ? (raw.services || raw.servizi) : [],
+          price: String(raw.price || raw.costo || raw.tariffa || "").trim(),
+          description: String(raw.description || raw.descrizione || raw.note || "").trim(),
+          rating: typeof raw.rating === "number" ? raw.rating : (raw.voto ? parseFloat(raw.voto) : 4.5),
+          verified: true,
+          status: "approved",
+          source: "dataset_soste"
+        };
+
+        const key = id || `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+        if (!existingMap.has(key)) {
+          existingMap.set(key, item);
+          addedCount++;
+        } else {
+          existingMap.set(key, { ...existingMap.get(key), ...item });
+        }
+        normalizedBatch.push(item);
+      }
+
+      const mergedList = Array.from(existingMap.values());
+      saveLocalSosteCatalog(mergedList);
+
+      // Asynchronously batch write to Firestore in chunks of 50
+      (async () => {
+        try {
+          for (let i = 0; i < normalizedBatch.length; i += 50) {
+            const chunk = normalizedBatch.slice(i, i + 50);
+            await Promise.all(
+              chunk.map(async (doc) => {
+                try {
+                  await firestoreDb.collection("soste").doc(doc.id).set(doc);
+                } catch (err: any) {
+                  // non-blocking
+                }
+              })
+            );
+          }
+          console.log(`[Import Soste] Finished background Firestore sync for ${normalizedBatch.length} items.`);
+        } catch (bgErr) {
+          console.warn("[Import Soste] Background Firestore sync error:", bgErr);
+        }
+      })();
+
+      res.json({
+        success: true,
+        received: rawList.length,
+        newAdded: addedCount,
+        totalInCatalog: mergedList.length
+      });
+    } catch (err: any) {
+      console.error("[Import Soste] Error in bulk import:", err);
+      res.status(500).json({ error: err.message || "Failed to process import batch" });
+    }
+  });
+
+  // Query Firestore soste collection with spatial bounding box, radius, search, or pagination
+  app.get("/api/soste", async (req, res) => {
+    try {
+      const minLat = req.query.minLat ? parseFloat(req.query.minLat as string) : null;
+      const maxLat = req.query.maxLat ? parseFloat(req.query.maxLat as string) : null;
+      const minLng = req.query.minLng ? parseFloat(req.query.minLng as string) : null;
+      const maxLng = req.query.maxLng ? parseFloat(req.query.maxLng as string) : null;
+      const search = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+      const limitCount = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10) || 500, 2000) : 500;
+
+      const results: any[] = [];
+      const seenIds = new Set<string>();
+
+      // 1. First check in-memory local catalog (instant search across 39,000 items)
+      const catalog = loadLocalSosteCatalog();
+      if (catalog.length > 0) {
+        for (const item of catalog) {
+          if (results.length >= limitCount) break;
+          const lat = item.lat;
+          const lng = item.lng;
+          if (minLat !== null && maxLat !== null && (lat < minLat || lat > maxLat)) continue;
+          if (minLng !== null && maxLng !== null && (lng < minLng || lng > maxLng)) continue;
+          if (search) {
+            const title = String(item.name || item.titolo || "").toLowerCase();
+            const address = String(item.address || item.city || "").toLowerCase();
+            if (!title.includes(search) && !address.includes(search)) continue;
+          }
+          seenIds.add(item.id);
+          results.push(parseSostaFirestoreDoc(item, item.id));
+        }
+      }
+
+      // 2. Supplement from Firestore 'soste' collection if results under limit
+      if (results.length < limitCount) {
+        try {
+          let queryRef: any = firestoreDb.collection("soste");
+          if (minLat !== null && maxLat !== null) {
+            queryRef = queryRef.where("lat", ">=", minLat).where("lat", "<=", maxLat);
+          }
+          queryRef = queryRef.limit(limitCount - results.length);
+
+          const snapshot = await queryRef.get();
+          snapshot.forEach((doc: any) => {
+            if (seenIds.has(doc.id)) return;
+            const raw = { id: doc.id, ...doc.data() };
+            if (minLng !== null && maxLng !== null) {
+              const lng = Number(raw.lng);
+              if (isNaN(lng) || lng < minLng || lng > maxLng) return;
+            }
+            if (search) {
+              const title = String(raw.titolo || raw.name || "").toLowerCase();
+              const address = String(raw.indirizzo || raw.address || "").toLowerCase();
+              if (!title.includes(search) && !address.includes(search)) return;
+            }
+            seenIds.add(doc.id);
+            results.push(parseSostaFirestoreDoc(raw, doc.id));
+          });
+        } catch (fsErr) {
+          // silently continue with local catalog
+        }
+      }
+
+      res.json(results);
+    } catch (err: any) {
+      console.error("Error fetching soste from Firestore/Catalog:", err);
+      res.json([]);
+    }
+  });
+
+  // Get public places (combining approved user places, local catalog, and Firestore soste)
   app.get("/api/public-places", async (req, res) => {
     try {
-      const snapshot = await firestoreDb.collection("places").where("status", "==", "approved").get();
-      const approved: any[] = [];
-      snapshot.forEach((doc: any) => {
-        approved.push({ id: doc.id, ...doc.data() });
-      });
-      res.json(approved);
+      const placesList: any[] = [];
+      const seenIds = new Set<string>();
+
+      // 1. From local memory catalog (full catalog)
+      const catalog = loadLocalSosteCatalog();
+      if (catalog.length > 0) {
+        catalog.forEach(item => {
+          seenIds.add(item.id);
+          placesList.push(parseSostaFirestoreDoc(item, item.id));
+        });
+      }
+
+      // 2. Fetch from Firestore 'soste' collection
+      try {
+        const sosteSnap = await firestoreDb.collection("soste").limit(500).get();
+        sosteSnap.forEach((doc: any) => {
+          if (!seenIds.has(doc.id)) {
+            seenIds.add(doc.id);
+            placesList.push(parseSostaFirestoreDoc({ id: doc.id, ...doc.data() }, doc.id));
+          }
+        });
+      } catch (sosteErr) {
+        // non-blocking
+      }
+
+      // 3. Fetch approved custom places from 'places' collection
+      try {
+        const snapshot = await firestoreDb.collection("places").where("status", "==", "approved").get();
+        snapshot.forEach((doc: any) => {
+          const data = { id: doc.id, ...doc.data() };
+          if (!seenIds.has(doc.id)) {
+            seenIds.add(doc.id);
+            placesList.push(parseSostaFirestoreDoc(data, doc.id));
+          }
+        });
+      } catch (placesErr) {
+        // non-blocking
+      }
+
+      // Fallback to local user_places if empty
+      if (placesList.length === 0) {
+        const list = loadUserPlaces();
+        const approved = list.filter((p: any) => p.status === "approved" || !p.status);
+        approved.forEach((p: any) => placesList.push(parseSostaFirestoreDoc(p, p.id)));
+      }
+
+      res.json(placesList);
     } catch (err: any) {
-      console.error("Error fetching approved places from Firestore:", err);
-      // Fallback to local files in case Firestore is unreachable
-      const list = loadUserPlaces();
-      const approved = list.filter((p: any) => p.status === "approved");
-      res.json(approved);
+      console.error("Error in /api/public-places:", err);
+      res.json([]);
     }
   });
 
@@ -4243,47 +4483,27 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         }
       } catch (e) {}
 
-      const snapshot = await firestoreDb.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
-      
-      // If collection is empty or missing Rolly topics, fire background seed to Firestore
-      const hasRollyTopics = !snapshot.empty && snapshot.docs.some((doc: any) => doc.id && doc.id.startsWith("rolly_topic_") && !deletedCommunityMessageIds.has(doc.id));
-      if (!hasRollyTopics) {
-        console.log("[Firestore Seed] Triggering background seed for Rolly forum topics into Firestore...");
-        Promise.all(
-          INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedCommunityMessageIds.has(m.id)).map((msg) =>
-            firestoreDb.collection("communityMessages").doc(msg.id).set(msg, { merge: true }).catch(err => console.error("Seed error:", err))
-          )
-        ).catch(e => console.error("Batch seed error:", e));
+      let snapshot: any = null;
+      try {
+        snapshot = await firestoreDb.collection("communityMessages").orderBy("timestamp", "asc").limit(200).get();
+      } catch (dbErr) {
+        console.warn("[Community Messages] Firestore query fallback:", dbErr);
       }
 
       const messages: any[] = [];
-      snapshot.forEach((doc: any) => {
-        const rawData = doc.data() || {};
-        if (deletedCommunityMessageIds.has(doc.id) || rawData.isDeleted || rawData.deleted) {
-          // Immediately purge deleted message from Firestore
-          firestoreDb.collection("communityMessages").doc(doc.id).delete().catch(() => {});
-          deletedCommunityMessageIds.add(doc.id);
-          return;
-        }
-        const sanitized = sanitizeServerCommunityMessage(doc.id, rawData);
-        if (sanitized) {
-          messages.push(sanitized);
-          // Clean Firestore document if it contained fake replies, fake likes or mismatched timestamps (like seeded Rolly posts)
-          const hadFakeReplies = (rawData.replies || []).length !== sanitized.replies.length;
-          const hadFakeLikes = rawData.likes !== sanitized.likes;
-          const hadMismatchedTimestamp = rawData.timestamp !== sanitized.timestamp;
-          if (hadFakeReplies || hadFakeLikes || hadMismatchedTimestamp) {
-            firestoreDb.collection("communityMessages").doc(doc.id).update({
-              likes: sanitized.likes,
-              replies: sanitized.replies,
-              timestamp: sanitized.timestamp
-            }).catch(err => console.error("Error updating cleaned Firestore doc:", err));
+      if (snapshot && snapshot.docs && snapshot.docs.length > 0) {
+        snapshot.forEach((doc: any) => {
+          const rawData = doc.data() || {};
+          if (deletedCommunityMessageIds.has(doc.id) || rawData.isDeleted || rawData.deleted) {
+            deletedCommunityMessageIds.add(doc.id);
+            return;
           }
-        } else {
-          // Delete old fake doc from Firestore
-          firestoreDb.collection("communityMessages").doc(doc.id).delete().catch(err => console.error("Error deleting fake doc:", err));
-        }
-      });
+          const sanitized = sanitizeServerCommunityMessage(doc.id, rawData);
+          if (sanitized) {
+            messages.push(sanitized);
+          }
+        });
+      }
 
       // Combine with INITIAL_COMMUNITY_MESSAGES to ensure instant full list return
       const fetchedIds = new Set(messages.map((m: any) => m.id));
@@ -4298,7 +4518,6 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       res.json(messages);
     } catch (err: any) {
-      console.error("Error loading community messages from Firestore:", err);
       const fallback = INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedCommunityMessageIds.has(m.id)).map(m => sanitizeServerCommunityMessage(m.id, m)).filter(Boolean);
       res.json(fallback);
     }

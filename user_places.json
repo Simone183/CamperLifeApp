@@ -1,1 +1,416 @@
-[]
+[
+  {
+    "id": "366975",
+    "titolo": "Chamonix-Mont-Blanc, 196 Route du Bouchet",
+    "tipo": "PJ",
+    "lat": 45.92562,
+    "lng": 6.874904,
+    "voto": null,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "124095",
+    "titolo": "Chamonix-Mont-Blanc, 560 Rue du Lyret",
+    "tipo": "DS",
+    "lat": 45.918123,
+    "lng": 6.868996,
+    "voto": 2.5,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "436442",
+    "titolo": "Chamonix-Mont-Blanc, 674 Chemin des Cristalliers",
+    "tipo": "PJ",
+    "lat": 45.928498,
+    "lng": 6.876985,
+    "voto": 3.5,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": true,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "186185",
+    "titolo": "Camping les Arolles.",
+    "tipo": "C",
+    "lat": 45.914036,
+    "lng": 6.865257,
+    "voto": 4.03,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": true,
+      "rifiuti": true,
+      "wc": true,
+      "docce": true,
+      "wifi": true
+    }
+  },
+  {
+    "id": "622959",
+    "titolo": "Rue Helbronner, Chamonix-Mont-Blanc",
+    "tipo": "P",
+    "lat": 45.92132,
+    "lng": 6.872655,
+    "voto": 3.5,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "699352",
+    "titolo": "Clos de la Corruaz, Chamonix-Mont-Blanc",
+    "tipo": "PJ",
+    "lat": 45.899118,
+    "lng": 6.841202,
+    "voto": 5.0,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "542892",
+    "titolo": "Chamonix-Mont-Blanc, 90 Descente des Périades",
+    "tipo": "P",
+    "lat": 45.92411,
+    "lng": 6.875307,
+    "voto": 3.75,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": true,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "696122",
+    "titolo": "Chamonix-Mont-Blanc,Rte Blanche",
+    "tipo": "PSS",
+    "lat": 45.914711,
+    "lng": 6.869485,
+    "voto": 2.86,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "697465",
+    "titolo": "Place Gilbert Ravanel, Chamonix-Mont-Blanc",
+    "tipo": "DS",
+    "lat": 45.940581,
+    "lng": 6.88501,
+    "voto": null,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "53551",
+    "titolo": "Chamonix-Mont-Blanc, 60 Chemin du Pied du Grepon",
+    "tipo": "PJ",
+    "lat": 45.923,
+    "lng": 6.87691,
+    "voto": 3.83,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": true,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "712123",
+    "titolo": "Route Blanche, Chamonix-Mont-Blanc",
+    "tipo": "PSS",
+    "lat": 45.917923,
+    "lng": 6.87335,
+    "voto": null,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "143151",
+    "titolo": "Chamonix-Mont-Blanc, 339 Route Blanche",
+    "tipo": "ASS",
+    "lat": 45.918865,
+    "lng": 6.874391,
+    "voto": 3.5,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "40068",
+    "titolo": "Borghetto Santo Spirito , 430 Via Po",
+    "tipo": "ACC_PR",
+    "lat": 44.1157,
+    "lng": 8.23496,
+    "voto": 4.15,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": true,
+      "rifiuti": true,
+      "wc": true,
+      "docce": true,
+      "wifi": false
+    }
+  },
+  {
+    "id": "556741",
+    "titolo": "Finale Ligure, 2 Piazza di Porta Testa",
+    "tipo": "DS",
+    "lat": 44.17509,
+    "lng": 8.326902,
+    "voto": null,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "211389",
+    "titolo": "Sant'Anna Avagnina, 2 Strada del Mazzucco",
+    "tipo": "P",
+    "lat": 44.40551,
+    "lng": 7.791029,
+    "voto": 3.0,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "632728",
+    "titolo": "Piazza Don Bonavia, Centallo",
+    "tipo": "P",
+    "lat": 44.51168,
+    "lng": 7.55716,
+    "voto": null,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "190674",
+    "titolo": "Sauze di Cesana ,Unnamed Road",
+    "tipo": "P",
+    "lat": 44.89439,
+    "lng": 6.919077,
+    "voto": 4.25,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "541673",
+    "titolo": "Sauze di Cesana,Unnamed Road",
+    "tipo": "APN",
+    "lat": 44.894668,
+    "lng": 6.917986,
+    "voto": null,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": true,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "162326",
+    "titolo": "Saint-Véran,  La Muande",
+    "tipo": "P",
+    "lat": 44.711665,
+    "lng": 6.84862,
+    "voto": 3.5,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": true,
+      "wc": true,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "545331",
+    "titolo": "Saint-Véran, 2 Vachères",
+    "tipo": "PN",
+    "lat": 44.706857,
+    "lng": 6.858437,
+    "voto": 3.33,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "702131",
+    "titolo": "Saint-Véran, Hautes-Alpes",
+    "tipo": "PN",
+    "lat": 44.706296,
+    "lng": 6.858967,
+    "voto": null,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "650906",
+    "titolo": "Via Santuario, Viola",
+    "tipo": "APN",
+    "lat": 44.286352,
+    "lng": 7.952644,
+    "voto": null,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  },
+  {
+    "id": "492689",
+    "titolo": "Manta, 13 Via Valerano",
+    "tipo": "P",
+    "lat": 44.610872,
+    "lng": 7.484492,
+    "voto": null,
+    "servizi": {
+      "acqua": false,
+      "scarico_grigie": false,
+      "scarico_nere": false,
+      "elettricita": false,
+      "rifiuti": false,
+      "wc": false,
+      "docce": false,
+      "wifi": false
+    }
+  }
+]

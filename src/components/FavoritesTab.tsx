@@ -8,6 +8,7 @@ import { Place, PlaceCategory } from '../types';
 import { Heart, Search, Compass, MapPin, Trash2, Star, ArrowRight } from 'lucide-react';
 import { CategoryIllustration } from './CategoryIllustration';
 import { PlaceOccupancyBadge } from './PlaceOccupancyBadge';
+import { MapCategoryPinMini, MapCategoryBadge } from './MapPoiIcon';
 
 interface FavoritesTabProps {
   favoriteIds: string[];
@@ -164,27 +165,37 @@ export default function FavoritesTab({
             <div className="flex flex-wrap gap-1.5 pb-1 sm:pb-0">
               <button
                 onClick={() => setSelectedCategory('all')}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer border ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
                   selectedCategory === 'all'
-                    ? 'bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs font-black'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                     : 'bg-stone-50 text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
                 }`}
               >
                 Tutti
               </button>
-              {(['area_sosta', 'campeggio', 'parcheggio_camper', 'camper_service'] as PlaceCategory[]).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold transition-all cursor-pointer border ${
-                    selectedCategory === cat
-                      ? 'bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs font-black'
-                      : 'bg-stone-50 text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  {getCategoryLabel(cat)}
-                </button>
-              ))}
+              {(['area_sosta', 'campeggio', 'parcheggio_camper', 'camper_service'] as PlaceCategory[]).map(cat => {
+                const isSelected = selectedCategory === cat;
+                let activeStyle = "bg-[#3E4A35] text-white border-[#3E4A35]";
+                if (cat === "area_sosta") activeStyle = "bg-gradient-to-r from-sky-500 to-sky-600 text-white border-sky-400";
+                else if (cat === "parcheggio_camper") activeStyle = "bg-gradient-to-r from-blue-700 to-blue-900 text-white border-blue-600";
+                else if (cat === "campeggio") activeStyle = "bg-gradient-to-r from-[#1C3D2B] to-[#14291E] text-white border-[#1C3D2B]";
+                else if (cat === "camper_service") activeStyle = "bg-gradient-to-r from-violet-600 to-purple-800 text-white border-violet-500";
+
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer border flex items-center gap-1.5 leading-none ${
+                      isSelected
+                        ? `${activeStyle} shadow-xs`
+                        : 'bg-stone-50 text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <MapCategoryPinMini category={cat} size={16} />
+                    <span>{getCategoryLabel(cat)}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -211,16 +222,14 @@ export default function FavoritesTab({
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <CategoryIllustration category={place.category} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        <CategoryIllustration category={place.category} feeStatus={place.feeStatus as any} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                       )}
                     </div>
 
                     {/* Metadata */}
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider border ${getCategoryTheme(place.category)}`}>
-                          {getCategoryLabel(place.category)}
-                        </span>
+                        <MapCategoryBadge category={place.category} feeStatus={place.feeStatus as any} pinSize={14} />
                         <span className="text-slate-500 dark:text-slate-400 font-bold font-mono text-[9px] bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-150 dark:border-slate-700">
                           {place.priceInfo}
                         </span>
