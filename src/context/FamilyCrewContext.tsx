@@ -42,6 +42,11 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
   });
   const [isLoading, setIsLoading] = useState(false);
 
+  const currentCrewRef = React.useRef(currentCrew);
+  React.useEffect(() => {
+    currentCrewRef.current = currentCrew;
+  }, [currentCrew]);
+
   // When currentUser changes or logs out, immediately reset currentCrew
   useEffect(() => {
     if (!emailLower) {
@@ -67,7 +72,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
 
   const refreshCrew = useCallback(async () => {
     if (!emailLower) {
-      setCurrentCrew(null);
+      if (currentCrewRef.current !== null) setCurrentCrew(null);
       return;
     }
 
@@ -76,12 +81,18 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       if (res.ok) {
         const data = await res.json();
         if (data && data.crew) {
-          setCurrentCrew(data.crew);
-          localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(data.crew));
+          const currentStr = JSON.stringify(currentCrewRef.current);
+          const newStr = JSON.stringify(data.crew);
+          if (currentStr !== newStr) {
+            setCurrentCrew(data.crew);
+            localStorage.setItem(`camper_family_crew_${emailLower}`, newStr);
+          }
         } else {
           // No active crew for user
-          setCurrentCrew(null);
-          localStorage.removeItem(`camper_family_crew_${emailLower}`);
+          if (currentCrewRef.current !== null) {
+            setCurrentCrew(null);
+            localStorage.removeItem(`camper_family_crew_${emailLower}`);
+          }
         }
       }
     } catch (err) {
@@ -99,12 +110,12 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
     };
     window.addEventListener('focus', handleFocus);
 
-    // Periodic background sync every 12 seconds
+    // Periodic background sync every 30 seconds (throttled to avoid rapid cycles)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         refreshCrew();
       }
-    }, 12000);
+    }, 30000);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
@@ -112,7 +123,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
     };
   }, [refreshCrew]);
 
-  const createCrew = async (name: string, syncModules?: Partial<CrewSyncModules>): Promise<boolean> => {
+  const createCrew = useCallback(async (name: string, syncModules?: Partial<CrewSyncModules>): Promise<boolean> => {
     if (!currentUser || !emailLower) return false;
     setIsLoading(true);
     try {
@@ -153,9 +164,9 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       setIsLoading(false);
     }
     return false;
-  };
+  }, [currentUser, emailLower]);
 
-  const joinCrew = async (code: string): Promise<{ success: boolean; message?: string }> => {
+  const joinCrew = useCallback(async (code: string): Promise<{ success: boolean; message?: string }> => {
     if (!currentUser || !emailLower) {
       return { success: false, message: "Effettua l'accesso per unirti a un equipaggio." };
     }
@@ -193,17 +204,17 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser, emailLower]);
 
-  const leaveCrew = async (): Promise<boolean> => {
-    if (!currentCrew || !emailLower) return false;
+  const leaveCrew = useCallback(async (): Promise<boolean> => {
+    if (!currentCrewRef.current || !emailLower) return false;
     setIsLoading(true);
     try {
       const res = await fetch(resolveMediaUrl('/api/family-crew/leave'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          crewId: currentCrew.id,
+          crewId: currentCrewRef.current.id,
           email: emailLower
         })
       });
@@ -225,13 +236,14 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       setIsLoading(false);
     }
     return false;
-  };
+  }, [emailLower]);
 
-  const syncCrewSection = async (
+  const syncCrewSection = useCallback(async (
     section: 'fuelLogs' | 'trips' | 'checklists' | 'pantry' | 'maintenance',
     data: any
   ): Promise<boolean> => {
-    if (!currentCrew || !currentCrew.id) return false;
+    const crew = currentCrewRef.current;
+    if (!crew || !crew.id) return false;
 
     // Check if module is enabled in crew settings
     const moduleKeyMap: Record<string, keyof CrewSyncModules> = {
@@ -243,16 +255,16 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
     };
 
     const modKey = moduleKeyMap[section];
-    if (modKey && currentCrew.syncModules && currentCrew.syncModules[modKey] === false) {
+    if (modKey && crew.syncModules && crew.syncModules[modKey] === false) {
       return false; // Module sync disabled for this crew
     }
 
     try {
       // Optimistic update
       const updatedCrew: FamilyCrew = {
-        ...currentCrew,
+        ...crew,
         sharedData: {
-          ...(currentCrew.sharedData || {}),
+          ...(crew.sharedData || {}),
           [section]: data
         },
         lastUpdated: new Date().toISOString(),
@@ -262,7 +274,7 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(updatedCrew));
 
       // Network sync
-      const res = await fetch(resolveMediaUrl(`/api/family-crew/sync/${encodeURIComponent(currentCrew.id)}`), {
+      const res = await fetch(resolveMediaUrl(`/api/family-crew/sync/${encodeURIComponent(crew.id)}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -276,8 +288,12 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       if (res.ok) {
         const resData = await res.json();
         if (resData.crew) {
-          setCurrentCrew(resData.crew);
-          localStorage.setItem(`camper_family_crew_${emailLower}`, JSON.stringify(resData.crew));
+          const curStr = JSON.stringify(currentCrewRef.current);
+          const newStr = JSON.stringify(resData.crew);
+          if (curStr !== newStr) {
+            setCurrentCrew(resData.crew);
+            localStorage.setItem(`camper_family_crew_${emailLower}`, newStr);
+          }
         }
         return true;
       }
@@ -285,17 +301,18 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       console.warn("Error syncing crew section:", err);
     }
     return false;
-  };
+  }, [currentUser, emailLower]);
 
-  const updateCrewSettings = async (name?: string, syncModules?: Partial<CrewSyncModules>): Promise<boolean> => {
-    if (!currentCrew || !emailLower) return false;
+  const updateCrewSettings = useCallback(async (name?: string, syncModules?: Partial<CrewSyncModules>): Promise<boolean> => {
+    const crew = currentCrewRef.current;
+    if (!crew || !emailLower) return false;
     try {
-      const res = await fetch(resolveMediaUrl(`/api/family-crew/update-settings/${encodeURIComponent(currentCrew.id)}`), {
+      const res = await fetch(resolveMediaUrl(`/api/family-crew/update-settings/${encodeURIComponent(crew.id)}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name || currentCrew.name,
-          syncModules: syncModules || currentCrew.syncModules,
+          name: name || crew.name,
+          syncModules: syncModules || crew.syncModules,
           email: emailLower
         })
       });
@@ -317,31 +334,42 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
       console.error("Error updating crew settings:", err);
     }
     return false;
-  };
+  }, [emailLower]);
 
   const isOwner = !!(currentCrew && emailLower && currentCrew.ownerEmail?.toLowerCase() === emailLower);
 
-  const isModuleSynced = (module: keyof CrewSyncModules): boolean => {
+  const isModuleSynced = useCallback((module: keyof CrewSyncModules): boolean => {
     if (!currentCrew) return false;
     if (!currentCrew.syncModules) return true;
     return currentCrew.syncModules[module] !== false;
-  };
+  }, [currentCrew?.syncModules]);
+
+  const value = React.useMemo(() => ({
+    currentCrew,
+    isLoading,
+    isOwner,
+    createCrew,
+    joinCrew,
+    leaveCrew,
+    syncCrewSection,
+    updateCrewSettings,
+    refreshCrew,
+    isModuleSynced
+  }), [
+    currentCrew,
+    isLoading,
+    isOwner,
+    createCrew,
+    joinCrew,
+    leaveCrew,
+    syncCrewSection,
+    updateCrewSettings,
+    refreshCrew,
+    isModuleSynced
+  ]);
 
   return (
-    <FamilyCrewContext.Provider
-      value={{
-        currentCrew,
-        isLoading,
-        isOwner,
-        createCrew,
-        joinCrew,
-        leaveCrew,
-        syncCrewSection,
-        updateCrewSettings,
-        refreshCrew,
-        isModuleSynced
-      }}
-    >
+    <FamilyCrewContext.Provider value={value}>
       {children}
     </FamilyCrewContext.Provider>
   );

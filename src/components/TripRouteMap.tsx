@@ -230,6 +230,9 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     pointsRef.current = points;
   }, [points]);
 
+  const routePointsStr = React.useMemo(() => JSON.stringify(trip.routePoints || []), [trip.routePoints]);
+  const movementsStr = React.useMemo(() => JSON.stringify(trip.movements || []), [trip.movements]);
+
   // Sync points state with prop when trip, mode, or editMode changes
   React.useEffect(() => {
     if (mode === 'planned') {
@@ -237,7 +240,8 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
         if (justSavedRef.current) {
           justSavedRef.current = false;
         } else {
-          setPoints(trip.routePoints || []);
+          const incoming = trip.routePoints || [];
+          setPoints((prev) => (JSON.stringify(prev) !== JSON.stringify(incoming) ? incoming : prev));
         }
       }
       setIsPlaying(false);
@@ -247,7 +251,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     }
 
     // mode === 'movements': geocode actual registered movements
-    setEditMode(false);
+    setEditMode((prev) => (prev ? false : prev));
     const sortedMovements = [...(trip.movements || [])].sort(
       (a, b) => (a.odometer || 0) - (b.odometer || 0)
     );
@@ -273,7 +277,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
         }
 
         if (isSubscribed) {
-          setPoints(resolvedPoints);
+          setPoints((prev) => (JSON.stringify(prev) !== JSON.stringify(resolvedPoints) ? resolvedPoints : prev));
           setIsGeocoding(false);
         }
       };
@@ -283,12 +287,12 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
         isSubscribed = false;
       };
     } else {
-      setPoints([]);
+      setPoints((prev) => (prev.length === 0 ? prev : []));
       setIsPlaying(false);
       isPlayingRef.current = false;
       setProgressIndex(0);
     }
-  }, [trip, mode, editMode]);
+  }, [trip.id, routePointsStr, movementsStr, mode, editMode]);
 
   // Geocode photos matching their assigned locationNames (only for real movements mode)
   React.useEffect(() => {

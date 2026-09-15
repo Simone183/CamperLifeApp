@@ -31,6 +31,8 @@ import {
 import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
 import { createSocialPostFromTrip } from "./utils/tripSocialShare";
 import { normalizeTrip, mergeTrips } from "./utils/tripSyncHelper";
+import { parseSostaFirestoreDoc } from "./data/userPlacesDataset";
+import { resolveApiUrl } from "./utils/resolveMediaUrl";
 
 
 // Modular Tab Components
@@ -232,6 +234,22 @@ export default function App() {
         ? { ...INITIAL_VEHICLE_DIMENSIONS, ...JSON.parse(saved) }
         : INITIAL_VEHICLE_DIMENSIONS;
     });
+
+  const safeSaveCustomPlaces = React.useCallback((allPlaces: Place[]) => {
+    try {
+      const customPlaces = allPlaces.filter(
+        (p) =>
+          p.source === "inserito_a_mano" ||
+          p.source === "user" ||
+          p.id.startsWith("custom_") ||
+          p.id.startsWith("sosta_user_") ||
+          Boolean((p as any).isUserCreated),
+      );
+      localStorage.setItem("camper_places", JSON.stringify(customPlaces));
+    } catch (e) {
+      console.warn("[App] Could not save custom places to localStorage:", e);
+    }
+  }, []);
 
   const [places, setPlaces] = React.useState<Place[]>(() => {
     const saved = localStorage.getItem("camper_places");
@@ -984,17 +1002,20 @@ export default function App() {
         const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
         const normalized = e.detail.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
         const newStr = JSON.stringify(normalized);
-        const curStr = JSON.stringify(trips);
-        if (newStr !== curStr) {
-          setTrips(normalized);
-        }
+        setTrips((prevTrips) => {
+          const curStr = JSON.stringify(prevTrips);
+          if (newStr !== curStr) {
+            return normalized;
+          }
+          return prevTrips;
+        });
       }
     };
     window.addEventListener("trip-updated", handleTripUpdated);
     return () => {
       window.removeEventListener("trip-updated", handleTripUpdated);
     };
-  }, [trips, currentUser?.email]);
+  }, [currentUser?.email]);
 
   // Active navigation tab: ONLY THREE primary sections as requested!
   const [activeTab, setActiveTab] = React.useState<
@@ -1936,21 +1957,8 @@ export default function App() {
 
   // --- Toast/Notification State ---
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
-  const [hasActiveTrip, setHasActiveTrip] = React.useState<boolean>(() => {
-    try {
-      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
-      const saved = cleanEmail ? localStorage.getItem(`camper_trips_${cleanEmail}`) : null;
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) && parsed.some((t: any) => t.status === "Attivo");
-      }
-    } catch {}
-    return false;
-  });
-
-  React.useEffect(() => {
-    const hasActive = trips.some((t) => t.status === "Attivo");
-    setHasActiveTrip(hasActive);
+  const hasActiveTrip = React.useMemo(() => {
+    return trips.some((t) => t.status === "Attivo");
   }, [trips]);
 
   React.useEffect(() => {
@@ -1989,16 +1997,9 @@ export default function App() {
         }
       }
     };
-    const handleTripStatusEvent = (e: any) => {
-      if (e.detail && typeof e.detail.hasActiveTrip === "boolean") {
-        setHasActiveTrip(e.detail.hasActiveTrip);
-      }
-    };
     window.addEventListener("show-toast", handleToastEvent);
-    window.addEventListener("trip-status-changed", handleTripStatusEvent);
     return () => {
       window.removeEventListener("show-toast", handleToastEvent);
-      window.removeEventListener("trip-status-changed", handleTripStatusEvent);
     };
   }, []);
 
@@ -3337,7 +3338,7 @@ out center;`;
       } else {
         const mergedList = [...places, ...importedPlaces];
         setPlaces(mergedList);
-        localStorage.setItem("camper_places", JSON.stringify(mergedList));
+        safeSaveCustomPlaces(mergedList);
         setOsmImportSuccessCount(importedPlaces.length);
         window.dispatchEvent(
           new CustomEvent("show-toast", {
@@ -3431,7 +3432,7 @@ out center;`;
       let fetchedSuccessfully = false;
 
       try {
-        const res = await fetch("/api/public-places");
+        const res = await fetch(resolveApiUrl("/api/public-places"));
         if (res.ok) {
           const contentType = res.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
@@ -3462,7 +3463,7 @@ out center;`;
           prevPlaces.forEach((p) => mergedMap.set(p.id, p));
           approvedPlaces.forEach((p) => mergedMap.set(p.id, p));
           const merged = Array.from(mergedMap.values());
-          localStorage.setItem("camper_places", JSON.stringify(merged));
+          safeSaveCustomPlaces(merged);
           return merged;
         });
       }
@@ -4035,8 +4036,18 @@ out center;`;
           );
         }
 
-        setUserLocation({ lat, lng });
-        setUserAccuracy(accuracy);
+        setUserLocation((prev) => {
+          if (prev && Math.abs(prev.lat - lat) < 0.00002 && Math.abs(prev.lng - lng) < 0.00002) {
+            return prev;
+          }
+          return { lat, lng };
+        });
+        setUserAccuracy((prev) => {
+          if (prev !== null && Math.abs(prev - accuracy) < 1) {
+            return prev;
+          }
+          return accuracy;
+        });
       };
 
       // Primary High Accuracy Watch
@@ -4284,32 +4295,88 @@ out center;`;
     }
   }, [userLocation, trips, pendingAutoMovement]);
 
-  // --- Sync States with LocalStorage on Change ---
+  // --- Sync States with LocalStorage & Load 41,730 Soste Catalog ---
   React.useEffect(() => {
-    fetch("/api/public-places")
-      .then((res) => {
-        if (!res.ok) throw new Error("Network response error");
-        return res.json();
-      })
-      .then((serverPlaces: Place[]) => {
-        if (Array.isArray(serverPlaces)) {
-          setPlaces((prevPlaces) => {
-            const mergedMap = new globalThis.Map<string, Place>();
-            INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
-            prevPlaces.forEach((p) => mergedMap.set(p.id, p));
-            serverPlaces.forEach((p) => mergedMap.set(p.id, p));
-            const merged = Array.from(mergedMap.values());
-            localStorage.setItem("camper_places", JSON.stringify(merged));
-            return merged;
-          });
+    let isCancelled = false;
+
+    async function loadCatalogAndPlaces() {
+      let catalogItems: Place[] = [];
+
+      // 1. First priority: Load bundled catalog (offline/local assets on Android APK and Web)
+      try {
+        let rawCatalog: any[] | null = null;
+        try {
+          const res1 = await fetch("./data/soste_catalog.json");
+          if (res1 && res1.ok) {
+            rawCatalog = await res1.json();
+          }
+        } catch {
+          // fallback to root path
         }
-      })
-      .catch((err) => {
-        console.warn(
-          "Impossibile caricare i punti pubblici condivisi (funzionamento offline attivo):",
-          err,
-        );
-      });
+
+        if (!rawCatalog) {
+          try {
+            const res2 = await fetch("/data/soste_catalog.json");
+            if (res2 && res2.ok) {
+              rawCatalog = await res2.json();
+            }
+          } catch {
+            // non-blocking
+          }
+        }
+
+        if (Array.isArray(rawCatalog) && rawCatalog.length > 0) {
+          catalogItems = rawCatalog.map((item: any) => parseSostaFirestoreDoc(item, item.id));
+          console.log(`[App] Successfully loaded ${catalogItems.length} catalog places from local assets.`);
+        }
+      } catch (catErr) {
+        console.warn("[App] Local soste_catalog.json load notice:", catErr);
+      }
+
+      // 2. Fetch server-approved / cloud places if online
+      let serverPlaces: Place[] = [];
+      try {
+        const res = await fetch(resolveApiUrl("/api/public-places")).catch(() => null);
+        if (res && res.ok) {
+          const ct = res.headers.get("content-type");
+          if (ct && ct.includes("application/json")) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+              serverPlaces = data;
+              console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places.`);
+            }
+          }
+        }
+      } catch (apiErr) {
+        console.warn("[App] /api/public-places fetch notice:", apiErr);
+      }
+
+      if (isCancelled) return;
+
+      if (catalogItems.length > 0 || serverPlaces.length > 0) {
+        setPlaces((prevPlaces) => {
+          const mergedMap = new globalThis.Map<string, Place>();
+          // 1. Mock baseline (2,670 items)
+          INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
+          // 2. Bundled Soste Catalog (39,061 items)
+          catalogItems.forEach((p) => mergedMap.set(p.id, p));
+          // 3. User local / existing places
+          prevPlaces.forEach((p) => mergedMap.set(p.id, p));
+          // 4. Remote server places
+          serverPlaces.forEach((p) => mergedMap.set(p.id, p));
+
+          const merged = Array.from(mergedMap.values());
+          console.log(`[App] Total merged places count: ${merged.length}`);
+          return merged;
+        });
+      }
+    }
+
+    loadCatalogAndPlaces();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   React.useEffect(() => {
@@ -4320,8 +4387,8 @@ out center;`;
   }, [vehicleDimensions]);
 
   React.useEffect(() => {
-    localStorage.setItem("camper_places", JSON.stringify(places));
-  }, [places]);
+    safeSaveCustomPlaces(places);
+  }, [places, safeSaveCustomPlaces]);
 
   React.useEffect(() => {
     localStorage.setItem("camper_messages", JSON.stringify(communityMessages));
@@ -6841,10 +6908,7 @@ out center;`;
                       onAddPlace={(newPlace) => {
                         const updatedPlaces = [...places, newPlace];
                         setPlaces(updatedPlaces);
-                        localStorage.setItem(
-                          "camper_places",
-                          JSON.stringify(updatedPlaces),
-                        );
+                        safeSaveCustomPlaces(updatedPlaces);
                       }}
                       onShowOnMap={(lat, lng, label) => {
                         setActiveTab("map_nav");

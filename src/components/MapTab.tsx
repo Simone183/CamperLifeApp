@@ -16,7 +16,7 @@ import {
   OSMObstacle,
   Trip,
 } from "../types";
-import { detectPlaceCategoryAndLabel, getPlaceBadgeText } from "../utils/placeCategoryHelper";
+import { detectPlaceCategoryAndLabel, getPlaceBadgeText, isCityOrLocality } from "../utils/placeCategoryHelper";
 import {
   MapPin,
   Heart,
@@ -110,7 +110,7 @@ export function MapCircle({
     return () => {
       circle.setMap(null);
     };
-  }, [map, center, radius, color]);
+  }, [map, center?.lat, center?.lng, radius, color]);
   return null;
 }
 
@@ -174,6 +174,18 @@ function MapEventsHelper({
   onMapInstance?: (map: any) => void;
 }) {
   const map = useMap();
+
+  const onMapClickRef = React.useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
+
+  const onMapContextMenuRef = React.useRef(onMapContextMenu);
+  onMapContextMenuRef.current = onMapContextMenu;
+
+  const onIdleRef = React.useRef(onIdle);
+  onIdleRef.current = onIdle;
+
+  const onMapInstanceRef = React.useRef(onMapInstance);
+  onMapInstanceRef.current = onMapInstance;
 
   React.useEffect(() => {
     if (!map) return;
@@ -243,7 +255,7 @@ function MapEventsHelper({
     };
 
     mapRef.current = map;
-    onMapInstance?.(map);
+    onMapInstanceRef.current?.(map);
 
     // Bind event listeners using Google Maps Client API
     const clickListener = map.addListener(
@@ -251,7 +263,7 @@ function MapEventsHelper({
       (e: any) => {
         const latLng = e.latLng;
         if (latLng) {
-          onMapClick(latLng.lat(), latLng.lng());
+          onMapClickRef.current?.(latLng.lat(), latLng.lng());
         }
       },
     );
@@ -261,7 +273,7 @@ function MapEventsHelper({
       (e: any) => {
         const latLng = e.latLng;
         if (latLng) {
-          onMapContextMenu(latLng.lat(), latLng.lng());
+          onMapContextMenuRef.current?.(latLng.lat(), latLng.lng());
         }
       },
     );
@@ -297,7 +309,7 @@ function MapEventsHelper({
     const idleListener = map.addListener("idle", () => {
       const center = map.getCenter();
       if (center) {
-        onIdle(center.lat(), center.lng());
+        onIdleRef.current?.(center.lat(), center.lng());
       }
     });
 
@@ -311,9 +323,9 @@ function MapEventsHelper({
       centerchangedListener.remove();
       idleListener.remove();
       mapRef.current = null;
-      onMapInstance?.(null);
+      onMapInstanceRef.current?.(null);
     };
-  }, [map, onMapClick, onMapContextMenu, onIdle, mapRef, mapMovedByUserRef, onMapInstance]);
+  }, [map, mapRef, mapMovedByUserRef]);
 
   return null;
 }
@@ -867,7 +879,13 @@ export default function MapTab({
       const pins = pinsList || searchResultPins;
       if (!pins || pins.length === 0) return;
 
-      const validPins = pins
+      // Filter out pure city/locality results so they are not treated as camper places
+      const nonCityPins = pins.filter((p) => !isCityOrLocality(p) && !p.isCity);
+
+      // If all results are city/locality, center the map on the first city
+      const pinsToFit = nonCityPins.length > 0 ? nonCityPins : [pins[0]];
+
+      const validPins = pinsToFit
         .map((p) => {
           const pLat = typeof p.lat === "number" ? p.lat : parseFloat(p.lat || p.lon);
           const pLng = typeof p.lng === "number" ? p.lng : parseFloat(p.lng || p.lon);
@@ -2003,6 +2021,7 @@ export default function MapTab({
 
             setMapCenterCoords({ lat: targetLat, lng: targetLng });
             setFilterCenter({ lat: targetLat, lng: targetLng });
+            setActiveDistanceFilter("place");
             handleMapCenterChange(targetLat, targetLng);
           }
         }
@@ -2013,7 +2032,7 @@ export default function MapTab({
           window.dispatchEvent(
             new CustomEvent("show-toast", {
               detail: {
-                message: `📍 Mappa centrata su: ${targetLocality.name || query}`,
+                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 15 km.`,
               },
             }),
           );
@@ -2071,10 +2090,13 @@ export default function MapTab({
     setMapCenterCoords({ lat, lng });
     handleMapCenterChange(lat, lng);
 
+    const isCity = isCityOrLocality(sug) || sug.isCity;
     window.dispatchEvent(
       new CustomEvent("show-toast", {
         detail: {
-          message: `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel diametro di 15 km.`,
+          message: isCity
+            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 15 km.`
+            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 15 km.`,
         },
       }),
     );
@@ -2172,11 +2194,16 @@ export default function MapTab({
     "Wi-Fi gratuito",
   ];
 
+  const selectedPlaceRef = React.useRef(selectedPlace);
+  React.useEffect(() => {
+    selectedPlaceRef.current = selectedPlace;
+  }, [selectedPlace]);
+
   // Sync state to local selected details box
   React.useEffect(() => {
-    if (selectedPlace) {
-      const fresh = places.find((p) => p.id === selectedPlace.id);
-      if (fresh) {
+    if (selectedPlaceRef.current) {
+      const fresh = places.find((p) => p.id === selectedPlaceRef.current?.id);
+      if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedPlaceRef.current)) {
         setSelectedPlace(fresh);
       }
     }
@@ -2202,7 +2229,11 @@ export default function MapTab({
   const prevSelectedPlaceIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (selectedPlace) {
-      setMapCenterCoords({ lat: selectedPlace.lat, lng: selectedPlace.lng });
+      setMapCenterCoords((prev) =>
+        prev.lat === selectedPlace.lat && prev.lng === selectedPlace.lng
+          ? prev
+          : { lat: selectedPlace.lat, lng: selectedPlace.lng },
+      );
       if (selectedPlace.id !== prevSelectedPlaceIdRef.current) {
         prevSelectedPlaceIdRef.current = selectedPlace.id;
         setShowSmartRoute(false);
@@ -2381,7 +2412,7 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (15 km di diametro / 7.5 km di raggio dal centro della mappa visualizzato)
+      // 3. Proximity Radius (15 km di raggio dal centro della mappa visualizzato)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
@@ -2395,11 +2426,18 @@ export default function MapTab({
       } else if (showAllPlaces) {
         matchesDistance = true;
       } else {
-        // Mostra le aree sosta entro 15 km di diametro (7.5 km di raggio) dal centro della mappa visualizzato
-        const centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 44.5);
-        const centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 11.5);
+        // Mostra le aree sosta entro 15 km di raggio dal centro della mappa o punto di filtro
+        let centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 44.5);
+        let centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 11.5);
+        if (activeDistanceFilter === "me" && userLocation) {
+          centerLat = userLocation.lat;
+          centerLng = userLocation.lng;
+        } else if (activeDistanceFilter === "place" && filterCenter) {
+          centerLat = filterCenter.lat;
+          centerLng = filterCenter.lng;
+        }
         const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
-        matchesDistance = dist <= 7.5;
+        matchesDistance = dist <= 15;
       }
       if (!matchesDistance) return false;
 
@@ -4750,8 +4788,10 @@ out center;`;
                     </AdvancedMarker>
                   )}
 
-                  {/* Search Result Pins (Puntine Ricerca da barra di ricerca) */}
-                  {searchResultPins.map((sug, idx) => {
+                  {/* Search Result Pins (Puntine Ricerca da barra di ricerca, esclusi risultati puramente comunali/cittadini) */}
+                  {searchResultPins
+                    .filter((sug) => !isCityOrLocality(sug) && !sug.isCity)
+                    .map((sug, idx) => {
                     const pLat = typeof sug.lat === 'number' ? sug.lat : parseFloat(sug.lat || sug.lon);
                     const pLng = typeof sug.lng === 'number' ? sug.lng : parseFloat(sug.lng || sug.lon);
                     if (isNaN(pLat) || isNaN(pLng)) return null;
@@ -4926,7 +4966,8 @@ out center;`;
                   <div className="divide-y divide-slate-100">
                     {addressSuggestions.map((sug, idx) => {
                       const isGoogle = sug.source === "google_places" || sug.source === "google";
-                      const isCamp = sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp");
+                      const isCity = isCityOrLocality(sug) || sug.isCity;
+                      const isCamp = !isCity && (sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp"));
                       const title = sug.name || sug.display_name?.split(",")[0];
                       const fullAddr = sug.address || sug.display_name;
                       const hasDist = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm);
@@ -4946,9 +4987,13 @@ out center;`;
                             />
                           ) : (
                             <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-bold text-base shadow-xs mt-0.5 ${
-                              isCamp ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                              isCity
+                                ? "bg-sky-100 text-sky-800"
+                                : isCamp
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-amber-100 text-amber-800"
                             }`}>
-                              {isCamp ? "🚐" : "📍"}
+                              {isCity ? "🏙️" : isCamp ? "🚐" : "📍"}
                             </div>
                           )}
                           <div className="flex-1 min-w-0 pr-1">
@@ -4974,15 +5019,23 @@ out center;`;
                             </div>
                             <div className="flex items-center gap-2 mt-1.5">
                               <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-                                isGoogle ? "bg-blue-50 text-blue-700 border border-blue-200/80" : "bg-slate-100 text-slate-600"
+                                isCity
+                                  ? "bg-sky-50 text-sky-700 border border-sky-200/80"
+                                  : isGoogle
+                                  ? "bg-blue-50 text-blue-700 border border-blue-200/80"
+                                  : "bg-slate-100 text-slate-600"
                               }`}>
-                                {isGoogle ? "Google Places" : "Mappa"}
+                                {isCity ? "Città / Comune" : isGoogle ? "Google Places" : "Mappa"}
                               </span>
                               {(() => {
                                 const detected = detectPlaceCategoryAndLabel(sug);
                                 if (detected.categoryLabel) {
                                   return (
-                                    <span className="text-[9.5px] text-emerald-800 font-extrabold uppercase bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-200/60 truncate">
+                                    <span className={`text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded border truncate ${
+                                      detected.isCity || isCity
+                                        ? "text-sky-800 bg-sky-100/80 border-sky-200/60"
+                                        : "text-emerald-800 bg-emerald-100/80 border-emerald-200/60"
+                                    }`}>
                                       • {detected.categoryLabel}
                                     </span>
                                   );
@@ -9745,9 +9798,11 @@ export function LeafletOfflineMap({
       markersRef.current.push(clickMarker);
     }
 
-    // Add markers for Search Result Pins
+    // Add markers for Search Result Pins (excluding pure city/locality results)
     if (searchResultPins && searchResultPins.length > 0) {
-      searchResultPins.forEach((sug, idx) => {
+      searchResultPins
+        .filter((sug) => !isCityOrLocality(sug) && !sug.isCity)
+        .forEach((sug, idx) => {
         const pLat = typeof sug.lat === 'number' ? sug.lat : parseFloat(sug.lat || sug.lon);
         const pLng = typeof sug.lng === 'number' ? sug.lng : parseFloat(sug.lng || sug.lon);
         if (isNaN(pLat) || isNaN(pLng)) return;
@@ -9843,7 +9898,7 @@ export function LeafletOfflineMap({
 
     if (activeDistanceFilter === "me" && userLocation) {
       circleLayerRef.current = L.circle([userLocation.lat, userLocation.lng], {
-        radius: 30000, // 30km
+        radius: 15000, // 15km
         color: "#3E4A35",
         fillColor: "#3E4A35",
         fillOpacity: 0.08,
@@ -9851,7 +9906,7 @@ export function LeafletOfflineMap({
       }).addTo(leafletMapInstance);
     } else if (activeDistanceFilter === "place" && filterCenter) {
       circleLayerRef.current = L.circle([filterCenter.lat, filterCenter.lng], {
-        radius: 30000, // 30km
+        radius: 15000, // 15km
         color: "#A45C40",
         fillColor: "#A45C40",
         fillOpacity: 0.08,

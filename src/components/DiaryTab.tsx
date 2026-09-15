@@ -215,12 +215,15 @@ export default function DiaryTab({
   React.useEffect(() => {
     if (initialTripId) {
       setSelectedTripId(initialTripId);
-    } else if (selectedTripId && !trips.some((t) => t.id === selectedTripId)) {
-      setSelectedTripId(trips.length > 0 ? trips[0].id : null);
-    } else if (!selectedTripId && trips.length > 0) {
-      setSelectedTripId(trips[0].id);
+      return;
     }
-  }, [trips, initialTripId, selectedTripId]);
+    setSelectedTripId((prev) => {
+      if (prev && trips.some((t) => t.id === prev)) {
+        return prev;
+      }
+      return trips.length > 0 ? trips[0].id : null;
+    });
+  }, [trips, initialTripId]);
 
   // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details, 'album' contains global photos)
   const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details" | "album">(

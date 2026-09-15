@@ -2208,6 +2208,11 @@ out center;`;
   const directionsSequence = osrmSteps.length > 0 ? osrmSteps : fallbackSequence;
 
   // Consolidated user location, active step tracking, and dual-stage TTS distance voice alerts (1km & 50m)
+  const simStepRef = React.useRef(simStep);
+  React.useEffect(() => {
+    simStepRef.current = simStep;
+  }, [simStep]);
+
   React.useEffect(() => {
     // If preview mode is active, handle once-off preview message and skip active voice alerts
     if (isPreview) {
@@ -2267,7 +2272,8 @@ out center;`;
       }
     }
 
-    if (activeStepIndex !== simStep) {
+    if (activeStepIndex !== simStepRef.current) {
+      simStepRef.current = activeStepIndex;
       setSimStep(activeStepIndex);
     }
 
@@ -2394,7 +2400,6 @@ out center;`;
       }
     }
   }, [
-    simStep,
     isPreview,
     directionsSequence,
     dest.id,

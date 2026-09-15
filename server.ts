@@ -1306,7 +1306,7 @@ function saveFeedbacks(feedbacks: any[]) {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const PORT = 3000;
 
   // Start-up optimization for all large existing public/ and uploads/ images to prevent mobile browser memory crashes
   (async function optimizeExistingImages() {
@@ -4801,6 +4801,28 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 ? calcDistKm(userLatNum, userLngNum, pLat, pLng)
                 : undefined;
 
+              const typesLower = (p.types || []).map((t: string) => String(t).toLowerCase());
+              const isCity = typesLower.some((t: string) => [
+                "locality",
+                "administrative_area_level_1",
+                "administrative_area_level_2",
+                "administrative_area_level_3",
+                "administrative_area_level_4",
+                "administrative_area_level_5",
+                "political",
+                "postal_code",
+                "country",
+                "sublocality"
+              ].includes(t)) && !typesLower.some((t: string) => [
+                "campground",
+                "rv_park",
+                "caravan_site",
+                "lodging",
+                "parking",
+                "restaurant",
+                "gas_station"
+              ].includes(t));
+
               return {
                 id: `google-${p.place_id}`,
                 place_id: p.place_id,
@@ -4813,7 +4835,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 types: p.types || [],
                 photoUrl: photoUrl,
                 source: "google_places",
-                distanceKm
+                distanceKm,
+                isCity
               };
             });
 
@@ -4839,6 +4862,21 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             ? calcDistKm(userLatNum, userLngNum, pLat, pLng)
             : undefined;
 
+          const nomTypes = [item.type, item.class].filter(Boolean).map((t: string) => String(t).toLowerCase());
+          const isNomCity = nomTypes.some((t: string) => [
+            "city",
+            "town",
+            "village",
+            "hamlet",
+            "municipality",
+            "administrative",
+            "boundary"
+          ].includes(t)) && !nomTypes.some((t: string) => [
+            "camp_site",
+            "caravan_site",
+            "sanitary_dump_station"
+          ].includes(t));
+
           return {
             id: `osm-${item.place_id}`,
             place_id: String(item.place_id),
@@ -4851,7 +4889,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             types: [item.type, item.class].filter(Boolean),
             photoUrl: null,
             source: "nominatim",
-            distanceKm
+            distanceKm,
+            isCity: isNomCity
           };
         });
 

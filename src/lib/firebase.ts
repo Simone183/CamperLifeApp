@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeFirestore, setLogLevel } from "firebase/firestore";
+import { initializeFirestore, getFirestore, setLogLevel } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
 // Silence standard Firestore SDK logs
@@ -15,6 +15,22 @@ const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatab
   ? firebaseConfig.firestoreDatabaseId
   : undefined;
 
-export const db = dbId
-  ? initializeFirestore(app, { experimentalForceLongPolling: true }, dbId)
-  : initializeFirestore(app, { experimentalForceLongPolling: true });
+function getDbInstance() {
+  try {
+    if (dbId) {
+      return initializeFirestore(app, { experimentalForceLongPolling: true }, dbId);
+    } else {
+      return initializeFirestore(app, { experimentalForceLongPolling: true });
+    }
+  } catch (e) {
+    try {
+      return dbId ? getFirestore(app, dbId) : getFirestore(app);
+    } catch (innerErr) {
+      console.warn("[Firebase] Fallback getFirestore error:", innerErr);
+      return getFirestore(app);
+    }
+  }
+}
+
+export const db = getDbInstance();
+

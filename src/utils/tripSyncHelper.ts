@@ -53,10 +53,10 @@ export function isDeletedId(type: DeletionType, id: string, email?: string): boo
 export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
   if (!rawTrip || typeof rawTrip !== "object") {
     return {
-      id: `trip_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      id: "trip_default",
       title: "Viaggio Senza Titolo",
-      startDate: new Date().toISOString().split("T")[0],
-      endDate: new Date().toISOString().split("T")[0],
+      startDate: "2025-01-01",
+      endDate: "2025-01-01",
       expenses: [],
       movements: [],
       stops: [],
@@ -74,11 +74,11 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
         .filter((e: any) => e && !deletedExpenses.has(String(e.id || '')))
         .map((e: any, idx: number) => {
           const item: DiaryExpense = {
-            id: String(e?.id || `exp_${Date.now()}_${idx}`),
+            id: String(e?.id || `exp_${idx}`),
             title: String(e?.title || "Spesa"),
             amount: typeof e?.amount === "number" && !isNaN(e.amount) ? e.amount : parseFloat(e?.amount) || 0,
             category: e?.category || "Altro",
-            date: String(e?.date || new Date().toISOString().split("T")[0]),
+            date: String(e?.date || "2025-01-01"),
           };
           if (e?.liters !== undefined && e?.liters !== null && !isNaN(Number(e.liters))) {
             item.liters = Number(e.liters);
@@ -103,17 +103,17 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
     ? rawTrip.movements
         .filter((m: any) => m && !deletedMovements.has(String(m.id || '')))
         .map((m: any, idx: number) => ({
-          id: String(m?.id || `mov_${Date.now()}_${idx}`),
+          id: String(m?.id || `mov_${idx}`),
           location: String(m?.location || "Tappa"),
           odometer: typeof m?.odometer === "number" && !isNaN(m.odometer) ? m.odometer : parseFloat(m?.odometer) || 0,
-          date: String(m?.date || new Date().toISOString()),
+          date: String(m?.date || "2025-01-01"),
           notes: String(m?.notes || ""),
         }))
     : [];
 
   const cleanStops: TripStop[] = Array.isArray(rawTrip.stops)
     ? rawTrip.stops.map((s: any, idx: number) => ({
-        id: String(s?.id || `stop_${Date.now()}_${idx}`),
+        id: String(s?.id || `stop_${idx}`),
         name: String(s?.name || "Sosta"),
         lat: typeof s?.lat === "number" ? s.lat : 0,
         lng: typeof s?.lng === "number" ? s.lng : 0,
@@ -136,7 +136,7 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
           return true;
         })
         .map((p: any, idx: number) => {
-          const photoId = String(p?.id || `photo_${Date.now()}_${idx}`);
+          const photoId = String(p?.id || `photo_${idx}`);
           let photoUrl = String(p?.url || "");
           if (photoUrl.startsWith("data:image/")) {
             // Offload base64 data to IndexedDB to keep trip documents ultra-lightweight (<1MB)
@@ -147,7 +147,7 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
             id: photoId,
             url: photoUrl,
             description: String(p?.description || ""),
-            date: String(p?.date || new Date().toISOString().split("T")[0]),
+            date: String(p?.date || "2025-01-01"),
           };
           if (p?.locationName) {
             photoItem.locationName = String(p.locationName);

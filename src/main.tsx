@@ -25,19 +25,25 @@ try {
       isMobileNative,
     });
 
-    // Aggiungi monkey-patch per prevenire QuotaExceededError in localStorage
-    const originalSetItem = localStorage.setItem;
-    localStorage.setItem = function(key, value) {
-      try {
-        originalSetItem.apply(this, [key, value]);
-      } catch (e) {
-        if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-          console.warn('LocalStorage quota exceeded for key:', key);
-        } else {
-          throw e;
-        }
+    // Aggiungi monkey-patch sicuro per prevenire QuotaExceededError in localStorage
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const originalSetItem = window.localStorage.setItem.bind(window.localStorage);
+        window.localStorage.setItem = function(key: string, value: string) {
+          try {
+            originalSetItem(key, String(value));
+          } catch (e: any) {
+            if (e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+              console.warn('LocalStorage quota exceeded for key:', key);
+            } else {
+              console.warn('LocalStorage setItem error for key:', key, e);
+            }
+          }
+        };
       }
-    };
+    } catch (storageErr) {
+      console.warn("Could not patch localStorage:", storageErr);
+    }
 
     if (isMobileNative && window.fetch) {
 

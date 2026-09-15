@@ -3,6 +3,101 @@ import { PlaceCategory } from "../types";
 export interface PlaceCategoryInfo {
   category: PlaceCategory;
   categoryLabel?: string;
+  isCity?: boolean;
+}
+
+/**
+ * Checks if a place/search suggestion represents a pure city, municipality, or administrative locality
+ * rather than a specific camper place, business, or campsite.
+ */
+export function isCityOrLocality(item: {
+  types?: string[];
+  name?: string;
+  display_name?: string;
+  category?: string;
+  categoryLabel?: string;
+  isCity?: boolean;
+}): boolean {
+  if (item.isCity) return true;
+
+  const types = (item.types || []).map((t: string) => String(t).toLowerCase());
+  const nameLower = (item.name || item.display_name || "").toLowerCase();
+
+  // If it contains explicit camper indicators, it is NOT just a city
+  const camperKeywords = [
+    "campground",
+    "rv_park",
+    "caravan_site",
+    "camper",
+    "camping",
+    "campeggio",
+    "area sosta",
+    "sosta camper",
+    "area camper",
+    "agricamper",
+    "sosta attrezzata",
+    "parcheggio camper",
+    "camper service",
+  ];
+  if (
+    camperKeywords.some((kw) => types.includes(kw) || nameLower.includes(kw))
+  ) {
+    return false;
+  }
+
+  // Check city / administrative / locality types
+  const cityTypes = [
+    "locality",
+    "administrative_area_level_1",
+    "administrative_area_level_2",
+    "administrative_area_level_3",
+    "administrative_area_level_4",
+    "administrative_area_level_5",
+    "political",
+    "country",
+    "postal_code",
+    "sublocality",
+    "sublocality_level_1",
+    "neighborhood",
+    "colloquial_area",
+    "city",
+    "town",
+    "village",
+    "hamlet",
+    "municipality",
+    "boundary",
+    "administrative",
+  ];
+
+  const hasCityType = types.some((t) => cityTypes.includes(t));
+  if (hasCityType) {
+    // If it also has specific business or POI types, it is a POI inside the city
+    const poiTypes = [
+      "restaurant",
+      "cafe",
+      "bar",
+      "bakery",
+      "supermarket",
+      "gas_station",
+      "car_repair",
+      "car_dealer",
+      "tourist_attraction",
+      "museum",
+      "lodging",
+      "hotel",
+      "pharmacy",
+      "store",
+      "establishment",
+      "point_of_interest",
+    ];
+    // If types ONLY consist of city/administrative types, or name is purely the locality
+    const nonCityPoiTypes = types.filter((t) => poiTypes.includes(t));
+    if (nonCityPoiTypes.length === 0 || (types.includes("locality") && nonCityPoiTypes.length <= 1 && types.includes("political"))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -14,12 +109,23 @@ export function detectPlaceCategoryAndLabel(sug: {
   display_name?: string;
   category?: string;
   categoryLabel?: string;
+  isCity?: boolean;
 }): PlaceCategoryInfo {
   // If explicitly provided with a custom label, return it
   if (sug.categoryLabel) {
     return {
       category: (sug.category as PlaceCategory) || "area_sosta",
       categoryLabel: sug.categoryLabel.toUpperCase(),
+      isCity: sug.isCity || sug.categoryLabel.toUpperCase().includes("CITTÀ"),
+    };
+  }
+
+  // 0. Check if this is a city / locality
+  if (isCityOrLocality(sug)) {
+    return {
+      category: "area_sosta",
+      categoryLabel: "CITTÀ / COMUNE",
+      isCity: true,
     };
   }
 

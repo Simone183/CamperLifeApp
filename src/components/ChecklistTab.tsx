@@ -46,13 +46,25 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
   const items = propItems !== undefined ? propItems : localItems;
   const setItems = propSetItems !== undefined ? propSetItems : setLocalItems;
 
+  const itemsRef = React.useRef(items);
+  React.useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   // Sync incoming family crew checklists
   React.useEffect(() => {
     if (currentCrew && isModuleSynced('checklists') && Array.isArray(currentCrew.sharedData?.checklists) && currentCrew.sharedData.checklists.length > 0) {
-      setItems(currentCrew.sharedData.checklists);
-      localStorage.setItem("camper_checklist", JSON.stringify(currentCrew.sharedData.checklists));
+      const incoming = currentCrew.sharedData.checklists;
+      const incomingStr = JSON.stringify(incoming);
+      const currentStr = JSON.stringify(itemsRef.current);
+      if (incomingStr !== currentStr) {
+        setItems(incoming);
+        try {
+          localStorage.setItem("camper_checklist", incomingStr);
+        } catch (e) {}
+      }
     }
-  }, [currentCrew, isModuleSynced, setItems]);
+  }, [currentCrew?.sharedData?.checklists, isModuleSynced, setItems]);
 
   // Sync to family crew when items change
   const handleUpdateItems = React.useCallback((newItems: ChecklistItem[]) => {
