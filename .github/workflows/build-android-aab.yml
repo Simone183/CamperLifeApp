@@ -125,8 +125,12 @@ jobs:
           echo "Found AAB at: $AAB_PATH"
           echo "aab_path=$AAB_PATH" >> $GITHUB_OUTPUT
           
-          # Estrai versione dal package.json
-          VERSION=$(node -p "require('./package.json').version")
+          # Estrai versione da android/app/build.gradle o package.json
+          GRADLE_VER=$(grep -o "versionName [\"'][^\"']*[\"']" android/app/build.gradle 2>/dev/null | awk '{print $2}' | tr -d '"'\''')
+          PKG_VER=$(node -p "require('./package.json').version" 2>/dev/null)
+          VERSION="${GRADLE_VER:-$PKG_VER}"
+          if [ -z "$VERSION" ]; then VERSION="2.4.20"; fi
+          echo "Determined Android Version: $VERSION"
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Sign Android Bundle (AAB) with Keystore
