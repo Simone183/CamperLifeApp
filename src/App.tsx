@@ -32,7 +32,9 @@ import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
 import { createSocialPostFromTrip } from "./utils/tripSocialShare";
 import { normalizeTrip, mergeTrips } from "./utils/tripSyncHelper";
 import { parseSostaFirestoreDoc } from "./data/userPlacesDataset";
+import { mergeNearbyPlaces, PROXIMITY_MERGE_DISTANCE_KM } from "./utils/placeMergeUtils";
 import { resolveApiUrl } from "./utils/resolveMediaUrl";
+import { sanitizeForFirestore } from "./utils/firestoreHelper";
 
 
 // Modular Tab Components
@@ -166,6 +168,13 @@ const firestore = new ClientFirestoreAdapter(
 );
 
 export default function App() {
+  React.useEffect(() => {
+    const preShell = document.getElementById("v-pre-shell");
+    if (preShell) {
+      preShell.remove();
+    }
+  }, []);
+
   const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
   const [currentUser, setCurrentUser] = React.useState<{
     nickname: string;
@@ -235,6 +244,26 @@ export default function App() {
         : INITIAL_VEHICLE_DIMENSIONS;
     });
 
+  const loadPlaceOverrides = (): Record<string, Partial<Place>> => {
+    try {
+      const raw = localStorage.getItem("camper_places_overrides");
+      if (raw) return JSON.parse(raw);
+    } catch (e) {
+      console.warn("[App] Could not load place overrides:", e);
+    }
+    return {};
+  };
+
+  const savePlaceOverride = (place: Place) => {
+    try {
+      const overrides = loadPlaceOverrides();
+      overrides[place.id] = place;
+      localStorage.setItem("camper_places_overrides", JSON.stringify(overrides));
+    } catch (e) {
+      console.warn("[App] Could not save place override:", e);
+    }
+  };
+
   const safeSaveCustomPlaces = React.useCallback((allPlaces: Place[]) => {
     try {
       const customPlaces = allPlaces.filter(
@@ -253,6 +282,7 @@ export default function App() {
 
   const [places, setPlaces] = React.useState<Place[]>(() => {
     const saved = localStorage.getItem("camper_places");
+    const overrides = loadPlaceOverrides();
     console.log("[App] Initializing places. Found in localStorage:", !!saved);
     let parsed: Place[] = [];
     if (saved) {
@@ -273,17 +303,20 @@ export default function App() {
     } else {
       parsed = INITIAL_PLACES;
     }
-    return parsed.map((p: any) => {
+    // Apply persistent overrides
+    parsed = parsed.map((p: any) => {
+      const overridden = overrides[p.id] ? { ...p, ...overrides[p.id] } : p;
       if (
-        p.name === "Camper Service Gratis / Scarico" ||
-        p.name === "Camper service gratis/scarico" ||
-        p.name === "Camper Service Gratis/Scarico" ||
-        p.name === "Camper service gratis / scarico"
+        overridden.name === "Camper Service Gratis / Scarico" ||
+        overridden.name === "Camper service gratis/scarico" ||
+        overridden.name === "Camper Service Gratis/Scarico" ||
+        overridden.name === "Camper service gratis / scarico"
       ) {
-        return { ...p, name: "Camper Service Carico/Scarico" };
+        return { ...overridden, name: "Camper Service Carico/Scarico" };
       }
-      return p;
+      return overridden;
     });
+    return mergeNearbyPlaces(parsed, PROXIMITY_MERGE_DISTANCE_KM);
   });
 
   const [deletedMessageIds, setDeletedMessageIds] = React.useState<Set<string>>(() => {
@@ -496,16 +529,24 @@ export default function App() {
   React.useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 1700);
+    }, 800);
     return () => clearTimeout(timer);
   }, []);
 
   const [showTermsModal, setShowTermsModal] = React.useState<boolean>(() => {
-    return localStorage.getItem("has_accepted_terms") !== "true";
+    try {
+      return localStorage.getItem("has_accepted_terms") !== "true";
+    } catch {
+      return false;
+    }
   });
 
   const [showTour, setShowTour] = React.useState<boolean>(() => {
-    return localStorage.getItem("has_seen_onboarding_tour") !== "true";
+    try {
+      return localStorage.getItem("has_seen_onboarding_tour") !== "true";
+    } catch {
+      return false;
+    }
   });
 
   const [showOfflinePromptModal, setShowOfflinePromptModal] =
@@ -513,7 +554,11 @@ export default function App() {
 
   const [hasAcceptedTerms, setHasAcceptedTerms] = React.useState<boolean>(
     () => {
-      return localStorage.getItem("has_accepted_terms") === "true";
+      try {
+        return localStorage.getItem("has_accepted_terms") === "true";
+      } catch {
+        return false;
+      }
     },
   );
 
@@ -1442,6 +1487,7 @@ export default function App() {
   }>({});
   const [adminUsers, setAdminUsers] = React.useState<any[]>([]);
   const [adminUsersSearch, setAdminUsersSearch] = React.useState("");
+  const [adminAllPlacesSearch, setAdminAllPlacesSearch] = React.useState("");
   const [adminUsersLoading, setAdminUsersLoading] = React.useState(false);
   const [adminUsersError, setAdminUsersError] = React.useState<string | null>(null);
 
@@ -2453,58 +2499,78 @@ export default function App() {
   const fetchAllPlaces = async () => {
     try {
       console.log("[Admin API] Fetching all places...");
+      const overrides = loadPlaceOverrides();
       const res = await fetch(resolveMediaUrl("/api/admin/all-places"));
+      let serverData: Place[] = [];
       if (res.ok) {
-        const data = await res.json();
-        console.log(`[Admin API] Fetched ${data.length} places.`);
-        setAllPlaces(Array.isArray(data) ? data : []);
-        return;
-      } else {
-        console.warn("[Admin API] Failed to fetch all places, status:", res.status);
+        const json = await res.json();
+        if (Array.isArray(json)) {
+          serverData = json as Place[];
+        }
       }
+      const map = new globalThis.Map<string, Place>();
+      if (Array.isArray(places)) {
+        places.forEach((p) => map.set(p.id, p));
+      }
+      if (Array.isArray(serverData)) {
+        serverData.forEach((p) => map.set(p.id, p));
+      }
+      // Apply local overrides
+      Object.entries(overrides).forEach(([id, overrideData]) => {
+        if (map.has(id)) {
+          map.set(id, { ...map.get(id)!, ...overrideData });
+        } else {
+          map.set(id, overrideData as Place);
+        }
+      });
+      const combined = Array.from(map.values());
+      console.log(`[Admin API] Total combined places for admin: ${combined.length}`);
+      setAllPlaces(combined);
+      return;
     } catch (err) {
-      console.warn("Fetch all places error, falling back to direct Firestore:", err);
-    }
-
-    if (firestore) {
-      try {
-        const snapshot = await firestore.collection("places").get();
-        const fallbackList: any[] = [];
-        snapshot.forEach((doc) => {
-          fallbackList.push({ id: doc.id, ...doc.data() });
-        });
-        setAllPlaces(fallbackList);
-      } catch (fsErr) {
-        console.warn("Direct Firestore all places query fallback failed:", fsErr);
-      }
+      console.warn("Fetch all places error, falling back to local places:", err);
+      const overrides = loadPlaceOverrides();
+      const map = new globalThis.Map<string, Place>();
+      places.forEach(p => map.set(p.id, p));
+      Object.entries(overrides).forEach(([id, overrideData]) => {
+        if (map.has(id)) map.set(id, { ...map.get(id)!, ...overrideData });
+      });
+      setAllPlaces(Array.from(map.values()));
     }
   };
 
   const handleUpdatePlace = async (updatedPlace: any) => {
+    const cleanPlace = sanitizeForFirestore(updatedPlace);
+    savePlaceOverride(cleanPlace);
+    setPlaces(prev => prev.map(p => p.id === cleanPlace.id ? { ...p, ...cleanPlace } : p));
+    setAllPlaces(prev => prev.map(p => p.id === cleanPlace.id ? { ...p, ...cleanPlace } : p));
+    setEditingPlace(null);
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: `✅ Sosta "${cleanPlace.name}" aggiornata con successo! Icona e scheda aggiornate.` },
+      }),
+    );
+
     try {
-      const res = await fetch(resolveMediaUrl("/api/admin/update-place"), {
+      await fetch(resolveMediaUrl("/api/admin/update-place"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: updatedPlace.id, updatedData: updatedPlace }),
+        body: JSON.stringify({ id: cleanPlace.id, updatedData: cleanPlace }),
       });
-      if (res.ok) {
-        fetchAllPlaces(); // Refresh list
-        setEditingPlace(null);
-        return;
-      }
     } catch (err) {
       console.warn("Update place API error, trying direct Firestore:", err);
     }
 
-    if (firestore && updatedPlace.id) {
+    if (firestore && cleanPlace.id) {
       try {
-        await firestore.collection("places").doc(updatedPlace.id).update(updatedPlace);
-        fetchAllPlaces();
-        setEditingPlace(null);
+        await firestore.collection("places").doc(cleanPlace.id).set(cleanPlace, { merge: true });
       } catch (fsErr) {
         console.error("Direct Firestore place update failed:", fsErr);
       }
     }
+
+    fetchAllPlaces();
   };
 
   const fetchFeedbacks = async () => {
@@ -3173,11 +3239,11 @@ out center;`;
 
         if (!elLat || !elLng) continue;
 
-        // Skip duplicate places
+        // Skip duplicate places within 100 meters
         const isDuplicate = places.some((p) => {
           if (p.id === `osm-${el.id}`) return true;
           const d = getDistanceKm(p.lat, p.lng, elLat, elLng);
-          return d < 0.055; // 55 meters proximity
+          return d <= PROXIMITY_MERGE_DISTANCE_KM; // 100 meters proximity
         });
 
         if (isDuplicate) continue;
@@ -3336,7 +3402,7 @@ out center;`;
           }),
         );
       } else {
-        const mergedList = [...places, ...importedPlaces];
+        const mergedList = mergeNearbyPlaces([...places, ...importedPlaces], PROXIMITY_MERGE_DISTANCE_KM);
         setPlaces(mergedList);
         safeSaveCustomPlaces(mergedList);
         setOsmImportSuccessCount(importedPlaces.length);
@@ -3458,11 +3524,8 @@ out center;`;
 
       if (approvedPlaces && approvedPlaces.length > 0) {
         setPlaces((prevPlaces) => {
-          const mergedMap = new globalThis.Map<string, Place>();
-          INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
-          prevPlaces.forEach((p) => mergedMap.set(p.id, p));
-          approvedPlaces.forEach((p) => mergedMap.set(p.id, p));
-          const merged = Array.from(mergedMap.values());
+          const combined = [...INITIAL_PLACES, ...prevPlaces, ...approvedPlaces];
+          const merged = mergeNearbyPlaces(combined, PROXIMITY_MERGE_DISTANCE_KM);
           safeSaveCustomPlaces(merged);
           return merged;
         });
@@ -4295,87 +4358,64 @@ out center;`;
     }
   }, [userLocation, trips, pendingAutoMovement]);
 
-  // --- Sync States with LocalStorage & Load 41,730 Soste Catalog ---
+  // --- Sync States with LocalStorage & Load Places (Instant & Non-blocking) ---
   React.useEffect(() => {
     let isCancelled = false;
 
-    async function loadCatalogAndPlaces() {
-      let catalogItems: Place[] = [];
-
-      // 1. First priority: Load bundled catalog (offline/local assets on Android APK and Web)
-      try {
-        let rawCatalog: any[] | null = null;
+    const timerId = setTimeout(() => {
+      async function loadServerPlaces() {
+        // Fetch server-approved / cloud places if online (lightweight)
+        let serverPlaces: Place[] = [];
         try {
-          const res1 = await fetch("./data/soste_catalog.json");
-          if (res1 && res1.ok) {
-            rawCatalog = await res1.json();
-          }
-        } catch {
-          // fallback to root path
-        }
-
-        if (!rawCatalog) {
-          try {
-            const res2 = await fetch("/data/soste_catalog.json");
-            if (res2 && res2.ok) {
-              rawCatalog = await res2.json();
-            }
-          } catch {
-            // non-blocking
-          }
-        }
-
-        if (Array.isArray(rawCatalog) && rawCatalog.length > 0) {
-          catalogItems = rawCatalog.map((item: any) => parseSostaFirestoreDoc(item, item.id));
-          console.log(`[App] Successfully loaded ${catalogItems.length} catalog places from local assets.`);
-        }
-      } catch (catErr) {
-        console.warn("[App] Local soste_catalog.json load notice:", catErr);
-      }
-
-      // 2. Fetch server-approved / cloud places if online
-      let serverPlaces: Place[] = [];
-      try {
-        const res = await fetch(resolveApiUrl("/api/public-places")).catch(() => null);
-        if (res && res.ok) {
-          const ct = res.headers.get("content-type");
-          if (ct && ct.includes("application/json")) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-              serverPlaces = data;
-              console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places.`);
+          const res = await fetch(resolveApiUrl("/api/public-places")).catch(() => null);
+          if (res && res.ok) {
+            const ct = res.headers.get("content-type");
+            if (ct && ct.includes("application/json")) {
+              const data = await res.json();
+              if (Array.isArray(data)) {
+                serverPlaces = data;
+                console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places.`);
+              }
             }
           }
+        } catch (apiErr) {
+          console.warn("[App] /api/public-places fetch notice:", apiErr);
         }
-      } catch (apiErr) {
-        console.warn("[App] /api/public-places fetch notice:", apiErr);
+
+        if (isCancelled) return;
+
+        if (serverPlaces.length > 0) {
+          setPlaces((prevPlaces) => {
+            const overrides = loadPlaceOverrides();
+            const mergedMap = new globalThis.Map<string, Place>();
+            // 1. Mock baseline
+            INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
+            // 2. User local / existing places
+            prevPlaces.forEach((p) => mergedMap.set(p.id, p));
+            // 3. Remote server places
+            serverPlaces.forEach((p) => mergedMap.set(p.id, p));
+            // 4. Overrides
+            Object.entries(overrides).forEach(([id, overrideData]) => {
+              if (mergedMap.has(id)) {
+                mergedMap.set(id, { ...mergedMap.get(id)!, ...overrideData });
+              } else {
+                mergedMap.set(id, overrideData as Place);
+              }
+            });
+
+            const merged = mergeNearbyPlaces(Array.from(mergedMap.values()), PROXIMITY_MERGE_DISTANCE_KM);
+            console.log(`[App] Total merged places count: ${merged.length}`);
+            return merged;
+          });
+        }
       }
 
-      if (isCancelled) return;
-
-      if (catalogItems.length > 0 || serverPlaces.length > 0) {
-        setPlaces((prevPlaces) => {
-          const mergedMap = new globalThis.Map<string, Place>();
-          // 1. Mock baseline (2,670 items)
-          INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
-          // 2. Bundled Soste Catalog (39,061 items)
-          catalogItems.forEach((p) => mergedMap.set(p.id, p));
-          // 3. User local / existing places
-          prevPlaces.forEach((p) => mergedMap.set(p.id, p));
-          // 4. Remote server places
-          serverPlaces.forEach((p) => mergedMap.set(p.id, p));
-
-          const merged = Array.from(mergedMap.values());
-          console.log(`[App] Total merged places count: ${merged.length}`);
-          return merged;
-        });
-      }
-    }
-
-    loadCatalogAndPlaces();
+      loadServerPlaces();
+    }, 200);
 
     return () => {
       isCancelled = true;
+      clearTimeout(timerId);
     };
   }, []);
 
@@ -4506,7 +4546,10 @@ out center;`;
       >
       {/* Initial App Startup Splash Screen */}
       {showSplash && (
-        <div className="fixed inset-0 z-[20000] bg-[#1C261B] flex flex-col items-center justify-center p-6 text-white animate-fade-in select-none">
+        <div
+          onClick={() => setShowSplash(false)}
+          className="fixed inset-0 z-[20000] bg-[#1C261B] flex flex-col items-center justify-center p-6 text-white animate-fade-in select-none cursor-pointer"
+        >
           <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6">
             <div className="relative">
               <div className="absolute -inset-4 bg-[#5A6B4E]/40 rounded-full blur-xl animate-pulse" />
@@ -4926,16 +4969,16 @@ out center;`;
       {/* Main Work Area Container */}
       <main
         id="main-content"
-        className={`flex-1 flex flex-col max-w-7xl w-full mx-auto md:px-8 ${
+        className={`flex-1 min-h-0 flex flex-col max-w-7xl w-full mx-auto md:px-8 ${
           activeTab === "map_nav"
-            ? "p-0 md:pt-4 md:pb-4 overflow-hidden"
+            ? "p-0 md:pt-3 md:pb-2.5 overflow-hidden"
             : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
         }`}
       >
         {/* Render Category 1: Mappa & Navigatore with sub segmentation */}
         {activeTab === "map_nav" &&
           (currentUser ? (
-            <div className="flex-1 space-y-2 md:space-y-4 h-full flex flex-col">
+            <div className="flex-1 min-h-0 space-y-2 md:space-y-3 h-full flex flex-col">
               {mapNavSubTab === "movement_log" ? (
                 <MovementLog
                   trip={
@@ -7131,7 +7174,7 @@ out center;`;
       )}
 
       {/* Safety info Alert panel bar */}
-      <div className="bg-[#3E4A35] text-white/80 text-xs py-3.5 border-t border-[#3E4A35]/25 text-center hidden md:block md:fixed md:bottom-0 md:left-0 md:right-0 md:z-40">
+      <div className="bg-[#3E4A35] text-white/80 text-xs py-2.5 sm:py-3 border-t border-[#3E4A35]/25 text-center hidden md:block shrink-0 z-40 w-full">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 bg-[#A45C40] rounded-full animate-ping"></span>
@@ -7552,35 +7595,75 @@ out center;`;
 
                 {adminSubTab === "all_places" && (
                   <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 font-sans">
-                    <div className="bg-[#3E4A35]/5 border border-[#3E4A35]/10 p-3.5 rounded-xl text-[11px] text-[#3E4A35] leading-relaxed">
-                      🗺️ <strong>Dashboard Tutte le Soste:</strong>{" "}
-                      Da qui puoi visualizzare, modificare e rimuovere definitivamente ogni sosta presente nel database.
-                    </div>
-                    {allPlaces.length === 0 ? (
-                      <div className="text-center py-16 text-slate-500">Nessuna sosta trovata.</div>
-                    ) : (
-                      <div className="space-y-4">
-                        {allPlaces.map((p) => (
-                          <div key={p.id} className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex justify-between items-center gap-4">
-                            <div>
-                              <div className="font-bold text-slate-800">{p.name}</div>
-                              <div className="text-xs text-slate-500">{p.address}</div>
-                            </div>
-                            <div className="flex gap-2">
-                              <button onClick={() => setEditingPlace(p)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg">
-                                <span className="text-xs font-bold">Modifica</span>
-                              </button>
-                              <button onClick={() => {
-                                console.log("[Admin UI] Delete button clicked for ID:", p.id);
-                                setConfirmingDeleteId(p.id);
-                              }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
-                                <span className="text-xs font-bold">Elimina</span>
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                    <div className="bg-[#3E4A35]/5 border border-[#3E4A35]/10 p-3.5 rounded-xl text-[11px] text-[#3E4A35] leading-relaxed flex items-center justify-between">
+                      <div>
+                        🗺️ <strong>Dashboard Tutte le Soste ({allPlaces.length} totali):</strong>{" "}
+                        Da qui puoi visualizzare, modificare e rimuovere ogni sosta presente nel database e nel catalogo.
                       </div>
-                    )}
+                      <button
+                        onClick={fetchAllPlaces}
+                        className="px-3 py-1.5 bg-[#3E4A35] text-white rounded-lg text-xs font-bold hover:bg-[#3E4A35]/90 transition-all shrink-0 ml-2"
+                      >
+                        Ricarica
+                      </button>
+                    </div>
+
+                    <div className="sticky top-0 bg-white pt-1 pb-2 z-10">
+                      <input
+                        type="text"
+                        placeholder="Cerca per nome o indirizzo tra tutte le soste..."
+                        value={adminAllPlacesSearch}
+                        onChange={(e) => setAdminAllPlacesSearch(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#3E4A35]"
+                      />
+                    </div>
+
+                    {(() => {
+                      const query = (adminAllPlacesSearch || "").toLowerCase().trim();
+                      const filtered = query
+                        ? allPlaces.filter((p) => (p.name || "").toLowerCase().includes(query) || (p.address || "").toLowerCase().includes(query))
+                        : allPlaces;
+                      const displayed = filtered.slice(0, 100);
+
+                      if (allPlaces.length === 0) {
+                        return <div className="text-center py-16 text-slate-500">Nessuna sosta trovata.</div>;
+                      }
+                      if (filtered.length === 0) {
+                        return <div className="text-center py-16 text-slate-500">Nessuna sosta corrisponde alla ricerca "{adminAllPlacesSearch}".</div>;
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          <div className="text-[11px] font-bold text-slate-500 px-1">
+                            Mostrando {displayed.length} di {filtered.length} risultati {query ? `(filtrati)` : ""}
+                          </div>
+                          {displayed.map((p) => (
+                            <div key={p.id} className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex justify-between items-center gap-4 hover:border-slate-300 transition-all">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <div className="font-bold text-slate-800 text-sm">{p.name}</div>
+                                  <span className="px-2 py-0.5 bg-[#3E4A35]/10 text-[#3E4A35] text-[9px] font-black uppercase rounded-md">
+                                    {p.category.replace("_", " ")}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">{p.address}</div>
+                              </div>
+                              <div className="flex gap-2 shrink-0">
+                                <button onClick={() => setEditingPlace(p)} className="px-3 py-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-colors">
+                                  Modifica
+                                </button>
+                                <button onClick={() => {
+                                  console.log("[Admin UI] Delete button clicked for ID:", p.id);
+                                  setConfirmingDeleteId(p.id);
+                                }} className="px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors">
+                                  Elimina
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {confirmingDeleteId && (
                       <ConfirmDeleteModal
                         onConfirm={async () => {

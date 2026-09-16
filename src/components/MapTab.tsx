@@ -16,7 +16,7 @@ import {
   OSMObstacle,
   Trip,
 } from "../types";
-import { detectPlaceCategoryAndLabel, getPlaceBadgeText, isCityOrLocality } from "../utils/placeCategoryHelper";
+import { detectPlaceCategoryAndLabel, getPlaceBadgeText, isCityOrLocality, resolvePlaceServiceSubtype } from "../utils/placeCategoryHelper";
 import {
   MapPin,
   Heart,
@@ -69,6 +69,13 @@ import {
   getBestTile,
   generatePlaceholderTile,
 } from "../utils/offlineMapCache";
+import {
+  mergeNearbyPlaces,
+  PROXIMITY_MERGE_DISTANCE_KM,
+  normalizeRatingTo10,
+  normalizeReview,
+  getRating10Descriptor,
+} from "../utils/placeMergeUtils";
 import {
   APIProvider,
   Map,
@@ -842,7 +849,7 @@ export default function MapTab({
   const [mapTypeId, setMapTypeId] = React.useState<string>("roadmap");
   const [showMapTypeMenu, setShowMapTypeMenu] = React.useState<boolean>(false);
 
-  // Distance / Radius filters states (30km)
+  // Distance / Radius filters states (10km diameter / 5km radius)
   const [activeDistanceFilter, setActiveDistanceFilter] = React.useState<
     "none" | "me" | "place"
   >("none");
@@ -899,7 +906,7 @@ export default function MapTab({
       if (googleMap && (window as any).google?.maps) {
         if (validPins.length === 1) {
           googleMap.panTo({ lat: validPins[0].lat, lng: validPins[0].lng });
-          googleMap.setZoom(13);
+          googleMap.setZoom(15);
         } else {
           const bounds = new (window as any).google.maps.LatLngBounds();
           validPins.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
@@ -910,7 +917,7 @@ export default function MapTab({
       } else if (mapRef.current && (window as any).L) {
         const map = mapRef.current;
         if (validPins.length === 1) {
-          map.setView([validPins[0].lat, validPins[0].lng], 13);
+          map.setView([validPins[0].lat, validPins[0].lng], 15);
         } else {
           const L = (window as any).L;
           const latLngs = validPins.map((p) => [p.lat, p.lng]);
@@ -925,22 +932,38 @@ export default function MapTab({
     }
   };
 
-  const [selectedCategory, setSelectedCategory] = React.useState<
-    Place["category"] | "all"
-  >(() => {
+  const [selectedCategories, setSelectedCategories] = React.useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("camper_app_settings");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.defaultPOI) return parsed.defaultPOI;
+        if (parsed.defaultPOI) return [parsed.defaultPOI];
       }
     } catch (e) {}
-    return "all";
+    return ["all"];
   });
+
+  const toggleCategory = (cat: string) => {
+    if (cat === "all") {
+      setSelectedCategories(["all"]);
+      return;
+    }
+    setSelectedCategories((prev) => {
+      if (prev.includes("all")) {
+        return [cat];
+      }
+      if (prev.includes(cat)) {
+        const next = prev.filter((c) => c !== cat);
+        return next.length === 0 ? ["all"] : next;
+      } else {
+        return [...prev, cat];
+      }
+    });
+  };
 
   React.useEffect(() => {
     if (settings?.defaultPOI) {
-      setSelectedCategory(settings.defaultPOI as any);
+      setSelectedCategories([settings.defaultPOI as string]);
     }
   }, [settings?.defaultPOI]);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -987,12 +1010,13 @@ export default function MapTab({
   const [osmObstacles, setOsmObstacles] = React.useState<OSMObstacle[]>([]);
   const [loadingOsmObstacles, setLoadingOsmObstacles] = React.useState(false);
   const [isOsmReportOpen, setIsOsmReportOpen] = React.useState(false);
+  const [osmReportCoords, setOsmReportCoords] = React.useState<{ lat: number; lng: number } | null>(null);
 
   // States for OpenStreetMap Importer
   const [showImportOSMForm, setShowImportOSMForm] = React.useState(false);
   const [isImporting, setIsImporting] = React.useState(false);
   const [isAutoLoadingOSM, setIsAutoLoadingOSM] = React.useState(false);
-  const [importRadius, setImportRadius] = React.useState<number>(15); // in km
+  const [importRadius, setImportRadius] = React.useState<number>(10); // in km
   const [importSuccessCount, setImportSuccessCount] = React.useState<
     number | null
   >(null);
@@ -1110,12 +1134,12 @@ export default function MapTab({
     hasMaxWeightLimit: false,
     maxWeight: 3.5,
     isNarrowAccess: false,
-    noiseLevel: 3,
-    maneuverability: 3,
-    cellularSignal: 3,
-    groundLevelness: 3,
-    shade: 3,
-    cleanliness: 3,
+    noiseLevel: 8,
+    maneuverability: 8,
+    cellularSignal: 8,
+    groundLevelness: 8,
+    shade: 8,
+    cleanliness: 8,
   });
 
   const [newPlaceQuery, setNewPlaceQuery] = React.useState("");
@@ -1369,7 +1393,11 @@ export default function MapTab({
               (r) => typeof r[key] === "number" && (r[key] as number) > 0
             );
             if (list.length === 0) return undefined;
-            return parseFloat((list.reduce((sum, r) => sum + (r[key] as number), 0) / list.length).toFixed(1));
+            const sum = list.reduce((acc, r) => {
+              const raw = r[key] as number;
+              return acc + (raw <= 5 ? raw * 2 : raw);
+            }, 0);
+            return parseFloat((sum / list.length).toFixed(1));
           };
           avgNoise = calcMetric("noiseLevel");
           avgManeuver = calcMetric("maneuverability");
@@ -2009,7 +2037,7 @@ export default function MapTab({
           if (!isNaN(targetLat) && !isNaN(targetLng)) {
             mapMovedByUserRef.current = true;
 
-            const targetZoom = 12;
+            const targetZoom = 15;
 
             if (mapRef.current) {
               mapRef.current.setView([targetLat, targetLng], targetZoom);
@@ -2032,7 +2060,7 @@ export default function MapTab({
           window.dispatchEvent(
             new CustomEvent("show-toast", {
               detail: {
-                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 15 km.`,
+                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel diametro di 10 km.`,
               },
             }),
           );
@@ -2070,11 +2098,11 @@ export default function MapTab({
 
     const map = mapRef.current;
     if (map) {
-      map.setView([lat, lng], 13);
+      map.setView([lat, lng], 15);
     }
     if (googleMapInstance) {
       googleMapInstance.panTo({ lat, lng });
-      googleMapInstance.setZoom(13);
+      googleMapInstance.setZoom(15);
     }
 
     const title = sug.name || sug.display_name?.split(",")[0] || "Località Ricercata";
@@ -2095,8 +2123,8 @@ export default function MapTab({
       new CustomEvent("show-toast", {
         detail: {
           message: isCity
-            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 15 km.`
-            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 15 km.`,
+            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel diametro di 10 km.`
+            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel diametro di 10 km.`,
         },
       }),
     );
@@ -2104,13 +2132,13 @@ export default function MapTab({
 
   // Review form state
   const [reviewerName, setReviewerName] = React.useState("");
-  const [rating, setRating] = React.useState(5);
-  const [noiseLevel, setNoiseLevel] = React.useState(5);
-  const [maneuverability, setManeuverability] = React.useState(5);
-  const [cellularSignal, setCellularSignal] = React.useState(5);
-  const [groundLevelness, setGroundLevelness] = React.useState(5);
-  const [shade, setShade] = React.useState(5);
-  const [cleanliness, setCleanliness] = React.useState(5);
+  const [rating, setRating] = React.useState(10);
+  const [noiseLevel, setNoiseLevel] = React.useState(8);
+  const [maneuverability, setManeuverability] = React.useState(8);
+  const [cellularSignal, setCellularSignal] = React.useState(8);
+  const [groundLevelness, setGroundLevelness] = React.useState(8);
+  const [shade, setShade] = React.useState(8);
+  const [cleanliness, setCleanliness] = React.useState(8);
   const [commentText, setCommentText] = React.useState("");
   const [priceUpdated, setPriceUpdated] = React.useState("");
   const [photoSimulation, setPhotoSimulation] = React.useState("");
@@ -2216,7 +2244,7 @@ export default function MapTab({
       if (found) {
         setSelectedPlace(found);
         if (mapRef.current) {
-          mapRef.current.setView([found.lat, found.lng], 14);
+          mapRef.current.setView([found.lat, found.lng], 15);
         }
         setIsMobileDetailsOpen(true);
         setMobileView("map");
@@ -2238,7 +2266,7 @@ export default function MapTab({
         prevSelectedPlaceIdRef.current = selectedPlace.id;
         setShowSmartRoute(false);
         if (mapRef.current) {
-          mapRef.current.setView([selectedPlace.lat, selectedPlace.lng], 13);
+          mapRef.current.setView([selectedPlace.lat, selectedPlace.lng], 15);
         }
       }
     } else {
@@ -2373,7 +2401,7 @@ export default function MapTab({
       }>;
       const { lat, lng, label } = customEvent.detail;
       if (mapRef.current) {
-        mapRef.current.setView([lat, lng], 13);
+        mapRef.current.setView([lat, lng], 15);
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
@@ -2393,12 +2421,35 @@ export default function MapTab({
   // Gestione e disegno della puntina personalizzata su sosta temporanea
   const clickedMarkerRef = React.useRef<any | null>(null);
 
-  // --- ADVANCED FILTER COUPLING ENGINE ---
-  const getFilteredPlaces = () => {
-    return places.filter((p) => {
+  // Unify places within 100 meters across different datasets (OSM, Firestore, User custom, Catalogo)
+  const unifiedPlaces = React.useMemo(() => {
+    return mergeNearbyPlaces(places, PROXIMITY_MERGE_DISTANCE_KM);
+  }, [places]);
+
+  // --- ADVANCED FILTER COUPLING ENGINE (MEMOIZED FOR PERFORMANCE) ---
+  const filteredPlaces = React.useMemo(() => {
+    return unifiedPlaces.filter((p) => {
       // 1. Category
-      const matchesCat =
-        selectedCategory === "all" || p.category === selectedCategory;
+      let matchesCat = false;
+      if (selectedCategories.includes("all") || selectedCategories.length === 0) {
+        matchesCat = true;
+      } else {
+        matchesCat = selectedCategories.some((cat) => {
+          if (cat === "camper_service") {
+            return p.category === "camper_service" || resolvePlaceServiceSubtype(p) !== undefined;
+          } else if (cat === "fontanella") {
+            return resolvePlaceServiceSubtype(p) === "fontanella";
+          } else if (cat === "lavanderia") {
+            return resolvePlaceServiceSubtype(p) === "lavanderia";
+          } else if (cat === "solo_scarico") {
+            return resolvePlaceServiceSubtype(p) === "solo_scarico";
+          } else if (cat === "carico_scarico") {
+            return resolvePlaceServiceSubtype(p) === "carico_scarico" || (p.category === "camper_service" && !resolvePlaceServiceSubtype(p));
+          } else {
+            return p.category === cat;
+          }
+        });
+      }
       if (!matchesCat) return false;
 
       // Filter by favorites if toggled
@@ -2412,7 +2463,7 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (15 km di raggio dal centro della mappa visualizzato)
+      // 3. Proximity Radius (10 km di diametro / 5 km di raggio dal centro della mappa visualizzato)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
@@ -2426,7 +2477,7 @@ export default function MapTab({
       } else if (showAllPlaces) {
         matchesDistance = true;
       } else {
-        // Mostra le aree sosta entro 15 km di raggio dal centro della mappa o punto di filtro
+        // Mostra le aree sosta entro 10 km di diametro (5 km di raggio) dal centro della mappa o punto di filtro
         let centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 44.5);
         let centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 11.5);
         if (activeDistanceFilter === "me" && userLocation) {
@@ -2437,12 +2488,13 @@ export default function MapTab({
           centerLng = filterCenter.lng;
         }
         const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
-        matchesDistance = dist <= 15;
+        matchesDistance = dist <= 5;
       }
       if (!matchesDistance) return false;
 
       // 4. Advanced Rating Filter
-      if (p.rating < filterMinRating) return false;
+      const pRating10 = normalizeRatingTo10(p.rating);
+      if (pRating10 < filterMinRating) return false;
 
       // 5. Advanced Price Filter
       if (filterMaxPrice === 0) {
@@ -2499,7 +2551,29 @@ export default function MapTab({
 
       return true;
     });
-  };
+  }, [
+    unifiedPlaces,
+    selectedCategories,
+    showFavoritesOnly,
+    favoriteIds,
+    searchQuery,
+    mapCenterCoords?.lat,
+    mapCenterCoords?.lng,
+    userLocation?.lat,
+    userLocation?.lng,
+    activeDistanceFilter,
+    filterCenter?.lat,
+    filterCenter?.lng,
+    showAllPlaces,
+    filterMinRating,
+    filterMaxPrice,
+    filterAvoidNarrow,
+    filterCheckVehicleDimensions,
+    vehicleDimensions.height,
+    vehicleDimensions.weight,
+    filterSelectedFacilities,
+    selectedPlace?.id
+  ]);
 
   const handleSelectAndFocus = (place: Place) => {
     setSelectedPlace(place);
@@ -2508,7 +2582,7 @@ export default function MapTab({
     const map = mapRef.current;
     if (map) {
       (map as any)._isProgrammatic = true;
-      map.setView([place.lat, place.lng], 14);
+      map.setView([place.lat, place.lng], 15);
     }
   };
 
@@ -2516,7 +2590,7 @@ export default function MapTab({
     const activeMap = googleMapInstance || mapRef.current;
     if (activeMap && userLocation) {
       (activeMap as any)._isProgrammatic = true;
-      activeMap.setView([userLocation.lat, userLocation.lng], 14);
+      activeMap.setView([userLocation.lat, userLocation.lng], 15);
       mapMovedByUserRef.current = false;
     }
   };
@@ -2586,7 +2660,7 @@ export default function MapTab({
         try {
           (activeMap as any)._isProgrammatic = true;
           const currentZoom = typeof activeMap.getZoom === "function" ? activeMap.getZoom() : null;
-          const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;
+          const targetZoom = (currentZoom && currentZoom > 15) ? currentZoom : 15;
           activeMap.setView([userLocation.lat, userLocation.lng], targetZoom);
         } catch (e) {
           console.warn("[GPS Centering] Failed to set center:", e);
@@ -2802,7 +2876,10 @@ out center;`;
     const totalVotes = validReviews.length;
 
     if (validReviews.length > 0) {
-      const sum = validReviews.reduce((acc, r) => acc + r.rating, 0);
+      const sum = validReviews.reduce((acc, r) => {
+        const normR = r.rating <= 5 ? r.rating * 2 : r.rating;
+        return acc + normR;
+      }, 0);
       overall = parseFloat((sum / validReviews.length).toFixed(1));
       hasVotes = true;
     } else if (
@@ -2813,8 +2890,11 @@ out center;`;
       selectedPlace.source !== "open_data_italia" &&
       selectedPlace.source !== "open_data_francia"
     ) {
-      overall = parseFloat(Number(selectedPlace.rating).toFixed(1));
-      hasVotes = true;
+      const normPlaceRating = normalizeRatingTo10(selectedPlace.rating);
+      if (normPlaceRating > 0) {
+        overall = parseFloat(Number(normPlaceRating).toFixed(1));
+        hasVotes = true;
+      }
     }
 
     const calcSubMetricAvg = (key: keyof Review, placeVal?: number) => {
@@ -2822,11 +2902,15 @@ out center;`;
         (r) =>
           typeof r[key] === "number" &&
           (r[key] as number) >= 1 &&
-          (r[key] as number) <= 5
+          (r[key] as number) <= 10
       );
       if (withMetric.length > 0) {
         const sum = withMetric.reduce(
-          (acc, r) => acc + (r[key] as number),
+          (acc, r) => {
+            const raw = r[key] as number;
+            const norm = raw <= 5 ? raw * 2 : raw;
+            return acc + norm;
+          },
           0
         );
         return parseFloat((sum / withMetric.length).toFixed(1));
@@ -2835,13 +2919,15 @@ out center;`;
         typeof placeVal === "number" &&
         placeVal > 0 &&
         placeVal !== 3 &&
+        placeVal !== 6 &&
         selectedPlace.source !== "osm" &&
         selectedPlace.source !== "OpenStreetMap" &&
         selectedPlace.source !== "open_data_italia" &&
         selectedPlace.source !== "open_data_francia" &&
         validReviews.length > 0
       ) {
-        return parseFloat(placeVal.toFixed(1));
+        const normPlaceVal = placeVal <= 5 ? placeVal * 2 : placeVal;
+        return parseFloat(normPlaceVal.toFixed(1));
       }
       return null;
     };
@@ -2928,11 +3014,14 @@ out center;`;
     setLocalReviews(updatedLocalReviews);
     localStorage.setItem(`camper_reviews_${selectedPlace.id}`, JSON.stringify(updatedLocalReviews));
 
-    // Calculate new average rating
+    // Calculate new average rating (1-10 scale)
     const expandedReviews = [...selectedPlace.reviews, newReview];
     console.log("[MapTab] New reviews count:", expandedReviews.length);
     const totalRating = expandedReviews.reduce(
-      (sum, rev) => sum + rev.rating,
+      (sum, rev) => {
+        const norm = rev.rating <= 5 && rev.rating > 0 ? rev.rating * 2 : rev.rating;
+        return sum + norm;
+      },
       0,
     );
     const average = parseFloat(
@@ -2945,7 +3034,10 @@ out center;`;
         (r) => typeof r[key] === "number" && (r[key] as number) > 0
       );
       if (withMetric.length === 0) return undefined;
-      const sum = withMetric.reduce((acc, r) => acc + (r[key] as number), 0);
+      const sum = withMetric.reduce((acc, r) => {
+        const raw = r[key] as number;
+        return acc + (raw <= 5 ? raw * 2 : raw);
+      }, 0);
       return parseFloat((sum / withMetric.length).toFixed(1));
     };
     const avgNoise = calcSubMetric("noiseLevel");
@@ -2986,12 +3078,13 @@ out center;`;
     setCommentText("");
     setPriceUpdated("");
     setPhotoSimulation("");
-    setNoiseLevel(5);
-    setManeuverability(5);
-    setCellularSignal(5);
-    setGroundLevelness(5);
-    setShade(5);
-    setCleanliness(5);
+    setRating(10);
+    setNoiseLevel(8);
+    setManeuverability(8);
+    setCellularSignal(8);
+    setGroundLevelness(8);
+    setShade(8);
+    setCleanliness(8);
     setIsAddingReview(false);
     setReviewSuccess(true);
     setTimeout(() => setReviewSuccess(false), 3000);
@@ -3132,12 +3225,12 @@ out center;`;
 
         if (!pLat || !pLng) continue;
 
-        // Skip duplicate places
+        // Skip duplicate places within 100 meters
         const currentPlacesList = placesRef.current || places;
         const isDuplicate = currentPlacesList.some((p) => {
           if (p.id === `osm-${el.id}`) return true;
           const d = getDistanceKm(p.lat, p.lng, pLat, pLng);
-          return d < 0.055; // 55 meters
+          return d <= PROXIMITY_MERGE_DISTANCE_KM; // 100 meters
         });
 
         if (isDuplicate) continue;
@@ -3297,8 +3390,8 @@ out center;`;
       if (firestoreSoste && firestoreSoste.length > 0) {
         const currentPlacesList = placesRef.current || places;
         for (const s of firestoreSoste) {
-          const isDup = currentPlacesList.some((p) => p.id === s.id || (Math.abs(p.lat - s.lat) < 0.0005 && Math.abs(p.lng - s.lng) < 0.0005)) ||
-                        importedPlaces.some((p) => p.id === s.id || (Math.abs(p.lat - s.lat) < 0.0005 && Math.abs(p.lng - s.lng) < 0.0005));
+          const isDup = currentPlacesList.some((p) => p.id === s.id || getDistanceKm(p.lat, p.lng, s.lat, s.lng) <= PROXIMITY_MERGE_DISTANCE_KM) ||
+                        importedPlaces.some((p) => p.id === s.id || getDistanceKm(p.lat, p.lng, s.lat, s.lng) <= PROXIMITY_MERGE_DISTANCE_KM);
           if (!isDup) {
             importedPlaces.push(s);
           }
@@ -3307,7 +3400,8 @@ out center;`;
 
       if (importedPlaces.length > 0) {
         const currentList = placesRef.current || places;
-        onPlacesChange([...currentList, ...importedPlaces]);
+        const mergedList = mergeNearbyPlaces([...currentList, ...importedPlaces], PROXIMITY_MERGE_DISTANCE_KM);
+        onPlacesChange(mergedList);
       }
     } catch (err: any) {
       console.warn("Overpass Autoload error:", err);
@@ -3415,7 +3509,7 @@ out center;`;
           typeof center.lat === "function" ? center.lat() : center.lat;
         const lng =
           typeof center.lng === "function" ? center.lng() : center.lng;
-        const radiusMeters = customCoords ? 15000 : importRadius * 1000;
+        const radiusMeters = customCoords ? 5000 : importRadius * 1000;
         const dLat = radiusMeters / 111000;
         const dLng = radiusMeters / (111000 * Math.cos((lat * Math.PI) / 180));
         const bbox = `${lat - dLat},${lng - dLng},${lat + dLat},${lng + dLng}`;
@@ -3510,11 +3604,11 @@ out center;`;
 
         if (!lat || !lng) continue;
 
-        // Skip duplicate places
+        // Skip duplicate places within 100 meters
         const isDuplicate = places.some((p) => {
           if (p.id === `osm-${el.id}`) return true;
           const d = getDistanceKm(p.lat, p.lng, lat, lng);
-          return d < 0.055; // 55 meters proximity
+          return d <= PROXIMITY_MERGE_DISTANCE_KM; // 100 meters proximity
         });
 
         if (isDuplicate) continue;
@@ -3671,7 +3765,7 @@ out center;`;
           }),
         );
       } else {
-        const mergedList = [...places, ...importedPlaces];
+        const mergedList = mergeNearbyPlaces([...places, ...importedPlaces], PROXIMITY_MERGE_DISTANCE_KM);
         onPlacesChange(mergedList);
         setImportSuccessCount(importedPlaces.length);
 
@@ -3964,7 +4058,7 @@ out center;`;
 
   return (
     <div
-      className={`flex-1 h-full w-full flex flex-col lg:grid lg:grid-cols-12 gap-2 md:gap-4 lg:gap-6 min-h-[300px]`}
+      className={`flex-1 min-h-0 h-full w-full flex flex-col lg:grid lg:grid-cols-12 gap-2 md:gap-4 lg:gap-6`}
     >
       {/* Sidebar - searching list */}
       <div
@@ -4089,7 +4183,7 @@ out center;`;
                     // Reset all filters and distance filtering
                     setActiveDistanceFilter("none");
                     setShowAllPlaces(true);
-                    setSelectedCategory("all");
+                    setSelectedCategories(["all"]);
                     setShowFavoritesOnly(false);
                     setSearchQuery("");
                     setFilterMinRating(0);
@@ -4150,29 +4244,29 @@ out center;`;
                   </div>
                 </div>
 
-                {/* 2. Min Rating selector */}
+                {/* 2. Min Rating selector (1-10 scale) */}
                 <div className="space-y-0.5">
                   <div className="flex justify-between font-bold text-slate-600 text-[10px]">
                     <span>Valutazione Minima:</span>
                     <span className="text-amber-600 flex items-center gap-0.5">
                       {filterMinRating === 0
                         ? "Qualsiasi"
-                        : `⭐ ${filterMinRating}.0+`}
+                        : `⭐ ≥ ${filterMinRating}/10`}
                     </span>
                   </div>
-                  <div className="grid grid-cols-4 gap-1">
-                    {[0, 3, 4, 4.5].map((stars) => (
+                  <div className="grid grid-cols-5 gap-1">
+                    {[0, 6, 7, 8, 9].map((score) => (
                       <button
-                        key={stars}
+                        key={score}
                         type="button"
-                        onClick={() => setFilterMinRating(stars)}
+                        onClick={() => setFilterMinRating(score)}
                         className={`py-0.5 rounded border text-center transition-all font-bold cursor-pointer text-[10px] ${
-                          filterMinRating === stars
+                          filterMinRating === score
                             ? "bg-[#5A6B4E]/10 text-[#3E4A35] border-[#5A6B4E]/40"
                             : "bg-slate-50 text-slate-600 border-transparent hover:bg-slate-100"
                         }`}
                       >
-                        {stars === 0 ? "Tutti" : `${stars}★`}
+                        {score === 0 ? "Tutti" : `${score}+`}
                       </button>
                     ))}
                   </div>
@@ -4278,71 +4372,166 @@ out center;`;
             </div>
           )}
 
-          {/* Category filter tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 py-1.5 w-full shrink-0 px-0.5">
+          {/* Category filter tabs - responsive grid with all categories and custom colors */}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 py-1.5 w-full shrink-0 px-0.5">
             <button
-              onClick={() => setSelectedCategory("all")}
-              className={`py-1.5 px-3 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "all"
+              onClick={() => toggleCategory("all")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("all")
                   ? "bg-slate-900 text-white shadow-xs"
                   : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
               }`}
               title={`Tutti (${places.length})`}
             >
               <span>Tutti</span>
-              <span className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-mono ${
-                selectedCategory === "all" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+              <span className={`text-[9px] px-1 py-0.5 rounded-md font-mono ${
+                selectedCategories.includes("all") ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
               }`}>
                 {places.length}
               </span>
             </button>
+
             <button
-              onClick={() => setSelectedCategory("area_sosta")}
-              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "area_sosta"
-                  ? "bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-xs border border-sky-400"
+              onClick={() => toggleCategory("area_sosta")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("area_sosta")
+                  ? "bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-xs border border-sky-400 ring-2 ring-sky-300/50"
                   : "bg-white text-sky-950 border border-sky-300 hover:bg-sky-50"
               }`}
               title="Aree Sosta Camper"
             >
-              <MapCategoryPinMini category="area_sosta" size={17} />
+              <MapCategoryPinMini category="area_sosta" size={15} />
               <span>Area Sosta</span>
             </button>
+
             <button
-              onClick={() => setSelectedCategory("parcheggio_camper")}
-              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "parcheggio_camper"
-                  ? "bg-gradient-to-r from-blue-700 to-blue-900 text-white shadow-xs border border-blue-600"
+              onClick={() => toggleCategory("parcheggio_gratuito")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("parcheggio_gratuito")
+                  ? "bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-xs border border-blue-500 ring-2 ring-blue-300/50"
                   : "bg-white text-blue-950 border border-blue-300 hover:bg-blue-50"
               }`}
-              title="Parcheggi Camper"
+              title="Parcheggio Gratuito / Free (Blu)"
             >
-              <MapCategoryPinMini category="parcheggio_camper" size={17} />
-              <span>Parcheggi</span>
+              <MapCategoryPinMini category="parcheggio_gratuito" size={15} />
+              <span>Park Free</span>
             </button>
+
             <button
-              onClick={() => setSelectedCategory("campeggio")}
-              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "campeggio"
-                  ? "bg-gradient-to-r from-[#1C3D2B] to-[#14291E] text-white shadow-xs border border-[#1C3D2B]"
+              onClick={() => toggleCategory("parcheggio_pagamento")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("parcheggio_pagamento")
+                  ? "bg-gradient-to-r from-red-600 to-red-800 text-white shadow-xs border border-red-500 ring-2 ring-red-300/50"
+                  : "bg-white text-red-950 border border-red-300 hover:bg-red-50"
+              }`}
+              title="Parcheggio a Pagamento (Rosso)"
+            >
+              <MapCategoryPinMini category="parcheggio_pagamento" size={15} />
+              <span>Park Pagam.</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("parcheggio_diurno")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("parcheggio_diurno")
+                  ? "bg-gradient-to-r from-amber-500 to-yellow-600 text-slate-950 shadow-xs border border-amber-400 ring-2 ring-amber-300/50"
+                  : "bg-white text-amber-950 border border-amber-300 hover:bg-amber-50"
+              }`}
+              title="Parcheggio Solo Giorno / Diurno (Giallo)"
+            >
+              <MapCategoryPinMini category="parcheggio_diurno" size={15} />
+              <span>Solo Giorno</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("campeggio")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("campeggio")
+                  ? "bg-gradient-to-r from-[#1C3D2B] to-[#14291E] text-white shadow-xs border border-[#1C3D2B] ring-2 ring-emerald-500/50"
                   : "bg-white text-[#1C3D2B] border border-[#1C3D2B]/35 hover:bg-[#1C3D2B]/10"
               }`}
-              title="Campeggi"
+              title="Campeggi (Verde Scuro)"
             >
-              <MapCategoryPinMini category="campeggio" size={17} />
+              <MapCategoryPinMini category="campeggio" size={15} />
               <span>Camping</span>
             </button>
+
             <button
-              onClick={() => setSelectedCategory("camper_service")}
-              className={`py-1 px-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer select-none flex items-center gap-1.5 leading-none ${
-                selectedCategory === "camper_service"
-                  ? "bg-gradient-to-r from-violet-600 to-purple-800 text-white shadow-xs border border-violet-500"
-                  : "bg-white text-purple-950 border border-purple-300 hover:bg-purple-50"
+              onClick={() => toggleCategory("agricampeggio")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("agricampeggio")
+                  ? "bg-gradient-to-r from-lime-600 to-emerald-600 text-white shadow-xs border border-lime-400 ring-2 ring-lime-300/50"
+                  : "bg-white text-lime-950 border border-lime-400 hover:bg-lime-50"
               }`}
-              title="Camper Service"
+              title="Agricampeggio / Agriturismo (Verde Chiaro)"
             >
-              <MapCategoryPinMini category="camper_service" size={17} />
+              <MapCategoryPinMini category="agricampeggio" size={15} />
+              <span>Agricamping</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("camper_service")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("camper_service")
+                  ? "bg-gradient-to-r from-cyan-600 to-teal-700 text-white shadow-xs border border-cyan-400 ring-2 ring-cyan-300/50"
+                  : "bg-white text-cyan-950 border border-cyan-300 hover:bg-cyan-50"
+              }`}
+              title="Camper Service (Ciano / Acqua)"
+            >
+              <MapCategoryPinMini category="camper_service" size={15} />
               <span>Service</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("carico_scarico")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("carico_scarico")
+                  ? "bg-gradient-to-r from-violet-600 to-indigo-700 text-white shadow-xs border border-violet-400 ring-2 ring-purple-300/50"
+                  : "bg-white text-violet-950 border border-violet-300 hover:bg-violet-50"
+              }`}
+              title="Camper Service Carico e Scarico Completo (Viola)"
+            >
+              <MapCategoryPinMini category="carico_scarico" size={15} />
+              <span>C/S Completo</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("solo_scarico")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("solo_scarico")
+                  ? "bg-gradient-to-r from-zinc-800 to-neutral-950 text-white shadow-xs border border-zinc-700 ring-2 ring-zinc-400/50"
+                  : "bg-white text-zinc-950 border border-zinc-400 hover:bg-zinc-100"
+              }`}
+              title="Solo Scarico Reflui (Nero)"
+            >
+              <MapCategoryPinMini category="solo_scarico" size={15} />
+              <span>Solo Scarico</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("fontanella")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("fontanella")
+                  ? "bg-gradient-to-r from-sky-500 to-cyan-600 text-white shadow-xs border border-sky-400 ring-2 ring-cyan-300/50"
+                  : "bg-white text-sky-900 border border-sky-200 hover:bg-sky-50"
+              }`}
+              title="Fontanelle Acqua"
+            >
+              <MapCategoryPinMini category="fontanella" size={15} />
+              <span>Fontanelle</span>
+            </button>
+
+            <button
+              onClick={() => toggleCategory("lavanderia")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("lavanderia")
+                  ? "bg-gradient-to-r from-fuchsia-600 to-purple-700 text-white shadow-xs border border-fuchsia-400 ring-2 ring-fuchsia-300/50"
+                  : "bg-white text-fuchsia-950 border border-fuchsia-300 hover:bg-fuchsia-50"
+              }`}
+              title="Lavanderie Self-Service"
+            >
+              <MapCategoryPinMini category="lavanderia" size={15} />
+              <span>Lavanderia</span>
             </button>
           </div>
         </div>
@@ -4350,7 +4539,7 @@ out center;`;
         {/* List scroll */}
         {!showFilterPanel && (
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
-            {getFilteredPlaces().length === 0 ? (
+            {filteredPlaces.length === 0 ? (
               <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
                 <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
                 <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
@@ -4373,7 +4562,7 @@ out center;`;
                 )}
               </div>
             ) : (
-              getFilteredPlaces().map((place) => {
+              filteredPlaces.slice(0, 100).map((place) => {
                 const isSelected = selectedPlace?.id === place.id;
                 const hasLimit =
                   place.hasMaxHeightLimit &&
@@ -4402,6 +4591,9 @@ out center;`;
                         <CategoryIllustration
                           category={place.category}
                           feeStatus={place.feeStatus as any}
+                          serviceSubtype={place.serviceSubtype}
+                          categoryLabel={place.categoryLabel}
+                          name={place.name}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -4447,9 +4639,9 @@ out center;`;
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex justify-between items-start gap-1">
                         <MapCategoryBadge category={place.category} feeStatus={place.feeStatus as any} pinSize={14} />
-                        <span className="flex items-center gap-1 font-bold text-[#2D2926]">
+                        <span className="flex items-center gap-1 font-bold text-[#2D2926] text-xs">
                           <Star className="w-3 h-3 text-amber-500 fill-current" />
-                          {Number(place.rating).toFixed(1)}
+                          {normalizeRatingTo10(place.rating) > 0 ? `${normalizeRatingTo10(place.rating).toFixed(1)}/10` : "—"}
                         </span>
                       </div>
 
@@ -4494,19 +4686,19 @@ out center;`;
 
       {/* Map visualization and Details wrapper */}
       <div
-        className={`lg:col-span-8 flex flex-col h-full gap-1 sm:gap-1.5 overflow-hidden p-0.5 ${
+        className={`lg:col-span-8 flex flex-col h-full min-h-0 gap-1 sm:gap-1.5 overflow-hidden p-0.5 ${
           mobileView === "map" ? "flex" : "hidden lg:flex"
         }`}
       >
         {/* Leaflet Frame & forms layer */}
         <div
-          className="relative bg-slate-100 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-[300px] w-full shrink"
+          className="relative bg-slate-100 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-0 w-full shrink"
           onPointerDown={handleMapUserActivity}
         >
           {/* Map canvas */}
           {!hasValidKey || !isOnline || settings?.mapEngine === "leaflet" ? (
             <LeafletOfflineMap
-              places={getFilteredPlaces()}
+              places={filteredPlaces}
               userLocation={userLocation}
               vehicleDimensions={vehicleDimensions}
               selectedPlace={selectedPlace}
@@ -4580,7 +4772,7 @@ out center;`;
                       };
                       setSelectedPlace(customPlace);
                       setIsMobileDetailsOpen(true);
-                      mapRef.current?.setView([lat, lng], 14);
+                      mapRef.current?.setView([lat, lng], 15);
 
                       window.dispatchEvent(
                         new CustomEvent("show-toast", {
@@ -4644,20 +4836,20 @@ out center;`;
                   {activeDistanceFilter === "me" && userLocation && (
                     <MapCircle
                       center={userLocation}
-                      radius={15000}
+                      radius={5000}
                       color="#3E4A35"
                     />
                   )}
                   {activeDistanceFilter === "place" && filterCenter && (
                     <MapCircle
                       center={filterCenter}
-                      radius={15000}
+                      radius={5000}
                       color="#A45C40"
                     />
                   )}
 
                   {/* Places Markers */}
-                  {getFilteredPlaces()
+                  {filteredPlaces
                     .filter((place) => {
                       if (showSmartRoute) {
                         if (selectedPlace && place.id === selectedPlace.id) {
@@ -4667,6 +4859,7 @@ out center;`;
                       }
                       return true;
                     })
+                    .slice(0, 300)
                     .map((place) => {
                     const normCat = (place.category || "").toLowerCase();
                     let colorClass = "bg-[#0077B6]"; // Default/Service (blue)
@@ -4707,7 +4900,7 @@ out center;`;
                           mapMovedByUserRef.current = true;
                           if (mapRef.current) {
                             (mapRef.current as any)._isProgrammatic = true;
-                            mapRef.current.setView([Number(place.lat), Number(place.lng)], 13);
+                            mapRef.current.setView([Number(place.lat), Number(place.lng)], 15);
                           }
                           setClickedCoords(null);
                           setShowClickedPopup(false);
@@ -4718,6 +4911,9 @@ out center;`;
                           isViolation={heightViolation}
                           isSelected={selectedPlace?.id === place.id}
                           feeStatus={place.feeStatus as any}
+                          serviceSubtype={place.serviceSubtype}
+                          categoryLabel={place.categoryLabel}
+                          name={place.name}
                         />
                       </AdvancedMarker>
                     );
@@ -4745,7 +4941,7 @@ out center;`;
                           source: 'User'
                         });
                         setIsMobileDetailsOpen(true);
-                        mapRef.current?.setView([userLocation.lat, userLocation.lng], 13);
+                        mapRef.current?.setView([userLocation.lat, userLocation.lng], 15);
                         setClickedCoords(null);
                         setShowClickedPopup(false);
                       }}
@@ -5009,7 +5205,7 @@ out center;`;
                                 )}
                                 {sug.rating && (
                                   <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] border border-amber-200/80 flex items-center gap-0.5">
-                                    ⭐ {sug.rating}
+                                    ⭐ {normalizeRatingTo10(sug.rating)}/10
                                   </span>
                                 )}
                               </div>
@@ -5414,7 +5610,23 @@ out center;`;
                     </button>
                   </div>
 
-                  {/* 4. Aggiungi tappa al viaggio attivo */}
+                  {/* 4. Segnala Ostacolo per le coordinate cliccate */}
+                  <button
+                    onClick={() => {
+                      setOsmReportCoords({
+                        lat: clickedCoords.lat,
+                        lng: clickedCoords.lng,
+                      });
+                      setIsOsmReportOpen(true);
+                      setShowClickedPopup(false);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 text-center w-full cursor-pointer"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Segnala Ostacolo</span>
+                  </button>
+
+                  {/* 5. Aggiungi tappa al viaggio attivo */}
                   {activeTrip && (
                     <button
                       onClick={() => {
@@ -5645,7 +5857,7 @@ out center;`;
                   : "text-[#3E4A35]"
               }`}
             />
-            <span>Filtri ed Elenco ({getFilteredPlaces().length})</span>
+            <span>Filtri ed Elenco ({filteredPlaces.length})</span>
             {filterMinRating > 0 ||
             filterMaxPrice < 100 ||
             filterAvoidNarrow ||
@@ -5734,7 +5946,31 @@ out center;`;
 
         {/* Selected Place Details panel */}
         {selectedPlace && (
-          <div className="hidden lg:block bg-white rounded-2xl border border-slate-100 p-5 shadow-sm text-xs space-y-4 max-h-[85vh] overflow-y-auto">
+          <div className="hidden lg:block bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm text-xs space-y-4 max-h-[85vh] overflow-y-auto relative">
+            {/* Header bar with Close Button (X) to return to the map */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-[#3E4A35] flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4 text-[#3E4A35]" />
+                  Scheda Dettagli Sosta
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPlace(null);
+                  setClickedCoords(null);
+                  setShowSmartRoute(false);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 transition-all cursor-pointer border border-slate-200/80 hover:border-rose-200 flex items-center gap-1.5 font-bold shadow-xs active:scale-95 group"
+                title="Chiudi scheda e torna alla mappa"
+                aria-label="Chiudi scheda e torna alla mappa"
+              >
+                <X className="w-4 h-4 group-hover:scale-110 transition-transform text-slate-500 group-hover:text-rose-600" />
+                <span className="text-xs">Chiudi e torna alla mappa ✕</span>
+              </button>
+            </div>
+
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex gap-4">
                 {selectedPlace.id !== "current_location" && (
@@ -5752,6 +5988,10 @@ out center;`;
                     ) ? (
                       <CategoryIllustration
                         category={selectedPlace.category}
+                        feeStatus={selectedPlace.feeStatus as any}
+                        serviceSubtype={selectedPlace.serviceSubtype}
+                        categoryLabel={selectedPlace.categoryLabel}
+                        name={selectedPlace.name}
                         className="w-full h-full object-cover animate-fade-in"
                       />
                     ) : (
@@ -5806,17 +6046,23 @@ out center;`;
                       return (
                         <span
                           className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${
-                            badgeText === "CAMPEGGIO"
-                              ? "bg-[#3E4A35]/15 text-[#3E4A35]"
-                              : badgeText === "PARCHEGGIO" || badgeText === "PARCHEGGIO CAMPER"
-                                ? "bg-sky-100 text-sky-800"
-                                : badgeText === "CAMPER SERVICE"
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : badgeText === "RISTORANTE" || badgeText === "BAR" || badgeText === "PASTICCERIA / BAR"
-                                    ? "bg-amber-100 text-amber-900 border border-amber-200/60"
-                                    : badgeText === "AUTORICAMBI" || badgeText === "OFFICINA MECCANICA"
-                                      ? "bg-orange-100 text-orange-900 border border-orange-200/60"
-                                      : "bg-[#5A6B4E]/15 text-[#3E4A35]"
+                            badgeText.includes("LAVANDERIA")
+                              ? "bg-purple-100 text-purple-900 border border-purple-300"
+                              : badgeText.includes("FONTANELLA")
+                                ? "bg-cyan-100 text-cyan-900 border border-cyan-300"
+                                : badgeText.includes("SOLO SCARICO")
+                                  ? "bg-amber-100 text-amber-900 border border-amber-300"
+                                  : badgeText.includes("CAMPEGGIO")
+                                    ? "bg-[#3E4A35]/15 text-[#3E4A35]"
+                                    : badgeText.includes("PARCHEGGIO")
+                                      ? "bg-sky-100 text-sky-800"
+                                      : badgeText.includes("CAMPER SERVICE") || badgeText.includes("C/S")
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : badgeText.includes("RISTORANTE") || badgeText.includes("BAR")
+                                          ? "bg-amber-100 text-amber-900 border border-amber-200/60"
+                                          : badgeText.includes("AUTORICAMBI") || badgeText.includes("OFFICINA")
+                                            ? "bg-orange-100 text-orange-900 border border-orange-200/60"
+                                            : "bg-[#5A6B4E]/15 text-[#3E4A35]"
                           }`}
                         >
                           {badgeText}
@@ -6311,7 +6557,7 @@ out center;`;
                   </h4>
                   <div className="flex items-center gap-1 font-bold text-[#3E4A35] dark:text-emerald-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs shadow-2xs">
                     <Star className={`w-3.5 h-3.5 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-300 dark:text-slate-600"}`} />
-                    <span>{placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}</span>
+                    <span>{placeRatings.overall !== null ? `${placeRatings.overall.toFixed(1)} / 10` : "—"}</span>
                   </div>
                 </div>
 
@@ -6333,13 +6579,17 @@ out center;`;
                           <span className="text-slate-400 text-[10px]">
                             {rev.date.split("-").reverse().join("/")}
                           </span>
-                          <div className="flex text-amber-400">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-3 h-3 ${i < rev.rating ? "fill-current" : "text-slate-200 dark:text-slate-700"}`}
-                              />
-                            ))}
+                          <div className="flex items-center gap-1">
+                            {(() => {
+                              const r10 = rev.rating <= 5 && rev.rating > 0 ? rev.rating * 2 : rev.rating;
+                              const desc = getRating10Descriptor(r10);
+                              return (
+                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded border flex items-center gap-0.5 ${desc.bgClass} ${desc.colorClass}`}>
+                                  <Star className="w-2.5 h-2.5 fill-current" />
+                                  {r10}/10
+                                </span>
+                              );
+                            })()}
                           </div>
                           {isUserAdmin && (
                             <button
@@ -6438,42 +6688,55 @@ out center;`;
                       className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                      Rating Struttura
-                    </label>
-                    <div className="flex gap-1 pt-1.5">
-                      {[1, 2, 3, 4, 5].map((star) => (
+                  <div className="col-span-1 md:col-span-3 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                        <span>Voto Complessivo Sosta:</span>
+                      </label>
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-full border ${getRating10Descriptor(rating).bgClass} ${getRating10Descriptor(rating).colorClass}`}>
+                        {rating}/10 · {getRating10Descriptor(rating).label}
+                      </span>
+                    </div>
+                    <div className="flex gap-1 overflow-x-auto pb-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
                         <button
-                          key={star}
+                          key={score}
                           type="button"
-                          onClick={() => setRating(star)}
-                          className="cursor-pointer"
+                          onClick={() => setRating(score)}
+                          className={`flex-1 min-w-[28px] py-1.5 rounded-lg font-black text-xs transition-all border cursor-pointer ${
+                            score === rating
+                              ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-105"
+                              : score < rating
+                              ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
                         >
-                          <Star
-                            className={`w-5 h-5 ${star <= rating ? "text-amber-400 fill-current" : "text-slate-300"}`}
-                          />
+                          {score}
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Silenziosità (1-5)
-                    </label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((val) => (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                        Silenziosità
+                      </label>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{noiseLevel}/10</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => setNoiseLevel(val)}
-                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === noiseLevel
-                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           {val}
@@ -6481,20 +6744,24 @@ out center;`;
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Manovrabilità (1-5)
-                    </label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((val) => (
+
+                  <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                        Manovrabilità
+                      </label>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{maneuverability}/10</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => setManeuverability(val)}
-                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === maneuverability
-                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           {val}
@@ -6502,20 +6769,24 @@ out center;`;
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Segnale Cell. (1-5)
-                    </label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((val) => (
+
+                  <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                        Segnale Cell.
+                      </label>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cellularSignal}/10</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => setCellularSignal(val)}
-                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === cellularSignal
-                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           {val}
@@ -6523,20 +6794,24 @@ out center;`;
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Terreno in bolla (1-5)
-                    </label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((val) => (
+
+                  <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                        Terreno in bolla
+                      </label>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{groundLevelness}/10</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => setGroundLevelness(val)}
-                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === groundLevelness
-                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           {val}
@@ -6544,20 +6819,24 @@ out center;`;
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Ombreggiatura (1-5)
-                    </label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((val) => (
+
+                  <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                        Ombreggiatura
+                      </label>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{shade}/10</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => setShade(val)}
-                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === shade
-                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           {val}
@@ -6565,20 +6844,24 @@ out center;`;
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                      Pulizia / Decoro (1-5)
-                    </label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((val) => (
+
+                  <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                        Pulizia / Decoro
+                      </label>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cleanliness}/10</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
                           onClick={() => setCleanliness(val)}
-                          className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                          className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === cleanliness
-                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           {val}
@@ -6663,6 +6946,19 @@ out center;`;
                 {selectedPlace.address}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileDetailsOpen(false);
+                setSelectedPlace(null);
+                setShowSmartRoute(false);
+              }}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-white/90 hover:text-white"
+              title="Chiudi e torna alla mappa"
+              aria-label="Chiudi e torna alla mappa"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Scrolling Content */}
@@ -6684,6 +6980,10 @@ out center;`;
                 ) ? (
                   <CategoryIllustration
                     category={selectedPlace.category}
+                    feeStatus={selectedPlace.feeStatus as any}
+                    serviceSubtype={selectedPlace.serviceSubtype}
+                    categoryLabel={selectedPlace.categoryLabel}
+                    name={selectedPlace.name}
                     className="w-full h-full object-cover animate-fade-in"
                   />
                 ) : (
@@ -6737,17 +7037,23 @@ out center;`;
                     return (
                       <span
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm ${
-                          badgeText === "CAMPEGGIO"
-                            ? "bg-[#3E4A35] text-white"
-                            : badgeText === "PARCHEGGIO" || badgeText === "PARCHEGGIO CAMPER"
-                              ? "bg-sky-600 text-white"
-                              : badgeText === "CAMPER SERVICE"
-                                ? "bg-emerald-600 text-white"
-                                : badgeText === "RISTORANTE" || badgeText === "BAR" || badgeText === "PASTICCERIA / BAR"
-                                  ? "bg-amber-600 text-white border border-amber-400/30"
-                                  : badgeText === "AUTORICAMBI" || badgeText === "OFFICINA MECCANICA"
-                                    ? "bg-orange-600 text-white border border-orange-400/30"
-                                    : "bg-[#5A6B4E] text-white"
+                          badgeText.includes("LAVANDERIA")
+                            ? "bg-purple-700 text-white"
+                            : badgeText.includes("FONTANELLA")
+                              ? "bg-cyan-700 text-white"
+                              : badgeText.includes("SOLO SCARICO")
+                                ? "bg-amber-700 text-white"
+                                : badgeText.includes("CAMPEGGIO")
+                                  ? "bg-[#3E4A35] text-white"
+                                  : badgeText.includes("PARCHEGGIO")
+                                    ? "bg-sky-600 text-white"
+                                    : badgeText.includes("CAMPER SERVICE") || badgeText.includes("C/S")
+                                      ? "bg-emerald-600 text-white"
+                                      : badgeText.includes("RISTORANTE") || badgeText.includes("BAR")
+                                        ? "bg-amber-600 text-white border border-amber-400/30"
+                                        : badgeText.includes("AUTORICAMBI") || badgeText.includes("OFFICINA")
+                                          ? "bg-orange-600 text-white border border-orange-400/30"
+                                          : "bg-[#5A6B4E] text-white"
                         }`}
                       >
                         {badgeText}
@@ -6775,7 +7081,7 @@ out center;`;
                     <div className="flex items-center gap-1 bg-[#5A6B4E]/10 px-2 py-1 rounded-lg shrink-0">
                       <Star className={`w-3.5 h-3.5 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-400"}`} />
                       <span className="font-extrabold text-slate-800 font-mono text-xs">
-                        {placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}
+                        {placeRatings.overall !== null ? `${placeRatings.overall.toFixed(1)}/10` : "—"}
                       </span>
                     </div>
                   )}
@@ -7257,7 +7563,7 @@ out center;`;
                   <div className="flex items-center gap-1 font-bold text-[#3E4A35] dark:text-emerald-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs shadow-2xs">
                     <Star className={`w-3.5 h-3.5 ${placeRatings.overall !== null ? "text-amber-500 fill-current" : "text-slate-300 dark:text-slate-600"}`} />
                     <span className="text-xs">
-                      {placeRatings.overall !== null ? placeRatings.overall.toFixed(1) : "—"}
+                      {placeRatings.overall !== null ? `${placeRatings.overall.toFixed(1)}/10` : "—"}
                     </span>
                   </div>
                 </div>
@@ -7318,13 +7624,17 @@ out center;`;
                                 </button>
                               )}
                             </div>
-                            <div className="flex text-amber-400">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className={`w-2.5 h-2.5 ${i < rev.rating ? "fill-current text-amber-500" : "text-slate-200 dark:text-slate-700"}`}
-                                />
-                              ))}
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const r10 = rev.rating <= 5 && rev.rating > 0 ? rev.rating * 2 : rev.rating;
+                                const desc = getRating10Descriptor(r10);
+                                return (
+                                  <span className={`text-[9.5px] font-black px-1.5 py-0.5 rounded border flex items-center gap-0.5 ${desc.bgClass} ${desc.colorClass}`}>
+                                    <Star className="w-2.5 h-2.5 fill-current" />
+                                    {r10}/10
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -7380,55 +7690,67 @@ out center;`;
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                        Prezzo Rilevato ({getCurrencySymbol(settings)}/notte)
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                      Prezzo Rilevato ({getCurrencySymbol(settings)}/notte)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={`Es: 18${getCurrencySymbol(settings)} tutto inc.`}
+                      value={priceUpdated}
+                      onChange={(e) => setPriceUpdated(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:border-[#3E4A35] outline-none"
+                    />
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                        <span>Voto Sosta (1-10):</span>
                       </label>
-                      <input
-                        type="text"
-                        placeholder={`Es: 18${getCurrencySymbol(settings)} tutto inc.`}
-                        value={priceUpdated}
-                        onChange={(e) => setPriceUpdated(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:border-[#3E4A35] outline-none"
-                      />
+                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-full border ${getRating10Descriptor(rating).bgClass} ${getRating10Descriptor(rating).colorClass}`}>
+                        {rating}/10 · {getRating10Descriptor(rating).label}
+                      </span>
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                        Voto (1-5)
-                      </label>
-                      <div className="flex gap-1.5 pt-1">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            type="button"
-                            onClick={() => setRating(star)}
-                            className="cursor-pointer"
-                          >
-                            <Star
-                              className={`w-5 h-5 ${star <= rating ? "text-amber-400 fill-current" : "text-slate-300"}`}
-                            />
-                          </button>
-                        ))}
-                      </div>
+                    <div className="flex gap-1 overflow-x-auto pb-1">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
+                        <button
+                          key={score}
+                          type="button"
+                          onClick={() => setRating(score)}
+                          className={`flex-1 min-w-[26px] py-1.5 rounded-lg font-black text-xs transition-all border cursor-pointer ${
+                            score === rating
+                              ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-105"
+                              : score < rating
+                              ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {score}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Silenziosità (1-5)
-                      </label>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((val) => (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          Silenziosità
+                        </label>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{noiseLevel}/10</span>
+                      </div>
+                      <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setNoiseLevel(val)}
-                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === noiseLevel
-                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                             }`}
                           >
                             {val}
@@ -7436,20 +7758,24 @@ out center;`;
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Manovrabilità (1-5)
-                      </label>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((val) => (
+
+                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          Manovrabilità
+                        </label>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{maneuverability}/10</span>
+                      </div>
+                      <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setManeuverability(val)}
-                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === maneuverability
-                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                             }`}
                           >
                             {val}
@@ -7457,20 +7783,24 @@ out center;`;
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Segnale Cell. (1-5)
-                      </label>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((val) => (
+
+                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          Segnale Cell.
+                        </label>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cellularSignal}/10</span>
+                      </div>
+                      <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setCellularSignal(val)}
-                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === cellularSignal
-                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                             }`}
                           >
                             {val}
@@ -7478,20 +7808,24 @@ out center;`;
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Terreno in bolla (1-5)
-                      </label>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((val) => (
+
+                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          Terreno in bolla
+                        </label>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{groundLevelness}/10</span>
+                      </div>
+                      <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setGroundLevelness(val)}
-                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === groundLevelness
-                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                             }`}
                           >
                             {val}
@@ -7499,20 +7833,24 @@ out center;`;
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Ombreggiatura (1-5)
-                      </label>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((val) => (
+
+                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          Ombreggiatura
+                        </label>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{shade}/10</span>
+                      </div>
+                      <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setShade(val)}
-                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === shade
-                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                             }`}
                           >
                             {val}
@@ -7520,20 +7858,24 @@ out center;`;
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        Pulizia / Decoro (1-5)
-                      </label>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((val) => (
+
+                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          Pulizia / Decoro
+                        </label>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cleanliness}/10</span>
+                      </div>
+                      <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
                             onClick={() => setCleanliness(val)}
-                            className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
+                            className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === cleanliness
-                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                                : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                             }`}
                           >
                             {val}
@@ -7962,9 +8304,16 @@ out center;`;
                     className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 outline-none focus:border-[#3E4A35] transition-all text-slate-800"
                   >
                     <option value="area_sosta">Area di Sosta</option>
+                    <option value="parcheggio_gratuito">Parcheggio Gratuito (Free)</option>
+                    <option value="parcheggio_pagamento">Parcheggio a Pagamento</option>
+                    <option value="parcheggio_diurno">Parcheggio Solo Giorno (Diurno)</option>
                     <option value="campeggio">Campeggio</option>
+                    <option value="agricampeggio">Agricampeggio / Agriturismo</option>
                     <option value="camper_service">Camper Service</option>
-                    <option value="parcheggio_camper">Parcheggio Camper</option>
+                    <option value="carico_scarico">Camper Service Completo (C/S)</option>
+                    <option value="solo_scarico">Solo Scarico Reflui</option>
+                    <option value="fontanella">Fontanella Acqua</option>
+                    <option value="lavanderia">Lavanderia Self-Service</option>
                   </select>
                 </div>
               </div>
@@ -8624,13 +8973,18 @@ out center;`;
               </div>
 
               {/* Rating Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 text-xs">
-                    Silenziosità (1-5)
-                  </label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((val) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      Silenziosità
+                    </label>
+                    <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
+                      {newPlaceForm.noiseLevel || 8}/10
+                    </span>
+                  </div>
+                  <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -8640,10 +8994,10 @@ out center;`;
                             noiseLevel: val,
                           }))
                         }
-                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
-                          (newPlaceForm.noiseLevel || 3) === val
-                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
+                          (newPlaceForm.noiseLevel || 8) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                            : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
                       >
                         {val}
@@ -8651,12 +9005,18 @@ out center;`;
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 text-xs">
-                    Manovrabilità (1-5)
-                  </label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((val) => (
+
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      Manovrabilità
+                    </label>
+                    <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
+                      {newPlaceForm.maneuverability || 8}/10
+                    </span>
+                  </div>
+                  <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -8666,10 +9026,10 @@ out center;`;
                             maneuverability: val,
                           }))
                         }
-                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
-                          (newPlaceForm.maneuverability || 3) === val
-                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
+                          (newPlaceForm.maneuverability || 8) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                            : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
                       >
                         {val}
@@ -8677,12 +9037,18 @@ out center;`;
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 text-xs">
-                    Segnale Cell. (1-5)
-                  </label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((val) => (
+
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      Segnale Cell.
+                    </label>
+                    <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
+                      {newPlaceForm.cellularSignal || 8}/10
+                    </span>
+                  </div>
+                  <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -8692,10 +9058,10 @@ out center;`;
                             cellularSignal: val,
                           }))
                         }
-                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
-                          (newPlaceForm.cellularSignal || 3) === val
-                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
+                          (newPlaceForm.cellularSignal || 8) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                            : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
                       >
                         {val}
@@ -8703,12 +9069,18 @@ out center;`;
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 text-xs">
-                    Terreno in bolla (1-5)
-                  </label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((val) => (
+
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      Terreno in bolla
+                    </label>
+                    <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
+                      {newPlaceForm.groundLevelness || 8}/10
+                    </span>
+                  </div>
+                  <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -8718,10 +9090,10 @@ out center;`;
                             groundLevelness: val,
                           }))
                         }
-                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
-                          (newPlaceForm.groundLevelness || 3) === val
-                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
+                          (newPlaceForm.groundLevelness || 8) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                            : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
                       >
                         {val}
@@ -8729,12 +9101,18 @@ out center;`;
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 text-xs">
-                    Ombreggiatura (1-5)
-                  </label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((val) => (
+
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      Ombreggiatura
+                    </label>
+                    <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
+                      {newPlaceForm.shade || 8}/10
+                    </span>
+                  </div>
+                  <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -8744,10 +9122,10 @@ out center;`;
                             shade: val,
                           }))
                         }
-                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
-                          (newPlaceForm.shade || 3) === val
-                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
+                          (newPlaceForm.shade || 8) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                            : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
                       >
                         {val}
@@ -8755,12 +9133,18 @@ out center;`;
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 text-xs">
-                    Pulizia / Decoro (1-5)
-                  </label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((val) => (
+
+                <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      Pulizia / Decoro
+                    </label>
+                    <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
+                      {newPlaceForm.cleanliness || 8}/10
+                    </span>
+                  </div>
+                  <div className="flex gap-0.5 overflow-x-auto pb-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                       <button
                         key={val}
                         type="button"
@@ -8770,10 +9154,10 @@ out center;`;
                             cleanliness: val,
                           }))
                         }
-                        className={`flex-1 py-1 rounded-lg font-bold text-xs transition-all border ${
-                          (newPlaceForm.cleanliness || 3) === val
-                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-sm scale-105"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
+                          (newPlaceForm.cleanliness || 8) === val
+                            ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
+                            : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
                       >
                         {val}
@@ -9465,9 +9849,12 @@ out center;`;
       {/* Modal Segnalazione Ostacolo / Modifica OSM */}
       <OsmReportModal
         isOpen={isOsmReportOpen}
-        onClose={() => setIsOsmReportOpen(false)}
-        currentLat={mapCenterCoords?.lat ?? userLocation?.lat ?? 44.5}
-        currentLng={mapCenterCoords?.lng ?? userLocation?.lng ?? 11.5}
+        onClose={() => {
+          setIsOsmReportOpen(false);
+          setOsmReportCoords(null);
+        }}
+        currentLat={osmReportCoords?.lat ?? mapCenterCoords?.lat ?? userLocation?.lat ?? 44.5}
+        currentLng={osmReportCoords?.lng ?? mapCenterCoords?.lng ?? userLocation?.lng ?? 11.5}
         currentUser={currentUser}
         onReportSubmitted={(report) => {
           window.dispatchEvent(
@@ -9557,7 +9944,7 @@ export function LeafletOfflineMap({
       try {
         (leafletMapInstance as any)._isProgrammatic = true;
         const currentZoom = leafletMapInstance.getZoom();
-        const targetZoom = (currentZoom && currentZoom > 14) ? currentZoom : 14;
+        const targetZoom = (currentZoom && currentZoom > 15) ? currentZoom : 15;
         leafletMapInstance.setView([userLocation.lat, userLocation.lng], targetZoom);
       } catch (e) {
         console.warn("[Leaflet GPS Centering] Failed to set center:", e);
@@ -9582,7 +9969,7 @@ export function LeafletOfflineMap({
       : userLocation
         ? userLocation.lng
         : 12.5;
-    const initialZoom = selectedPlace ? 13 : 6;
+    const initialZoom = selectedPlace ? 15 : userLocation ? 15 : 12;
 
     // Create Leaflet Map instance
     const map = L.map(containerRef.current, {
@@ -9702,7 +10089,22 @@ export function LeafletOfflineMap({
 
     customTileLayer.addTo(map);
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapRef.current) {
+          try {
+            mapRef.current.invalidateSize();
+          } catch (e) {}
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
     return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -9717,10 +10119,12 @@ export function LeafletOfflineMap({
     if (!mapRef.current) return;
     const map = mapRef.current;
 
-    // Clear old markers
+    // Clear old markers safely
     markersRef.current.forEach((m) => {
       try {
-        if (mapRef.current) m.remove();
+        if (m && typeof m.remove === 'function' && mapRef.current && (m as any)._map) {
+          m.remove();
+        }
       } catch (e) {}
     });
     markersRef.current = [];
@@ -9850,7 +10254,14 @@ export function LeafletOfflineMap({
         place.maxHeight &&
         parseDimToNumber(vehicleDimensions.height) > place.maxHeight;
 
-      const { html, iconSize, iconAnchor } = getMapPoiIconHtml(place.category, isViolation, place.feeStatus as any);
+      const { html, iconSize, iconAnchor } = getMapPoiIconHtml(
+        place.category,
+        isViolation,
+        place.feeStatus as any,
+        place.serviceSubtype,
+        place.categoryLabel,
+        place.name
+      );
 
       const customDivIcon = L.divIcon({
         className: "custom-div-icon",
@@ -9869,7 +10280,7 @@ export function LeafletOfflineMap({
         if (movedRef) movedRef.current = true;
         if (leafletMapInstance) {
           (leafletMapInstance as any)._isProgrammatic = true;
-          leafletMapInstance.setView([place.lat, place.lng], 13);
+          leafletMapInstance.setView([place.lat, place.lng], 15);
         }
       });
 
@@ -9898,7 +10309,7 @@ export function LeafletOfflineMap({
 
     if (activeDistanceFilter === "me" && userLocation) {
       circleLayerRef.current = L.circle([userLocation.lat, userLocation.lng], {
-        radius: 15000, // 15km
+        radius: 5000, // 5km raggio = 10km diametro
         color: "#3E4A35",
         fillColor: "#3E4A35",
         fillOpacity: 0.08,
@@ -9906,7 +10317,7 @@ export function LeafletOfflineMap({
       }).addTo(leafletMapInstance);
     } else if (activeDistanceFilter === "place" && filterCenter) {
       circleLayerRef.current = L.circle([filterCenter.lat, filterCenter.lng], {
-        radius: 15000, // 15km
+        radius: 5000, // 5km raggio = 10km diametro
         color: "#A45C40",
         fillColor: "#A45C40",
         fillOpacity: 0.08,
@@ -9925,7 +10336,7 @@ export function LeafletOfflineMap({
   // Adjust zoom/center when selectedPlace changes
   React.useEffect(() => {
     if (mapRef.current && selectedPlace) {
-      mapRef.current.setView([selectedPlace.lat, selectedPlace.lng], 13);
+      mapRef.current.setView([selectedPlace.lat, selectedPlace.lng], 15);
     }
   }, [selectedPlace]);
 
@@ -9938,8 +10349,8 @@ export function LeafletOfflineMap({
           <span>
             {indicatorTitle ||
               (isOnline
-                ? `📍 ${places.length.toLocaleString()} SOSTE NEL RAGGIO DI 20 KM 🗺️`
-                : `📍 ${places.length.toLocaleString()} SOSTE OFFLINE NEL RAGGIO DI 20 KM 🗺️`)}
+                ? `📍 ${places.length.toLocaleString()} SOSTE NEL DIAMETRO DI 10 KM 🗺️`
+                : `📍 ${places.length.toLocaleString()} SOSTE OFFLINE NEL DIAMETRO DI 10 KM 🗺️`)}
           </span>
         </div>
       </div>

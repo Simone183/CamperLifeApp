@@ -9,6 +9,7 @@ import { Heart, Search, Compass, MapPin, Trash2, Star, ArrowRight } from 'lucide
 import { CategoryIllustration } from './CategoryIllustration';
 import { PlaceOccupancyBadge } from './PlaceOccupancyBadge';
 import { MapCategoryPinMini, MapCategoryBadge } from './MapPoiIcon';
+import { normalizeRatingTo10 } from '../utils/placeMergeUtils';
 
 interface FavoritesTabProps {
   favoriteIds: string[];
@@ -222,7 +223,14 @@ export default function FavoritesTab({
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <CategoryIllustration category={place.category} feeStatus={place.feeStatus as any} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        <CategoryIllustration
+                          category={place.category}
+                          feeStatus={place.feeStatus as any}
+                          serviceSubtype={place.serviceSubtype}
+                          categoryLabel={place.categoryLabel}
+                          name={place.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
                       )}
                     </div>
 
@@ -235,7 +243,7 @@ export default function FavoritesTab({
                         </span>
                         <div className="flex items-center gap-0.5 text-amber-500">
                           <Star className="w-3 h-3 fill-current" />
-                          <span className="font-bold text-slate-800 dark:text-slate-200 font-mono text-[9px]">{place.rating.toFixed(1)}</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 font-mono text-[9px]">{normalizeRatingTo10(place.rating) > 0 ? `${normalizeRatingTo10(place.rating).toFixed(1)}/10` : '—'}</span>
                         </div>
                         <PlaceOccupancyBadge placeId={place.id} size="sm" />
                       </div>

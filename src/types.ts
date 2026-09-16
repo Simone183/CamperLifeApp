@@ -3,7 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type PlaceCategory = 'area_sosta' | 'camper_service' | 'campeggio' | 'parcheggio_camper' | 'hidden_gem';
+export type PlaceCategory = 
+  | 'area_sosta' 
+  | 'camper_service' 
+  | 'campeggio' 
+  | 'agricampeggio'
+  | 'parcheggio_camper' 
+  | 'parcheggio_gratuito' 
+  | 'parcheggio_pagamento' 
+  | 'parcheggio_diurno'
+  | 'hidden_gem' 
+  | 'fontanella' 
+  | 'lavanderia' 
+  | 'solo_scarico' 
+  | 'carico_scarico';
+export type CamperServiceSubtype = 'carico_scarico' | 'fontanella' | 'lavanderia' | 'solo_scarico';
 
 export interface Review {
   id: string;
@@ -14,12 +28,12 @@ export interface Review {
   priceUpdated?: string;
   imageUrl?: string;
   vehicleType?: string;
-  noiseLevel?: number; // 1-5
-  maneuverability?: number; // 1-5
-  cellularSignal?: number; // 1-5
-  groundLevelness?: number; // 1-5
-  shade?: number; // 1-5
-  cleanliness?: number; // 1-5
+  noiseLevel?: number; // 1-10
+  maneuverability?: number; // 1-10
+  cellularSignal?: number; // 1-10
+  groundLevelness?: number; // 1-10
+  shade?: number; // 1-10
+  cleanliness?: number; // 1-10
 }
 
 export interface DashboardSettings {
@@ -135,6 +149,7 @@ export interface Place {
   name: string;
   category: PlaceCategory;
   categoryLabel?: string;
+  serviceSubtype?: CamperServiceSubtype;
   lat: number;
   lng: number;
   address: string;

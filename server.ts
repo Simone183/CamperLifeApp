@@ -2634,18 +2634,47 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "ID e dati aggiornati sono obbligatori." });
       }
 
-      await firestoreDb.collection("places").doc(id).update(updatedData);
-      console.log(`[Firestore Sync] Updated place ID: ${id}`);
+      const cleanData = removeUndefined(updatedData);
+
+      // Sync to places collection
+      try {
+        await firestoreDb.collection("places").doc(id).set(cleanData, { merge: true });
+        console.log(`[Firestore Sync] Updated place ID: ${id} in places`);
+      } catch (e) {
+        console.warn("[Firestore] Error updating places doc:", e);
+      }
+
+      // Sync to soste collection
+      try {
+        await firestoreDb.collection("soste").doc(id).set(cleanData, { merge: true });
+      } catch (e) {
+        // non-blocking
+      }
       
-      // Sync local backup too
+      // Sync local user_places backup
       try {
         const list = loadUserPlaces();
         const index = list.findIndex((p: any) => p.id === id);
         if (index !== -1) {
-          list[index] = { ...list[index], ...updatedData };
+          list[index] = { ...list[index], ...cleanData };
+          saveUserPlaces(list);
+        } else {
+          list.push({ id, ...cleanData });
           saveUserPlaces(list);
         }
       } catch (backErr) {
+        // Safe to ignore
+      }
+
+      // Sync memory soste catalog
+      try {
+        const catalog = loadLocalSosteCatalog();
+        const catIdx = catalog.findIndex((p: any) => p.id === id);
+        if (catIdx !== -1) {
+          catalog[catIdx] = { ...catalog[catIdx], ...cleanData };
+          saveLocalSosteCatalog(catalog);
+        }
+      } catch (catErr) {
         // Safe to ignore
       }
 

@@ -5,19 +5,33 @@
 
 import React from 'react';
 import { getPoiCategoryDetails } from './MapPoiIcon';
+import { CamperServiceSubtype } from '../types';
 
 interface CategoryIllustrationProps {
   category: string;
   className?: string;
   feeStatus?: 'free' | 'paid' | 'unknown';
+  serviceSubtype?: CamperServiceSubtype;
+  categoryLabel?: string;
+  name?: string;
 }
 
 export const CategoryIllustration: React.FC<CategoryIllustrationProps> = ({
   category,
   className = "w-full h-full",
   feeStatus,
+  serviceSubtype,
+  categoryLabel,
+  name,
 }) => {
-  const details = getPoiCategoryDetails(category, false, feeStatus);
+  const details = getPoiCategoryDetails(
+    category,
+    false,
+    feeStatus,
+    serviceSubtype,
+    categoryLabel,
+    name
+  );
   const gradId = React.useId().replace(/:/g, "_");
 
   return (

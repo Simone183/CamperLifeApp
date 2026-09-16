@@ -24,25 +24,16 @@ export function AppPermissionModal({ isOpen, onClose, onApply }: AppPermissionMo
       console.warn('Errore salvataggio permessi:', e);
     }
 
-    // Trigger standard browser geolocation prompt if enabled
+    // Trigger standard browser geolocation prompt if enabled (non-blocking)
     if (locationEnabled && typeof window !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        () => {},
-        (err) => console.log('GPS Permission request:', err.message),
-        { timeout: 5000 }
-      );
-    }
-
-    // Trigger standard browser camera and mic prompt if enabled
-    if ((cameraEnabled || microphoneEnabled) && typeof window !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: cameraEnabled,
-          audio: microphoneEnabled,
-        });
-        stream.getTracks().forEach((track) => track.stop());
-      } catch (err: any) {
-        console.log('Media Permission request:', err.message);
+        navigator.geolocation.getCurrentPosition(
+          () => {},
+          (err) => console.log('GPS Permission request:', err.message),
+          { timeout: 3000 }
+        );
+      } catch (e) {
+        // ignore
       }
     }
 

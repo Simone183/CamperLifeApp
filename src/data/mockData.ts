@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem } from '../types.ts';
+import type { Place, CommunityMessage, VehicleDimensions, Deadline, ChecklistItem, PlaceCategory, CamperServiceSubtype } from '../types.ts';
 import { FRANCE_RAW_PLACES } from './francePlaces.ts';
 import { ITALIA_RAW_PLACES } from './italiaPlaces.ts';
 import { USER_PROVIDED_PLACES } from './userPlacesDataset.ts';
+import { detectPlaceCategoryAndLabel } from '../utils/placeCategoryHelper.ts';
 
 export const INITIAL_VEHICLE_DIMENSIONS: VehicleDimensions = {
   modelName: 'Mio Camper',
@@ -66,7 +67,7 @@ const HANDCRAFTED_PLACES: Place[] = [
     address: 'Via Gardesana 22, Torbole sul Garda (TN)',
     priceInfo: '18€ / 24 ore',
     priceEuro: 18,
-    rating: 4.6,
+    rating: 9.2,
     facilities: ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Animali ammessi', 'Raccolta differenziata'],
     imageUrl: 'https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600',
     source: 'inserito_a_mano',
@@ -79,7 +80,7 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r1_1',
         user: 'Marco & Silvia',
         date: '2026-06-12',
-        rating: 5,
+        rating: 10,
         comment: 'Ottima area sosta proprio in riva al lago! Wifi gratuito ben funzionante. Piazzole in piano su ghiaia. Consigliatissima per gli amanti del windsurf.',
         priceUpdated: '18€ / 24 ore',
         vehicleType: 'Semintegrale'
@@ -88,7 +89,7 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r1_2',
         user: 'CamperVagabond',
         date: '2026-06-08',
-        rating: 4,
+        rating: 8,
         comment: 'Molto pulita e tranquilla. Luce compresa nel prezzo. Un po\' distante dal centro di Torbole a piedi, ma c\'è una comodissima pista ciclabile adiacente.',
         priceUpdated: '18€ / 24 ore',
         vehicleType: 'Van / Camper puro'
@@ -104,7 +105,7 @@ const HANDCRAFTED_PLACES: Place[] = [
     address: 'Località Campo, Cortina d\'Ampezzo (BL)',
     priceInfo: '34€ / notte',
     priceEuro: 34,
-    rating: 4.8,
+    rating: 9.6,
     facilities: ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Bagni riscaldati', 'Aria condizionata', 'Piscina', 'Wi-Fi gratuito'],
     imageUrl: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&q=80&w=600',
     source: 'inserito_a_mano',
@@ -117,7 +118,7 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r2_1',
         user: 'Luigi_82',
         date: '2026-06-14',
-        rating: 5,
+        rating: 10,
         comment: 'Spettacolare! Vista mozzafiato sulle Tofane. Bagni che sembrano un hotel a 5 stelle con pavimenti riscaldati d\'inverno. Struttura superba.',
         priceUpdated: '34€ / notte + tassa soggiorno',
         vehicleType: 'Motorhome'
@@ -128,12 +129,14 @@ const HANDCRAFTED_PLACES: Place[] = [
     id: 'p3',
     name: 'Camper Service Autostrada del Sole - Orvieto',
     category: 'camper_service',
+    categoryLabel: 'CAMPER SERVICE (C/S)',
+    serviceSubtype: 'carico_scarico',
     lat: 42.721,
     lng: 12.129,
     address: 'Area Servizio Tevere Est, S.R. 205, Orvieto (TR)',
     priceInfo: 'Gratuito',
     priceEuro: 0,
-    rating: 3.8,
+    rating: 7.6,
     facilities: ['Carico acqua', 'Scarico reflui', 'Illuminazione notturna'],
     imageUrl: 'https://images.unsplash.com/photo-1596524430615-b46475ddff6e?auto=format&fit=crop&q=80&w=600',
     source: 'inserito_a_mano',
@@ -145,12 +148,66 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r3_1',
         user: 'GirovagoCamper',
         date: '2026-05-20',
-        rating: 4,
+        rating: 8,
         comment: 'Servizio di carico e scarico gratuito e perfettamente funzionante. Griglia comoda anche per grandi camper mansardati. Grazie Autostrade.',
         priceUpdated: 'Gratuito',
         vehicleType: 'Mansardato'
       }
     ]
+  },
+  {
+    id: 'p3_fontanella',
+    name: 'Fontanella Acqua Potabile Val Veny',
+    category: 'camper_service',
+    categoryLabel: 'FONTANELLA ACQUA',
+    serviceSubtype: 'fontanella',
+    lat: 45.789,
+    lng: 6.945,
+    address: 'Strada della Val Veny, Courmayeur (AO)',
+    priceInfo: 'Gratuito',
+    priceEuro: 0,
+    feeStatus: 'free',
+    rating: 9.6,
+    facilities: ['Carico acqua', 'Acqua potabile fresca'],
+    imageUrl: 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?auto=format&fit=crop&q=80&w=600',
+    source: 'inserito_a_mano',
+    reviews: []
+  },
+  {
+    id: 'p3_lavanderia',
+    name: 'Lavanderia Self-Service Speed Queen Aosta',
+    category: 'camper_service',
+    categoryLabel: 'LAVANDERIA SELF-SERVICE',
+    serviceSubtype: 'lavanderia',
+    lat: 45.742,
+    lng: 7.325,
+    address: 'Corso Saint-Martin-de-Corléans 88, Aosta (AO)',
+    priceInfo: '5€ Lavaggio / 2€ Asciugatura',
+    priceEuro: 5,
+    feeStatus: 'paid',
+    rating: 9.2,
+    facilities: ['Lavanderia self-service', 'Lavatrici industriali 18kg', 'Asciugatrici rapide', 'Wi-Fi'],
+    imageUrl: 'https://images.unsplash.com/photo-1517677208171-0bc6725a3e60?auto=format&fit=crop&q=80&w=600',
+    source: 'inserito_a_mano',
+    reviews: []
+  },
+  {
+    id: 'p3_scarico',
+    name: 'Pozzetto Solo Scarico Reflui Casello',
+    category: 'camper_service',
+    categoryLabel: 'SOLO SCARICO REFLUI',
+    serviceSubtype: 'solo_scarico',
+    lat: 45.728,
+    lng: 7.355,
+    address: 'Area Tecnica Raccordo Autostradale A5, Aosta Est (AO)',
+    priceInfo: 'Gratuito',
+    priceEuro: 0,
+    feeStatus: 'free',
+    rating: 8.2,
+    facilities: ['Scarico reflui', 'Scarico wc chimico'],
+    imageUrl: 'https://images.unsplash.com/photo-1596524430615-b46475ddff6e?auto=format&fit=crop&q=80&w=600',
+    source: 'inserito_a_mano',
+    reviews: []
   },
   {
     id: 'p4',
@@ -161,7 +218,7 @@ const HANDCRAFTED_PLACES: Place[] = [
     address: 'Via Ponte Romano 12, Saint-Vincent (AO)',
     priceInfo: '15€ / notte',
     priceEuro: 15,
-    rating: 4.1,
+    rating: 8.2,
     facilities: ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Ricarica bombole'],
     imageUrl: 'https://images.unsplash.com/photo-1510312305653-8ed496efae75?auto=format&fit=crop&q=80&w=600',
     source: 'inserito_a_mano',
@@ -176,7 +233,7 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r4_1',
         user: 'TechCamper',
         date: '2026-06-01',
-        rating: 4,
+        rating: 8,
         comment: 'ATTENZIONE: Ponte d\'ingresso molto basso! C\'è scritto 3.10m. Col mio mansardato da 3.05m sono passato al pelo ma col cuore in gola. Area tranquilla ed economica.',
         priceUpdated: '15€ / notte',
         vehicleType: 'Mansardato'
@@ -192,7 +249,7 @@ const HANDCRAFTED_PLACES: Place[] = [
     address: 'Viale dei Pini 140, Castiglione della Pescaia (GR)',
     priceInfo: '29€ / notte',
     priceEuro: 29,
-    rating: 4.5,
+    rating: 9.0,
     facilities: ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Bagni riscaldati', 'Animali ammessi', 'Piscina', 'Ristorante', 'Spiaggia privata'],
     imageUrl: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?auto=format&fit=crop&q=80&w=600',
     source: 'inserito_a_mano',
@@ -205,7 +262,7 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r5_1',
         user: 'Chiara_Loves_Camping',
         date: '2026-06-11',
-        rating: 5,
+        rating: 10,
         comment: 'Posizionato in una pineta bellissima, all\'ombra naturale! Piazzole molto spaziose. Accesso diretto alla spiaggia di sabbia fine. Personale super gentile.',
         priceUpdated: '29€ piazzola standard + camper',
         vehicleType: 'Semintegrale'
@@ -221,7 +278,7 @@ const HANDCRAFTED_PLACES: Place[] = [
     address: 'Via Don Francesco Gigante 2, Alberobello (BA)',
     priceInfo: '20€ / 24h',
     priceEuro: 20,
-    rating: 4.2,
+    rating: 8.4,
     facilities: ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Bagni riscaldati'],
     imageUrl: 'https://images.unsplash.com/photo-1568285634123-0130f146a47a?auto=format&fit=crop&q=80&w=600',
     source: 'inserito_a_mano',
@@ -235,7 +292,7 @@ const HANDCRAFTED_PLACES: Place[] = [
         id: 'r6_1',
         user: 'PugliaOnTheRoad',
         date: '2026-06-10',
-        rating: 4,
+        rating: 8,
         comment: 'Comodissimo per visitare i Trulli a piedi (5 minuti). Custodito giorno e notte. Strada d\'accesso leggermente stretta se si incrocia un altro camper grande. Complessivamente ottima pulizia.',
         priceUpdated: '20€ tutto compreso',
         vehicleType: 'Van / Camper puro'
@@ -297,26 +354,42 @@ function parseRawFrancePlace(index: number, lng: number, lat: number, rawLabel: 
   
   const coreName = parts.slice(0).join(' ');
   
-  let category: 'area_sosta' | 'camper_service' | 'campeggio' = 'area_sosta';
+  const detected = detectPlaceCategoryAndLabel({ name: clean });
+  let category: PlaceCategory = detected.category;
+  let serviceSubtype = detected.serviceSubtype;
+  let categoryLabel = detected.categoryLabel;
   let name = clean;
   let priceEuro = 0;
   let priceInfo = 'Gratuito';
   let facilities = ['Illuminazione notturna'];
   
-  if (catSuffix === 'AA') {
+  if (serviceSubtype === 'lavanderia' || serviceSubtype === 'fontanella' || serviceSubtype === 'solo_scarico') {
+    name = coreName || clean;
+    if (serviceSubtype === 'lavanderia') {
+      facilities = ['Lavatrice self-service', 'Asciugatrice'];
+    } else if (serviceSubtype === 'fontanella') {
+      facilities = ['Acqua potabile'];
+    } else if (serviceSubtype === 'solo_scarico') {
+      facilities = ['Pozzetto scarico reflui'];
+    }
+  } else if (catSuffix === 'AA') {
     category = 'area_sosta';
+    categoryLabel = 'AREA SOSTA';
     name = `Area Sosta ${coreName}`;
     priceEuro = 12;
     priceInfo = '12€ / 24h';
     facilities = ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Illuminazione notturna'];
   } else if (catSuffix === 'CS') {
     category = 'camper_service';
+    serviceSubtype = 'carico_scarico';
+    categoryLabel = 'CAMPER SERVICE (C/S)';
     name = `Camper Service ${coreName}`;
     priceEuro = 0;
     priceInfo = 'Gratuito';
     facilities = ['Carico acqua', 'Scarico reflui'];
   } else if (catSuffix === 'PS') {
-    category = 'area_sosta';
+    category = 'parcheggio_gratuito';
+    categoryLabel = 'PARCHEGGIO FREE';
     name = `Punto Sosta ${coreName}`;
     priceEuro = 0;
     priceInfo = 'Gratuito';
@@ -343,6 +416,8 @@ function parseRawFrancePlace(index: number, lng: number, lat: number, rawLabel: 
     id: `fr_${numericId || index}`,
     name,
     category,
+    serviceSubtype,
+    categoryLabel,
     lat,
     lng,
     address: `${coreName}, Francia`,
@@ -385,26 +460,42 @@ function parseRawItaliaPlace(index: number, lng: number, lat: number, rawLabel: 
   
   const coreName = parts.slice(0).join(' ');
   
-  let category: 'area_sosta' | 'camper_service' | 'campeggio' = 'area_sosta';
+  const detected = detectPlaceCategoryAndLabel({ name: clean });
+  let category: PlaceCategory = detected.category;
+  let serviceSubtype = detected.serviceSubtype;
+  let categoryLabel = detected.categoryLabel;
   let name = clean;
   let priceEuro = 0;
   let priceInfo = 'Gratuito';
   let facilities = ['Illuminazione notturna'];
   
-  if (catSuffix === 'AA') {
+  if (serviceSubtype === 'lavanderia' || serviceSubtype === 'fontanella' || serviceSubtype === 'solo_scarico') {
+    name = coreName || clean;
+    if (serviceSubtype === 'lavanderia') {
+      facilities = ['Lavatrice self-service', 'Asciugatrice'];
+    } else if (serviceSubtype === 'fontanella') {
+      facilities = ['Acqua potabile'];
+    } else if (serviceSubtype === 'solo_scarico') {
+      facilities = ['Pozzetto scarico reflui'];
+    }
+  } else if (catSuffix === 'AA') {
     category = 'area_sosta';
+    categoryLabel = 'AREA SOSTA';
     name = `Area Sosta ${coreName}`;
     priceEuro = 14;
     priceInfo = '14€ / 24h';
     facilities = ['Carico acqua', 'Scarico reflui', 'Elettricità 220V', 'Illuminazione notturna'];
   } else if (catSuffix === 'CS') {
     category = 'camper_service';
+    serviceSubtype = 'carico_scarico';
+    categoryLabel = 'CAMPER SERVICE (C/S)';
     name = `Camper Service ${coreName}`;
     priceEuro = 0;
     priceInfo = 'Gratuito';
     facilities = ['Carico acqua', 'Scarico reflui'];
   } else if (catSuffix === 'PS') {
-    category = 'area_sosta';
+    category = 'parcheggio_gratuito';
+    categoryLabel = 'PARCHEGGIO FREE';
     name = `Punto Sosta ${coreName}`;
     priceEuro = 0;
     priceInfo = 'Gratuito';
@@ -431,6 +522,8 @@ function parseRawItaliaPlace(index: number, lng: number, lat: number, rawLabel: 
     id: `it_${numericId || index}`,
     name,
     category,
+    serviceSubtype,
+    categoryLabel,
     lat,
     lng,
     address: `${coreName}, Italia`,
@@ -447,95 +540,21 @@ function parseRawItaliaPlace(index: number, lng: number, lat: number, rawLabel: 
 function processAllPlaces(): Place[] {
   const resultList: Place[] = [...HANDCRAFTED_PLACES];
   
-  // 1. Process France Raw Places
+  // 1. Process France Raw Places (O(N) direct push)
   FRANCE_RAW_PLACES.forEach(([lng, lat, rawLabel], index) => {
     const freshPlace = parseRawFrancePlace(index, lng, lat, rawLabel);
-    
-    // Check if there is already a duplicate within our chosen 1.5km proximity limit in our parsed list
-    let duplicateIndex = -1;
-    for (let i = 0; i < resultList.length; i++) {
-      const dist = calculateDistance(resultList[i].lat, resultList[i].lng, freshPlace.lat, freshPlace.lng);
-      if (dist < 1.5) {
-        duplicateIndex = i;
-        break;
-      }
-    }
-    
-    if (duplicateIndex !== -1) {
-      // Duplicate found! We merge the data
-      const existing = resultList[duplicateIndex];
-      
-      const cleanFreshName = freshPlace.name.replace(/Area Sosta |Camper Service |Punto Sosta /g, '').trim();
-      if (!existing.name.includes(cleanFreshName) && existing.name !== freshPlace.name) {
-        existing.name = `${existing.name} & ${cleanFreshName}`;
-      }
-      
-      // Combine facilities list uniquely
-      const combinedFacilities = new Set([...existing.facilities, ...freshPlace.facilities]);
-      existing.facilities = Array.from(combinedFacilities);
-      
-      // Upgrade category if fresh is higher utility
-      if (freshPlace.category === 'area_sosta' && existing.category === 'camper_service') {
-        existing.category = 'area_sosta';
-        existing.priceInfo = freshPlace.priceInfo;
-        existing.priceEuro = freshPlace.priceEuro;
-      }
-    } else {
-      resultList.push(freshPlace);
-    }
+    resultList.push(freshPlace);
   });
 
-  // 2. Process Italia Raw Places
+  // 2. Process Italia Raw Places (O(N) direct push)
   ITALIA_RAW_PLACES.forEach(([lng, lat, rawLabel], index) => {
     const freshPlace = parseRawItaliaPlace(index, lng, lat, rawLabel);
-    
-    // Check if there is already a duplicate within our chosen 1.5km proximity limit in our parsed list
-    let duplicateIndex = -1;
-    for (let i = 0; i < resultList.length; i++) {
-      const dist = calculateDistance(resultList[i].lat, resultList[i].lng, freshPlace.lat, freshPlace.lng);
-      if (dist < 1.5) {
-        duplicateIndex = i;
-        break;
-      }
-    }
-    
-    if (duplicateIndex !== -1) {
-      // Duplicate found! We merge the data
-      const existing = resultList[duplicateIndex];
-      
-      const cleanFreshName = freshPlace.name.replace(/Area Sosta |Camper Service |Punto Sosta /g, '').trim();
-      if (!existing.name.includes(cleanFreshName) && existing.name !== freshPlace.name) {
-        existing.name = `${existing.name} & ${cleanFreshName}`;
-      }
-      
-      // Combine facilities list uniquely
-      const combinedFacilities = new Set([...existing.facilities, ...freshPlace.facilities]);
-      existing.facilities = Array.from(combinedFacilities);
-      
-      // Upgrade category if fresh is higher utility
-      if (freshPlace.category === 'area_sosta' && existing.category === 'camper_service') {
-        existing.category = 'area_sosta';
-        existing.priceInfo = freshPlace.priceInfo;
-        existing.priceEuro = freshPlace.priceEuro;
-      }
-    } else {
-      resultList.push(freshPlace);
-    }
+    resultList.push(freshPlace);
   });
 
   // 3. Process User Provided Places
   USER_PROVIDED_PLACES.forEach((freshPlace) => {
-    let duplicateIndex = -1;
-    for (let i = 0; i < resultList.length; i++) {
-      const dist = calculateDistance(resultList[i].lat, resultList[i].lng, freshPlace.lat, freshPlace.lng);
-      if (dist < 1.0) {
-        duplicateIndex = i;
-        break;
-      }
-    }
-    if (duplicateIndex === -1) {
-      resultList.push(freshPlace);
-    }
+    resultList.push(freshPlace);
   });
   
   return resultList;

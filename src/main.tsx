@@ -1,8 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
+import "./index.css";
 import App from "./App.tsx";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary.tsx";
-import "./index.css";
 
 // 1. Intercettatore API trasparente per ambienti app ibridi nativi (come Capacitor APK)
 try {
@@ -217,11 +219,22 @@ try {
 
 const rootElem = document.getElementById("root");
 if (rootElem) {
-  createRoot(rootElem).render(
-    <StrictMode>
-      <GlobalErrorBoundary>
-        <App />
-      </GlobalErrorBoundary>
-    </StrictMode>,
-  );
+  try {
+    const root = createRoot(rootElem);
+    root.render(
+      <StrictMode>
+        <GlobalErrorBoundary>
+          <App />
+        </GlobalErrorBoundary>
+      </StrictMode>,
+    );
+  } catch (mountErr) {
+    console.error("[ViaCamper] Critical mount error:", mountErr);
+    const errBox = document.getElementById("v-boot-error");
+    if (errBox) {
+      errBox.style.display = "block";
+      const errMsg = document.getElementById("v-boot-msg");
+      if (errMsg) errMsg.textContent = String((mountErr as any)?.message || mountErr);
+    }
+  }
 }
