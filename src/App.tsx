@@ -4368,14 +4368,21 @@ out center;`;
         // Fetch server-approved / cloud places if online (lightweight)
         let serverPlaces: Place[] = [];
         try {
-          const res = await fetch(resolveApiUrl("/api/public-places")).catch(() => null);
+          // Calculate a bounding box based on reasonable default area around center
+          // Using a ~5 degree buffer (~500km) to ensure enough places are loaded
+          const lat = userLocation?.lat || 41.9; // Default Rome
+          const lng = userLocation?.lng || 12.5;
+          const buffer = 5.0; 
+          const url = `/api/public-places?minLat=${lat - buffer}&maxLat=${lat + buffer}&minLng=${lng - buffer}&maxLng=${lng + buffer}`;
+          
+          const res = await fetch(resolveApiUrl(url)).catch(() => null);
           if (res && res.ok) {
             const ct = res.headers.get("content-type");
             if (ct && ct.includes("application/json")) {
               const data = await res.json();
               if (Array.isArray(data)) {
                 serverPlaces = data;
-                console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places.`);
+                console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places within area.`);
               }
             }
           }

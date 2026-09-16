@@ -2102,25 +2102,45 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // Get public places (combining approved user places, local catalog, and Firestore soste)
   app.get("/api/public-places", async (req, res) => {
     try {
+      const { minLat, maxLat, minLng, maxLng } = req.query;
+      const useBoundingBox = minLat && maxLat && minLng && maxLng;
+
       const placesList: any[] = [];
       const seenIds = new Set<string>();
+
+      const filterByBoundingBox = (item: any) => {
+        if (!useBoundingBox) return true;
+        const lat = parseFloat(item.lat || item.latitude);
+        const lng = parseFloat(item.lng || item.longitude);
+        return (
+          lat >= parseFloat(minLat as string) &&
+          lat <= parseFloat(maxLat as string) &&
+          lng >= parseFloat(minLng as string) &&
+          lng <= parseFloat(maxLng as string)
+        );
+      };
 
       // 1. From local memory catalog (full catalog)
       const catalog = loadLocalSosteCatalog();
       if (catalog.length > 0) {
         catalog.forEach(item => {
-          seenIds.add(item.id);
-          placesList.push(parseSostaFirestoreDoc(item, item.id));
+          if (!seenIds.has(item.id) && filterByBoundingBox(item)) {
+            seenIds.add(item.id);
+            placesList.push(parseSostaFirestoreDoc(item, item.id));
+          }
         });
       }
 
       // 2. Fetch from Firestore 'soste' collection
       try {
-        const sosteSnap = await firestoreDb.collection("soste").limit(500).get();
+        // NOTE: For better performance with bounding box, consider geospatial indexing in Firestore.
+        // For now, we fetch a limited subset.
+        const sosteSnap = await firestoreDb.collection("soste").limit(1000).get();
         sosteSnap.forEach((doc: any) => {
-          if (!seenIds.has(doc.id)) {
+          const data = doc.data();
+          if (!seenIds.has(doc.id) && filterByBoundingBox({ id: doc.id, ...data })) {
             seenIds.add(doc.id);
-            placesList.push(parseSostaFirestoreDoc({ id: doc.id, ...doc.data() }, doc.id));
+            placesList.push(parseSostaFirestoreDoc({ id: doc.id, ...data }, doc.id));
           }
         });
       } catch (sosteErr) {
@@ -2132,7 +2152,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         const snapshot = await firestoreDb.collection("places").where("status", "==", "approved").get();
         snapshot.forEach((doc: any) => {
           const data = { id: doc.id, ...doc.data() };
-          if (!seenIds.has(doc.id)) {
+          if (!seenIds.has(doc.id) && filterByBoundingBox(data)) {
             seenIds.add(doc.id);
             placesList.push(parseSostaFirestoreDoc(data, doc.id));
           }
@@ -2142,10 +2162,15 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       // Fallback to local user_places if empty
-      if (placesList.length === 0) {
+      if (placesList.length === 0 && !useBoundingBox) {
         const list = loadUserPlaces();
         const approved = list.filter((p: any) => p.status === "approved" || !p.status);
-        approved.forEach((p: any) => placesList.push(parseSostaFirestoreDoc(p, p.id)));
+        approved.forEach((p: any) => {
+          if (!seenIds.has(p.id)) {
+            seenIds.add(p.id);
+            placesList.push(parseSostaFirestoreDoc(p, p.id));
+          }
+        });
       }
 
       res.json(placesList);
