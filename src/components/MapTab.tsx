@@ -6,7 +6,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppSettings } from "../useAppSettings";
-import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getFuelEfficiencyUnit, getFuelEfficiencyValue, parseDimToNumber } from "../unit-helpers";
+import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getTileConfig, getFuelEfficiencyUnit, getFuelEfficiencyValue, parseDimToNumber } from "../unit-helpers";
 import {
   Place,
   PlaceSeasonalPrice,
@@ -5350,103 +5350,88 @@ out center;`;
               <Minus className="w-4 h-4 text-slate-700" />
             </button>
 
-            {/* Pulsante dei Livelli Subito Sotto ai Pulsanti + e - */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowMapTypeMenu(!showMapTypeMenu)}
-                className={`w-9 h-9 rounded-xl shadow-md flex items-center justify-center transition-all cursor-pointer border ${
-                  showMapTypeMenu || mapTypeId !== "roadmap"
-                    ? "bg-[#3E4A35] text-white border-transparent"
-                    : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-100 border-slate-200/90"
-                }`}
-                title="Cambia visualizzazione mappa (Livelli)"
-              >
-                <Layers className="w-4 h-4" />
-              </button>
+            {/* Pulsante dei Livelli Subito Sotto ai Pulsanti + e - (Visibile solo con Google Maps attivo) */}
+            {settings?.mapEngine === "google" && hasValidKey && isOnline && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowMapTypeMenu(!showMapTypeMenu)}
+                  className={`w-9 h-9 rounded-xl shadow-md flex items-center justify-center transition-all cursor-pointer border ${
+                    showMapTypeMenu || mapTypeId !== "roadmap"
+                      ? "bg-[#3E4A35] text-white border-transparent"
+                      : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-100 border-slate-200/90"
+                  }`}
+                  title="Cambia visualizzazione mappa (Livelli)"
+                >
+                  <Layers className="w-4 h-4" />
+                </button>
 
-              {/* Menu dei Livelli */}
-              {showMapTypeMenu && (
-                <div className="absolute top-0 left-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-1.5 w-36 z-[1100] animate-in fade-in slide-in-from-left-2 duration-150">
-                  <div className="px-2 py-1 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100 mb-1">
-                    Tipo Mappa
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMapTypeId("roadmap");
-                      setShowMapTypeMenu(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                      mapTypeId === "roadmap"
-                        ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    🗺️ Stradale
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMapTypeId("satellite");
-                      setShowMapTypeMenu(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                      mapTypeId === "satellite"
-                        ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    🛰️ Satellitare
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMapTypeId("hybrid");
-                      setShowMapTypeMenu(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                      mapTypeId === "hybrid"
-                        ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    🛣️ Ibrido
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMapTypeId("terrain");
-                      setShowMapTypeMenu(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                      mapTypeId === "terrain"
-                        ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    ⛰️ Terreno
-                  </button>
-
-                  {/* Impostazioni Chiave API solo per admin all'interno del menu Livelli */}
-                  {isAdmin && (currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && (
-                    <div className="border-t border-slate-100 pt-1 mt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowMapTypeMenu(false);
-                          setShowKeyModal(true);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 text-amber-700 hover:bg-amber-50 cursor-pointer"
-                      >
-                        <Lock className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Chiave API Google</span>
-                      </button>
+                {/* Menu dei Livelli */}
+                {showMapTypeMenu && (
+                  <div className="absolute top-0 left-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-1.5 w-36 z-[1100] animate-in fade-in slide-in-from-left-2 duration-150">
+                    <div className="px-2 py-1 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100 mb-1">
+                      Tipo Mappa
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapTypeId("roadmap");
+                        setShowMapTypeMenu(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                        mapTypeId === "roadmap"
+                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      🗺️ Stradale
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapTypeId("satellite");
+                        setShowMapTypeMenu(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                        mapTypeId === "satellite"
+                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      🛰️ Satellitare
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapTypeId("hybrid");
+                        setShowMapTypeMenu(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                        mapTypeId === "hybrid"
+                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      🛣️ Ibrido
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapTypeId("terrain");
+                        setShowMapTypeMenu(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                        mapTypeId === "terrain"
+                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      ⛰️ Terreno
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Scheda informativa per la puntina temporanea personalizzata */}
@@ -10043,13 +10028,14 @@ export function LeafletOfflineMap({
 
     // Add our customized offline-aware tile layer!
     // We can fetch from local IndexedDB storage if available!
+    const tileCfg = getTileConfig(settings?.mapTheme || 'positron');
     const customTileLayer = L.tileLayer(
-      getTileUrl(settings?.mapTheme || 'standard'),
+      tileCfg.url,
       {
         maxZoom: 19,
         maxNativeZoom: offlineActive ? 16 : 19, // Support detailed offline maps up to zoom 16
-        attribution: "&copy; Google | ViaCamper Offline Cache",
-        subdomains: "0123",
+        attribution: tileCfg.attribution + " | ViaCamper Offline Cache",
+        subdomains: tileCfg.subdomains,
       },
     );
 

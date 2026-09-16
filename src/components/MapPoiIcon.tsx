@@ -127,11 +127,11 @@ export function getPoiCategoryDetails(
   ) {
     type = "agricampeggio";
     label = "Agricampeggio";
-    gradientColors = ["#84CC16", "#65A30D"]; // Verde chiaro / Lime
-    bgGradient = "from-lime-500 to-lime-700";
-    borderBg = "border-lime-200/90";
-    glowColor = "rgba(132, 204, 22, 0.45)";
-    bgHex = "#84CC16";
+    gradientColors = ["#65A30D", "#65A30D"]; // Verde oliva scuro solid
+    bgGradient = "bg-lime-700";
+    borderBg = "border-lime-900/20";
+    glowColor = "rgba(101, 163, 13, 0.45)";
+    bgHex = "#65A30D";
   }
   // 3. Campeggio
   else if (
@@ -156,11 +156,11 @@ export function getPoiCategoryDetails(
   ) {
     type = "parcheggio_diurno";
     label = "Parcheggio Solo Giorno";
-    gradientColors = ["#EAB308", "#CA8A04"]; // Giallo vivo
-    bgGradient = "from-yellow-500 to-amber-600";
-    borderBg = "border-yellow-200/90";
-    glowColor = "rgba(234, 179, 8, 0.45)";
-    bgHex = "#EAB308";
+    gradientColors = ["#CA8A04", "#CA8A04"]; // Giallo scuro solid
+    bgGradient = "bg-amber-600";
+    borderBg = "border-amber-900/20";
+    glowColor = "rgba(202, 138, 4, 0.45)";
+    bgHex = "#CA8A04";
   }
   // 5. Parcheggio a Pagamento
   else if (
@@ -171,11 +171,11 @@ export function getPoiCategoryDetails(
   ) {
     type = "parcheggio_pagamento";
     label = "Parcheggio a Pagamento";
-    gradientColors = ["#EF4444", "#DC2626"]; // Rosso vivo
-    bgGradient = "from-red-500 to-red-700";
-    borderBg = "border-red-200/90";
-    glowColor = "rgba(239, 68, 68, 0.45)";
-    bgHex = "#DC2626";
+    gradientColors = ["#B91C1C", "#B91C1C"]; // Rosso scuro solid
+    bgGradient = "bg-red-700";
+    borderBg = "border-red-900/20";
+    glowColor = "rgba(185, 28, 28, 0.45)";
+    bgHex = "#B91C1C";
   }
   // 6. Parcheggio Gratuito
   else if (
@@ -187,11 +187,11 @@ export function getPoiCategoryDetails(
   ) {
     type = "parcheggio_gratuito";
     label = "Parcheggio Free";
-    gradientColors = ["#2563EB", "#1D4ED8"]; // Blu classico
-    bgGradient = "from-blue-600 to-blue-800";
-    borderBg = "border-blue-200/90";
-    glowColor = "rgba(37, 99, 235, 0.45)";
-    bgHex = "#2563EB";
+    gradientColors = ["#1D4ED8", "#1D4ED8"]; // Blu scuro solid
+    bgGradient = "bg-blue-700";
+    borderBg = "border-blue-900/20";
+    glowColor = "rgba(29, 78, 216, 0.45)";
+    bgHex = "#1D4ED8";
   }
   // 7. Fontanella / Solo carico acqua
   else if (

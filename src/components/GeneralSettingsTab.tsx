@@ -481,36 +481,40 @@ export default function GeneralSettingsTab({
         <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
         <div className="flex items-center justify-between">
           <div>
-            <p className="font-bold text-[#2D2926] dark:text-white">Motore Mappa</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Google Maps (3D/Interattivo) o Leaflet (Ultra-veloce/Offline)</p>
+            <p className="font-bold text-[#2D2926] dark:text-white">Motore e Stile Mappa</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Scegli la cartografia e il motore di rendering preferito</p>
           </div>
           <select
-            value={mapEngine}
+            value={
+              mapEngine === "leaflet" && mapTheme === "standard"
+                ? "leaflet_ultrafast"
+                : mapEngine === "leaflet"
+                ? mapTheme
+                : mapTheme === "satellite" || mapTheme === "hybrid"
+                ? mapTheme
+                : "google"
+            }
             onChange={(e) => {
-              setMapEngine(e.target.value);
-              window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { mapEngine: e.target.value } }));
+              const val = e.target.value;
+              if (val === "leaflet_ultrafast") {
+                setMapEngine("leaflet");
+                setMapTheme("standard");
+              } else if (val === "positron" || val === "dark" || val === "standard" || val === "osm") {
+                setMapEngine("leaflet");
+                setMapTheme(val);
+              } else {
+                setMapEngine("google");
+                setMapTheme(val === "google" ? "standard" : val);
+              }
+              window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { mapEngine: val === "google" || val === "satellite" || val === "hybrid" ? "google" : "leaflet" } }));
             }}
             className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl px-3 py-1.5 text-sm outline-none cursor-pointer border border-slate-200 dark:border-slate-600"
           >
-            <option value="google">Google Maps (3D/Online)</option>
-            <option value="leaflet">Leaflet (Rapido/Offline)</option>
-          </select>
-        </div>
-        <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-bold text-[#2D2926] dark:text-white">Tema Grafico Mappa</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Stile grafico predefinito per la cartografia</p>
-          </div>
-          <select
-            value={mapTheme}
-            onChange={(e) => setMapTheme(e.target.value)}
-            className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl px-3 py-1.5 text-sm outline-none cursor-pointer border border-slate-200 dark:border-slate-600"
-          >
-            <option value="standard">Standard</option>
-            <option value="satellite">Satellite</option>
-            <option value="hybrid">Ibrida</option>
-            <option value="dark">Scura</option>
+            <option value="leaflet_ultrafast">Mappa Leaflet Ultra-Rapida ⚡</option>
+            <option value="positron">Chiara (Esri Light Gray)</option>
+            <option value="osm">OpenStreetMap Standard</option>
+            <option value="dark">Scura / Dark Mode</option>
+            <option value="google">Google Maps Standard (3D)</option>
           </select>
         </div>
         <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
@@ -527,7 +531,17 @@ export default function GeneralSettingsTab({
             <option value="all">Tutti i servizi</option>
             <option value="area_sosta">Aree di sosta</option>
             <option value="campeggio">Campeggi</option>
-            <option value="parcheggio_camper">Parcheggi</option>
+            <option value="agricampeggio">Agricampeggi</option>
+            <option value="parcheggio_camper">Parcheggi Camper</option>
+            <option value="camper_service">Camper Service (C/S)</option>
+            <option value="carico_scarico">Carico & Scarico</option>
+            <option value="solo_scarico">Solo Scarico</option>
+            <option value="fontanella">Fontanelle / Acqua</option>
+            <option value="lavanderia">Lavanderie</option>
+            <option value="parcheggio_gratuito">Parcheggi Gratuiti</option>
+            <option value="parcheggio_pagamento">Parcheggi a Pagamento</option>
+            <option value="parcheggio_diurno">Parcheggi Diurni</option>
+            <option value="hidden_gem">Luoghi Segreti / Hidden Gems</option>
           </select>
         </div>
         <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
@@ -546,32 +560,6 @@ export default function GeneralSettingsTab({
             <option value="veloce">Veloce (Autostrade)</option>
           </select>
         </div>
-        {isSuperAdmin && (
-          <>
-            <div className="h-px bg-slate-100 dark:bg-slate-700 w-full" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-bold text-[#2D2926] dark:text-white flex items-center gap-1.5">
-                  <span>Chiave Google Maps API</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold dark:bg-amber-950/60 dark:text-amber-300">
-                    Admin
-                  </span>
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Configura la tua chiave API Google Maps per la vista satellitare avanzata e 3D</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent("open-google-maps-key-modal"));
-                }}
-                className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-700 font-extrabold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-              >
-                <Key className="w-4 h-4 shrink-0" />
-                <span>Configura Chiave</span>
-              </button>
-            </div>
-          </>
-        )}
       </div>
     </section>
   );

@@ -61,6 +61,10 @@ export function loadGooglePlacesScript(apiKey: string): Promise<boolean> {
   if (scriptLoadPromise) return scriptLoadPromise;
 
   scriptLoadPromise = new Promise((resolve) => {
+    if (window.google?.maps || document.querySelector('script[src*="maps.googleapis.com"]')) {
+      resolve(true);
+      return;
+    }
     const existingScript = document.getElementById('google-maps-places-sdk');
     if (existingScript) {
       const check = setInterval(() => {

@@ -131,9 +131,59 @@ export function getWeightUnitTonnes(settings: AppSettings): string {
   return settings.dimensionUnit === 'imperial' ? 'lbs' : 't';
 }
 
+export interface TileConfig {
+  url: string;
+  subdomains: string;
+  attribution: string;
+}
+
 export function getTileUrl(mapTheme: string): string {
+  const cfg = getTileConfig(mapTheme);
+  return cfg.url;
+}
+
+export function getTileConfig(mapTheme: string): TileConfig {
+  if (mapTheme === 'positron' || mapTheme === 'light') {
+    return {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      subdomains: 'abc',
+      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+    };
+  }
+  if (mapTheme === 'esri') {
+    return {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+      subdomains: 'abc',
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom'
+    };
+  }
+  if (mapTheme === 'dark') {
+    return {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      subdomains: 'abc',
+      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+    };
+  }
+  if (mapTheme === 'standard') {
+    return {
+      url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+      subdomains: '0123',
+      attribution: '&copy; Google'
+    };
+  }
+  if (mapTheme === 'osm') {
+    return {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      subdomains: 'abc',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    };
+  }
   const lyrs = mapTheme === 'satellite' ? 's' : mapTheme === 'hybrid' ? 'y' : 'm';
-  return `https://mt{s}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`;
+  return {
+    url: `https://mt{s}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`,
+    subdomains: '0123',
+    attribution: '&copy; Google'
+  };
 }
 
 export function parseDimToNumber(val: string | number | undefined | null): number {

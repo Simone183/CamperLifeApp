@@ -152,6 +152,7 @@ import {
   Bot,
   Copy,
   Navigation,
+  Key,
 } from "lucide-react";
 
 import { ClientFirestoreAdapter } from "./client-firestore";
@@ -7244,7 +7245,7 @@ out center;`;
             </div>
 
             {/* Admin Controls */}
-            <div className="p-4 border-b border-slate-100 bg-slate-50">
+            <div className="p-4 border-b border-slate-100 bg-slate-50 space-y-2">
               <button
                 onClick={toggleSimulatedOffline}
                 className={`w-full px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 border ${
@@ -7264,6 +7265,16 @@ out center;`;
                     ? "Simulazione Offline Attiva"
                     : "Simula Offline"}
                 </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("open-google-maps-key-modal"));
+                }}
+                className="w-full px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Key className="w-4 h-4 shrink-0 text-emerald-700" />
+                <span>Configura Chiave Google Maps API (Admin)</span>
               </button>
             </div>
 
