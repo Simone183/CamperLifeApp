@@ -1,0 +1,21 @@
+[
+  {
+    "id": "568277",
+    "titolo": "Area sosta Camper Roma Nord, 184 Via Tiberina",
+    "tipo": "ACC_PR",
+    "lat": 42.0128,
+    "lng": 12.5033,
+    "voto": 4.74,
+    "recensioni": 45,
+    "servizi": {
+      "acqua": true,
+      "scarico_grigie": true,
+      "scarico_nere": true,
+      "elettricita": true,
+      "rifiuti": true,
+      "wc": true,
+      "docce": true,
+      "wifi": true
+    }
+  }
+]

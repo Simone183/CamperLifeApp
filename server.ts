@@ -1901,16 +1901,49 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
   // --- FIRESTORE SOSTE (39,000 PUNTI SOSTA) & LOCAL CATALOG CACHE ---
   const SOSTE_CATALOG_FILE = path.join(process.cwd(), "data", "soste_catalog.json");
+  const USER_IMPORTED_POIS_FILE = path.join(process.cwd(), "data", "user_imported_pois.json");
   let memorySosteCatalog: any[] = [];
 
   function loadLocalSosteCatalog(forceReload = false): any[] {
-    if (!forceReload && memorySosteCatalog.length > 0) return memorySosteCatalog;
+    if (!forceReload && memorySosteCatalog.length > 0) {
+      // Ensure user imported POIs are present even if catalog was cached
+      try {
+        if (fs.existsSync(USER_IMPORTED_POIS_FILE)) {
+          const rawUser = fs.readFileSync(USER_IMPORTED_POIS_FILE, "utf-8");
+          const userPois = JSON.parse(rawUser);
+          if (Array.isArray(userPois)) {
+            const map = new Map(memorySosteCatalog.map(i => [String(i.id), i]));
+            userPois.forEach(item => {
+              if (item.id) map.set(String(item.id), item);
+            });
+            memorySosteCatalog = Array.from(map.values());
+          }
+        }
+      } catch (e) {}
+      return memorySosteCatalog;
+    }
     try {
+      const allItemsMap = new Map<string, any>();
       if (fs.existsSync(SOSTE_CATALOG_FILE)) {
         const raw = fs.readFileSync(SOSTE_CATALOG_FILE, "utf-8");
-        memorySosteCatalog = JSON.parse(raw);
-        console.log(`[Soste Catalog] Loaded ${memorySosteCatalog.length} points from local catalog.`);
+        const catalog = JSON.parse(raw);
+        if (Array.isArray(catalog)) {
+          catalog.forEach(item => {
+            if (item.id) allItemsMap.set(String(item.id), item);
+          });
+        }
       }
+      if (fs.existsSync(USER_IMPORTED_POIS_FILE)) {
+        const rawUser = fs.readFileSync(USER_IMPORTED_POIS_FILE, "utf-8");
+        const userPois = JSON.parse(rawUser);
+        if (Array.isArray(userPois)) {
+          userPois.forEach(item => {
+            if (item.id) allItemsMap.set(String(item.id), item);
+          });
+        }
+      }
+      memorySosteCatalog = Array.from(allItemsMap.values());
+      console.log(`[Soste Catalog] Loaded ${memorySosteCatalog.length} points from local catalog (including user imported).`);
     } catch (e) {
       console.error("[Soste Catalog] Error reading local catalog:", e);
     }
