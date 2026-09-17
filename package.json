@@ -1,8 +1,8 @@
 {
   "name": "viacamper",
   "private": true,
-  "version": "2.4.22",
-  "description": "ViaCamper App v2.4.22",
+  "version": "2.4.23",
+  "description": "ViaCamper App v2.4.23",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
