@@ -2168,7 +2168,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       try {
         // NOTE: For better performance with bounding box, consider geospatial indexing in Firestore.
         // For now, we fetch a limited subset.
-        const sosteSnap = await firestoreDb.collection("soste").limit(1000).get();
+        const sosteSnap = await firestoreDb.collection("soste").limit(5000).get();
         sosteSnap.forEach((doc: any) => {
           const data = doc.data();
           if (!seenIds.has(doc.id) && filterByBoundingBox({ id: doc.id, ...data })) {

@@ -4369,10 +4369,10 @@ out center;`;
         let serverPlaces: Place[] = [];
         try {
           // Calculate a bounding box based on reasonable default area around center
-          // Using a ~5 degree buffer (~500km) to ensure enough places are loaded
+          // Using a ~1 degree buffer (~100km) to ensure enough places are loaded efficiently
           const lat = userLocation?.lat || 41.9; // Default Rome
           const lng = userLocation?.lng || 12.5;
-          const buffer = 5.0; 
+          const buffer = 1.0; 
           const url = `/api/public-places?minLat=${lat - buffer}&maxLat=${lat + buffer}&minLng=${lng - buffer}&maxLng=${lng + buffer}`;
           
           const res = await fetch(resolveApiUrl(url)).catch(() => null);
