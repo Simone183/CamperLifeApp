@@ -2,5 +2,13 @@
   "appId": "com.ViaCamper.myapp",
   "appName": "ViaCamper",
   "webDir": "dist",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "launchAutoHide": true,
+      "backgroundColor": "#1C261B",
+      "showSpinner": false
+    }
+  }
 }
