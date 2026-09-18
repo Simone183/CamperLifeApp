@@ -1,15 +1,15 @@
 {
   "name": "viacamper",
   "private": true,
-  "version": "2.4.27",
-  "description": "ViaCamper App v2.4.27",
+  "version": "2.4.30",
+  "description": "ViaCamper App v2.4.30",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "rm -rf dist && NODE_OPTIONS=--max-old-space-size=4096 vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist",
     "cap": "cap",
     "lint": "tsc --noEmit"
   },

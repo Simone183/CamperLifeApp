@@ -64,6 +64,19 @@ class LocalSQLiteDatabase {
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
 
+      // Force re-seed if the data structure has changed (category mapping fix)
+      const DB_VERSION_KEY = "viacamper_db_version_v2";
+      const currentDbVersion = localStorage.getItem(DB_VERSION_KEY);
+      
+      if (currentDbVersion !== "2.4.30") {
+        console.log("[SQLite] DB version mismatch or missing, forcing re-seed...");
+        await this.db.execute(`DROP TABLE IF EXISTS soste;`);
+        await this.db.execute(createTableQuery);
+        await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
+        await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
+        localStorage.setItem(DB_VERSION_KEY, "2.4.30");
+      }
+
       // Check count
       const countRes = await this.db.query(`SELECT COUNT(*) as cnt FROM soste;`);
       const count = countRes.values?.[0]?.cnt || 0;
@@ -99,6 +112,28 @@ class LocalSQLiteDatabase {
     }
   }
 
+  private normalizeCategory(rawCat: string): string {
+    const cat = (rawCat || "").toLowerCase().trim();
+    if (cat.includes("campeggio") || cat.includes("camping") || cat.includes("agricamp")) {
+      if (cat.includes("agri")) return "agricampeggio";
+      return "campeggio";
+    }
+    if (cat.includes("parcheggio") || cat.includes("parking") || cat.includes("p.za") || cat.includes("piazza")) {
+      if (cat.includes("pagamento") || cat.includes("ticket") || cat.includes("tariffa")) return "parcheggio_pagamento";
+      if (cat.includes("diurno") || cat.includes("giorno") || cat.includes("diurna")) return "parcheggio_diurno";
+      return "parcheggio_gratuito";
+    }
+    if (cat.includes("service") || cat.includes("scarico") || cat.includes("carico") || cat.includes("rubinetto") || cat.includes("fontana") || cat.includes("fontanella") || cat.includes("acqua")) {
+      if (cat.includes("carico") && cat.includes("scarico")) return "carico_scarico";
+      if (cat.includes("solo scarico") || cat.includes("scarico acque")) return "solo_scarico";
+      if (cat.includes("fontanella") || cat.includes("fontana") || cat.includes("rubinetto") || cat.includes("acqua potabile")) return "fontanella";
+      return "service";
+    }
+    if (cat.includes("area") || cat.includes("sosta")) return "sosta";
+    if (cat.includes("natura") || cat.includes("libera")) return "natura";
+    return "sosta";
+  }
+
   public async seedPlaces(places: Place[]): Promise<void> {
     if (!this.db) return;
     try {
@@ -111,11 +146,26 @@ class LocalSQLiteDatabase {
         for (const p of chunk) {
           const lat = (p as any).lat || (p as any).latitude || 0;
           const lng = (p as any).lng || (p as any).longitude || 0;
-          const rawJson = JSON.stringify(p).replace(/'/g, "''");
           const name = (p.name || (p as any).titolo || "").replace(/'/g, "''");
-          const category = (p.category || (p as any).tipo || "").replace(/'/g, "''");
+          
+          const rawTipo = (p as any).tipo || (p as any).category || "";
+          const normalizedCategory = this.normalizeCategory(rawTipo);
+          
+          const category = (p.category || normalizedCategory || "sosta").replace(/'/g, "''");
           const address = (p.address || "").replace(/'/g, "''");
           const rating = p.rating || (p as any).voto || 0;
+
+          // Normalize the object stored in raw_json to ensure consistent property names (like category)
+          const normalized = {
+            ...p,
+            id: p.id,
+            name: p.name || (p as any).titolo || "",
+            category: normalizedCategory,
+            rating: rating,
+            lat: lat,
+            lng: lng
+          };
+          const rawJson = JSON.stringify(normalized).replace(/'/g, "''");
 
           statements.push(`
             INSERT OR REPLACE INTO soste (id, name, category, lat, lng, address, rating, raw_json)

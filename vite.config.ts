@@ -20,6 +20,22 @@ export default defineConfig(() => {
     },
     build: {
       outDir: 'dist',
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('leaflet') || id.includes('maplibre-gl')) {
+                return 'map-libs';
+              }
+              if (id.includes('hls.js') || id.includes('jspdf') || id.includes('html2canvas')) {
+                return 'heavy-libs';
+              }
+              return 'vendor';
+            }
+          }
+        }
+      }
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
