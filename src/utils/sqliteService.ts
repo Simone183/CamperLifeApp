@@ -72,17 +72,17 @@ class LocalSQLiteDatabase {
       if (count === 0) {
         let placesToSeed = initialPlaces;
         try {
-          console.log("[SQLite] Fetching full soste_catalog.json for initial local seeding...");
-          const res = await fetch('/soste_catalog.json');
+          console.log("[SQLite] Fetching full public places from API for initial local seeding...");
+          const res = await fetch('/api/public-places');
           if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
               placesToSeed = data;
-              console.log(`[SQLite] Loaded ${data.length} places from soste_catalog.json for SQLite seeding.`);
+              console.log(`[SQLite] Loaded ${data.length} places from API for SQLite seeding.`);
             }
           }
         } catch (e) {
-          console.warn("[SQLite] Could not fetch soste_catalog.json, falling back to initialPlaces:", e);
+          console.warn("[SQLite] Could not fetch public places from API, falling back to initialPlaces:", e);
         }
 
         if (placesToSeed.length > 0) {
