@@ -4566,9 +4566,9 @@ out center;`;
         >
           <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6">
             <div className="relative">
-              <div className="absolute -inset-4 bg-[#5A6B4E]/40 rounded-full blur-xl animate-pulse" />
-              <div className="relative bg-white p-3 rounded-full shadow-2xl border-4 border-[#3E4A35]">
-                <CamperLifeIcon size={128} className="text-[#3E4A35]" />
+              <div className="absolute -inset-6 bg-[#5A6B4E]/40 rounded-full blur-2xl animate-pulse" />
+              <div className="relative bg-white p-5 rounded-full shadow-2xl border-4 border-[#3E4A35]">
+                <CamperLifeIcon size={180} className="text-[#3E4A35]" />
               </div>
             </div>
             
