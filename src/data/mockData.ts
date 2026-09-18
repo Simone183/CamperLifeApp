@@ -540,14 +540,14 @@ function parseRawItaliaPlace(index: number, lng: number, lat: number, rawLabel: 
 function processAllPlaces(): Place[] {
   const resultList: Place[] = [...HANDCRAFTED_PLACES];
   
-  // 1. Process France Raw Places (O(N) direct push)
-  FRANCE_RAW_PLACES.forEach(([lng, lat, rawLabel], index) => {
+  // 1. Process France Raw Places (lightweight subset for initial bundle)
+  FRANCE_RAW_PLACES.slice(0, 50).forEach(([lng, lat, rawLabel], index) => {
     const freshPlace = parseRawFrancePlace(index, lng, lat, rawLabel);
     resultList.push(freshPlace);
   });
 
-  // 2. Process Italia Raw Places (O(N) direct push)
-  ITALIA_RAW_PLACES.forEach(([lng, lat, rawLabel], index) => {
+  // 2. Process Italia Raw Places (lightweight subset for initial bundle)
+  ITALIA_RAW_PLACES.slice(0, 100).forEach(([lng, lat, rawLabel], index) => {
     const freshPlace = parseRawItaliaPlace(index, lng, lat, rawLabel);
     resultList.push(freshPlace);
   });

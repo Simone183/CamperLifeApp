@@ -2136,6 +2136,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app.get("/api/public-places", async (req, res) => {
     try {
       const { minLat, maxLat, minLng, maxLng } = req.query;
+      console.log(`[DEBUG] Received bounding box: minLat=${minLat}, maxLat=${maxLat}, minLng=${minLng}, maxLng=${maxLng}`);
       const useBoundingBox = minLat && maxLat && minLng && maxLng;
 
       const placesList: any[] = [];

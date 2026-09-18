@@ -35,6 +35,7 @@ import { parseSostaFirestoreDoc } from "./data/userPlacesDataset";
 import { mergeNearbyPlaces, PROXIMITY_MERGE_DISTANCE_KM } from "./utils/placeMergeUtils";
 import { resolveApiUrl } from "./utils/resolveMediaUrl";
 import { sanitizeForFirestore } from "./utils/firestoreHelper";
+import { sqliteService } from "./utils/sqliteService";
 
 
 // Modular Tab Components
@@ -4363,17 +4364,20 @@ out center;`;
   React.useEffect(() => {
     let isCancelled = false;
 
+    // Initialize local SQLite database for zero-latency offline performance
+    sqliteService.initialize(INITIAL_PLACES).then((success) => {
+      console.log("[App] SQLite initialization status:", success);
+    }).catch(err => {
+      console.warn("[App] SQLite init notice:", err);
+    });
+
     const timerId = setTimeout(() => {
       async function loadServerPlaces() {
         // Fetch server-approved / cloud places if online (lightweight)
         let serverPlaces: Place[] = [];
         try {
-          // Calculate a bounding box based on reasonable default area around center
-          // Using a ~1 degree buffer (~100km) to ensure enough places are loaded efficiently
-          const lat = userLocation?.lat || 41.9; // Default Rome
-          const lng = userLocation?.lng || 12.5;
-          const buffer = 1.0; 
-          const url = `/api/public-places?minLat=${lat - buffer}&maxLat=${lat + buffer}&minLng=${lng - buffer}&maxLng=${lng + buffer}`;
+          const url = `/api/public-places`;
+          console.log("[DEBUG] Fetching all places with URL:", url);
           
           const res = await fetch(resolveApiUrl(url)).catch(() => null);
           if (res && res.ok) {
@@ -4383,6 +4387,8 @@ out center;`;
               if (Array.isArray(data)) {
                 serverPlaces = data;
                 console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places within area.`);
+                // Seed into SQLite for offline zero-latency access
+                sqliteService.seedPlaces(serverPlaces).catch(() => {});
               }
             }
           }
