@@ -4365,8 +4365,29 @@ out center;`;
     let isCancelled = false;
 
     // Initialize local SQLite database for zero-latency offline performance
-    sqliteService.initialize(INITIAL_PLACES).then((success) => {
+    sqliteService.initialize(INITIAL_PLACES).then(async (success) => {
       console.log("[App] SQLite initialization status:", success);
+      if (success) {
+        const sqlitePlaces = await sqliteService.getAllSoste(45000);
+        if (sqlitePlaces && sqlitePlaces.length > 0) {
+          console.log(`[App] Loaded ${sqlitePlaces.length} places from local SQLite database.`);
+          setPlaces((prev) => {
+            const overrides = loadPlaceOverrides();
+            const mergedMap = new globalThis.Map<string, Place>();
+            INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
+            prev.forEach((p) => mergedMap.set(p.id, p));
+            sqlitePlaces.forEach((p) => mergedMap.set(p.id, p));
+            Object.entries(overrides).forEach(([id, overrideData]) => {
+              if (mergedMap.has(id)) {
+                mergedMap.set(id, { ...mergedMap.get(id)!, ...overrideData });
+              } else {
+                mergedMap.set(id, overrideData as Place);
+              }
+            });
+            return mergeNearbyPlaces(Array.from(mergedMap.values()), PROXIMITY_MERGE_DISTANCE_KM);
+          });
+        }
+      }
     }).catch(err => {
       console.warn("[App] SQLite init notice:", err);
     });
