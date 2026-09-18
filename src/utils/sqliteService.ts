@@ -112,10 +112,10 @@ class LocalSQLiteDatabase {
           const lat = (p as any).lat || (p as any).latitude || 0;
           const lng = (p as any).lng || (p as any).longitude || 0;
           const rawJson = JSON.stringify(p).replace(/'/g, "''");
-          const name = (p.name || "").replace(/'/g, "''");
-          const category = (p.category || "").replace(/'/g, "''");
+          const name = (p.name || (p as any).titolo || "").replace(/'/g, "''");
+          const category = (p.category || (p as any).tipo || "").replace(/'/g, "''");
           const address = (p.address || "").replace(/'/g, "''");
-          const rating = p.rating || 0;
+          const rating = p.rating || (p as any).voto || 0;
 
           statements.push(`
             INSERT OR REPLACE INTO soste (id, name, category, lat, lng, address, rating, raw_json)
