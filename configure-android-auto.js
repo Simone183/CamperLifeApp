@@ -118,8 +118,8 @@ export function configureAndroidAuto() {
       console.warn('[Android Auto] Errore aggiornamento versione in build.gradle:', verErr);
     }
 
-    const carDep = "    implementation 'androidx.car.app:car-app:1.4.0'\n    implementation 'androidx.car.app:car-app-projected:1.4.0'";
-    if (!gradle.includes('androidx.car.app:car-app')) {
+    const carDep = "    implementation 'androidx.car.app:app:1.4.0'\n    implementation 'androidx.car.app:app-projected:1.4.0'";
+    if (!gradle.includes('androidx.car.app:app:')) {
       if (gradle.includes('dependencies {')) {
         gradle = gradle.replace('dependencies {', `dependencies {\n${carDep}`);
       }
