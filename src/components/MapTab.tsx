@@ -2063,7 +2063,7 @@ export default function MapTab({
           window.dispatchEvent(
             new CustomEvent("show-toast", {
               detail: {
-                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel diametro di 10 km.`,
+                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 15 km.`,
               },
             }),
           );
@@ -2126,8 +2126,8 @@ export default function MapTab({
       new CustomEvent("show-toast", {
         detail: {
           message: isCity
-            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel diametro di 10 km.`
-            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel diametro di 10 km.`,
+            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 15 km.`
+            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 15 km.`,
         },
       }),
     );
@@ -2470,23 +2470,16 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (10 km di diametro / 5 km di raggio dal centro della mappa visualizzato)
+      // 3. Proximity Radius (Mostra solo le aree sosta entro 15 km di raggio / circonferenza dal centro visualizzato)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
 
-      if (hasSearchQuery) {
-        // Se l'utente sta cercando un nome o indirizzo, mostra tutti i risultati corrispondenti
-        matchesDistance = true;
-      } else if (isSelectedPlace) {
-        // La sosta attualmente selezionata resta sempre visibile
-        matchesDistance = true;
-      } else if (showAllPlaces) {
+      if (hasSearchQuery || isSelectedPlace) {
         matchesDistance = true;
       } else {
-        // Mostra le aree sosta entro 10 km di diametro (5 km di raggio) dal centro della mappa o punto di filtro
-        let centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 44.5);
-        let centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 11.5);
+        let centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 41.9);
+        let centerLng = mapCenterCoords?.lng ?? (userLocation?.lng || 12.5);
         if (activeDistanceFilter === "me" && userLocation) {
           centerLat = userLocation.lat;
           centerLng = userLocation.lng;
@@ -2495,7 +2488,7 @@ export default function MapTab({
           centerLng = filterCenter.lng;
         }
         const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
-        matchesDistance = dist <= 5;
+        matchesDistance = dist <= 15; // Circonferenza / raggio di 15 km
       }
       if (!matchesDistance) return false;
 
@@ -4863,14 +4856,14 @@ out center;`;
                   {activeDistanceFilter === "me" && userLocation && (
                     <MapCircle
                       center={userLocation}
-                      radius={5000}
+                      radius={15000}
                       color="#3E4A35"
                     />
                   )}
                   {activeDistanceFilter === "place" && filterCenter && (
                     <MapCircle
                       center={filterCenter}
-                      radius={5000}
+                      radius={15000}
                       color="#A45C40"
                     />
                   )}
@@ -9941,6 +9934,7 @@ export function LeafletOfflineMap({
   const mapRef = React.useRef<L.Map | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [leafletMapInstance, setLeafletMapInstance] = React.useState<L.Map | null>(null);
+  const [boundsTick, setBoundsTick] = React.useState<number>(0);
   const circleLayerRef = React.useRef<L.Circle | null>(null);
 
   const onCenterChangeRef = React.useRef(onCenterChange);
@@ -10045,12 +10039,13 @@ export function LeafletOfflineMap({
       }
     });
 
-    map.on("moveend", () => {
+    map.on("moveend zoomend", () => {
       try {
         const center = map.getCenter();
         if (center && onCenterChangeRef.current) {
           onCenterChangeRef.current(center.lat, center.lng);
         }
+        setBoundsTick((t) => (t + 1) % 1000000);
       } catch (e) {}
     });
 
@@ -10274,9 +10269,38 @@ export function LeafletOfflineMap({
       });
     }
 
-    // Add markers for all filtered places
-    console.log("MapTab: rendering places:", places.length);
-    places.forEach((place) => {
+    // Add markers for visible places within viewport bounds (capped to 350 for 60fps performance)
+    let visiblePlaces = places;
+    try {
+      const bounds = map.getBounds();
+      if (bounds && typeof (bounds as any).pad === "function") {
+        const paddedBounds = (bounds as any).pad(0.3);
+        visiblePlaces = places.filter((p) => {
+          if (selectedPlace && p.id === selectedPlace.id) return true;
+          return paddedBounds.contains([p.lat, p.lng]);
+        });
+      }
+    } catch (e) {
+      visiblePlaces = places;
+    }
+
+    if (visiblePlaces.length > 350) {
+      if (selectedPlace) {
+        const hasSelected = visiblePlaces.slice(0, 350).some((p) => p.id === selectedPlace.id);
+        if (!hasSelected) {
+          visiblePlaces = [
+            selectedPlace,
+            ...visiblePlaces.filter((p) => p.id !== selectedPlace.id).slice(0, 349),
+          ];
+        } else {
+          visiblePlaces = visiblePlaces.slice(0, 350);
+        }
+      } else {
+        visiblePlaces = visiblePlaces.slice(0, 350);
+      }
+    }
+
+    visiblePlaces.forEach((place) => {
       const isViolation =
         place.hasMaxHeightLimit &&
         place.maxHeight &&
@@ -10316,6 +10340,8 @@ export function LeafletOfflineMap({
     });
   }, [
     places,
+    boundsTick,
+    selectedPlace,
     userLocation,
     vehicleDimensions,
     setSelectedPlace,
@@ -10337,7 +10363,7 @@ export function LeafletOfflineMap({
 
     if (activeDistanceFilter === "me" && userLocation) {
       circleLayerRef.current = L.circle([userLocation.lat, userLocation.lng], {
-        radius: 5000, // 5km raggio = 10km diametro
+        radius: 15000, // 15km raggio
         color: "#3E4A35",
         fillColor: "#3E4A35",
         fillOpacity: 0.08,
@@ -10345,7 +10371,7 @@ export function LeafletOfflineMap({
       }).addTo(leafletMapInstance);
     } else if (activeDistanceFilter === "place" && filterCenter) {
       circleLayerRef.current = L.circle([filterCenter.lat, filterCenter.lng], {
-        radius: 5000, // 5km raggio = 10km diametro
+        radius: 15000, // 15km raggio
         color: "#A45C40",
         fillColor: "#A45C40",
         fillOpacity: 0.08,

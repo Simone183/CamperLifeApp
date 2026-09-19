@@ -143,24 +143,24 @@ export function mergeTwoPlaces(base: Place, incoming: Place): Place {
   }
 
   // 2. Choose the best category & subtype
-  const baseCatPrio = CATEGORY_PRIORITY[base.category] || 0;
-  const incCatPrio = CATEGORY_PRIORITY[incoming.category] || 0;
+  // Specific categories (camping, agricamping, parking, nature spot, water/dump, laundry) ALWAYS take priority over generic "area_sosta"
   let bestCategory: PlaceCategory = base.category;
   let bestSubtype: CamperServiceSubtype | undefined = base.serviceSubtype || incoming.serviceSubtype;
 
-  if (incCatPrio > baseCatPrio) {
+  if (base.category === "area_sosta" && incoming.category && incoming.category !== "area_sosta") {
     bestCategory = incoming.category;
     if (incoming.serviceSubtype) {
       bestSubtype = incoming.serviceSubtype;
     }
-  } else if (base.category === "area_sosta" && incoming.category && incoming.category !== "area_sosta") {
-    // If base is generic area_sosta with no camper services, prefer incoming's true category (e.g. parking, day-only, nature spot)
-    const hasBaseServices = (base.facilities || []).some(f => 
-      f.toLowerCase().includes("carico") || 
-      f.toLowerCase().includes("scarico") || 
-      f.toLowerCase().includes("elettricit")
-    );
-    if (!hasBaseServices) {
+  } else if (incoming.category === "area_sosta" && base.category && base.category !== "area_sosta") {
+    bestCategory = base.category;
+    if (base.serviceSubtype) {
+      bestSubtype = base.serviceSubtype;
+    }
+  } else {
+    const baseCatPrio = CATEGORY_PRIORITY[base.category] || 0;
+    const incCatPrio = CATEGORY_PRIORITY[incoming.category] || 0;
+    if (incCatPrio > baseCatPrio) {
       bestCategory = incoming.category;
       if (incoming.serviceSubtype) {
         bestSubtype = incoming.serviceSubtype;

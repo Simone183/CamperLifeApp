@@ -176,6 +176,28 @@ export default function DiaryTab({
     }
   }, [propsTrips]);
 
+  // When emailKey changes, reset or load scoped trips
+  React.useEffect(() => {
+    if (propsTrips === undefined) {
+      if (emailKey) {
+        const saved = localStorage.getItem(`camper_trips_${emailKey}`);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setInternalTrips(parsed);
+              return;
+            }
+          } catch {}
+        }
+      }
+      setInternalTrips([]);
+    }
+  }, [emailKey, propsTrips]);
+
+  const trips = propsTrips !== undefined ? propsTrips : internalTrips;
+  const setTrips = propsSetTrips || setInternalTrips;
+
   // Controlla se sono stati registrati nuovi spostamenti dal display di Android Auto
   React.useEffect(() => {
     try {
@@ -211,28 +233,6 @@ export default function DiaryTab({
       }
     } catch (e) {}
   }, [trips, setTrips]);
-
-  // When emailKey changes, reset or load scoped trips
-  React.useEffect(() => {
-    if (propsTrips === undefined) {
-      if (emailKey) {
-        const saved = localStorage.getItem(`camper_trips_${emailKey}`);
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-              setInternalTrips(parsed);
-              return;
-            }
-          } catch {}
-        }
-      }
-      setInternalTrips([]);
-    }
-  }, [emailKey, propsTrips]);
-
-  const trips = propsTrips !== undefined ? propsTrips : internalTrips;
-  const setTrips = propsSetTrips || setInternalTrips;
 
   const tripsRef = React.useRef(trips);
   React.useEffect(() => {

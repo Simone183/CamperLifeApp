@@ -532,14 +532,27 @@ export default function App() {
     }
   }, [favoriteIds, currentUser?.email]);
 
-  const [showSplash, setShowSplash] = React.useState<boolean>(true);
+  // Native Capacitor check to avoid duplicate splash screen (native Android 12+ splash already runs)
+  const [showSplash, setShowSplash] = React.useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const isNative =
+        (window as any).Capacitor?.isNativePlatform?.() ||
+        (window as any).Capacitor?.getPlatform?.() === "android" ||
+        (window as any).Capacitor?.getPlatform?.() === "ios" ||
+        window.location.protocol.startsWith("capacitor") ||
+        window.location.protocol.startsWith("file:");
+      if (isNative) return false;
+    }
+    return true;
+  });
 
   React.useEffect(() => {
+    if (!showSplash) return;
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 800);
     return () => clearTimeout(timer);
-  }, []);
+  }, [showSplash]);
 
   const [showTermsModal, setShowTermsModal] = React.useState<boolean>(() => {
     try {
@@ -4411,31 +4424,40 @@ out center;`;
 
     const timerId = setTimeout(() => {
       async function loadServerPlaces() {
-        // Fetch server-approved / cloud places if online (lightweight)
+        // Fetch server-approved / cloud places if online (lightweight or full catalog)
         let serverPlaces: Place[] = [];
         try {
           const url = `/api/public-places`;
-          console.log("[DEBUG] Fetching all places with URL:", url);
+          console.log("[DEBUG] Fetching places with URL:", url);
           
-          const res = await fetch(resolveApiUrl(url)).catch(() => null);
+          let res = await fetch(resolveApiUrl(url)).catch(() => null);
+          let loadedFromStatic = false;
+
+          // If API fails or returns non-ok on mobile, fallback to the bundled /soste_catalog.json
+          if (!res || !res.ok) {
+            console.log("[App] /api/public-places unavailable, attempting to fetch /soste_catalog.json...");
+            res = await fetch(resolveApiUrl('/soste_catalog.json')).catch(() => null);
+            loadedFromStatic = true;
+          }
+
           if (res && res.ok) {
             const ct = res.headers.get("content-type");
-            if (ct && ct.includes("application/json")) {
+            if (ct && (ct.includes("application/json") || loadedFromStatic)) {
               const data = await res.json();
-              if (Array.isArray(data)) {
+              if (Array.isArray(data) && data.length > 0) {
                 serverPlaces = data.map((item: any) => 
                   (!item.category || (item.category as any) === "sosta" || !item.categoryLabel)
                     ? parseSostaFirestoreDoc(item, item.id)
                     : (item as Place)
                 );
-                console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places within area.`);
+                console.log(`[App] Loaded ${serverPlaces.length} places from ${loadedFromStatic ? '/soste_catalog.json' : '/api/public-places'}.`);
                 // Seed into SQLite for offline zero-latency access
                 sqliteService.seedPlaces(serverPlaces).catch(() => {});
               }
             }
           }
         } catch (apiErr) {
-          console.warn("[App] /api/public-places fetch notice:", apiErr);
+          console.warn("[App] places fetch notice:", apiErr);
         }
 
         if (isCancelled) return;

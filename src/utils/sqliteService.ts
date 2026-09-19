@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { Place } from '../types';
 import { parseSostaFirestoreDoc } from '../data/userPlacesDataset';
+import { resolveApiUrl } from './resolveMediaUrl';
 
 class LocalSQLiteDatabase {
   private sqlite: SQLiteConnection;
@@ -65,17 +66,17 @@ class LocalSQLiteDatabase {
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
 
-      // Force re-seed if the data structure has changed (category mapping fix)
+      // Force re-seed if the data structure has changed (category mapping fix & full catalog)
       const DB_VERSION_KEY = "viacamper_db_version_v3";
       const currentDbVersion = localStorage.getItem(DB_VERSION_KEY);
       
-      if (currentDbVersion !== "3.0.2") {
-        console.log("[SQLite] DB version mismatch or missing, forcing re-seed to 3.0.2 with accurate categories...");
+      if (currentDbVersion !== "3.1.0") {
+        console.log("[SQLite] DB version mismatch or missing, forcing re-seed to 3.1.0 with accurate categories and full 40.000 catalog...");
         await this.db.execute(`DROP TABLE IF EXISTS soste;`);
         await this.db.execute(createTableQuery);
         await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
         await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
-        localStorage.setItem(DB_VERSION_KEY, "3.0.2");
+        localStorage.setItem(DB_VERSION_KEY, "3.1.0");
       }
 
       // Check count
@@ -86,18 +87,35 @@ class LocalSQLiteDatabase {
       if (count === 0) {
         let placesToSeed = initialPlaces;
         try {
-          console.log("[SQLite] Fetching full public places from API for initial local seeding...");
-          // We fetch WITHOUT bounding box to get the full streamlined catalog
-          const res = await fetch('/api/public-places');
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-              placesToSeed = data;
-              console.log(`[SQLite] Loaded ${data.length} places from API for SQLite seeding.`);
+          console.log("[SQLite] Fetching full public places for initial local seeding...");
+          // Try fetching full static soste_catalog.json first (contains all ~40,000 places)
+          let fetched = false;
+          try {
+            const staticRes = await fetch(resolveApiUrl('/soste_catalog.json'));
+            if (staticRes.ok) {
+              const staticData = await staticRes.json();
+              if (Array.isArray(staticData) && staticData.length > 0) {
+                placesToSeed = staticData;
+                fetched = true;
+                console.log(`[SQLite] Loaded ${staticData.length} places from soste_catalog.json for SQLite seeding.`);
+              }
+            }
+          } catch (staticErr) {
+            console.warn("[SQLite] soste_catalog.json fetch failed, trying /api/public-places:", staticErr);
+          }
+
+          if (!fetched) {
+            const res = await fetch(resolveApiUrl('/api/public-places'));
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data) && data.length > 0) {
+                placesToSeed = data;
+                console.log(`[SQLite] Loaded ${data.length} places from API for SQLite seeding.`);
+              }
             }
           }
         } catch (e) {
-          console.warn("[SQLite] Could not fetch public places from API, falling back to initialPlaces:", e);
+          console.warn("[SQLite] Could not fetch public places from API or catalog, falling back to initialPlaces:", e);
         }
 
         if (placesToSeed.length > 0) {
