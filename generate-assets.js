@@ -162,6 +162,14 @@ async function run() {
   }
 
   console.log("All icons and splash screens successfully generated from original LOGO_BASE64!");
+
+  // Configura supporto nativo ad Android Auto (CarAppService, Spostamenti e Rifornimenti)
+  try {
+    const { configureAndroidAuto } = await import('./configure-android-auto.js');
+    configureAndroidAuto();
+  } catch (autoErr) {
+    console.warn("Notice configuring Android Auto:", autoErr);
+  }
 }
 
 run().catch(err => {

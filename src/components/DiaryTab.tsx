@@ -176,6 +176,42 @@ export default function DiaryTab({
     }
   }, [propsTrips]);
 
+  // Controlla se sono stati registrati nuovi spostamenti dal display di Android Auto
+  React.useEffect(() => {
+    try {
+      const pendingRaw = localStorage.getItem('pending_auto_movements');
+      if (pendingRaw) {
+        const pendingMovs = JSON.parse(pendingRaw);
+        if (Array.isArray(pendingMovs) && pendingMovs.length > 0 && trips.length > 0) {
+          // Trova il viaggio attivo
+          const activeIndex = trips.findIndex(t => t.status === 'Attivo' || t.status === 'ATTIVO');
+          const targetIndex = activeIndex >= 0 ? activeIndex : 0;
+          const currentTrip = trips[targetIndex];
+          const existingMovs = currentTrip.movements || [];
+          const newMovs = [...existingMovs];
+
+          for (const pm of pendingMovs) {
+            if (!newMovs.some(m => m.id === pm.id)) {
+              newMovs.push({
+                id: pm.id || `mov_${Date.now()}`,
+                location: pm.location || 'Tappa Android Auto',
+                odometer: Number(pm.odometer) || undefined,
+                date: pm.date || new Date().toISOString(),
+                notes: pm.notes || 'Registrato da Android Auto'
+              });
+            }
+          }
+
+          const updatedTrip: Trip = { ...currentTrip, movements: newMovs };
+          const updatedTrips = [...trips];
+          updatedTrips[targetIndex] = updatedTrip;
+          setTrips(updatedTrips);
+          localStorage.removeItem('pending_auto_movements');
+        }
+      }
+    } catch (e) {}
+  }, [trips, setTrips]);
+
   // When emailKey changes, reset or load scoped trips
   React.useEffect(() => {
     if (propsTrips === undefined) {

@@ -1,4 +1,5 @@
 node_modules/
+android/
 build/
 coverage/
 .DS_Store
@@ -6,4 +7,3 @@ coverage/
 .env*
 !.env.example
 !google-services.json
-!android/app/google-services.json

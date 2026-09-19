@@ -295,7 +295,10 @@ export default function App() {
         );
         savedList.forEach((savedPlace) => {
           if (savedPlace.id && !savedPlace.id.startsWith("google-")) {
-            initialMap.set(savedPlace.id, savedPlace);
+            const normalized = (!savedPlace.category || (savedPlace.category as any) === "sosta" || !savedPlace.categoryLabel)
+              ? parseSostaFirestoreDoc(savedPlace, savedPlace.id)
+              : savedPlace;
+            initialMap.set(savedPlace.id, normalized);
           }
         });
         parsed = Array.from(initialMap.values());
@@ -305,9 +308,12 @@ export default function App() {
     } else {
       parsed = INITIAL_PLACES;
     }
-    // Apply persistent overrides
+    // Apply persistent overrides & ensure true category
     parsed = parsed.map((p: any) => {
-      const overridden = overrides[p.id] ? { ...p, ...overrides[p.id] } : p;
+      const current = (!p.category || (p.category as any) === "sosta" || !p.categoryLabel)
+        ? parseSostaFirestoreDoc(p, p.id)
+        : p;
+      const overridden = overrides[current.id] ? { ...current, ...overrides[current.id] } : current;
       if (
         overridden.name === "Camper Service Gratis / Scarico" ||
         overridden.name === "Camper service gratis/scarico" ||
@@ -4368,14 +4374,25 @@ out center;`;
     sqliteService.initialize(INITIAL_PLACES).then(async (success) => {
       console.log("[App] SQLite initialization status:", success);
       if (success) {
-        const sqlitePlaces = await sqliteService.getAllSoste(45000);
-        if (sqlitePlaces && sqlitePlaces.length > 0) {
+        const rawSqlitePlaces = await sqliteService.getAllSoste(45000);
+        if (rawSqlitePlaces && rawSqlitePlaces.length > 0) {
+          const sqlitePlaces = rawSqlitePlaces.map((item: any) => 
+            (!item.category || item.category === "sosta" || !item.categoryLabel)
+              ? parseSostaFirestoreDoc(item, item.id)
+              : (item as Place)
+          );
           console.log(`[App] Loaded ${sqlitePlaces.length} places from local SQLite database.`);
           setPlaces((prev) => {
             const overrides = loadPlaceOverrides();
             const mergedMap = new globalThis.Map<string, Place>();
-            INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
-            prev.forEach((p) => mergedMap.set(p.id, p));
+            INITIAL_PLACES.forEach((p) => {
+              const cleanP = (!p.category || (p.category as any) === "sosta" || !p.categoryLabel) ? parseSostaFirestoreDoc(p, p.id) : p;
+              mergedMap.set(cleanP.id, cleanP);
+            });
+            prev.forEach((p) => {
+              const cleanP = (!p.category || (p.category as any) === "sosta" || !p.categoryLabel) ? parseSostaFirestoreDoc(p, p.id) : p;
+              mergedMap.set(cleanP.id, cleanP);
+            });
             sqlitePlaces.forEach((p) => mergedMap.set(p.id, p));
             Object.entries(overrides).forEach(([id, overrideData]) => {
               if (mergedMap.has(id)) {
@@ -4406,7 +4423,11 @@ out center;`;
             if (ct && ct.includes("application/json")) {
               const data = await res.json();
               if (Array.isArray(data)) {
-                serverPlaces = data;
+                serverPlaces = data.map((item: any) => 
+                  (!item.category || (item.category as any) === "sosta" || !item.categoryLabel)
+                    ? parseSostaFirestoreDoc(item, item.id)
+                    : (item as Place)
+                );
                 console.log(`[App] Loaded ${serverPlaces.length} places from /api/public-places within area.`);
                 // Seed into SQLite for offline zero-latency access
                 sqliteService.seedPlaces(serverPlaces).catch(() => {});
@@ -4424,9 +4445,15 @@ out center;`;
             const overrides = loadPlaceOverrides();
             const mergedMap = new globalThis.Map<string, Place>();
             // 1. Mock baseline
-            INITIAL_PLACES.forEach((p) => mergedMap.set(p.id, p));
+            INITIAL_PLACES.forEach((p) => {
+              const cleanP = (!p.category || (p.category as any) === "sosta" || !p.categoryLabel) ? parseSostaFirestoreDoc(p, p.id) : p;
+              mergedMap.set(cleanP.id, cleanP);
+            });
             // 2. User local / existing places
-            prevPlaces.forEach((p) => mergedMap.set(p.id, p));
+            prevPlaces.forEach((p) => {
+              const cleanP = (!p.category || (p.category as any) === "sosta" || !p.categoryLabel) ? parseSostaFirestoreDoc(p, p.id) : p;
+              mergedMap.set(cleanP.id, cleanP);
+            });
             // 3. Remote server places
             serverPlaces.forEach((p) => mergedMap.set(p.id, p));
             // 4. Overrides

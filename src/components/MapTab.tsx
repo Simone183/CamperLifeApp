@@ -2441,13 +2441,17 @@ export default function MapTab({
           if (cat === "camper_service") {
             return p.category === "camper_service" || resolvePlaceServiceSubtype(p) !== undefined;
           } else if (cat === "fontanella") {
-            return resolvePlaceServiceSubtype(p) === "fontanella";
+            return p.category === "fontanella" || resolvePlaceServiceSubtype(p) === "fontanella";
           } else if (cat === "lavanderia") {
-            return resolvePlaceServiceSubtype(p) === "lavanderia";
+            return p.category === "lavanderia" || resolvePlaceServiceSubtype(p) === "lavanderia";
           } else if (cat === "solo_scarico") {
-            return resolvePlaceServiceSubtype(p) === "solo_scarico";
+            return p.category === "solo_scarico" || resolvePlaceServiceSubtype(p) === "solo_scarico";
           } else if (cat === "carico_scarico") {
-            return resolvePlaceServiceSubtype(p) === "carico_scarico" || (p.category === "camper_service" && !resolvePlaceServiceSubtype(p));
+            return p.category === "carico_scarico" || resolvePlaceServiceSubtype(p) === "carico_scarico" || (p.category === "camper_service" && !resolvePlaceServiceSubtype(p));
+          } else if (cat === "area_sosta") {
+            return p.category === "area_sosta" || (p.category as any) === "sosta";
+          } else if (cat === "hidden_gem") {
+            return p.category === "hidden_gem" || (p.category as any) === "natura";
           } else {
             return p.category === cat;
           }
@@ -4536,6 +4540,19 @@ out center;`;
               <MapCategoryPinMini category="lavanderia" size={15} />
               <span>Lavanderia</span>
             </button>
+
+            <button
+              onClick={() => toggleCategory("hidden_gem")}
+              className={`py-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-1 leading-none w-full ${
+                selectedCategories.includes("hidden_gem")
+                  ? "bg-gradient-to-r from-emerald-700 to-emerald-900 text-white shadow-xs border border-emerald-500 ring-2 ring-emerald-300/50"
+                  : "bg-white text-emerald-950 border border-emerald-300 hover:bg-emerald-50"
+              }`}
+              title="Spot Natura e Sosta Libera (Verde Natura)"
+            >
+              <MapCategoryPinMini category="hidden_gem" size={15} />
+              <span>Spot Natura</span>
+            </button>
           </div>
         </div>
 
@@ -4641,7 +4658,14 @@ out center;`;
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex justify-between items-start gap-1">
-                        <MapCategoryBadge category={place.category} feeStatus={place.feeStatus as any} pinSize={14} />
+                        <MapCategoryBadge 
+                          category={place.category} 
+                          feeStatus={place.feeStatus as any} 
+                          pinSize={14} 
+                          serviceSubtype={place.serviceSubtype}
+                          categoryLabel={place.categoryLabel}
+                          name={place.name}
+                        />
                         <span className="flex items-center gap-1 font-bold text-[#2D2926] text-xs">
                           <Star className="w-3 h-3 text-amber-500 fill-current" />
                           {normalizeRatingTo10(place.rating) > 0 ? `${normalizeRatingTo10(place.rating).toFixed(1)}/10` : "—"}
@@ -6972,6 +6996,7 @@ out center;`;
                     serviceSubtype={selectedPlace.serviceSubtype}
                     categoryLabel={selectedPlace.categoryLabel}
                     name={selectedPlace.name}
+                    size="hero"
                     className="w-full h-full object-cover animate-fade-in"
                   />
                 ) : (
@@ -7026,22 +7051,36 @@ out center;`;
                       <span
                         className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm ${
                           badgeText.includes("LAVANDERIA")
-                            ? "bg-purple-700 text-white"
+                            ? "bg-fuchsia-700 text-white shadow-fuchsia-900/30"
                             : badgeText.includes("FONTANELLA")
-                              ? "bg-cyan-700 text-white"
+                              ? "bg-cyan-700 text-white shadow-cyan-900/30"
                               : badgeText.includes("SOLO SCARICO")
-                                ? "bg-amber-700 text-white"
-                                : badgeText.includes("CAMPEGGIO")
-                                  ? "bg-[#3E4A35] text-white"
-                                  : badgeText.includes("PARCHEGGIO")
-                                    ? "bg-sky-600 text-white"
-                                    : badgeText.includes("CAMPER SERVICE") || badgeText.includes("C/S")
-                                      ? "bg-emerald-600 text-white"
-                                      : badgeText.includes("RISTORANTE") || badgeText.includes("BAR")
-                                        ? "bg-amber-600 text-white border border-amber-400/30"
-                                        : badgeText.includes("AUTORICAMBI") || badgeText.includes("OFFICINA")
-                                          ? "bg-orange-600 text-white border border-orange-400/30"
-                                          : "bg-[#5A6B4E] text-white"
+                                ? "bg-zinc-800 text-white shadow-zinc-900/30"
+                                : badgeText.includes("AGRICAMPEGGIO")
+                                  ? "bg-lime-800 text-white shadow-lime-900/30"
+                                  : badgeText.includes("CAMPEGGIO")
+                                    ? "bg-emerald-800 text-white shadow-emerald-900/30"
+                                    : badgeText.includes("SOLO GIORNO")
+                                      ? "bg-amber-600 text-slate-950 font-black shadow-amber-900/30"
+                                      : badgeText.includes("PAGAMENTO")
+                                        ? "bg-red-700 text-white shadow-red-900/30"
+                                        : badgeText.includes("PARCHEGGIO FREE") || badgeText.includes("PARCHEGGIO GRATUITO")
+                                          ? "bg-blue-700 text-white shadow-blue-900/30"
+                                          : badgeText.includes("PARCHEGGIO")
+                                            ? "bg-blue-600 text-white shadow-blue-900/30"
+                                            : badgeText.includes("C/S")
+                                              ? "bg-violet-700 text-white shadow-violet-900/30"
+                                              : badgeText.includes("CAMPER SERVICE")
+                                                ? "bg-cyan-700 text-white shadow-cyan-900/30"
+                                                : badgeText.includes("NATURA") || badgeText.includes("LIBERA")
+                                                  ? "bg-emerald-900 text-white shadow-emerald-950/30"
+                                                  : badgeText.includes("AREA SOSTA")
+                                                    ? "bg-sky-600 text-white shadow-sky-900/30"
+                                                    : badgeText.includes("RISTORANTE") || badgeText.includes("BAR")
+                                                      ? "bg-amber-600 text-white border border-amber-400/30"
+                                                      : badgeText.includes("AUTORICAMBI") || badgeText.includes("OFFICINA")
+                                                        ? "bg-orange-600 text-white border border-orange-400/30"
+                                                        : "bg-sky-600 text-white"
                         }`}
                       >
                         {badgeText}

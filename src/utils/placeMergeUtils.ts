@@ -153,7 +153,24 @@ export function mergeTwoPlaces(base: Place, incoming: Place): Place {
     if (incoming.serviceSubtype) {
       bestSubtype = incoming.serviceSubtype;
     }
+  } else if (base.category === "area_sosta" && incoming.category && incoming.category !== "area_sosta") {
+    // If base is generic area_sosta with no camper services, prefer incoming's true category (e.g. parking, day-only, nature spot)
+    const hasBaseServices = (base.facilities || []).some(f => 
+      f.toLowerCase().includes("carico") || 
+      f.toLowerCase().includes("scarico") || 
+      f.toLowerCase().includes("elettricit")
+    );
+    if (!hasBaseServices) {
+      bestCategory = incoming.category;
+      if (incoming.serviceSubtype) {
+        bestSubtype = incoming.serviceSubtype;
+      }
+    }
   }
+
+  const bestCategoryLabel = (bestCategory === incoming.category ? incoming.categoryLabel : base.categoryLabel) || 
+    incoming.categoryLabel || 
+    base.categoryLabel;
 
   // 3. Merge facilities uniquely
   const mergedFacilities = Array.from(
@@ -267,7 +284,7 @@ export function mergeTwoPlaces(base: Place, incoming: Place): Place {
     id: base.id, // preserve primary ID for state/selection stability
     name: bestName,
     category: bestCategory,
-    categoryLabel: base.categoryLabel || incoming.categoryLabel,
+    categoryLabel: bestCategoryLabel,
     serviceSubtype: bestSubtype,
     address: bestAddress,
     description: bestDescription,

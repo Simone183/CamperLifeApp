@@ -2136,14 +2136,41 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   app.get("/api/public-places", async (req, res) => {
     try {
       const { minLat, maxLat, minLng, maxLng } = req.query;
-      console.log(`[DEBUG] Received bounding box: minLat=${minLat}, maxLat=${maxLat}, minLng=${minLng}, maxLng=${maxLng}`);
       const useBoundingBox = minLat && maxLat && minLng && maxLng;
 
+      // For initial FULL SEED (no bounding box), we return a streamlined version of the catalog
+      // to avoid massive payload size and CPU usage.
+      if (!useBoundingBox) {
+        console.log("[SQLite Seed] Serving streamlined full catalog for client-side seeding...");
+        const catalog = loadLocalSosteCatalog();
+        // Return pre-parsed streamlined fields with true categories for fast, accurate SQLite seeding
+        const minimalCatalog = catalog.map(item => {
+          const parsed = parseSostaFirestoreDoc(item, item.id);
+          return {
+            id: parsed.id,
+            name: parsed.name,
+            category: parsed.category,
+            categoryLabel: parsed.categoryLabel,
+            serviceSubtype: parsed.serviceSubtype,
+            tipo: item.tipo || item.category || "",
+            lat: parsed.lat,
+            lng: parsed.lng,
+            rating: parsed.rating,
+            facilities: parsed.facilities,
+            priceInfo: parsed.priceInfo,
+            priceEuro: parsed.priceEuro,
+            feeStatus: parsed.feeStatus,
+            address: parsed.address || item.address || item.city || ""
+          };
+        });
+        return res.json(minimalCatalog);
+      }
+
+      console.log(`[DEBUG] Received bounding box: minLat=${minLat}, maxLat=${maxLat}, minLng=${minLng}, maxLng=${maxLng}`);
       const placesList: any[] = [];
       const seenIds = new Set<string>();
 
       const filterByBoundingBox = (item: any) => {
-        if (!useBoundingBox) return true;
         const lat = parseFloat(item.lat || item.latitude);
         const lng = parseFloat(item.lng || item.longitude);
         return (

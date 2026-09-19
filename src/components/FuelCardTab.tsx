@@ -143,6 +143,25 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
       }
 
       // 2. Fallback to direct Firestore if API was not reachable
+      // Controllo anche se sono presenti rifornimenti registrati da Android Auto
+      try {
+        const autoLogsRaw = localStorage.getItem('camper_last_fuel_logs');
+        if (autoLogsRaw) {
+          const autoLogs = JSON.parse(autoLogsRaw);
+          if (Array.isArray(autoLogs) && autoLogs.length > 0) {
+            for (const aLog of autoLogs) {
+              if (aLog && aLog.id && aLog.id.startsWith('fuel_auto_')) {
+                // Invia a server per sincronizzazione duratura
+                fetch(`/api/fuel-logs/${encodeURIComponent(emailLower)}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(aLog)
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+      } catch (autoErr) {}
       if (!fetchedLogs || fetchedLogs.length === 0) {
         try {
           const logsRef = collection(db, `users/${emailLower}/fuelLogs`);

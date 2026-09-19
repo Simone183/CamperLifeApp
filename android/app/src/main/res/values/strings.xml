@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">ViaCamper</string>
-    <string name="title_activity_main">ViaCamper</string>
-    <string name="package_name">com.ViaCamper.myapp</string>
-    <string name="custom_url_scheme">com.ViaCamper.myapp</string>
-</resources>

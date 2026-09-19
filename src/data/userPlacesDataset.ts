@@ -51,17 +51,19 @@ export function parseSostaFirestoreDoc(item: any, fallbackId?: number | string):
   let category: PlaceCategory = "area_sosta";
   let serviceSubtype: "carico_scarico" | "fontanella" | "lavanderia" | "solo_scarico" | undefined = undefined;
 
-  // 1. Agricampeggio & Fattorie
+  // 1. Agricampeggio & Fattorie & Ospitalità Privata
   if (
     rawCat === "agricampeggio" ||
     tipoUpper === "F" ||
     tipoUpper === "FERME" ||
+    tipoUpper === "ACC_PR" ||
     titleLower.includes("agriturism") ||
     titleLower.includes("agricamp") ||
     titleLower.includes("agricamper") ||
     titleLower.includes("azienda agricola") ||
     titleLower.includes("fattoria didattica") ||
     titleLower.includes("sosta in fattoria") ||
+    titleLower.includes("chez l'habitant") ||
     descLower.includes("accueil a la ferme")
   ) {
     category = "agricampeggio";
@@ -78,14 +80,13 @@ export function parseSostaFirestoreDoc(item: any, fallbackId?: number | string):
     category = "lavanderia";
     serviceSubtype = "lavanderia";
   }
-  // 3. Fontanella / Punto Acqua Potabile
+  // 3. Fontanella / Solo Acqua Potabile
   else if (
     rawCat === "fontanella" ||
     tipoUpper === "EP" ||
     titleLower.includes("fontanella") ||
     titleLower.includes("fontana pubblica") ||
-    titleLower.includes("punto acqua potabile") ||
-    ((tipoUpper === "DS" || rawCat === "camper_service") && hasWater && !hasDischarge)
+    titleLower.includes("punto acqua potabile")
   ) {
     category = "fontanella";
     serviceSubtype = "fontanella";
@@ -95,8 +96,7 @@ export function parseSostaFirestoreDoc(item: any, fallbackId?: number | string):
     rawCat === "solo_scarico" ||
     tipoUpper === "SOLO_SCARICO" ||
     titleLower.includes("solo scarico") ||
-    titleLower.includes("pozzetto scarico") ||
-    ((tipoUpper === "DS" || rawCat === "camper_service") && !hasWater && hasDischarge)
+    titleLower.includes("pozzetto scarico")
   ) {
     category = "solo_scarico";
     serviceSubtype = "solo_scarico";
@@ -113,7 +113,7 @@ export function parseSostaFirestoreDoc(item: any, fallbackId?: number | string):
   ) {
     category = "campeggio";
   }
-  // 6. Parcheggio Solo Giorno
+  // 6. Parcheggio Solo Giorno (No notte / Divieto sosta notturna)
   else if (
     rawCat === "parcheggio_diurno" ||
     tipoUpper === "PJ" ||
@@ -129,57 +129,68 @@ export function parseSostaFirestoreDoc(item: any, fallbackId?: number | string):
   ) {
     category = "parcheggio_diurno";
   }
-  // 7. Parcheggio a Pagamento
+  // 7. C/S Completo / Camper Service (DS = Dump Station)
+  else if (
+    rawCat === "carico_scarico" ||
+    tipoUpper === "DS" ||
+    tipoUpper === "CS" ||
+    tipoUpper === "DUMP_STATION" ||
+    titleLower.includes("carico e scarico") ||
+    titleLower.includes("carico/scarico") ||
+    titleLower.includes("c/s completo")
+  ) {
+    category = "carico_scarico";
+    serviceSubtype = "carico_scarico";
+  }
+  // 8. Spot Natura / Hidden Gem / Sosta Libera (PN = Parking Nature, APN = Aire Pleine Nature, OR = Off-Road / Nature)
+  else if (
+    rawCat === "hidden_gem" ||
+    rawCat === "natura" ||
+    rawCat === "sosta_libera" ||
+    tipoUpper === "PN" ||
+    tipoUpper === "APN" ||
+    tipoUpper === "OR" ||
+    titleLower.includes("sosta libera") ||
+    titleLower.includes("spot natura") ||
+    titleLower.includes("in piena natura") ||
+    titleLower.includes("pleine nature") ||
+    titleLower.includes("off-road")
+  ) {
+    category = "hidden_gem";
+  }
+  // 9. Parcheggio a Pagamento
   else if (
     rawCat === "parcheggio_pagamento" ||
     tipoUpper === "PSS" ||
-    tipoUpper === "ACC_P" ||
     tipoUpper === "PP" ||
     titleLower.includes("parcheggio a pagamento") ||
     titleLower.includes("parcometro") ||
     titleLower.includes("parking payant") ||
-    ((tipoUpper === "P" || tipoUpper === "PN" || tipoUpper === "APN") && isPaidExplicit && !isFreeExplicit)
+    (tipoUpper === "P" && isPaidExplicit && !isFreeExplicit)
   ) {
     category = "parcheggio_pagamento";
   }
-  // 8. Parcheggio Gratuito
+  // 10. Parcheggio Gratuito
   else if (
     rawCat === "parcheggio_gratuito" ||
     rawCat === "parcheggio_camper" ||
     rawCat === "parcheggio" ||
     tipoUpper === "P" ||
-    tipoUpper === "PN" ||
-    tipoUpper === "APN" ||
     tipoUpper === "ACC_G" ||
+    tipoUpper === "ASS" ||
     titleLower.includes("parcheggio gratuito") ||
     titleLower.includes("parcheggio free") ||
-    titleLower.includes("free parking")
+    titleLower.includes("free parking") ||
+    (titleLower.includes("parcheggio") && !isPaidExplicit)
   ) {
     category = "parcheggio_gratuito";
   }
-  // 9. C/S Completo
-  else if (
-    rawCat === "carico_scarico" ||
-    tipoUpper === "CS" ||
-    titleLower.includes("carico e scarico") ||
-    titleLower.includes("carico/scarico") ||
-    titleLower.includes("c/s completo") ||
-    ((tipoUpper === "DS" || rawCat === "camper_service") && hasWater && hasDischarge) ||
-    tipoUpper === "DS"
-  ) {
-    category = "carico_scarico";
-    serviceSubtype = "carico_scarico";
-  }
-  // 10. Camper Service generico
-  else if (rawCat === "camper_service" || tipoUpper.includes("SERVICE")) {
+  // 11. Camper Service generico
+  else if (rawCat === "camper_service" || tipoUpper.includes("SERVICE") || titleLower.includes("camper service")) {
     category = "camper_service";
     serviceSubtype = "carico_scarico";
   }
-  // 11. Hidden Gem
-  else if (rawCat === "hidden_gem") {
-    category = "hidden_gem";
-  }
-  // 12. Area Sosta Camper (Default per ASS, AS, AA, AR, ACC_PR, OR e aree attrezzate)
+  // 12. Area Sosta Camper (APN, ACC_P, ACC_PR, AR, ASS, AS, AA e aree attrezzate)
   else {
     category = "area_sosta";
   }
@@ -241,7 +252,7 @@ export function parseSostaFirestoreDoc(item: any, fallbackId?: number | string):
     rating,
     facilities: finalFacilities,
     imageUrl: item.imageUrl || item.foto || defaultImg,
-    source: "inserito_a_mano",
+    source: item.source || "catalogo",
     reviews: normalizedReviews
   };
 }

@@ -97,6 +97,25 @@ jobs:
       - name: Generate & Verify Clean Android Assets
         run: node generate-assets.js
 
+      - name: Set Android Version and VersionCode
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "Package version: $PKG_VERSION"
+          if [ -f "android/app/build.gradle" ]; then
+            # Calcola versionCode numerico basato sui campi semver (es. 2.4.32 -> 20432)
+            IFS='.' read -r major minor patch <<< "$PKG_VERSION"
+            VCODE=$(( ${major:-2} * 10000 + ${minor:-4} * 100 + ${patch:-32} ))
+            echo "Computed versionCode: $VCODE, versionName: $PKG_VERSION"
+            
+            # Aggiorna versionCode
+            sed -i -E "s/versionCode [0-9]+/versionCode $VCODE/g" android/app/build.gradle
+            # Aggiorna versionName
+            sed -i -E "s/versionName [\"'][^\"']*[\"']/versionName \"$PKG_VERSION\"/g" android/app/build.gradle
+            
+            echo "--- android/app/build.gradle updated values: ---"
+            grep -E "versionCode|versionName" android/app/build.gradle
+          fi
+
       - name: Grant Execute Permission for Gradlew
         run: |
           if [ -f "android/gradlew" ]; then
