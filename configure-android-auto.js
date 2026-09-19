@@ -100,10 +100,10 @@ export function configureAndroidAuto() {
     // Leggi versione da package.json
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
-      const newVersionName = pkg.version || '2.4.32';
+      const newVersionName = pkg.version || '2.4.33';
       const parts = newVersionName.split('.').map(n => parseInt(n, 10));
-      // Calcolo progressivo univoco del versionCode, ad es. 2*10000 + 4*100 + 32 = 20432 (o + offset)
-      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 4) * 100 + (parts[2] || 32);
+      // Calcolo progressivo univoco del versionCode, ad es. 2*10000 + 4*100 + 33 = 20433 (o + offset)
+      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 4) * 100 + (parts[2] || 33);
 
       // Aggiorna versionCode
       if (/versionCode\s+\d+/.test(gradle)) {
