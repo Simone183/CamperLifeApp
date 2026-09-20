@@ -66,12 +66,14 @@ export function configureAndroidAuto() {
       }
     }
 
-    // Service declaration per CarApp
+    // Service declaration per CarApp con etichetta e icona esplicite
     const carServiceDeclaration = `
         <!-- Android Auto ViaCamper Service -->
         <service
-            android:name=".auto.ViaCamperCarAppService"
-            android:exported="true">
+            android:name="com.ViaCamper.myapp.auto.ViaCamperCarAppService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:icon="@mipmap/ic_launcher">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
                 <category android:name="androidx.car.app.category.POI" />
@@ -101,10 +103,10 @@ export function configureAndroidAuto() {
     // Leggi versione da package.json
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
-      const newVersionName = pkg.version || '2.4.34';
+      const newVersionName = pkg.version || '2.4.35';
       const parts = newVersionName.split('.').map(n => parseInt(n, 10));
-      // Calcolo progressivo univoco del versionCode, ad es. 2*10000 + 4*100 + 34 = 20434 (o + offset)
-      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 4) * 100 + (parts[2] || 34);
+      // Calcolo progressivo univoco del versionCode, ad es. 2*10000 + 4*100 + 35 = 20435 (o + offset)
+      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 4) * 100 + (parts[2] || 35);
 
       // Aggiorna versionCode
       if (/versionCode\s+\d+/.test(gradle)) {

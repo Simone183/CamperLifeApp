@@ -66,61 +66,70 @@ class LocalSQLiteDatabase {
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
 
-      // Force re-seed if the data structure has changed (category mapping fix & full catalog)
-      const DB_VERSION_KEY = "viacamper_db_version_v3";
+      // Force re-seed if the data structure has changed (full 37.765+ catalog & correct categorization)
+      const DB_VERSION_KEY = "viacamper_db_version_v4";
       const currentDbVersion = localStorage.getItem(DB_VERSION_KEY);
       
-      if (currentDbVersion !== "3.1.0") {
-        console.log("[SQLite] DB version mismatch or missing, forcing re-seed to 3.1.0 with accurate categories and full 40.000 catalog...");
-        await this.db.execute(`DROP TABLE IF EXISTS soste;`);
-        await this.db.execute(createTableQuery);
-        await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
-        await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
-        localStorage.setItem(DB_VERSION_KEY, "3.1.0");
+      // Check current records count
+      let count = 0;
+      try {
+        const countRes = await this.db.query(`SELECT COUNT(*) as cnt FROM soste;`);
+        count = countRes.values?.[0]?.cnt || 0;
+      } catch {
+        count = 0;
       }
 
-      // Check count
-      const countRes = await this.db.query(`SELECT COUNT(*) as cnt FROM soste;`);
-      const count = countRes.values?.[0]?.cnt || 0;
+      if (currentDbVersion !== "4.0.0" || count < 5000) {
+        console.log(`[SQLite] DB version upgrade or low record count (${count}), forcing re-seed to 4.0.0 with full 37.765+ places...`);
+        try {
+          await this.db.execute(`DROP TABLE IF EXISTS soste;`);
+          await this.db.execute(createTableQuery);
+          await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lat ON soste (lat);`);
+          await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_lng ON soste (lng);`);
+        } catch (tableErr) {
+          console.warn("[SQLite] Table reset notice:", tableErr);
+        }
+        count = 0;
+      }
+
       console.log(`[SQLite] Current records in SQLite soste table: ${count}`);
 
-      if (count === 0) {
-        let placesToSeed = initialPlaces;
-        try {
-          console.log("[SQLite] Fetching full public places for initial local seeding...");
-          // Try fetching full static soste_catalog.json first (contains all ~40,000 places)
-          let fetched = false;
-          try {
-            const staticRes = await fetch(resolveApiUrl('/soste_catalog.json'));
-            if (staticRes.ok) {
-              const staticData = await staticRes.json();
-              if (Array.isArray(staticData) && staticData.length > 0) {
-                placesToSeed = staticData;
-                fetched = true;
-                console.log(`[SQLite] Loaded ${staticData.length} places from soste_catalog.json for SQLite seeding.`);
-              }
-            }
-          } catch (staticErr) {
-            console.warn("[SQLite] soste_catalog.json fetch failed, trying /api/public-places:", staticErr);
-          }
+      if (count < 5000) {
+        let placesToSeed: any[] = [];
+        const catalogSources = [
+          './soste_catalog.json',
+          '/soste_catalog.json',
+          'soste_catalog.json',
+          '/api/public-places',
+          resolveApiUrl('/api/public-places')
+        ];
 
-          if (!fetched) {
-            const res = await fetch(resolveApiUrl('/api/public-places'));
-            if (res.ok) {
+        console.log("[SQLite] Fetching full catalog for local SQLite database seeding...");
+        for (const src of catalogSources) {
+          try {
+            const res = await fetch(src);
+            if (res && res.ok) {
               const data = await res.json();
-              if (Array.isArray(data) && data.length > 0) {
+              if (Array.isArray(data) && data.length > 500) {
                 placesToSeed = data;
-                console.log(`[SQLite] Loaded ${data.length} places from API for SQLite seeding.`);
+                console.log(`[SQLite] Successfully loaded ${data.length} places from "${src}" for SQLite seeding.`);
+                break;
               }
             }
+          } catch (fetchErr) {
+            // try next candidate
           }
-        } catch (e) {
-          console.warn("[SQLite] Could not fetch public places from API or catalog, falling back to initialPlaces:", e);
+        }
+
+        if (placesToSeed.length === 0) {
+          console.warn("[SQLite] Catalog fetch failed from all sources, using fallback initialPlaces:", initialPlaces.length);
+          placesToSeed = initialPlaces;
         }
 
         if (placesToSeed.length > 0) {
           console.log(`[SQLite] Seeding ${placesToSeed.length} places into SQLite...`);
           await this.seedPlaces(placesToSeed);
+          localStorage.setItem(DB_VERSION_KEY, "4.0.0");
         }
       }
 

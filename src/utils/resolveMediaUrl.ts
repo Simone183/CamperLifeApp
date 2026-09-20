@@ -14,6 +14,18 @@ export function resolveMediaUrl(url?: string): string {
     return url;
   }
 
+  // Local static files bundled in the app must remain relative for offline / native access
+  if (
+    url.includes("soste_catalog.json") ||
+    url.endsWith(".json") ||
+    url.endsWith(".png") ||
+    url.endsWith(".jpg") ||
+    url.endsWith(".svg") ||
+    url.endsWith(".ico")
+  ) {
+    return url.startsWith("/") ? url : `/${url}`;
+  }
+
   // Detect if the app is running in a mobile native WebView (Capacitor/Cordova)
   const isMobileNative =
     typeof (window as any).Capacitor !== "undefined" ||
@@ -49,5 +61,13 @@ export function resolveMediaUrl(url?: string): string {
  * Resolves an API path (e.g. /api/user-trips/sync) to full URL when on native mobile
  */
 export function resolveApiUrl(apiPath: string): string {
+  if (!apiPath) return "";
+  // Local static bundled files must NEVER be routed to remote endpoints
+  if (
+    apiPath.includes("soste_catalog.json") ||
+    (apiPath.endsWith(".json") && !apiPath.startsWith("/api/"))
+  ) {
+    return apiPath.startsWith("/") ? apiPath : `/${apiPath}`;
+  }
   return resolveMediaUrl(apiPath);
 }

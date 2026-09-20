@@ -532,28 +532,6 @@ export default function App() {
     }
   }, [favoriteIds, currentUser?.email]);
 
-  // Native Capacitor check to avoid duplicate splash screen (native Android 12+ splash already runs)
-  const [showSplash, setShowSplash] = React.useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      const isNative =
-        (window as any).Capacitor?.isNativePlatform?.() ||
-        (window as any).Capacitor?.getPlatform?.() === "android" ||
-        (window as any).Capacitor?.getPlatform?.() === "ios" ||
-        window.location.protocol.startsWith("capacitor") ||
-        window.location.protocol.startsWith("file:");
-      if (isNative) return false;
-    }
-    return true;
-  });
-
-  React.useEffect(() => {
-    if (!showSplash) return;
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [showSplash]);
-
   const [showTermsModal, setShowTermsModal] = React.useState<boolean>(() => {
     try {
       return localStorage.getItem("has_accepted_terms") !== "true";
@@ -4424,36 +4402,36 @@ out center;`;
 
     const timerId = setTimeout(() => {
       async function loadServerPlaces() {
-        // Fetch server-approved / cloud places if online (lightweight or full catalog)
+        // Fetch full catalog of places (from local bundled static JSON or API)
         let serverPlaces: Place[] = [];
         try {
-          const url = `/api/public-places`;
-          console.log("[DEBUG] Fetching places with URL:", url);
-          
-          let res = await fetch(resolveApiUrl(url)).catch(() => null);
-          let loadedFromStatic = false;
+          const catalogSources = [
+            './soste_catalog.json',
+            '/soste_catalog.json',
+            'soste_catalog.json',
+            '/api/public-places',
+            resolveApiUrl('/api/public-places')
+          ];
 
-          // If API fails or returns non-ok on mobile, fallback to the bundled /soste_catalog.json
-          if (!res || !res.ok) {
-            console.log("[App] /api/public-places unavailable, attempting to fetch /soste_catalog.json...");
-            res = await fetch(resolveApiUrl('/soste_catalog.json')).catch(() => null);
-            loadedFromStatic = true;
-          }
-
-          if (res && res.ok) {
-            const ct = res.headers.get("content-type");
-            if (ct && (ct.includes("application/json") || loadedFromStatic)) {
-              const data = await res.json();
-              if (Array.isArray(data) && data.length > 0) {
-                serverPlaces = data.map((item: any) => 
-                  (!item.category || (item.category as any) === "sosta" || !item.categoryLabel)
-                    ? parseSostaFirestoreDoc(item, item.id)
-                    : (item as Place)
-                );
-                console.log(`[App] Loaded ${serverPlaces.length} places from ${loadedFromStatic ? '/soste_catalog.json' : '/api/public-places'}.`);
-                // Seed into SQLite for offline zero-latency access
-                sqliteService.seedPlaces(serverPlaces).catch(() => {});
+          for (const src of catalogSources) {
+            try {
+              const res = await fetch(src);
+              if (res && res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 500) {
+                  serverPlaces = data.map((item: any) => 
+                    (!item.category || (item.category as any) === "sosta" || !item.categoryLabel)
+                      ? parseSostaFirestoreDoc(item, item.id)
+                      : (item as Place)
+                  );
+                  console.log(`[App] Loaded ${serverPlaces.length} places with true categories from "${src}".`);
+                  // Seed into SQLite for offline zero-latency access
+                  sqliteService.seedPlaces(serverPlaces).catch(() => {});
+                  break;
+                }
               }
+            } catch (srcErr) {
+              // try next candidate
             }
           }
         } catch (apiErr) {
@@ -4476,7 +4454,7 @@ out center;`;
               const cleanP = (!p.category || (p.category as any) === "sosta" || !p.categoryLabel) ? parseSostaFirestoreDoc(p, p.id) : p;
               mergedMap.set(cleanP.id, cleanP);
             });
-            // 3. Remote server places
+            // 3. Remote/Bundled server places
             serverPlaces.forEach((p) => mergedMap.set(p.id, p));
             // 4. Overrides
             Object.entries(overrides).forEach(([id, overrideData]) => {
@@ -4495,7 +4473,7 @@ out center;`;
       }
 
       loadServerPlaces();
-    }, 200);
+    }, 100);
 
     return () => {
       isCancelled = true;
@@ -4628,40 +4606,6 @@ out center;`;
         id="root-container"
         className="h-[100dvh] overflow-hidden bg-[#D1CDBF] flex flex-col font-sans text-[#2D2926] selection:bg-[#5A6B4E]/30 selection:text-[#2D2926] pb-[58px] md:pb-0"
       >
-      {/* Initial App Startup Splash Screen */}
-      {showSplash && (
-        <div
-          onClick={() => setShowSplash(false)}
-          className="fixed inset-0 z-[20000] bg-[#1C261B] flex flex-col items-center justify-center p-6 text-white animate-fade-in select-none cursor-pointer"
-        >
-          <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6">
-            <div className="relative">
-              <div className="absolute -inset-6 bg-[#5A6B4E]/40 rounded-full blur-2xl animate-pulse" />
-              <div className="relative bg-white p-5 rounded-full shadow-2xl border-4 border-[#3E4A35]">
-                <CamperLifeIcon size={180} className="text-[#3E4A35]" />
-              </div>
-            </div>
-            
-            <div className="space-y-1.5">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-serif">
-                ViaCamper App
-              </h1>
-              <p className="text-xs text-[#A8BBA2] font-semibold tracking-wider uppercase">
-                Mappe sosta, navigatore sagomato & community
-              </p>
-            </div>
-
-            <div className="w-44 h-1.5 bg-white/15 rounded-full overflow-hidden relative">
-              <div className="absolute inset-y-0 left-0 bg-[#A8BBA2] rounded-full animate-pulse w-full origin-left duration-1000" />
-            </div>
-            
-            <p className="text-[11px] text-white/50 font-medium">
-              Avvio applicazione in corso...
-            </p>
-          </div>
-        </div>
-      )}
-
       {showTermsModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[10000] p-4 flex flex-col items-center justify-center font-sans animate-fade-in">
           <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-2xl max-w-md w-full space-y-4 text-center border border-slate-200">
