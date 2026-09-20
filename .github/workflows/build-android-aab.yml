@@ -101,9 +101,9 @@ jobs:
           PKG_VERSION=$(node -p "require('./package.json').version")
           echo "Package version: $PKG_VERSION"
           if [ -f "android/app/build.gradle" ]; then
-            # Calcola versionCode numerico basato sui campi semver (es. 2.4.33 -> 20433)
+            # Calcola versionCode numerico basato sui campi semver (es. 2.4.34 -> 20434)
             IFS='.' read -r major minor patch <<< "$PKG_VERSION"
-            VCODE=$(( ${major:-2} * 10000 + ${minor:-4} * 100 + ${patch:-33} ))
+            VCODE=$(( ${major:-2} * 10000 + ${minor:-4} * 100 + ${patch:-34} ))
             echo "Computed versionCode: $VCODE, versionName: $PKG_VERSION"
             
             # Aggiorna versionCode

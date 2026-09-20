@@ -55,6 +55,7 @@ export function configureAndroidAuto() {
     const permissionsToAdd = [
       '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
       '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+      '    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />',
       '    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />',
       '    <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />'
     ];
@@ -100,10 +101,10 @@ export function configureAndroidAuto() {
     // Leggi versione da package.json
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
-      const newVersionName = pkg.version || '2.4.33';
+      const newVersionName = pkg.version || '2.4.34';
       const parts = newVersionName.split('.').map(n => parseInt(n, 10));
-      // Calcolo progressivo univoco del versionCode, ad es. 2*10000 + 4*100 + 33 = 20433 (o + offset)
-      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 4) * 100 + (parts[2] || 33);
+      // Calcolo progressivo univoco del versionCode, ad es. 2*10000 + 4*100 + 34 = 20434 (o + offset)
+      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 4) * 100 + (parts[2] || 34);
 
       // Aggiorna versionCode
       if (/versionCode\s+\d+/.test(gradle)) {
