@@ -80,7 +80,7 @@ import { ChallengesTab } from "./components/ChallengesTab";
 import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
-import { getStats } from "./utils/offlineMapCache";
+import { getStats, enablePersistentStorage } from "./utils/offlineMapCache";
 import { registerPushNotifications } from "./utils/pushNotifications";
 import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
@@ -266,6 +266,7 @@ export default function App() {
     }
   };
 
+  const lastSavedCustomPlacesJsonRef = React.useRef<string>("");
   const safeSaveCustomPlaces = React.useCallback((allPlaces: Place[]) => {
     try {
       const customPlaces = allPlaces.filter(
@@ -276,7 +277,11 @@ export default function App() {
           p.id.startsWith("sosta_user_") ||
           Boolean((p as any).isUserCreated),
       );
-      localStorage.setItem("camper_places", JSON.stringify(customPlaces));
+      const json = JSON.stringify(customPlaces);
+      if (json !== lastSavedCustomPlacesJsonRef.current) {
+        lastSavedCustomPlacesJsonRef.current = json;
+        localStorage.setItem("camper_places", json);
+      }
     } catch (e) {
       console.warn("[App] Could not save custom places to localStorage:", e);
     }
@@ -554,9 +559,10 @@ export default function App() {
   const [hasAcceptedTerms, setHasAcceptedTerms] = React.useState<boolean>(
     () => {
       try {
-        return localStorage.getItem("has_accepted_terms") === "true";
+        const saved = localStorage.getItem("has_accepted_terms");
+        return saved === null ? true : saved === "true";
       } catch {
-        return false;
+        return true;
       }
     },
   );
@@ -1313,7 +1319,8 @@ export default function App() {
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
     window.addEventListener("appinstalled", handleAppInstalled);
 
-    // Initial check
+    // Initial check and request persistent storage to protect offline maps from eviction
+    enablePersistentStorage().catch(() => {});
     if (
       window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as any).standalone
@@ -1648,11 +1655,13 @@ export default function App() {
             return norm;
           });
           const serverTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
-          lastSavedTripsJsonRef.current = serverTripsJson;
-          setTrips(cleanTripsFromServ);
-          try {
-            localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
-          } catch (e) {}
+          if (serverTripsJson !== lastSavedTripsJsonRef.current) {
+            lastSavedTripsJsonRef.current = serverTripsJson;
+            setTrips(cleanTripsFromServ);
+            try {
+              localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
+            } catch (e) {}
+          }
         }
       }
     } catch (e) {
@@ -1789,12 +1798,32 @@ export default function App() {
         .get()
         .then((snap) => {
           if (snap.exists) {
-            const data = snap.data();
-            setVehicleDimensions(data as VehicleDimensions);
+            const data = snap.data() as VehicleDimensions;
+            setVehicleDimensions((prev) => {
+              if (
+                prev.height === data.height &&
+                prev.width === data.width &&
+                prev.length === data.length &&
+                prev.weight === data.weight
+              ) {
+                return prev;
+              }
+              return data;
+            });
             localStorage.setItem("camper_dimensions", JSON.stringify(data));
           } else {
             // New user without custom camper settings: reset to defaults
-            setVehicleDimensions(INITIAL_VEHICLE_DIMENSIONS);
+            setVehicleDimensions((prev) => {
+              if (
+                prev.height === INITIAL_VEHICLE_DIMENSIONS.height &&
+                prev.width === INITIAL_VEHICLE_DIMENSIONS.width &&
+                prev.length === INITIAL_VEHICLE_DIMENSIONS.length &&
+                prev.weight === INITIAL_VEHICLE_DIMENSIONS.weight
+              ) {
+                return prev;
+              }
+              return INITIAL_VEHICLE_DIMENSIONS;
+            });
             localStorage.setItem("camper_dimensions", JSON.stringify(INITIAL_VEHICLE_DIMENSIONS));
           }
         })
@@ -1950,26 +1979,7 @@ export default function App() {
     }
   });
 
-  React.useEffect(() => {
-    if (!currentUser && activeTab === "settings_tools") {
-      if (
-        settingsSubTab !== "login" &&
-        settingsSubTab !== "registration" &&
-        settingsSubTab !== "copyright"
-      ) {
-        setSettingsSubTab("login");
-      }
-    }
-  }, [currentUser, activeTab, settingsSubTab]);
 
-  React.useEffect(() => {
-    if (currentUser && !hasAcceptedTerms) {
-      if (activeTab !== "settings_tools" || settingsSubTab !== "copyright") {
-        setActiveTab("settings_tools");
-        setSettingsSubTab("copyright");
-      }
-    }
-  }, [currentUser, hasAcceptedTerms, activeTab, settingsSubTab]);
 
   React.useEffect(() => {
     if (settingsSubTab === "feedback") {
@@ -2384,7 +2394,7 @@ export default function App() {
     );
 
     if (isSuperOrMod) {
-      setIsAdminLoggedIn(true);
+      setIsAdminLoggedIn((prev) => (prev ? prev : true));
       fetchPendingPlaces();
       fetchAdminUsers();
       fetchAdminNotifications();
@@ -2420,9 +2430,15 @@ export default function App() {
         if (unsubPlaces) unsubPlaces();
       };
     } else {
-      setIsAdminLoggedIn(false);
+      setIsAdminLoggedIn((prev) => (!prev ? prev : false));
     }
-  }, [currentUser]);
+  }, [
+    currentUser?.email,
+    currentUser?.isModerator,
+    currentUser?.moderatorRoles?.community,
+    currentUser?.moderatorRoles?.places,
+    currentUser?.moderatorRoles?.itineraries
+  ]);
 
   // Listen for real-time notifications for moderators and superadmins
   React.useEffect(() => {
@@ -2467,7 +2483,13 @@ export default function App() {
     });
     
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [
+    currentUser?.email,
+    currentUser?.isModerator,
+    currentUser?.moderatorRoles?.community,
+    currentUser?.moderatorRoles?.places,
+    currentUser?.moderatorRoles?.itineraries
+  ]);
 
   const fetchPendingPlaces = async () => {
     try {
@@ -5206,43 +5228,64 @@ out center;`;
                 </div>
 
                 {/* Category Quick Filter Pills */}
-                <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/50">
+                <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-slate-700">
                   <button
                     onClick={() => setToolsCategory("all")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
                       toolsCategory === "all"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '🎛️ All' : appLang === 'fr' ? '🎛️ Tous' : '🎛️ Tutti'}
+                    <span>{appLang === 'en' ? '🎛️ All' : appLang === 'fr' ? '🎛️ Tous' : '🎛️ Tutti'}</span>
+                    {totalWarnings > 0 && (
+                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                        toolsCategory === "all" ? "bg-[#E56B38] text-white" : "bg-orange-100 text-orange-800"
+                      }`}>
+                        {totalWarnings}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => setToolsCategory("safety")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
                       toolsCategory === "safety"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '🛡️ Crew & Dep.' : appLang === 'fr' ? '🛡️ Équipage' : '🛡️ Equipaggio & Partenza'}
+                    <span>{appLang === 'en' ? '🛡️ Crew & Dep.' : appLang === 'fr' ? '🛡️ Équipage' : '🛡️ Equipaggio & Partenza'}</span>
+                    {incompleteChecklistCount > 0 && (
+                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                        toolsCategory === "safety" ? "bg-[#E56B38] text-white" : "bg-orange-100 text-orange-800"
+                      }`}>
+                        {incompleteChecklistCount}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => setToolsCategory("planning")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
                       toolsCategory === "planning"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '📊 Onboard Resources' : appLang === 'fr' ? '📊 Ressources' : '📊 Risorse di Bordo'}
+                    <span>{appLang === 'en' ? '📊 Onboard Resources' : appLang === 'fr' ? '📊 Ressources' : '📊 Risorse di Bordo'}</span>
+                    {urgentDeadlinesCount > 0 && (
+                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                        toolsCategory === "planning" ? "bg-[#E56B38] text-white" : "bg-orange-100 text-orange-800"
+                      }`}>
+                        {urgentDeadlinesCount}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => setToolsCategory("itinerary")}
                     className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
                       toolsCategory === "itinerary"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
                     {appLang === 'en' ? '🗺️ Route & Explore' : appLang === 'fr' ? '🗺️ Itinéraire' : '🗺️ Rotta & Esplorazione'}
@@ -5252,27 +5295,34 @@ out center;`;
                     className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
                       toolsCategory === "camping"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
                     {appLang === 'en' ? '🏕️ Camping Life' : appLang === 'fr' ? '🏕️ Vie en Camping' : '🏕️ Vita in Piazzola'}
                   </button>
                   <button
                     onClick={() => setToolsCategory("community")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
                       toolsCategory === "community"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '👥 Community' : appLang === 'fr' ? '👥 Communauté' : '👥 Community'}
+                    <span>{appLang === 'en' ? '👥 Community' : appLang === 'fr' ? '👥 Communauté' : '👥 Community'}</span>
+                    {unreadCommunityCount > 0 && (
+                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                        toolsCategory === "community" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-800"
+                      }`}>
+                        {unreadCommunityCount}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => setToolsCategory("settings")}
                     className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
                       toolsCategory === "settings"
                         ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
                     {appLang === 'en' ? '⚙️ Settings' : appLang === 'fr' ? '⚙️ Paramètres' : '⚙️ Impostazioni'}
@@ -5304,8 +5354,13 @@ out center;`;
                                   <CheckSquare className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Checklist Pre-partenza
+                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
+                                    <span>Checklist Pre-partenza</span>
+                                    {incompleteChecklistCount > 0 && (
+                                      <span className="bg-[#E56B38] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                                        {incompleteChecklistCount}
+                                      </span>
+                                    )}
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Controlli rigorosi (valvole, finestre
@@ -5445,8 +5500,13 @@ out center;`;
                                   <Calendar className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Scadenziere di Bordo
+                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
+                                    <span>Scadenziere di Bordo</span>
+                                    {urgentDeadlinesCount > 0 && (
+                                      <span className="bg-[#E56B38] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                                        {urgentDeadlinesCount}
+                                      </span>
+                                    )}
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Tagliando, bombole gas, bollo, assicurazione
@@ -5797,8 +5857,13 @@ out center;`;
                                   <MessageSquare className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Bacheca & Chat Locale
+                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
+                                    <span>Bacheca & Chat Locale</span>
+                                    {unreadCommunityCount > 0 && (
+                                      <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                                        {unreadCommunityCount}
+                                      </span>
+                                    )}
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                                     Parla con altri equipaggi vicini, ricevi
@@ -6130,51 +6195,73 @@ out center;`;
 
                     {/* Small heading telling where we are & Rolly Guide button */}
                     <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 pr-2 tracking-wider hidden xs:block">
-                        Strumenti &gt;{" "}
-                        {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
-                        {settingsSubTab === "checklist" &&
-                          "Checklist Pre-partenza"}
-                        {settingsSubTab === "deadlines" && "Scandenziere"}
-                        {settingsSubTab === "community" && "Bacheca & Chat"}
-                        {settingsSubTab === "challenges" && "Sfide & Concorsi Camperisti"}
-                        {settingsSubTab === "registration" && "Registrazione"}
-                        {settingsSubTab === "login" && "Login"}
-                        {settingsSubTab === "install" && "Installazione"}
-                        {settingsSubTab === "feedback" &&
-                          "Segnalazione & Opinione"}
-                        {settingsSubTab === "ai_itinerary" &&
-                          "Generatore Itinerari AI Rolly"}
-                        {settingsSubTab === "bubble_level" &&
-                          "Livella Digitale Camper"}
-                        {settingsSubTab === "weight_calculator" &&
-                          "Bilanciamento & Carico"}
-                        {settingsSubTab === "offgrid_estimator" &&
-                          "Autonomia Off-Grid"}
-                        {settingsSubTab === "pantry_shopping" &&
-                          "Cambusa & Spesa Intelligente"}
-                        {settingsSubTab === "maintenance_log" &&
-                          "Registro Manutenzione Cellula"}
-                        {settingsSubTab === "work_log" && "Registro Lavori"}
-                        {settingsSubTab === "favorites" && "Soste Preferite"}
-                        {settingsSubTab === "fuel_card" && "Carta Carburante & Consumi"}
-                        {settingsSubTab === "copyright" &&
-                          "Tutela & Licenza D’Autore"}
-                        {settingsSubTab === "sosta_libera_tools" &&
-                          "Pannello Sosta Libera"}
-                        {settingsSubTab === "camper_security" &&
-                          "Sicurezza Attiva & Sosta Notturna"}
-                        {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
-                        {settingsSubTab === "offline_maps" &&
-                          "Mappe Cartografiche Offline"}
-                        {settingsSubTab === "shared_trips" && "Viaggi Condivisi"}
-                        {settingsSubTab === "dashboard_settings" &&
-                          "Personalizzazione Dashboard"}
-                        {settingsSubTab === "general" &&
-                          "Impostazioni Generali"}
-                        {settingsSubTab === "delete_account" &&
-                          "Cancellazione Definitiva Account"}
-                      </span>
+                      <div className="flex items-center gap-2 pr-2 hidden xs:flex">
+                        <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 tracking-wider">
+                          Strumenti &gt;{" "}
+                          {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
+                          {settingsSubTab === "checklist" &&
+                            "Checklist Pre-partenza"}
+                          {settingsSubTab === "deadlines" && "Scadenzario di Bordo"}
+                          {settingsSubTab === "community" && "Bacheca & Chat"}
+                          {settingsSubTab === "challenges" && "Sfide & Concorsi Camperisti"}
+                          {settingsSubTab === "registration" && "Registrazione"}
+                          {settingsSubTab === "login" && "Login"}
+                          {settingsSubTab === "install" && "Installazione"}
+                          {settingsSubTab === "feedback" &&
+                            "Segnalazione & Opinione"}
+                          {settingsSubTab === "ai_itinerary" &&
+                            "Generatore Itinerari AI Rolly"}
+                          {settingsSubTab === "bubble_level" &&
+                            "Livella Digitale Camper"}
+                          {settingsSubTab === "weight_calculator" &&
+                            "Bilanciamento & Carico"}
+                          {settingsSubTab === "offgrid_estimator" &&
+                            "Autonomia Off-Grid"}
+                          {settingsSubTab === "pantry_shopping" &&
+                            "Cambusa & Spesa Intelligente"}
+                          {settingsSubTab === "maintenance_log" &&
+                            "Registro Manutenzione Cellula"}
+                          {settingsSubTab === "work_log" && "Registro Lavori"}
+                          {settingsSubTab === "favorites" && "Soste Preferite"}
+                          {settingsSubTab === "fuel_card" && "Carta Carburante & Consumi"}
+                          {settingsSubTab === "copyright" &&
+                            "Tutela & Licenza D’Autore"}
+                          {settingsSubTab === "sosta_libera_tools" &&
+                            "Pannello Sosta Libera"}
+                          {settingsSubTab === "camper_security" &&
+                            "Sicurezza Attiva & Sosta Notturna"}
+                          {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
+                          {settingsSubTab === "offline_maps" &&
+                            "Mappe Cartografiche Offline"}
+                          {settingsSubTab === "shared_trips" && "Viaggi Condivisi"}
+                          {settingsSubTab === "dashboard_settings" &&
+                            "Personalizzazione Dashboard"}
+                          {settingsSubTab === "general" &&
+                            "Impostazioni Generali"}
+                          {settingsSubTab === "delete_account" &&
+                            "Cancellazione Definitiva Account"}
+                        </span>
+                        {settingsSubTab === "checklist" && incompleteChecklistCount > 0 && (
+                          <span className="bg-[#E56B38] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                            {incompleteChecklistCount} da fare
+                          </span>
+                        )}
+                        {settingsSubTab === "deadlines" && urgentDeadlinesCount > 0 && (
+                          <span className="bg-[#E56B38] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                            {urgentDeadlinesCount} imminenti
+                          </span>
+                        )}
+                        {settingsSubTab === "community" && unreadCommunityCount > 0 && (
+                          <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                            {unreadCommunityCount} nuovi
+                          </span>
+                        )}
+                        {settingsSubTab === "favorites" && favoriteIds.length > 0 && (
+                          <span className="bg-rose-100 text-rose-700 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                            {favoriteIds.length} salvati
+                          </span>
+                        )}
+                      </div>
                       <RollyOnboardingGuide sectionKey={settingsSubTab} key={settingsSubTab} />
                     </div>
                   </div>
@@ -7072,7 +7159,9 @@ out center;`;
                     />
                   )}
 
-                  {settingsSubTab === "offline_maps" && <OfflineMapsTab />}
+                  {settingsSubTab === "offline_maps" && (
+                    <OfflineMapsTab userEmail={currentUser?.email} />
+                  )}
 
                   {settingsSubTab === "general" && (
                     <GeneralSettingsTab

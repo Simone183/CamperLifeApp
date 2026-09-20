@@ -163,18 +163,35 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const [pantry, setPantry] = React.useState<PantryItem[]>(DEFAULT_PANTRY);
   const [shoppingList, setShoppingList] = React.useState<ShoppingItem[]>([]);
 
+  const pantryRef = React.useRef(pantry);
+  const shoppingListRef = React.useRef(shoppingList);
+  React.useEffect(() => {
+    pantryRef.current = pantry;
+  }, [pantry]);
+  React.useEffect(() => {
+    shoppingListRef.current = shoppingList;
+  }, [shoppingList]);
+
   // Sync from family crew if updated by another member
   React.useEffect(() => {
     if (currentCrew && isModuleSynced('pantry') && currentCrew.sharedData?.pantry) {
       const sharedPantry = currentCrew.sharedData.pantry;
       if (Array.isArray(sharedPantry.pantry) && sharedPantry.pantry.length > 0) {
-        setPantry(sharedPantry.pantry);
+        const incomingPantryStr = JSON.stringify(sharedPantry.pantry);
+        const currentPantryStr = JSON.stringify(pantryRef.current);
+        if (incomingPantryStr !== currentPantryStr) {
+          setPantry(sharedPantry.pantry);
+        }
       }
       if (Array.isArray(sharedPantry.shoppingList)) {
-        setShoppingList(sharedPantry.shoppingList);
+        const incomingListStr = JSON.stringify(sharedPantry.shoppingList);
+        const currentListStr = JSON.stringify(shoppingListRef.current);
+        if (incomingListStr !== currentListStr) {
+          setShoppingList(sharedPantry.shoppingList);
+        }
       }
     }
-  }, [currentCrew, isModuleSynced]);
+  }, [currentCrew?.sharedData?.pantry, isModuleSynced]);
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [pantryName, setPantryName] = React.useState('');

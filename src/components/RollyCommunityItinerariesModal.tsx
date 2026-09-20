@@ -22,6 +22,7 @@ import { CommunityItinerary, AIItineraryResult, Trip } from '../types';
 import { getAllRollyCuratedItineraries } from '../data/rollyItineraries';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import { getRealRegionalImage } from '../utils/regionalImageHelper';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
 interface RollyCommunityItinerariesModalProps {
   isOpen: boolean;
@@ -61,7 +62,7 @@ export function RollyCommunityItinerariesModal({
   const fetchCommunityItineraries = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/community-itineraries');
+      const res = await fetch(resolveMediaUrl('/api/community-itineraries'));
       if (res.ok) {
         const data = await res.json();
         if (data.itineraries) {
@@ -145,7 +146,7 @@ export function RollyCommunityItinerariesModal({
     };
 
     try {
-      const res = await fetch('/api/propose-community-itinerary', {
+      const res = await fetch(resolveMediaUrl('/api/propose-community-itinerary'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

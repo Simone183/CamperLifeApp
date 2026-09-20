@@ -18,7 +18,7 @@ interface NavTabItem {
 export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   setActiveTab,
-  notificationBadgeCount = 18
+  notificationBadgeCount
 }) => {
   const tabs: NavTabItem[] = [
     { id: 'map', label: 'MAPPA', icon: Map },

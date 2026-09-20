@@ -339,10 +339,11 @@ export function FamilyCrewProvider({ children, currentUser }: FamilyCrewProvider
   const isOwner = !!(currentCrew && emailLower && currentCrew.ownerEmail?.toLowerCase() === emailLower);
 
   const isModuleSynced = useCallback((module: keyof CrewSyncModules): boolean => {
-    if (!currentCrew) return false;
-    if (!currentCrew.syncModules) return true;
-    return currentCrew.syncModules[module] !== false;
-  }, [currentCrew?.syncModules]);
+    const crew = currentCrewRef.current;
+    if (!crew) return false;
+    if (!crew.syncModules) return true;
+    return crew.syncModules[module] !== false;
+  }, []);
 
   const value = React.useMemo(() => ({
     currentCrew,

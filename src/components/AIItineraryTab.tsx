@@ -183,6 +183,20 @@ export default function AIItineraryTab({
     );
   };
 
+  const userEmail = currentUser?.email?.toLowerCase()?.trim() || '';
+
+  // Cycle through loading messages count
+  const LOADING_MESSAGES_COUNT = 7;
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      interval = setInterval(() => {
+        setLoadingMsgIdx((prev) => (prev + 1) % LOADING_MESSAGES_COUNT);
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
+
   // Load itineraries from Firestore and LocalStorage
   const loadAllItineraries = React.useCallback(async () => {
     let list: AIItineraryResult[] = [];
@@ -220,10 +234,9 @@ export default function AIItineraryTab({
     } catch (e) {}
 
     // 3. Try Firestore if user logged in
-    if (currentUser?.email) {
+    if (userEmail) {
       try {
-        const email = currentUser.email.toLowerCase();
-        const docRefCurrent = doc(db, 'users', email, 'itineraries', 'current');
+        const docRefCurrent = doc(db, 'users', userEmail, 'itineraries', 'current');
         const docSnapCurrent = await getDoc(docRefCurrent);
         if (docSnapCurrent.exists()) {
           const currentData = docSnapCurrent.data() as AIItineraryResult;
@@ -239,7 +252,7 @@ export default function AIItineraryTab({
         }
 
         // Fetch user itineraries collection
-        const itinerariesColl = collection(db, 'users', email, 'itineraries');
+        const itinerariesColl = collection(db, 'users', userEmail, 'itineraries');
         const querySnap = await getDocs(itinerariesColl);
         querySnap.forEach((docSnap) => {
           if (docSnap.id === 'current') return;
@@ -270,22 +283,11 @@ export default function AIItineraryTab({
 
     setSavedItineraries(list);
     localStorage.setItem('camper_ai_saved_itineraries', JSON.stringify(list));
-  }, [currentUser]);
+  }, [userEmail]);
 
   React.useEffect(() => {
     loadAllItineraries();
   }, [loadAllItineraries]);
-
-  // Cycle through loading messages
-  React.useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (loading) {
-      interval = setInterval(() => {
-        setLoadingMsgIdx((prev) => (prev + 1) % LOADING_MESSAGES.length);
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [loading]);
 
   const LOADING_MESSAGES = [
     "Analisi del punto di partenza e ricerca dei passi montani limitrofi...",

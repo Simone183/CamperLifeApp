@@ -2230,15 +2230,29 @@ export default function MapTab({
     selectedPlaceRef.current = selectedPlace;
   }, [selectedPlace]);
 
-  // Sync state to local selected details box
+  // Sync state to local selected details box only if place content genuinely changed
   React.useEffect(() => {
     if (selectedPlaceRef.current) {
       const fresh = places.find((p) => p.id === selectedPlaceRef.current?.id);
-      if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedPlaceRef.current)) {
-        setSelectedPlace(fresh);
+      if (fresh && fresh !== selectedPlaceRef.current) {
+        // Deep compare key mutable fields to avoid triggering state update on every places reference change
+        if (
+          fresh.name !== selectedPlaceRef.current.name ||
+          fresh.rating !== selectedPlaceRef.current.rating ||
+          fresh.reviews?.length !== selectedPlaceRef.current.reviews?.length ||
+          fresh.priceEuro !== selectedPlaceRef.current.priceEuro ||
+          fresh.priceInfo !== selectedPlaceRef.current.priceInfo
+        ) {
+          setSelectedPlace(fresh);
+        }
       }
     }
   }, [places]);
+
+  const onClearFocusedPlaceIdRef = React.useRef(onClearFocusedPlaceId);
+  React.useEffect(() => {
+    onClearFocusedPlaceIdRef.current = onClearFocusedPlaceId;
+  }, [onClearFocusedPlaceId]);
 
   // Synchronize externally selected place and center/pan map
   React.useEffect(() => {
@@ -2251,20 +2265,21 @@ export default function MapTab({
         }
         setIsMobileDetailsOpen(true);
         setMobileView("map");
-        onClearFocusedPlaceId?.();
+        onClearFocusedPlaceIdRef.current?.();
       }
     }
-  }, [focusedPlaceId, places, onClearFocusedPlaceId]);
+  }, [focusedPlaceId, places]);
 
   // Map center coords tracking and initialization
   const prevSelectedPlaceIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (selectedPlace) {
-      setMapCenterCoords((prev) =>
-        prev.lat === selectedPlace.lat && prev.lng === selectedPlace.lng
-          ? prev
-          : { lat: selectedPlace.lat, lng: selectedPlace.lng },
-      );
+      setMapCenterCoords((prev) => {
+        if (prev && prev.lat === selectedPlace.lat && prev.lng === selectedPlace.lng) {
+          return prev;
+        }
+        return { lat: selectedPlace.lat, lng: selectedPlace.lng };
+      });
       if (selectedPlace.id !== prevSelectedPlaceIdRef.current) {
         prevSelectedPlaceIdRef.current = selectedPlace.id;
         setShowSmartRoute(false);
@@ -2276,7 +2291,7 @@ export default function MapTab({
       prevSelectedPlaceIdRef.current = null;
       setShowSmartRoute(false);
     }
-  }, [selectedPlace]); // --- INTELLIGENT CAMPER ROUTING ENGINE EFFECT ---
+  }, [selectedPlace?.id, selectedPlace?.lat, selectedPlace?.lng]); // Stabilized dependency with primitives
   React.useEffect(() => {
     if (!showSmartRoute || !selectedPlace) {
       setActiveRouteCoords(null);
@@ -2669,7 +2684,7 @@ export default function MapTab({
     }
   }, [userLocation, googleMapInstance, isGPSEnabled, selectedPlace, isMobileDetailsOpen, showClickedPopup]);
 
-  const loadOsmObstaclesOnMap = async (lat: number, lng: number) => {
+  const loadOsmObstaclesOnMap = React.useCallback(async (lat: number, lng: number) => {
     if (!showOsmObstacles) return;
     setLoadingOsmObstacles(true);
     try {
@@ -2807,17 +2822,27 @@ out center;`;
     } finally {
       setLoadingOsmObstacles(false);
     }
-  };
+  }, [showOsmObstacles, vehicleDimensions.height, vehicleDimensions.width, vehicleDimensions.weight]);
 
   const osmObstaclesRef = React.useRef<any[]>([]);
 
+  const lastLoadedObstaclesCenterRef = React.useRef<{ lat: number; lng: number } | null>(null);
   React.useEffect(() => {
     if (showOsmObstacles) {
-      loadOsmObstaclesOnMap(mapCenterCoords.lat, mapCenterCoords.lng);
+      const lat = mapCenterCoords?.lat;
+      const lng = mapCenterCoords?.lng;
+      if (typeof lat === "number" && typeof lng === "number") {
+        const last = lastLoadedObstaclesCenterRef.current;
+        if (!last || Math.abs(last.lat - lat) > 0.02 || Math.abs(last.lng - lng) > 0.02) {
+          lastLoadedObstaclesCenterRef.current = { lat, lng };
+          loadOsmObstaclesOnMap(lat, lng);
+        }
+      }
     } else {
+      lastLoadedObstaclesCenterRef.current = null;
       setOsmObstacles([]);
     }
-  }, [showOsmObstacles, mapCenterCoords.lat, mapCenterCoords.lng]);
+  }, [showOsmObstacles, mapCenterCoords?.lat, mapCenterCoords?.lng, loadOsmObstaclesOnMap]);
 
   // NOTE: Automated OSM loading at startup and on GPS tracking has been removed on user request.
   // OSM elements will now ONLY load when user explicitly clicks "Intorno a me", "Intorno a questo luogo" or from the popup.

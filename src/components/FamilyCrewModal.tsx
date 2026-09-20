@@ -427,7 +427,7 @@ export function FamilyCrewModal({ isOpen, onClose, currentUser }: FamilyCrewModa
                 </div>
 
                 {/* Invite Code Box */}
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-slate-900 border border-amber-500/20 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
                       Codice Invito Equipaggio
@@ -662,24 +662,29 @@ export function FamilyCrewTabBanner({
   return (
     <div 
       onClick={onOpenCrewModal}
-      className="cursor-pointer mb-4 p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-slate-900 border border-amber-500/20 flex items-center justify-between gap-3 text-xs hover:border-amber-500/40 transition group"
+      className="cursor-pointer mb-4 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 via-amber-100/50 to-orange-50/80 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border border-amber-300/80 dark:border-amber-500/30 shadow-xs flex items-center justify-between gap-3 text-xs hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-sm transition-all group"
     >
-      <div className="flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
-          <Users className="w-3.5 h-3.5" />
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-8 h-8 rounded-xl bg-amber-500/20 dark:bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-800 dark:text-amber-400 shrink-0 shadow-2xs">
+          <Users className="w-4 h-4" />
         </div>
-        <div>
-          <span className="text-white font-bold flex items-center gap-1.5">
-            Equipaggio: {currentCrew.name}
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          </span>
-          <span className="text-slate-400 text-[11px]">
-            {moduleName} condivisa in tempo reale con {currentCrew.members?.length || 1} membri
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-900 dark:text-white font-extrabold text-xs sm:text-sm tracking-tight flex items-center gap-1.5">
+              Equipaggio: {currentCrew.name}
+            </span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+          </div>
+          <span className="text-slate-700 dark:text-slate-300 text-[11px] font-medium block mt-0.5 truncate">
+            {moduleName} condivisa in tempo reale con {currentCrew.members?.length || 1} {currentCrew.members?.length === 1 ? 'membro' : 'membri'}
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 text-amber-400 text-[11px] font-semibold group-hover:translate-x-0.5 transition">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 text-amber-950 dark:text-amber-300 border border-amber-400/80 dark:border-amber-500/40 text-[11px] font-black group-hover:translate-x-0.5 transition shrink-0">
         <span>Gestisci</span>
         <ExternalLink className="w-3 h-3" />
       </div>

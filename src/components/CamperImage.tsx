@@ -9,17 +9,23 @@ import { Camera, RefreshCw } from "lucide-react";
 const base64Cache = new Map<string, string>();
 
 export function useResolvedPhotoUrl(url?: string, photoId?: string, thumbnail?: boolean): string {
-  const [resolvedUrl, setResolvedUrl] = useState<string>("");
+  const [resolvedUrl, setResolvedUrl] = useState<string>(() => {
+    if (!url && !photoId) return "";
+    if (url && (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("http://") || url.startsWith("https://"))) {
+      return url;
+    }
+    return "";
+  });
 
   useEffect(() => {
     if (!url && !photoId) {
-      setResolvedUrl("");
+      setResolvedUrl((prev) => (prev === "" ? prev : ""));
       return;
     }
 
     // Direct local Data URLs or Blob URLs work immediately
     if (url && (url.startsWith("data:") || url.startsWith("blob:"))) {
-      setResolvedUrl(url);
+      setResolvedUrl((prev) => (prev === url ? prev : url));
       if (photoId) {
         savePhotoToIndexedDB(photoId, url).catch(() => {});
       }

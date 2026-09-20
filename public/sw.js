@@ -31,12 +31,22 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate Event - purge old caches immediately
+// Activate Event - purge old application bundles but PROTECT offline map tile caches!
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
+          // Never purge offline map caches or persistent user data!
+          if (
+            cache.startsWith('viacamper-offline') ||
+            cache.startsWith('viacamper-tiles') ||
+            cache.startsWith('viacamper-persistent')
+          ) {
+            console.log('[SW] Preserving offline map cache:', cache);
+            return Promise.resolve();
+          }
+
           if (cache !== CACHE_NAME) {
             console.log('[SW] Purging outdated cache:', cache);
             return caches.delete(cache);
