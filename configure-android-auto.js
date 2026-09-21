@@ -463,8 +463,8 @@ import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
+import androidx.car.app.model.CarLocation;
 import androidx.car.app.model.ItemList;
-import androidx.car.app.model.LatLng;
 import androidx.car.app.model.Metadata;
 import androidx.car.app.model.Place;
 import androidx.car.app.model.PlaceListMapTemplate;
@@ -551,7 +551,7 @@ public class MainMapScreen extends Screen {
                 row.setMetadata(
                     new Metadata.Builder()
                         .setPlace(
-                            new Place.Builder(LatLng.create(m.lat, m.lng))
+                            new Place.Builder(CarLocation.create(m.lat, m.lng))
                                 .setMarker(new PlaceMarker.Builder().setColor(CarColor.BLUE).build())
                                 .build()
                         )
@@ -603,8 +603,8 @@ import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
+import androidx.car.app.model.CarLocation;
 import androidx.car.app.model.ItemList;
-import androidx.car.app.model.LatLng;
 import androidx.car.app.model.Metadata;
 import androidx.car.app.model.Place;
 import androidx.car.app.model.PlaceListMapTemplate;
@@ -641,7 +641,7 @@ public class CamperPlacesScreen extends Screen {
                 row.setMetadata(
                     new Metadata.Builder()
                         .setPlace(
-                            new Place.Builder(LatLng.create(p.lat, p.lng))
+                            new Place.Builder(CarLocation.create(p.lat, p.lng))
                                 .setMarker(new PlaceMarker.Builder().setColor(CarColor.YELLOW).build())
                                 .build()
                         )
