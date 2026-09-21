@@ -1621,6 +1621,13 @@ export default function App() {
     if (!currentUser?.email) return;
     const cleanEmail = currentUser.email.toLowerCase().trim();
     const normalized = newTrips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+
+    // PROTECT AGAINST CATASTROPHIC CLOUD OVERWRITE WITH EMPTY ARRAY
+    if (normalized.length === 0 && lastSavedTripsJsonRef.current && lastSavedTripsJsonRef.current !== "[]") {
+      console.warn("[App] Safeguard: Prevented accidental deletion of all cloud trips via empty array save.");
+      return;
+    }
+
     const tripsJson = JSON.stringify(normalized);
     if (tripsJson === lastSavedTripsJsonRef.current || isSavingTripsRef.current) {
       return;
@@ -1638,7 +1645,7 @@ export default function App() {
       });
       if (res.ok) {
         const resData = await res.json().catch(() => ({}));
-        if (resData.trips && Array.isArray(resData.trips)) {
+        if (resData.trips && Array.isArray(resData.trips) && resData.trips.length > 0) {
           // Merge safely: preserve local data:image or /api/photos/ URLs so they are never lost
           const cleanTripsFromServ = resData.trips.map((t: any) => {
             const norm = normalizeTrip(t, cleanEmail);
@@ -1668,11 +1675,13 @@ export default function App() {
       console.warn("[App] user-trips sync server notice:", e);
     }
 
-    // 2. Client Firestore write
+    // 2. Client Firestore write (only if non-empty or initialized)
     try {
       const docRef = doc(db, "users", cleanEmail, "data", "trips");
       const cleanedTrips = JSON.parse(tripsJson);
-      await setDoc(docRef, { trips: cleanedTrips, updatedAt: new Date().toISOString() }, { merge: true });
+      if (cleanedTrips && (cleanedTrips.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
+        await setDoc(docRef, { trips: cleanedTrips, updatedAt: new Date().toISOString() }, { merge: true });
+      }
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);
     } finally {
@@ -1689,6 +1698,7 @@ export default function App() {
     }
     const cleanEmail = currentUser.email.toLowerCase().trim();
     const docRef = doc(db, "users", cleanEmail, "data", "trips");
+    setLoadedFromFirestore(false); // Reset while loading to prevent premature sync
     
     const loadCloudData = async () => {
       let cloudTrips: Trip[] = [];
@@ -1704,7 +1714,7 @@ export default function App() {
         console.warn("[App] Client Firestore load notice:", error?.message);
       }
 
-      // Query server-side API as well (guarantees data availability in AI Studio preview)
+      // Query server-side API as well (guarantees data availability in AI Studio preview & disk backup)
       try {
         const res = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
         if (res.ok) {
@@ -1718,14 +1728,31 @@ export default function App() {
         console.warn("[App] Server user-trips API notice:", apiErr);
       }
 
+      // Check for guest/unlogged trips to merge
+      let guestTrips: Trip[] = [];
+      try {
+        const guestSaved = localStorage.getItem("camper_trips_guest") || localStorage.getItem("camper_trips");
+        if (guestSaved) {
+          const parsed = JSON.parse(guestSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            guestTrips = parsed.map((t: any) => normalizeTrip(t, cleanEmail));
+            localStorage.removeItem("camper_trips_guest");
+            localStorage.removeItem("camper_trips");
+          }
+        }
+      } catch (e) {}
+
       setTrips((prevTrips) => {
-        const merged = mergeTrips(prevTrips, cloudTrips, cleanEmail);
+        let merged = mergeTrips(prevTrips, cloudTrips, cleanEmail);
+        if (guestTrips.length > 0) {
+          merged = mergeTrips(merged, guestTrips, cleanEmail);
+        }
+
         try {
           localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(merged));
         } catch (e) {}
 
-        // Check if local device has more items (e.g. phone has 52 expenses vs cloud 23)
-        // If so, automatically sync to Cloud so tablet and preview receive the full data!
+        // Check if local device has more items than cloud
         const localExpensesCount = prevTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
         const cloudExpensesCount = cloudTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
         const localMovsCount = prevTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
@@ -1733,8 +1760,8 @@ export default function App() {
         const localPhotosCount = prevTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
         const cloudPhotosCount = cloudTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
 
-        if (localExpensesCount > cloudExpensesCount || localMovsCount > cloudMovsCount || localPhotosCount > cloudPhotosCount) {
-          console.log("[App] Local device has more trip data than Cloud, auto-syncing to Cloud...");
+        if (localExpensesCount > cloudExpensesCount || localMovsCount > cloudMovsCount || localPhotosCount > cloudPhotosCount || guestTrips.length > 0) {
+          console.log("[App] Device has new local/guest trip data, auto-syncing to Cloud...");
           setTimeout(() => {
             saveTripsToFirestore(merged);
           }, 800);
@@ -1744,8 +1771,8 @@ export default function App() {
         return merged;
       });
 
-      if (cloudTrips.length === 0 && trips.length > 0) {
-        saveTripsToFirestore(trips);
+      if (cloudTrips.length === 0 && tripsRef.current.length > 0) {
+        saveTripsToFirestore(tripsRef.current);
       }
       setLoadedFromFirestore(true);
     };
@@ -1756,9 +1783,14 @@ export default function App() {
       const tripsToSync = (e?.detail && Array.isArray(e.detail.trips)) ? e.detail.trips : tripsRef.current;
       saveTripsToFirestore(tripsToSync);
     };
+    const handleRestoreCloudData = () => {
+      loadCloudData();
+    };
     window.addEventListener("sync-trips-now", handleSyncTripsNow);
+    window.addEventListener("restore-cloud-data", handleRestoreCloudData);
     return () => {
       window.removeEventListener("sync-trips-now", handleSyncTripsNow);
+      window.removeEventListener("restore-cloud-data", handleRestoreCloudData);
     };
   }, [currentUser?.email, saveTripsToFirestore]);
 

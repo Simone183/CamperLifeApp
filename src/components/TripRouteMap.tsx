@@ -55,19 +55,16 @@ const geocodeCache: Record<string, { lat: number; lng: number }> = {
 };
 
 const geocodeLocation = async (location: string): Promise<{ lat: number; lng: number } | null> => {
+  if (!location || !location.trim()) return null;
   const cleanLoc = location.trim().toLowerCase();
   if (geocodeCache[cleanLoc]) {
     return geocodeCache[cleanLoc];
   }
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=1`, {
-      headers: {
-        "User-Agent": "ViaCamper/2.0 (viacamperapp@gmail.com)"
-      }
-    });
+    const res = await fetch(`/api/nominatim?q=${encodeURIComponent(location)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data && data[0]) {
+      if (Array.isArray(data) && data[0] && data[0].lat && data[0].lon) {
         const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         geocodeCache[cleanLoc] = coords;
         return coords;
@@ -252,9 +249,17 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
 
     // mode === 'movements': geocode actual registered movements
     setEditMode((prev) => (prev ? false : prev));
-    const sortedMovements = [...(trip.movements || [])].sort(
-      (a, b) => (a.odometer || 0) - (b.odometer || 0)
-    );
+    const sortedMovements = [...(trip.movements || [])].sort((a, b) => {
+      const odoA = a.odometer && a.odometer > 0 ? a.odometer : 0;
+      const odoB = b.odometer && b.odometer > 0 ? b.odometer : 0;
+      if (odoA > 0 && odoB > 0 && odoA !== odoB) {
+        return odoA - odoB;
+      }
+      if (a.date && b.date) {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      }
+      return 0;
+    });
 
     if (sortedMovements.length > 0) {
       let isSubscribed = true;
@@ -266,6 +271,18 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
         for (const mov of sortedMovements) {
           if (!isSubscribed) return;
           const locName = mov.location;
+          if (!locName || !locName.trim()) continue;
+
+          // Check if movement object already has lat/lng coordinates stored
+          if ((mov as any).lat && (mov as any).lng) {
+            resolvedPoints.push({
+              lat: (mov as any).lat,
+              lng: (mov as any).lng,
+              name: locName,
+            });
+            continue;
+          }
+
           const coords = await geocodeLocation(locName);
           if (coords) {
             resolvedPoints.push({
@@ -374,51 +391,64 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
         for (let i = 0; i < points.length - 1; i++) {
           const p1 = points[i];
           const p2 = points[i + 1];
-          const url = `/api/osrm?start=${p1.lng},${p1.lat}&end=${p2.lng},${p2.lat}`;
-          fetchPromises.push(
-            fetch(url)
-              .then(async (res) => {
-                if (!res.ok) {
-                  throw new Error(`Failed to fetch segment ${i}`);
-                }
+
+          // Skip routing request if points are virtually identical
+          if (Math.abs(p1.lat - p2.lat) < 0.0001 && Math.abs(p1.lng - p2.lng) < 0.0001) {
+            fetchPromises.push(Promise.resolve([new L.LatLng(p1.lat, p1.lng)]));
+            continue;
+          }
+
+          const fetchSegment = async (): Promise<L.LatLng[]> => {
+            // 1. Try OSRM Proxy
+            try {
+              const url = `/api/osrm?start=${p1.lng},${p1.lat}&end=${p2.lng},${p2.lat}`;
+              const res = await fetch(url);
+              if (res.ok) {
                 const data = await res.json();
                 if (data && data.routes && data.routes[0] && data.routes[0].geometry) {
                   const geom = data.routes[0].geometry;
-                  if (geom.type === "LineString") {
+                  if (geom.type === "LineString" && Array.isArray(geom.coordinates) && geom.coordinates.length > 1) {
                     return geom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
                   }
                 }
-                // Fallback to straight line for this segment
-                const segmentCoords: L.LatLng[] = [];
-                const steps = 30;
-                for (let step = 0; step <= steps; step++) {
-                  const t = step / steps;
-                  segmentCoords.push(
-                    new L.LatLng(
-                      p1.lat + (p2.lat - p1.lat) * t,
-                      p1.lng + (p2.lng - p1.lng) * t
-                    )
-                  );
+              }
+            } catch (err) {
+              console.warn(`OSRM proxy failed for segment ${i}, trying BRouter fallback:`, err);
+            }
+
+            // 2. Retry with BRouter Proxy fallback
+            try {
+              const brouterUrl = `/api/brouter?start=${p1.lng},${p1.lat}&end=${p2.lng},${p2.lat}`;
+              const bRes = await fetch(brouterUrl);
+              if (bRes.ok) {
+                const bData = await bRes.json();
+                if (bData && bData.features && bData.features[0] && bData.features[0].geometry) {
+                  const bGeom = bData.features[0].geometry;
+                  if (bGeom.type === "LineString" && Array.isArray(bGeom.coordinates) && bGeom.coordinates.length > 1) {
+                    return bGeom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                  }
                 }
-                return segmentCoords;
-              })
-              .catch((err) => {
-                console.error(`OSRM segment error ${i}:`, err);
-                // Fallback to straight line
-                const segmentCoords: L.LatLng[] = [];
-                const steps = 30;
-                for (let step = 0; step <= steps; step++) {
-                  const t = step / steps;
-                  segmentCoords.push(
-                    new L.LatLng(
-                      p1.lat + (p2.lat - p1.lat) * t,
-                      p1.lng + (p2.lng - p1.lng) * t
-                    )
-                  );
-                }
-                return segmentCoords;
-              })
-          );
+              }
+            } catch (bErr) {
+              console.warn(`BRouter proxy also failed for segment ${i}:`, bErr);
+            }
+
+            // 3. Straight line interpolation fallback only if both routing engines fail
+            const segmentCoords: L.LatLng[] = [];
+            const steps = 30;
+            for (let step = 0; step <= steps; step++) {
+              const t = step / steps;
+              segmentCoords.push(
+                new L.LatLng(
+                  p1.lat + (p2.lat - p1.lat) * t,
+                  p1.lng + (p2.lng - p1.lng) * t
+                )
+              );
+            }
+            return segmentCoords;
+          };
+
+          fetchPromises.push(fetchSegment());
         }
 
         const segmentsResults = await Promise.all(fetchPromises);

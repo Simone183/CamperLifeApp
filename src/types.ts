@@ -399,7 +399,7 @@ export interface DiaryExpense {
 export interface DiaryPhoto {
   id: string;
   url: string;
-  description: string;
+  description?: string;
   date: string;
   locationName?: string; // Tappa in cui è stata scattata la foto
   deleted?: boolean; // Flag per soft delete sincronizzato

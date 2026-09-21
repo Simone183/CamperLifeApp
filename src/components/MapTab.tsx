@@ -1137,12 +1137,12 @@ export default function MapTab({
     hasMaxWeightLimit: false,
     maxWeight: 3.5,
     isNarrowAccess: false,
-    noiseLevel: 8,
-    maneuverability: 8,
-    cellularSignal: 8,
-    groundLevelness: 8,
-    shade: 8,
-    cleanliness: 8,
+    noiseLevel: undefined as number | undefined,
+    maneuverability: undefined as number | undefined,
+    cellularSignal: undefined as number | undefined,
+    groundLevelness: undefined as number | undefined,
+    shade: undefined as number | undefined,
+    cleanliness: undefined as number | undefined,
   });
 
   const [newPlaceQuery, setNewPlaceQuery] = React.useState("");
@@ -2135,13 +2135,13 @@ export default function MapTab({
 
   // Review form state
   const [reviewerName, setReviewerName] = React.useState("");
-  const [rating, setRating] = React.useState(10);
-  const [noiseLevel, setNoiseLevel] = React.useState(8);
-  const [maneuverability, setManeuverability] = React.useState(8);
-  const [cellularSignal, setCellularSignal] = React.useState(8);
-  const [groundLevelness, setGroundLevelness] = React.useState(8);
-  const [shade, setShade] = React.useState(8);
-  const [cleanliness, setCleanliness] = React.useState(8);
+  const [rating, setRating] = React.useState<number | undefined>(undefined);
+  const [noiseLevel, setNoiseLevel] = React.useState<number | undefined>(undefined);
+  const [maneuverability, setManeuverability] = React.useState<number | undefined>(undefined);
+  const [cellularSignal, setCellularSignal] = React.useState<number | undefined>(undefined);
+  const [groundLevelness, setGroundLevelness] = React.useState<number | undefined>(undefined);
+  const [shade, setShade] = React.useState<number | undefined>(undefined);
+  const [cleanliness, setCleanliness] = React.useState<number | undefined>(undefined);
   const [commentText, setCommentText] = React.useState("");
   const [priceUpdated, setPriceUpdated] = React.useState("");
   const [photoSimulation, setPhotoSimulation] = React.useState("");
@@ -3021,7 +3021,7 @@ out center;`;
       id: `rev_${Date.now()}`,
       user: reviewerName.trim(),
       date: new Date().toISOString().split("T")[0],
-      rating,
+      rating: rating || 10,
       comment: commentText.trim(),
       priceUpdated: priceUpdated.trim() || undefined,
       imageUrl: photoSimulation || undefined,
@@ -3103,13 +3103,13 @@ out center;`;
     setCommentText("");
     setPriceUpdated("");
     setPhotoSimulation("");
-    setRating(10);
-    setNoiseLevel(8);
-    setManeuverability(8);
-    setCellularSignal(8);
-    setGroundLevelness(8);
-    setShade(8);
-    setCleanliness(8);
+    setRating(undefined);
+    setNoiseLevel(undefined);
+    setManeuverability(undefined);
+    setCellularSignal(undefined);
+    setGroundLevelness(undefined);
+    setShade(undefined);
+    setCleanliness(undefined);
     setIsAddingReview(false);
     setReviewSuccess(true);
     setTimeout(() => setReviewSuccess(false), 3000);
@@ -5577,12 +5577,12 @@ out center;`;
                           hasMaxWeightLimit: false,
                           maxWeight: 3.5,
                           isNarrowAccess: false,
-                          noiseLevel: 3,
-                          maneuverability: 3,
-                          cellularSignal: 3,
-                          groundLevelness: 3,
-                          shade: 3,
-                          cleanliness: 3,
+                          noiseLevel: undefined,
+                          maneuverability: undefined,
+                          cellularSignal: undefined,
+                          groundLevelness: undefined,
+                          shade: undefined,
+                          cleanliness: undefined,
                         });
 
                         setNewPlaceQuery(
@@ -5941,12 +5941,12 @@ out center;`;
                 hasMaxWeightLimit: false,
                 maxWeight: 3.5,
                 isNarrowAccess: false,
-                noiseLevel: 3,
-                maneuverability: 3,
-                cellularSignal: 3,
-                groundLevelness: 3,
-                shade: 3,
-                cleanliness: 3,
+                noiseLevel: undefined,
+                maneuverability: undefined,
+                cellularSignal: undefined,
+                groundLevelness: undefined,
+                shade: undefined,
+                cleanliness: undefined,
               });
               setShowAddPlaceModal(true);
             }}
@@ -6724,8 +6724,8 @@ out center;`;
                         <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
                         <span>Voto Complessivo Sosta:</span>
                       </label>
-                      <span className={`text-xs font-black px-2 py-0.5 rounded-full border ${getRating10Descriptor(rating).bgClass} ${getRating10Descriptor(rating).colorClass}`}>
-                        {rating}/10 · {getRating10Descriptor(rating).label}
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-full border ${getRating10Descriptor(rating || 0).bgClass} ${getRating10Descriptor(rating || 0).colorClass}`}>
+                        {rating ? `${rating}/10 · ${getRating10Descriptor(rating).label}` : "Seleziona voto"}
                       </span>
                     </div>
                     <div className="flex gap-1 overflow-x-auto pb-0.5">
@@ -6733,11 +6733,11 @@ out center;`;
                         <button
                           key={score}
                           type="button"
-                          onClick={() => setRating(score)}
+                          onClick={() => setRating((prev) => (prev === score ? undefined : score))}
                           className={`flex-1 min-w-[28px] py-1.5 rounded-lg font-black text-xs transition-all border cursor-pointer ${
                             score === rating
                               ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-105"
-                              : score < rating
+                              : rating !== undefined && score < rating
                               ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
                               : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                           }`}
@@ -6755,14 +6755,14 @@ out center;`;
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                         Silenziosità
                       </label>
-                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{noiseLevel}/10</span>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{noiseLevel ? `${noiseLevel}/10` : "--"}</span>
                     </div>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setNoiseLevel(val)}
+                          onClick={() => setNoiseLevel((prev) => (prev === val ? undefined : val))}
                           className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === noiseLevel
                               ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -6780,14 +6780,14 @@ out center;`;
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                         Manovrabilità
                       </label>
-                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{maneuverability}/10</span>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{maneuverability ? `${maneuverability}/10` : "--"}</span>
                     </div>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setManeuverability(val)}
+                          onClick={() => setManeuverability((prev) => (prev === val ? undefined : val))}
                           className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === maneuverability
                               ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -6805,14 +6805,14 @@ out center;`;
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                         Segnale Cell.
                       </label>
-                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cellularSignal}/10</span>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cellularSignal ? `${cellularSignal}/10` : "--"}</span>
                     </div>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setCellularSignal(val)}
+                          onClick={() => setCellularSignal((prev) => (prev === val ? undefined : val))}
                           className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === cellularSignal
                               ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -6830,14 +6830,14 @@ out center;`;
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                         Terreno in bolla
                       </label>
-                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{groundLevelness}/10</span>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{groundLevelness ? `${groundLevelness}/10` : "--"}</span>
                     </div>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setGroundLevelness(val)}
+                          onClick={() => setGroundLevelness((prev) => (prev === val ? undefined : val))}
                           className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === groundLevelness
                               ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -6855,14 +6855,14 @@ out center;`;
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                         Ombreggiatura
                       </label>
-                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{shade}/10</span>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{shade ? `${shade}/10` : "--"}</span>
                     </div>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setShade(val)}
+                          onClick={() => setShade((prev) => (prev === val ? undefined : val))}
                           className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === shade
                               ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -6880,14 +6880,14 @@ out center;`;
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                         Pulizia / Decoro
                       </label>
-                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cleanliness}/10</span>
+                      <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cleanliness ? `${cleanliness}/10` : "--"}</span>
                     </div>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                         <button
                           key={val}
                           type="button"
-                          onClick={() => setCleanliness(val)}
+                          onClick={() => setCleanliness((prev) => (prev === val ? undefined : val))}
                           className={`flex-1 min-w-[18px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                             val === cleanliness
                               ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -7754,8 +7754,8 @@ out center;`;
                         <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
                         <span>Voto Sosta (1-10):</span>
                       </label>
-                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-full border ${getRating10Descriptor(rating).bgClass} ${getRating10Descriptor(rating).colorClass}`}>
-                        {rating}/10 · {getRating10Descriptor(rating).label}
+                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-full border ${getRating10Descriptor(rating || 0).bgClass} ${getRating10Descriptor(rating || 0).colorClass}`}>
+                        {rating ? `${rating}/10 · ${getRating10Descriptor(rating).label}` : "Seleziona voto"}
                       </span>
                     </div>
                     <div className="flex gap-1 overflow-x-auto pb-1">
@@ -7763,11 +7763,11 @@ out center;`;
                         <button
                           key={score}
                           type="button"
-                          onClick={() => setRating(score)}
+                          onClick={() => setRating((prev) => (prev === score ? undefined : score))}
                           className={`flex-1 min-w-[26px] py-1.5 rounded-lg font-black text-xs transition-all border cursor-pointer ${
                             score === rating
                               ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-105"
-                              : score < rating
+                              : rating !== undefined && score < rating
                               ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
                               : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                           }`}
@@ -7784,14 +7784,14 @@ out center;`;
                         <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                           Silenziosità
                         </label>
-                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{noiseLevel}/10</span>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{noiseLevel ? `${noiseLevel}/10` : "--"}</span>
                       </div>
                       <div className="flex gap-0.5 overflow-x-auto pb-0.5">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setNoiseLevel(val)}
+                            onClick={() => setNoiseLevel((prev) => (prev === val ? undefined : val))}
                             className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === noiseLevel
                                 ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -7809,14 +7809,14 @@ out center;`;
                         <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                           Manovrabilità
                         </label>
-                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{maneuverability}/10</span>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{maneuverability ? `${maneuverability}/10` : "--"}</span>
                       </div>
                       <div className="flex gap-0.5 overflow-x-auto pb-0.5">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setManeuverability(val)}
+                            onClick={() => setManeuverability((prev) => (prev === val ? undefined : val))}
                             className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === maneuverability
                                 ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -7834,14 +7834,14 @@ out center;`;
                         <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                           Segnale Cell.
                         </label>
-                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cellularSignal}/10</span>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cellularSignal ? `${cellularSignal}/10` : "--"}</span>
                       </div>
                       <div className="flex gap-0.5 overflow-x-auto pb-0.5">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setCellularSignal(val)}
+                            onClick={() => setCellularSignal((prev) => (prev === val ? undefined : val))}
                             className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === cellularSignal
                                 ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -7859,14 +7859,14 @@ out center;`;
                         <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                           Terreno in bolla
                         </label>
-                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{groundLevelness}/10</span>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{groundLevelness ? `${groundLevelness}/10` : "--"}</span>
                       </div>
                       <div className="flex gap-0.5 overflow-x-auto pb-0.5">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setGroundLevelness(val)}
+                            onClick={() => setGroundLevelness((prev) => (prev === val ? undefined : val))}
                             className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === groundLevelness
                                 ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -7884,14 +7884,14 @@ out center;`;
                         <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                           Ombreggiatura
                         </label>
-                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{shade}/10</span>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{shade ? `${shade}/10` : "--"}</span>
                       </div>
                       <div className="flex gap-0.5 overflow-x-auto pb-0.5">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setShade(val)}
+                            onClick={() => setShade((prev) => (prev === val ? undefined : val))}
                             className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === shade
                                 ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -7909,14 +7909,14 @@ out center;`;
                         <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
                           Pulizia / Decoro
                         </label>
-                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cleanliness}/10</span>
+                        <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">{cleanliness ? `${cleanliness}/10` : "--"}</span>
                       </div>
                       <div className="flex gap-0.5 overflow-x-auto pb-0.5">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setCleanliness(val)}
+                            onClick={() => setCleanliness((prev) => (prev === val ? undefined : val))}
                             className={`flex-1 min-w-[22px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
                               val === cleanliness
                                 ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
@@ -9025,7 +9025,7 @@ out center;`;
                       Silenziosità
                     </label>
                     <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
-                      {newPlaceForm.noiseLevel || 8}/10
+                      {newPlaceForm.noiseLevel ? `${newPlaceForm.noiseLevel}/10` : "--"}
                     </span>
                   </div>
                   <div className="flex gap-0.5 overflow-x-auto pb-0.5">
@@ -9036,11 +9036,11 @@ out center;`;
                         onClick={() =>
                           setNewPlaceForm((prev) => ({
                             ...prev,
-                            noiseLevel: val,
+                            noiseLevel: prev.noiseLevel === val ? undefined : val,
                           }))
                         }
                         className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
-                          (newPlaceForm.noiseLevel || 8) === val
+                          newPlaceForm.noiseLevel === val
                             ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
                             : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
@@ -9057,7 +9057,7 @@ out center;`;
                       Manovrabilità
                     </label>
                     <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
-                      {newPlaceForm.maneuverability || 8}/10
+                      {newPlaceForm.maneuverability ? `${newPlaceForm.maneuverability}/10` : "--"}
                     </span>
                   </div>
                   <div className="flex gap-0.5 overflow-x-auto pb-0.5">
@@ -9068,11 +9068,11 @@ out center;`;
                         onClick={() =>
                           setNewPlaceForm((prev) => ({
                             ...prev,
-                            maneuverability: val,
+                            maneuverability: prev.maneuverability === val ? undefined : val,
                           }))
                         }
                         className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
-                          (newPlaceForm.maneuverability || 8) === val
+                          newPlaceForm.maneuverability === val
                             ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
                             : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
@@ -9089,7 +9089,7 @@ out center;`;
                       Segnale Cell.
                     </label>
                     <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
-                      {newPlaceForm.cellularSignal || 8}/10
+                      {newPlaceForm.cellularSignal ? `${newPlaceForm.cellularSignal}/10` : "--"}
                     </span>
                   </div>
                   <div className="flex gap-0.5 overflow-x-auto pb-0.5">
@@ -9100,11 +9100,11 @@ out center;`;
                         onClick={() =>
                           setNewPlaceForm((prev) => ({
                             ...prev,
-                            cellularSignal: val,
+                            cellularSignal: prev.cellularSignal === val ? undefined : val,
                           }))
                         }
                         className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
-                          (newPlaceForm.cellularSignal || 8) === val
+                          newPlaceForm.cellularSignal === val
                             ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
                             : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
@@ -9121,7 +9121,7 @@ out center;`;
                       Terreno in bolla
                     </label>
                     <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
-                      {newPlaceForm.groundLevelness || 8}/10
+                      {newPlaceForm.groundLevelness ? `${newPlaceForm.groundLevelness}/10` : "--"}
                     </span>
                   </div>
                   <div className="flex gap-0.5 overflow-x-auto pb-0.5">
@@ -9132,11 +9132,11 @@ out center;`;
                         onClick={() =>
                           setNewPlaceForm((prev) => ({
                             ...prev,
-                            groundLevelness: val,
+                            groundLevelness: prev.groundLevelness === val ? undefined : val,
                           }))
                         }
                         className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
-                          (newPlaceForm.groundLevelness || 8) === val
+                          newPlaceForm.groundLevelness === val
                             ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
                             : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
@@ -9153,7 +9153,7 @@ out center;`;
                       Ombreggiatura
                     </label>
                     <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
-                      {newPlaceForm.shade || 8}/10
+                      {newPlaceForm.shade ? `${newPlaceForm.shade}/10` : "--"}
                     </span>
                   </div>
                   <div className="flex gap-0.5 overflow-x-auto pb-0.5">
@@ -9164,11 +9164,11 @@ out center;`;
                         onClick={() =>
                           setNewPlaceForm((prev) => ({
                             ...prev,
-                            shade: val,
+                            shade: prev.shade === val ? undefined : val,
                           }))
                         }
                         className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
-                          (newPlaceForm.shade || 8) === val
+                          newPlaceForm.shade === val
                             ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
                             : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}
@@ -9185,7 +9185,7 @@ out center;`;
                       Pulizia / Decoro
                     </label>
                     <span className="text-xs font-black text-[#3E4A35] dark:text-emerald-400">
-                      {newPlaceForm.cleanliness || 8}/10
+                      {newPlaceForm.cleanliness ? `${newPlaceForm.cleanliness}/10` : "--"}
                     </span>
                   </div>
                   <div className="flex gap-0.5 overflow-x-auto pb-0.5">
@@ -9196,11 +9196,11 @@ out center;`;
                         onClick={() =>
                           setNewPlaceForm((prev) => ({
                             ...prev,
-                            cleanliness: val,
+                            cleanliness: prev.cleanliness === val ? undefined : val,
                           }))
                         }
                         className={`flex-1 min-w-[20px] py-1 rounded font-bold text-[10px] transition-all border cursor-pointer ${
-                          (newPlaceForm.cleanliness || 8) === val
+                          newPlaceForm.cleanliness === val
                             ? "bg-[#3E4A35] text-white border-[#3E4A35] shadow-xs scale-105"
                             : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                         }`}

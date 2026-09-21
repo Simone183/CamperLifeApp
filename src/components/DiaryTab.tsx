@@ -1071,6 +1071,29 @@ export default function DiaryTab({
     return isNaN(n) ? undefined : n;
   };
 
+  // Helper to safely format dates for input type="date"
+  const formatForDateInput = (dStr: string | number | undefined | null): string => {
+    if (!dStr) return "";
+    const str = String(dStr).trim();
+    if (!str) return "";
+    if (str.includes("T")) return str.split("T")[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+      const parts = str.split("/");
+      const day = parts[0].padStart(2, "0");
+      const month = parts[1].padStart(2, "0");
+      const year = parts[2];
+      return `${year}-${month}-${day}`;
+    }
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split("T")[0];
+      }
+    } catch (e) {}
+    return "";
+  };
+
   // Add Expense to Trip handler
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1300,8 +1323,8 @@ export default function DiaryTab({
       return;
     }
 
-    const parsedOdometer = parseOdometerInput(movementOdometer);
-    if (parsedOdometer === undefined || isNaN(parsedOdometer) || parsedOdometer < 0) {
+    const parsedOdometer = parseOdometerInput(movementOdometer) ?? 0;
+    if (isNaN(parsedOdometer) || parsedOdometer < 0) {
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: { message: "⚠️ Inserisci un chilometraggio valido!" },
@@ -1309,6 +1332,8 @@ export default function DiaryTab({
       );
       return;
     }
+
+    const isEditingMovement = Boolean(editingMovementId);
 
     if (editingMovementId) {
       // Edit mode
@@ -1325,7 +1350,7 @@ export default function DiaryTab({
                   ...m,
                   odometer: parsedOdometer,
                   location: movementLocation.trim(),
-                  date: movementDate || m.date,
+                  date: movementDate ? formatForDateInput(movementDate) : m.date,
                   notes: movementNotes.trim(),
                 }
               : m
@@ -1356,7 +1381,7 @@ export default function DiaryTab({
         id: "mov_" + Date.now(),
         odometer: parsedOdometer,
         location: movementLocation.trim(),
-        date: movementDate || new Date().toISOString(),
+        date: movementDate ? formatForDateInput(movementDate) : new Date().toISOString(),
         notes: movementNotes.trim(),
       };
 
@@ -1396,10 +1421,11 @@ export default function DiaryTab({
     setMovementNotes("");
     setMovementDate("");
     setExpenseDate("");
+    setEditingMovementId(null);
 
     window.dispatchEvent(
       new CustomEvent("show-toast", {
-        detail: { message: editingMovementId ? "✅ Spostamento aggiornato!" : "📍 Spostamento registrato!" },
+        detail: { message: isEditingMovement ? "✅ Spostamento aggiornato!" : "📍 Spostamento registrato!" },
       }),
     );
   };
@@ -1822,11 +1848,7 @@ export default function DiaryTab({
     }
 
     const newPhotos: DiaryPhoto[] = urls.map((img, idx) => {
-      let finalDesc = photoDesc;
-      if (!finalDesc) {
-        const nameWithoutExt = img.name.split(".")[0];
-        finalDesc = nameWithoutExt || "Nessuna descrizione inserita.";
-      }
+      const finalDesc = photoDesc.trim() || undefined;
       const photoId = "photo_" + (Date.now() + idx);
       return {
         id: photoId,
@@ -2126,7 +2148,7 @@ export default function DiaryTab({
         newPhotosToAdd.push({
           id: photoId,
           url: `/api/photos/${photoId}`,
-          description: cleanName || "Foto ricordo di viaggio",
+          description: cleanName && cleanName.length > 2 && !cleanName.match(/^(img|dsc|photo|screenshot|whatsapp)/i) ? cleanName : undefined,
           date: activeTrip?.startDate || new Date().toISOString().split("T")[0],
         });
       } catch (err) {
@@ -3934,8 +3956,7 @@ export default function DiaryTab({
 
                           <input
                             type="text"
-                            required
-                            placeholder="Scrivi un pensiero o descrizione..."
+                            placeholder="Scrivi un pensiero o descrizione (opzionale)..."
                             value={photoDesc}
                             onChange={(e) => setPhotoDesc(e.target.value)}
                             className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
@@ -4987,7 +5008,7 @@ export default function DiaryTab({
                           </div>
                         </div>
 
-                        <div className="space-y-2">
+                          <div className="space-y-2">
                           {(activeTrip.movements || []).length === 0 ? (
                             <p className="text-xs text-slate-400 py-4 text-center">
                               Nessun spostamento registrato.
@@ -4997,6 +5018,109 @@ export default function DiaryTab({
                                 .slice()
                                 .sort((a, b) => (a.odometer || 0) - (b.odometer || 0))
                                 .map((m) => (
+                              editingMovementId === m.id ? (
+                                <form
+                                  key={m.id}
+                                  onSubmit={handleAddMovement}
+                                  className="p-3 bg-amber-50/90 border-2 border-amber-300 rounded-xl space-y-2.5 font-sans shadow-sm text-left animate-fade-in"
+                                >
+                                  <div className="flex justify-between items-center pb-1 border-b border-amber-200/80">
+                                    <span className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                                      <Pencil className="w-3.5 h-3.5 text-amber-700" /> Modifica Spostamento
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingMovementId(null);
+                                        setMovementLocation("");
+                                        setMovementOdometer("");
+                                        setMovementDate("");
+                                        setMovementNotes("");
+                                      }}
+                                      className="text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-white px-2 py-0.5 rounded border border-amber-200 cursor-pointer"
+                                    >
+                                      ✕ Annulla
+                                    </button>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div className="space-y-0.5">
+                                      <label className="block text-[9px] font-black text-slate-600 uppercase tracking-wider">
+                                        Luogo / Tappa
+                                      </label>
+                                      <input
+                                        type="text"
+                                        placeholder="Luogo (es. Roma)"
+                                        value={movementLocation}
+                                        onChange={(e) => setMovementLocation(e.target.value)}
+                                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 outline-none focus:border-[#3E4A35] bg-white font-semibold text-slate-800"
+                                        autoFocus
+                                      />
+                                    </div>
+
+                                    <div className="space-y-0.5">
+                                      <label className="block text-[9px] font-black text-slate-600 uppercase tracking-wider">
+                                        Chilometri (KM)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        placeholder="KM (es. 128600)"
+                                        value={movementOdometer}
+                                        onChange={(e) => setMovementOdometer(e.target.value)}
+                                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 outline-none focus:border-[#3E4A35] bg-white font-semibold text-slate-800"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-0.5">
+                                      <label className="block text-[9px] font-black text-slate-600 uppercase tracking-wider">
+                                        Data
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={movementDate ? formatForDateInput(movementDate) : ""}
+                                        onChange={(e) => setMovementDate(e.target.value)}
+                                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 outline-none focus:border-[#3E4A35] bg-white font-semibold text-slate-800"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-0.5">
+                                      <label className="block text-[9px] font-black text-slate-600 uppercase tracking-wider">
+                                        Note (opzionale)
+                                      </label>
+                                      <input
+                                        type="text"
+                                        placeholder="Note (opzionale)"
+                                        value={movementNotes}
+                                        onChange={(e) => setMovementNotes(e.target.value)}
+                                        className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 outline-none focus:border-[#3E4A35] bg-white font-semibold text-slate-800"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-2 pt-1">
+                                    <button
+                                      type="submit"
+                                      className="flex-1 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-sm"
+                                    >
+                                      💾 Salva Modifiche
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingMovementId(null);
+                                        setMovementLocation("");
+                                        setMovementOdometer("");
+                                        setMovementDate("");
+                                        setMovementNotes("");
+                                      }}
+                                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                    >
+                                      Annulla
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
                               <div
                                 key={m.id}
                                 className="p-2.5 bg-white border border-slate-100 rounded-lg hover:border-slate-200 transition-all font-sans relative group"
@@ -5130,36 +5254,36 @@ export default function DiaryTab({
                                       </p>
                                     )}
                                     <span className="text-[9px] text-slate-400 font-mono block">
-                                      {new Date(m.date).toLocaleDateString()}
+                                      {m.date ? (m.date.includes("T") ? m.date.split("T")[0] : m.date) : ""}
                                     </span>
                                   </div>
 
                                   <div className="flex items-center gap-1">
                                     <button
                                       onClick={() => {
-                                        // Edit functionality: fill state with m values
+                                        setExpenseSubMode("movement");
                                         setMovementLocation(m.location);
                                         setMovementOdometer(m.odometer && m.odometer > 0 ? String(m.odometer) : "");
                                         setMovementNotes(m.notes || "");
-                                        setMovementDate(m.date ? (m.date.includes('T') ? m.date.split('T')[0] : m.date) : "");
-                                        // Keep track of which one is being edited
-                                        // For now let's reuse state or create new one if needed, 
-                                        // actually let's just trigger edit mode
+                                        setMovementDate(formatForDateInput(m.date));
                                         setEditingMovementId(m.id);
                                       }}
                                       className="text-slate-350 hover:text-blue-500 rounded p-1 transition-colors cursor-pointer"
+                                      title="Modifica questo spostamento"
                                     >
                                       <Pencil className="w-3.5 h-3.5" />
                                     </button>
                                     <button
                                       onClick={() => handleDeleteMovement(m.id)}
                                       className="text-slate-350 hover:text-red-500 rounded p-1 transition-colors cursor-pointer"
+                                      title="Elimina questo spostamento"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 </div>
                               </div>
+                              )
                             ))
                           )}
                         </div>

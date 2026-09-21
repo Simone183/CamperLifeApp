@@ -633,23 +633,34 @@ const ai = new GoogleGenAI({
 });
 
 async function generateContentWithRetry(params: any, maxRetries = 5) {
+  const modelsSequence = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"];
+  let currentModelIdx = 0;
+  if (params && params.model) {
+    const idx = modelsSequence.indexOf(params.model);
+    if (idx !== -1) currentModelIdx = idx;
+    else modelsSequence.unshift(params.model);
+  }
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      params.model = modelsSequence[currentModelIdx];
       return await ai.models.generateContent(params);
     } catch (err: any) {
       const errMsg = err.message || "";
       const isQuotaError = err.status === 429 || errMsg.includes("429") || errMsg.includes("Quota") || errMsg.includes("RESOURCE_EXHAUSTED");
       
-      if (isQuotaError && params && params.model === "gemini-3.5-flash") {
-        console.warn(`[Gemini AI] Quota exceeded on gemini-3.5-flash. Falling back to gemini-2.5-flash!`);
-        params.model = "gemini-2.5-flash";
-        continue;
+      if (isQuotaError) {
+        if (currentModelIdx < modelsSequence.length - 1) {
+          currentModelIdx++;
+          console.warn(`[Gemini AI] Quota exceeded on ${modelsSequence[currentModelIdx - 1]}. Falling back to ${modelsSequence[currentModelIdx]}!`);
+          continue;
+        }
       }
 
       if (err.status === 503 || err.status === 429 || err.message?.includes("503") || err.message?.includes("429") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE") || err.message?.includes("Quota")) {
         if (attempt < maxRetries) {
           const delayMs = attempt * 3000;
-          console.warn(`[Gemini AI] 503/429 on attempt ${attempt}. Retrying in ${delayMs}ms...`);
+          console.warn(`[Gemini AI] 503/429 on attempt ${attempt} (${modelsSequence[currentModelIdx]}). Retrying in ${delayMs}ms...`);
           await new Promise(r => setTimeout(r, delayMs));
           continue;
         }

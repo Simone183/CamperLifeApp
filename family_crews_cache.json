@@ -21,39 +21,133 @@
       "maintenance": true
     },
     "ownerEmail": "sambucci.simone@gmail.com",
-    "updatedBy": "sambucci.simone@gmail.com",
+    "updatedBy": "Sam83",
     "sharedData": {
       "fuelLogs": [],
       "trips": [
         {
+          "id": "trip_1789979532629",
+          "title": "Acquasparta e SanGemini ",
+          "startDate": "2025-03-08",
+          "endDate": "2025-03-09",
+          "description": "Primo viaggio dopo l'acquisto del mio camper, insieme ad Ivano visitiamo qualche paesino nel cuore dell'Italia, in Umbria dove testare il mezzo e vedere come ci troviamo ad utilizzarlo.",
+          "status": "Completato",
+          "startOdometer": 118768,
+          "endOdometer": 119057,
+          "expenses": [],
+          "photos": [
+            {
+              "id": "photo_1789998595722",
+              "url": "/api/photos/photo_1789998595722",
+              "description": "Acquasparta ",
+              "date": "2026-09-21",
+              "locationName": "Acquasparta"
+            },
+            {
+              "id": "photo_1789998595723",
+              "url": "/api/photos/photo_1789998595723",
+              "description": "Acquasparta ",
+              "date": "2026-09-21",
+              "locationName": "Acquasparta"
+            },
+            {
+              "id": "photo_1789998595724",
+              "url": "/api/photos/photo_1789998595724",
+              "description": "Acquasparta ",
+              "date": "2026-09-21",
+              "locationName": "Acquasparta"
+            },
+            {
+              "id": "photo_1789998595725",
+              "url": "/api/photos/photo_1789998595725",
+              "description": "Acquasparta ",
+              "date": "2026-09-21",
+              "locationName": "Acquasparta"
+            },
+            {
+              "id": "photo_1789998595726",
+              "url": "/api/photos/photo_1789998595726",
+              "description": "Acquasparta ",
+              "date": "2026-09-21",
+              "locationName": "Acquasparta"
+            },
+            {
+              "id": "photo_1789998595727",
+              "url": "/api/photos/photo_1789998595727",
+              "description": "Acquasparta ",
+              "date": "2026-09-21",
+              "locationName": "Acquasparta"
+            },
+            {
+              "id": "photo_1789998633821",
+              "url": "/api/photos/photo_1789998633821",
+              "description": "San Gemini ",
+              "date": "2026-09-21",
+              "locationName": "San Gemini"
+            },
+            {
+              "id": "photo_1789998633822",
+              "url": "/api/photos/photo_1789998633822",
+              "description": "San Gemini ",
+              "date": "2026-09-21",
+              "locationName": "San Gemini"
+            },
+            {
+              "id": "photo_1789998633823",
+              "url": "/api/photos/photo_1789998633823",
+              "description": "San Gemini ",
+              "date": "2026-09-21",
+              "locationName": "San Gemini"
+            },
+            {
+              "id": "photo_1789998633824",
+              "url": "/api/photos/photo_1789998633824",
+              "description": "San Gemini ",
+              "date": "2026-09-21",
+              "locationName": "San Gemini"
+            }
+          ],
           "movements": [
             {
-              "id": "auto_1787658824655",
-              "location": "Porto Empedocle",
-              "odometer": 128912,
-              "date": "2026-08-25",
-              "notes": "Registrato in tempo reale alle coordinate 37.2893, 13.5161. Inserisci i chilometri manualmente."
+              "id": "mov_1789979807402",
+              "location": "San Gemini",
+              "odometer": 118939,
+              "date": "2025-03-09",
+              "notes": ""
             },
             {
-              "id": "1788001774634",
+              "id": "mov_1789979833730",
               "location": "Velletri",
-              "odometer": 127900,
-              "date": "2026-08-21",
-              "notes": "Partenza "
-            },
-            {
-              "id": "1788001826364",
-              "location": "Fisciano",
-              "odometer": 128130,
-              "date": "2026-08-22",
+              "odometer": 119057,
+              "date": "2025-03-09",
               "notes": ""
             },
             {
-              "id": "1788001857488",
-              "location": "Messina",
-              "odometer": 128573,
-              "date": "2026-08-22",
+              "id": "mov_1789979577456",
+              "location": "Velletri",
+              "odometer": 118768,
+              "date": "2025-03-08",
+              "notes": "Partenza"
+            },
+            {
+              "id": "mov_1789979783589",
+              "location": "Acquasparta",
+              "odometer": 118923,
+              "date": "2025-03-08",
               "notes": ""
+            }
+          ],
+          "stops": [],
+          "routePoints": []
+        },
+        {
+          "movements": [
+            {
+              "id": "auto_1788616489102",
+              "location": "Velletri",
+              "odometer": 130062,
+              "date": "2026-09-05",
+              "notes": "Registrato in tempo reale alle coordinate 41.6594, 12.7471. Inserisci i chilometri manualmente."
             },
             {
               "id": "auto_1788541896637",
@@ -63,24 +157,38 @@
               "notes": "Registrato in tempo reale alle coordinate 39.6788, 15.8215. Inserisci i chilometri manualmente."
             },
             {
-              "id": "1788029001010",
-              "location": "Capo Peloro ",
-              "odometer": 128590,
-              "date": "2026-08-22",
-              "notes": "Area sosta camper Capo Peloro "
-            },
-            {
-              "id": "1788029229517",
-              "location": "Agrigento ",
-              "odometer": 128882,
-              "date": "2026-08-24",
+              "id": "mov_1788377827549",
+              "location": "Giardini Naxos",
+              "odometer": 129336,
+              "date": "2026-09-01",
               "notes": ""
             },
             {
-              "id": "1788032655809",
-              "location": "Scala dei turchi ",
-              "odometer": 128907,
-              "date": "2026-08-25",
+              "id": "mov_1788377662470",
+              "location": "Siracusa",
+              "odometer": 129223,
+              "date": "2026-08-31",
+              "notes": "Ortigia"
+            },
+            {
+              "id": "mov_1788126551526",
+              "location": "Fontane Bianche",
+              "odometer": 129206,
+              "date": "2026-08-30",
+              "notes": ""
+            },
+            {
+              "id": "auto_1788028389270",
+              "location": "Noto",
+              "odometer": 129172,
+              "date": "2026-08-29",
+              "notes": "Area sosta Oasy park Falconara Registrato in tempo reale alle coordinate 36.8701, 15.1282. "
+            },
+            {
+              "id": "1788032796607",
+              "location": "Marzamemi ",
+              "odometer": 129144,
+              "date": "2026-08-28",
               "notes": ""
             },
             {
@@ -98,406 +206,123 @@
               "notes": "Camping Flintstones park "
             },
             {
-              "id": "1788032796607",
-              "location": "Marzamemi ",
-              "odometer": 129144,
-              "date": "2026-08-28",
+              "id": "auto_1787658824655",
+              "location": "Porto Empedocle",
+              "odometer": 128912,
+              "date": "2026-08-25",
+              "notes": "Registrato in tempo reale alle coordinate 37.2893, 13.5161. Inserisci i chilometri manualmente."
+            },
+            {
+              "id": "1788032655809",
+              "location": "Scala dei turchi ",
+              "odometer": 128907,
+              "date": "2026-08-25",
               "notes": ""
             },
             {
-              "id": "auto_1788028389270",
-              "location": "Noto",
-              "odometer": 129172,
-              "date": "2026-08-29",
-              "notes": "Area sosta Oasy park Falconara Registrato in tempo reale alle coordinate 36.8701, 15.1282. "
-            },
-            {
-              "id": "mov_1788126551526",
-              "location": "Fontane Bianche",
-              "odometer": 129206,
-              "date": "2026-08-30",
+              "id": "1788029229517",
+              "location": "Agrigento ",
+              "odometer": 128882,
+              "date": "2026-08-24",
               "notes": ""
             },
             {
-              "id": "mov_1788377662470",
-              "location": "Siracusa",
-              "odometer": 129223,
-              "date": "2026-08-31",
-              "notes": "Ortigia"
-            },
-            {
-              "id": "mov_1788377827549",
-              "location": "Giardini Naxos",
-              "odometer": 129336,
-              "date": "2026-09-01",
+              "id": "1788001826364",
+              "location": "Fisciano",
+              "odometer": 128130,
+              "date": "2026-08-22",
               "notes": ""
             },
             {
-              "id": "auto_1788616489102",
+              "id": "1788001857488",
+              "location": "Messina",
+              "odometer": 128573,
+              "date": "2026-08-22",
+              "notes": ""
+            },
+            {
+              "id": "1788029001010",
+              "location": "Capo Peloro ",
+              "odometer": 128590,
+              "date": "2026-08-22",
+              "notes": "Area sosta camper Capo Peloro "
+            },
+            {
+              "id": "1788001774634",
               "location": "Velletri",
-              "odometer": 130062,
-              "date": "2026-09-05",
-              "notes": "Registrato in tempo reale alle coordinate 41.6594, 12.7471. Inserisci i chilometri manualmente."
+              "odometer": 127900,
+              "date": "2026-08-21",
+              "notes": "Partenza "
             }
           ],
-          "endOdometer": 129336,
-          "title": "Viaggio in Sicilia",
-          "description": "",
           "status": "Attivo",
-          "endDate": "2026-09-06",
-          "photos": [],
-          "startDate": "2026-08-21",
+          "title": "Viaggio in Sicilia",
+          "stops": [],
+          "id": "trip_1787575589438",
           "expenses": [
             {
-              "id": "exp_1788000096548",
-              "title": "Traghetto andata e ritorno",
-              "amount": 86.4,
+              "id": "exp_1788712165008",
+              "title": "Autostrada Salerno - Valmontone",
+              "amount": 16.8,
               "category": "Autostrada",
-              "date": "2026-08-22"
+              "date": "2026-09-05"
             },
             {
-              "id": "exp_1788000141772",
-              "title": "Area sosta Bonino Messina",
-              "amount": 8,
-              "category": "Sosta",
-              "date": "2026-08-22"
-            },
-            {
-              "id": "exp_1788000203621",
-              "title": "Gelato Messina",
-              "amount": 4.3,
-              "category": "Cibo",
-              "date": "2026-08-22"
-            },
-            {
-              "id": "exp_1788000248379",
-              "title": "Autobus Messina",
-              "amount": 7.5,
-              "category": "Altro",
-              "date": "2026-08-23"
-            },
-            {
-              "id": "exp_1788000275614",
-              "title": "Souvenir Messina",
-              "amount": 8,
-              "category": "Altro",
-              "date": "2026-08-23"
-            },
-            {
-              "id": "exp_1788000389862",
-              "title": "Pranzo con arancini Famulari Messina",
-              "amount": 11.5,
-              "category": "Cibo",
-              "date": "2026-08-23"
-            },
-            {
-              "id": "exp_1788000433393",
-              "title": "Granita e cono da passeggio bar Eden Messina",
-              "amount": 7.5,
-              "category": "Cibo",
-              "date": "2026-08-23"
-            },
-            {
-              "id": "exp_1788000475157",
-              "title": "Area sosta camper Capo Peloro",
-              "amount": 70,
-              "category": "Sosta",
-              "date": "2026-08-24"
-            },
-            {
-              "id": "exp_1788000607267",
-              "title": "Visita guidata Valle dei templi",
-              "amount": 40,
-              "category": "Altro",
-              "date": "2026-08-25"
-            },
-            {
-              "id": "exp_1788000644602",
-              "title": "Spesa Conad",
-              "amount": 51,
-              "category": "Cibo",
-              "date": "2026-08-25"
-            },
-            {
-              "id": "exp_1788000670446",
-              "title": "Taxy valle dei templi",
-              "amount": 9,
-              "category": "Altro",
-              "date": "2026-08-25"
-            },
-            {
-              "id": "exp_1788000759724",
-              "title": "Souvenir valle dei templi",
-              "amount": 4,
-              "category": "Altro",
-              "date": "2026-08-25"
-            },
-            {
-              "id": "exp_1788000810838",
-              "title": "Entrata Valle dei templi",
-              "amount": 34,
-              "category": "Altro",
-              "date": "2026-08-25"
-            },
-            {
-              "id": "exp_1788000844436",
-              "title": "Parcheggio Valle dei templi",
-              "amount": 9.4,
-              "category": "Sosta",
-              "date": "2026-08-25"
-            },
-            {
-              "id": "exp_1788000879497",
-              "title": "Colazione a Gela",
-              "amount": 5,
-              "category": "Cibo",
-              "date": "2026-08-26"
-            },
-            {
-              "id": "exp_1788000953124",
-              "title": "Colazione a Scicli Flintstones park",
-              "amount": 7,
-              "category": "Cibo",
-              "date": "2026-08-27"
-            },
-            {
-              "id": "exp_1788001023170",
-              "title": "Pranzo bar spiaggia a Scicli",
-              "amount": 10,
-              "category": "Cibo",
-              "date": "2026-08-27"
-            },
-            {
-              "id": "exp_1788001059157",
-              "title": "Merenda bar spiaggia Scicli",
-              "amount": 6,
-              "category": "Cibo",
-              "date": "2026-08-27"
-            },
-            {
-              "id": "exp_1788001092073",
-              "title": "Camping Flintstones park",
-              "amount": 85,
-              "category": "Sosta",
-              "date": "2026-08-28"
-            },
-            {
-              "id": "exp_1788001135949",
-              "title": "Gelati per pranzo a Scicli",
-              "amount": 13.6,
-              "category": "Cibo",
-              "date": "2026-08-28"
-            },
-            {
-              "id": "exp_1788001167066",
-              "title": "Parcheggio Marzamemi",
-              "amount": 4.6,
-              "category": "Sosta",
-              "date": "2026-08-28"
-            },
-            {
-              "id": "exp_1788001193699",
-              "title": "Cena di pesce a Marzamemi",
-              "amount": 90.5,
-              "category": "Cibo",
-              "date": "2026-08-28"
-            },
-            {
-              "id": "exp_1788001268808",
-              "title": "Tonno Marzamemi",
-              "amount": 20,
-              "category": "Cibo",
-              "date": "2026-08-28"
-            },
-            {
-              "id": "exp_1788001544117",
-              "title": "Rifornimento Altro 45.48L @ 2.199€/L",
-              "amount": 100.01,
-              "category": "Carburante",
-              "date": "2026-08-17",
-              "liters": 45.48,
-              "pricePerLiter": 2.199,
-              "odometer": 127890,
-              "fuelCompany": "Altro",
-              "isFullTank": false
-            },
-            {
-              "id": "exp_1788001620654",
-              "title": "Rifornimento Altro 46.1L @ 2.169€/L",
+              "id": "exp_1788860362733",
+              "title": "Rifornimento Altro 45.68L @ 2.189€/L",
               "amount": 99.99,
               "category": "Carburante",
-              "date": "2026-08-22",
-              "liters": 46.1,
-              "pricePerLiter": 2.169,
-              "odometer": 128389,
+              "date": "2026-09-05",
+              "liters": 45.68,
+              "pricePerLiter": 2.189,
+              "odometer": 129574,
               "fuelCompany": "Altro",
               "isFullTank": false
             },
             {
-              "id": "exp_1788001701669",
-              "title": "Rifornimento Altro 57.47L @ 2.199€/L [Pieno ✓]",
-              "amount": 126.38,
+              "id": "exp_1788860388168",
+              "title": "Rifornimento Altro 13.7L @ 2.189€/L",
+              "amount": 29.99,
               "category": "Carburante",
-              "date": "2026-08-22",
-              "liters": 57.47,
-              "pricePerLiter": 2.199,
-              "odometer": 128775,
+              "date": "2026-09-05",
+              "liters": 13.7,
+              "pricePerLiter": 2.189,
+              "odometer": 130042,
               "fuelCompany": "Altro",
-              "isFullTank": true
+              "isFullTank": false
             },
             {
-              "id": "exp_1788028844106",
-              "title": "Pranzo Noto",
-              "amount": 16,
-              "category": "Cibo",
-              "date": "2026-08-29"
-            },
-            {
-              "id": "exp_1788028854396",
-              "title": "Gelato Noto",
-              "amount": 2,
-              "category": "Cibo",
-              "date": "2026-08-29"
-            },
-            {
-              "id": "exp_1788074239482",
-              "title": "Colazione Noto",
-              "amount": 9,
-              "category": "Cibo",
-              "date": "2026-08-30"
-            },
-            {
-              "id": "exp_1788377907515",
-              "title": "Bibite Noto",
-              "amount": 7,
-              "category": "Cibo",
-              "date": "2026-08-30"
-            },
-            {
-              "id": "exp_1788377949405",
-              "title": "area sosta Oasi park Falconara Noto Marina",
-              "amount": 42,
-              "category": "Sosta",
-              "date": "2026-08-30"
-            },
-            {
-              "id": "exp_1788378003284",
-              "title": "Souvenir Noto",
-              "amount": 28,
-              "category": "Altro",
-              "date": "2026-08-30"
-            },
-            {
-              "id": "exp_1788378080139",
-              "title": "Cena Noto",
-              "amount": 76.5,
-              "category": "Cibo",
-              "date": "2026-08-30"
-            },
-            {
-              "id": "exp_1788378131092",
-              "title": "Colazione Fontane bianche",
-              "amount": 8,
-              "category": "Cibo",
-              "date": "2026-08-31"
-            },
-            {
-              "id": "exp_1788378157986",
-              "title": "Retino Aurora",
-              "amount": 5,
-              "category": "Altro",
-              "date": "2026-08-31"
-            },
-            {
-              "id": "exp_1788378198882",
-              "title": "Pranzo Fontane bianche",
+              "id": "exp_1788630513152",
+              "title": "Autogrill",
               "amount": 12,
               "category": "Cibo",
-              "date": "2026-08-31"
+              "date": "2026-09-04"
             },
             {
-              "id": "exp_1788378243024",
-              "title": "Spesa Lidl",
-              "amount": 33.67,
+              "id": "exp_1788630559438",
+              "title": "Cena pizzeria Diamante",
+              "amount": 42,
               "category": "Cibo",
-              "date": "2026-08-31"
+              "date": "2026-09-04"
             },
             {
-              "id": "exp_1788378285245",
-              "title": "Souvenir Ortigia",
-              "amount": 3,
-              "category": "Altro",
-              "date": "2026-08-31"
-            },
-            {
-              "id": "exp_1788378310016",
-              "title": "Cena Ortigia",
-              "amount": 29,
-              "category": "Cibo",
-              "date": "2026-08-31"
-            },
-            {
-              "id": "exp_1788378340714",
-              "title": "Gelato ad Ortigia",
-              "amount": 7,
-              "category": "Cibo",
-              "date": "2026-08-31"
-            },
-            {
-              "id": "exp_1788378367485",
-              "title": "Colazione ad Ortigia",
-              "amount": 4.9,
-              "category": "Cibo",
-              "date": "2026-09-01"
-            },
-            {
-              "id": "exp_1788378398219",
-              "title": "Parcheggio Ortigia",
-              "amount": 16.9,
-              "category": "Sosta",
-              "date": "2026-09-01"
-            },
-            {
-              "id": "exp_1788378436507",
-              "title": "Lido Giardini Naxos",
-              "amount": 27,
-              "category": "Altro",
-              "date": "2026-09-01"
-            },
-            {
-              "id": "exp_1788378457406",
-              "title": "Spesa Giardini Naxos",
+              "id": "exp_1788712064701",
+              "title": "Souvenir Diamante",
               "amount": 5,
-              "category": "Cibo",
-              "date": "2026-09-01"
-            },
-            {
-              "id": "exp_1788378482951",
-              "title": "Souvenir Giardini Naxos",
-              "amount": 10,
               "category": "Altro",
-              "date": "2026-09-02"
+              "date": "2026-09-04"
             },
             {
-              "id": "exp_1788378511545",
-              "title": "Bottiglia acqua Giardini Naxos",
-              "amount": 1.5,
-              "category": "Cibo",
-              "date": "2026-09-02"
-            },
-            {
-              "id": "exp_1788378539578",
-              "title": "Pranzo Giardini Naxos",
-              "amount": 48,
-              "category": "Cibo",
-              "date": "2026-09-02"
-            },
-            {
-              "id": "exp_1788416699975",
-              "title": "Giro in barca Giardini Naxos",
-              "amount": 90,
-              "category": "Altro",
-              "date": "2026-09-02"
+              "id": "exp_1788860234524",
+              "title": "Rifornimento Altro 21.75L @ 2.229€/L",
+              "amount": 48.48,
+              "category": "Carburante",
+              "date": "2026-09-04",
+              "liters": 21.75,
+              "pricePerLiter": 2.229,
+              "odometer": 129398,
+              "fuelCompany": "Altro",
+              "isFullTank": false
             },
             {
               "id": "exp_1788440507525",
@@ -549,20 +374,6 @@
               "date": "2026-09-03"
             },
             {
-              "id": "exp_1788630513152",
-              "title": "Autogrill",
-              "amount": 12,
-              "category": "Cibo",
-              "date": "2026-09-04"
-            },
-            {
-              "id": "exp_1788630559438",
-              "title": "Cena pizzeria Diamante",
-              "amount": 42,
-              "category": "Cibo",
-              "date": "2026-09-04"
-            },
-            {
               "id": "exp_1788630411605",
               "title": "Spesa Deco Giardini Naxos",
               "amount": 15,
@@ -584,6 +395,345 @@
               "date": "2026-09-03"
             },
             {
+              "id": "exp_1788378482951",
+              "title": "Souvenir Giardini Naxos",
+              "amount": 10,
+              "category": "Altro",
+              "date": "2026-09-02"
+            },
+            {
+              "id": "exp_1788378511545",
+              "title": "Bottiglia acqua Giardini Naxos",
+              "amount": 1.5,
+              "category": "Cibo",
+              "date": "2026-09-02"
+            },
+            {
+              "id": "exp_1788378539578",
+              "title": "Pranzo Giardini Naxos",
+              "amount": 48,
+              "category": "Cibo",
+              "date": "2026-09-02"
+            },
+            {
+              "id": "exp_1788416699975",
+              "title": "Giro in barca Giardini Naxos",
+              "amount": 90,
+              "category": "Altro",
+              "date": "2026-09-02"
+            },
+            {
+              "id": "exp_1788378367485",
+              "title": "Colazione ad Ortigia",
+              "amount": 4.9,
+              "category": "Cibo",
+              "date": "2026-09-01"
+            },
+            {
+              "id": "exp_1788378398219",
+              "title": "Parcheggio Ortigia",
+              "amount": 16.9,
+              "category": "Sosta",
+              "date": "2026-09-01"
+            },
+            {
+              "id": "exp_1788378436507",
+              "title": "Lido Giardini Naxos",
+              "amount": 27,
+              "category": "Altro",
+              "date": "2026-09-01"
+            },
+            {
+              "id": "exp_1788378457406",
+              "title": "Spesa Giardini Naxos",
+              "amount": 5,
+              "category": "Cibo",
+              "date": "2026-09-01"
+            },
+            {
+              "id": "exp_1788378131092",
+              "title": "Colazione Fontane bianche",
+              "amount": 8,
+              "category": "Cibo",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788378157986",
+              "title": "Retino Aurora",
+              "amount": 5,
+              "category": "Altro",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788378198882",
+              "title": "Pranzo Fontane bianche",
+              "amount": 12,
+              "category": "Cibo",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788378243024",
+              "title": "Spesa Lidl",
+              "amount": 33.67,
+              "category": "Cibo",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788378285245",
+              "title": "Souvenir Ortigia",
+              "amount": 3,
+              "category": "Altro",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788378310016",
+              "title": "Cena Ortigia",
+              "amount": 29,
+              "category": "Cibo",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788378340714",
+              "title": "Gelato ad Ortigia",
+              "amount": 7,
+              "category": "Cibo",
+              "date": "2026-08-31"
+            },
+            {
+              "id": "exp_1788074239482",
+              "title": "Colazione Noto",
+              "amount": 9,
+              "category": "Cibo",
+              "date": "2026-08-30"
+            },
+            {
+              "id": "exp_1788377907515",
+              "title": "Bibite Noto",
+              "amount": 7,
+              "category": "Cibo",
+              "date": "2026-08-30"
+            },
+            {
+              "id": "exp_1788377949405",
+              "title": "area sosta Oasi park Falconara Noto Marina",
+              "amount": 42,
+              "category": "Sosta",
+              "date": "2026-08-30"
+            },
+            {
+              "id": "exp_1788378003284",
+              "title": "Souvenir Noto",
+              "amount": 28,
+              "category": "Altro",
+              "date": "2026-08-30"
+            },
+            {
+              "id": "exp_1788378080139",
+              "title": "Cena Noto",
+              "amount": 76.5,
+              "category": "Cibo",
+              "date": "2026-08-30"
+            },
+            {
+              "id": "exp_1788028844106",
+              "title": "Pranzo Noto",
+              "amount": 16,
+              "category": "Cibo",
+              "date": "2026-08-29"
+            },
+            {
+              "id": "exp_1788028854396",
+              "title": "Gelato Noto",
+              "amount": 2,
+              "category": "Cibo",
+              "date": "2026-08-29"
+            },
+            {
+              "id": "exp_1788001092073",
+              "title": "Camping Flintstones park",
+              "amount": 85,
+              "category": "Sosta",
+              "date": "2026-08-28"
+            },
+            {
+              "id": "exp_1788001135949",
+              "title": "Gelati per pranzo a Scicli",
+              "amount": 13.6,
+              "category": "Cibo",
+              "date": "2026-08-28"
+            },
+            {
+              "id": "exp_1788001167066",
+              "title": "Parcheggio Marzamemi",
+              "amount": 4.6,
+              "category": "Sosta",
+              "date": "2026-08-28"
+            },
+            {
+              "id": "exp_1788001193699",
+              "title": "Cena di pesce a Marzamemi",
+              "amount": 90.5,
+              "category": "Cibo",
+              "date": "2026-08-28"
+            },
+            {
+              "id": "exp_1788001268808",
+              "title": "Tonno Marzamemi",
+              "amount": 20,
+              "category": "Cibo",
+              "date": "2026-08-28"
+            },
+            {
+              "id": "exp_1788000953124",
+              "title": "Colazione a Scicli Flintstones park",
+              "amount": 7,
+              "category": "Cibo",
+              "date": "2026-08-27"
+            },
+            {
+              "id": "exp_1788001023170",
+              "title": "Pranzo bar spiaggia a Scicli",
+              "amount": 10,
+              "category": "Cibo",
+              "date": "2026-08-27"
+            },
+            {
+              "id": "exp_1788001059157",
+              "title": "Merenda bar spiaggia Scicli",
+              "amount": 6,
+              "category": "Cibo",
+              "date": "2026-08-27"
+            },
+            {
+              "id": "exp_1788000879497",
+              "title": "Colazione a Gela",
+              "amount": 5,
+              "category": "Cibo",
+              "date": "2026-08-26"
+            },
+            {
+              "id": "exp_1788000607267",
+              "title": "Visita guidata Valle dei templi",
+              "amount": 40,
+              "category": "Altro",
+              "date": "2026-08-25"
+            },
+            {
+              "id": "exp_1788000644602",
+              "title": "Spesa Conad",
+              "amount": 51,
+              "category": "Cibo",
+              "date": "2026-08-25"
+            },
+            {
+              "id": "exp_1788000670446",
+              "title": "Taxy valle dei templi",
+              "amount": 9,
+              "category": "Altro",
+              "date": "2026-08-25"
+            },
+            {
+              "id": "exp_1788000759724",
+              "title": "Souvenir valle dei templi",
+              "amount": 4,
+              "category": "Altro",
+              "date": "2026-08-25"
+            },
+            {
+              "id": "exp_1788000810838",
+              "title": "Entrata Valle dei templi",
+              "amount": 34,
+              "category": "Altro",
+              "date": "2026-08-25"
+            },
+            {
+              "id": "exp_1788000844436",
+              "title": "Parcheggio Valle dei templi",
+              "amount": 9.4,
+              "category": "Sosta",
+              "date": "2026-08-25"
+            },
+            {
+              "id": "exp_1788000475157",
+              "title": "Area sosta camper Capo Peloro",
+              "amount": 70,
+              "category": "Sosta",
+              "date": "2026-08-24"
+            },
+            {
+              "id": "exp_1788000248379",
+              "title": "Autobus Messina",
+              "amount": 7.5,
+              "category": "Altro",
+              "date": "2026-08-23"
+            },
+            {
+              "id": "exp_1788000275614",
+              "title": "Souvenir Messina",
+              "amount": 8,
+              "category": "Altro",
+              "date": "2026-08-23"
+            },
+            {
+              "id": "exp_1788000389862",
+              "title": "Pranzo con arancini Famulari Messina",
+              "amount": 11.5,
+              "category": "Cibo",
+              "date": "2026-08-23"
+            },
+            {
+              "id": "exp_1788000433393",
+              "title": "Granita e cono da passeggio bar Eden Messina",
+              "amount": 7.5,
+              "category": "Cibo",
+              "date": "2026-08-23"
+            },
+            {
+              "id": "exp_1788000096548",
+              "title": "Traghetto andata e ritorno",
+              "amount": 86.4,
+              "category": "Autostrada",
+              "date": "2026-08-22"
+            },
+            {
+              "id": "exp_1788000141772",
+              "title": "Area sosta Bonino Messina",
+              "amount": 8,
+              "category": "Sosta",
+              "date": "2026-08-22"
+            },
+            {
+              "id": "exp_1788000203621",
+              "title": "Gelato Messina",
+              "amount": 4.3,
+              "category": "Cibo",
+              "date": "2026-08-22"
+            },
+            {
+              "id": "exp_1788001620654",
+              "title": "Rifornimento Altro 46.1L @ 2.169€/L",
+              "amount": 99.99,
+              "category": "Carburante",
+              "date": "2026-08-22",
+              "liters": 46.1,
+              "pricePerLiter": 2.169,
+              "odometer": 128389,
+              "fuelCompany": "Altro",
+              "isFullTank": false
+            },
+            {
+              "id": "exp_1788001701669",
+              "title": "Rifornimento Altro 57.47L @ 2.199€/L [Pieno ✓]",
+              "amount": 126.38,
+              "category": "Carburante",
+              "date": "2026-08-22",
+              "liters": 57.47,
+              "pricePerLiter": 2.199,
+              "odometer": 128775,
+              "fuelCompany": "Altro",
+              "isFullTank": true
+            },
+            {
               "id": "exp_1788630631698",
               "title": "Autostrada Valmontone -Salerno",
               "amount": 16.8,
@@ -591,95 +741,28 @@
               "date": "2026-08-21"
             },
             {
-              "id": "exp_1788712064701",
-              "title": "Souvenir Diamante",
-              "amount": 5,
-              "category": "Altro",
-              "date": "2026-09-04"
-            },
-            {
-              "id": "exp_1788712165008",
-              "title": "Autostrada Salerno - Valmontone",
-              "amount": 16.8,
-              "category": "Autostrada",
-              "date": "2026-09-05"
-            },
-            {
-              "id": "exp_1788860362733",
-              "title": "Rifornimento Altro 45.68L @ 2.189€/L",
-              "amount": 99.99,
+              "id": "exp_1788001544117",
+              "title": "Rifornimento Altro 45.48L @ 2.199€/L",
+              "amount": 100.01,
               "category": "Carburante",
-              "date": "2026-09-05",
-              "liters": 45.68,
-              "pricePerLiter": 2.189,
-              "odometer": 129574,
-              "fuelCompany": "Altro",
-              "isFullTank": false
-            },
-            {
-              "id": "exp_1788860388168",
-              "title": "Rifornimento Altro 13.7L @ 2.189€/L",
-              "amount": 29.99,
-              "category": "Carburante",
-              "date": "2026-09-05",
-              "liters": 13.7,
-              "pricePerLiter": 2.189,
-              "odometer": 130042,
-              "fuelCompany": "Altro",
-              "isFullTank": false
-            },
-            {
-              "id": "exp_1788860234524",
-              "title": "Rifornimento Altro 21.75L @ 2.229€/L",
-              "amount": 48.48,
-              "category": "Carburante",
-              "date": "2026-09-04",
-              "liters": 21.75,
-              "pricePerLiter": 2.229,
-              "odometer": 129398,
+              "date": "2026-08-17",
+              "liters": 45.48,
+              "pricePerLiter": 2.199,
+              "odometer": 127890,
               "fuelCompany": "Altro",
               "isFullTank": false
             }
           ],
-          "id": "trip_1787575589438",
-          "stops": [],
+          "startDate": "2026-08-21",
           "routePoints": [],
-          "startOdometer": 127900
+          "description": "",
+          "endDate": "2026-09-06",
+          "photos": [],
+          "startOdometer": 127900,
+          "endOdometer": 129336
         },
         {
-          "status": "Completato",
-          "endOdometer": 124820,
-          "description": "Questo è un viaggio di esempio per mostrarti come funziona il diario. Puoi modificarlo o cancellarlo in qualsiasi momento.\nAbbiamo visitato borghi stupendi e registrato qui i nostri appunti, costi e spese per tenere traccia di tutto.",
           "startOdometer": 124500,
-          "expenses": [
-            {
-              "id": "te1",
-              "title": "Gasolio Eni Siena",
-              "amount": 55,
-              "category": "Carburante",
-              "date": "2025-10-10",
-              "liters": 30,
-              "pricePerLiter": 1.833,
-              "odometer": 124500,
-              "fuelCompany": "Eni"
-            },
-            {
-              "id": "te2",
-              "title": "Sosta Pienza comunale",
-              "amount": 12,
-              "category": "Sosta",
-              "date": "2025-10-11"
-            },
-            {
-              "id": "te3",
-              "title": "Pranzo Tipico Trattoria",
-              "amount": 48,
-              "category": "Cibo",
-              "date": "2025-10-11"
-            }
-          ],
-          "movements": [],
-          "startDate": "2025-10-10",
           "photos": [
             {
               "id": "tp1",
@@ -689,7 +772,8 @@
               "locationName": "Val d'Orcia"
             }
           ],
-          "title": "ESEMPIO: Weekend d'Autunno in Val d'Orcia",
+          "endOdometer": 124820,
+          "description": "Questo è un viaggio di esempio per mostrarti come funziona il diario. Puoi modificarlo o cancellarlo in qualsiasi momento.\nAbbiamo visitato borghi stupendi e registrato qui i nostri appunti, costi e spese per tenere traccia di tutto.",
           "routePoints": [
             {
               "lat": 43.318,
@@ -712,18 +796,144 @@
               "name": "Montepulciano (Vigneti) 🍷"
             }
           ],
+          "movements": [],
+          "title": "ESEMPIO: Weekend d'Autunno in Val d'Orcia",
           "id": "trip-example-10-oct-2025",
+          "expenses": [
+            {
+              "id": "te2",
+              "title": "Sosta Pienza comunale",
+              "amount": 12,
+              "category": "Sosta",
+              "date": "2025-10-11"
+            },
+            {
+              "id": "te3",
+              "title": "Pranzo Tipico Trattoria",
+              "amount": 48,
+              "category": "Cibo",
+              "date": "2025-10-11"
+            },
+            {
+              "id": "te1",
+              "title": "Gasolio Eni Siena",
+              "amount": 55,
+              "category": "Carburante",
+              "date": "2025-10-10",
+              "liters": 30,
+              "pricePerLiter": 1.833,
+              "odometer": 124500,
+              "fuelCompany": "Eni"
+            }
+          ],
+          "stops": [],
           "endDate": "2025-10-12",
-          "stops": []
+          "status": "Completato",
+          "startDate": "2025-10-10"
         }
       ],
       "checklists": [],
       "pantry": {
-        "pantry": [],
-        "shoppingList": []
+        "pantry": [
+          {
+            "unit": "lattina",
+            "name": "Pesto",
+            "category": "scatolame",
+            "quantity": 0,
+            "isLow": true,
+            "id": "pantry_1783250682054"
+          },
+          {
+            "id": "pantry_1783257740708",
+            "isLow": true,
+            "unit": "pacco",
+            "quantity": 0,
+            "category": "spezie",
+            "name": "Caffè in cialde"
+          },
+          {
+            "category": "freschi",
+            "quantity": 1,
+            "id": "pantry_1786902163725",
+            "name": "Caffè",
+            "isLow": true,
+            "unit": "pacco"
+          }
+        ],
+        "shoppingList": [
+          {
+            "quantityStr": "1 pz",
+            "isCompleted": false,
+            "category": "freschi",
+            "id": "shop_1786902196326",
+            "name": "Frutta"
+          },
+          {
+            "name": "Prosciutto",
+            "id": "shop_1786902187020",
+            "isCompleted": false,
+            "quantityStr": "1",
+            "category": "freschi"
+          }
+        ]
       },
-      "maintenance": []
+      "maintenance": [
+        {
+          "id": "m1",
+          "title": "Test di Umidità / Infiltrazioni Parentale",
+          "date": "2026-04-10",
+          "completed": true,
+          "description": "Controllo con igrometro su angoli dinette, mansarda e doccia. Valori rilevati uniformi tra 10% e 14%. Tutto conforme.",
+          "cost": 0,
+          "category": "infiltrazioni"
+        },
+        {
+          "id": "m2",
+          "completed": true,
+          "date": "2026-05-18",
+          "category": "acqua",
+          "description": "Pulizia chimica con enzimi antiodore per eliminare depositi grassi e saponi accumulati.",
+          "title": "Trattamento Igienizzante Serbatoio Grige",
+          "cost": 15
+        },
+        {
+          "id": "m3",
+          "cost": 38,
+          "description": "Controllo pressione e montaggio nuovo filtro protettivo per olii pesanti del GPL.",
+          "completed": true,
+          "date": "2026-06-01",
+          "category": "gas",
+          "title": "Sostituzione Filtro Regolatore Gas Truma MonoControl"
+        },
+        {
+          "category": "acqua",
+          "completed": true,
+          "cost": 24,
+          "id": "m4",
+          "description": "Pulizia completa con agente a base di cloro e inserimento della rete agli ioni d'argento per conservazione a lungo termine.",
+          "date": "2026-06-15",
+          "title": "Sanificazione Serbatoio Acqua Chiara con Ioni D'argento"
+        },
+        {
+          "cost": 0,
+          "description": "Ispezione esterna del sigillante siliconico perimetrale e rimessa a nuovo dei punti usurati con Terostat.",
+          "title": "Verifica Sigillature Tetto & Oblo",
+          "completed": false,
+          "id": "m5",
+          "category": "infiltrazioni",
+          "date": "2026-07-15"
+        },
+        {
+          "completed": false,
+          "cost": 0,
+          "date": "2026-08-01",
+          "id": "m6",
+          "category": "elettrico",
+          "description": "Rimozione polvere dai pannelli solari anteriori e misurazione dell'amperaggio di ricarica in uscita dal regolatore MPPT.",
+          "title": "Controllo Tensione e capacità della piastra solare"
+        }
+      ]
     },
-    "lastUpdated": "2026-09-10T11:08:11.572Z"
+    "lastUpdated": "2026-09-21T15:10:13.468Z"
   }
 }

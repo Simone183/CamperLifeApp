@@ -105,11 +105,33 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
     setDate('');
   };
 
+  const formatForDateInput = (dStr: string | number | undefined | null): string => {
+    if (!dStr) return "";
+    const str = String(dStr).trim();
+    if (!str) return "";
+    if (str.includes("T")) return str.split("T")[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+      const parts = str.split("/");
+      const day = parts[0].padStart(2, "0");
+      const month = parts[1].padStart(2, "0");
+      const year = parts[2];
+      return `${year}-${month}-${day}`;
+    }
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split("T")[0];
+      }
+    } catch (e) {}
+    return "";
+  };
+
   const startEditMovement = (movement: DiaryMovement) => {
     setEditingMovementId(movement.id);
-    setOdometer(movement.odometer.toString());
+    setOdometer(movement.odometer !== undefined && movement.odometer !== null ? movement.odometer.toString() : '');
     setLocation(movement.location);
-    setDate(movement.date ? new Date(movement.date).toISOString().split('T')[0] : '');
+    setDate(formatForDateInput(movement.date));
     setNotes(movement.notes || '');
   };
 
