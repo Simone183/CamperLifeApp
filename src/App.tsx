@@ -948,25 +948,19 @@ export default function App() {
         if (userSaved) {
           const parsed = JSON.parse(userSaved);
           if (Array.isArray(parsed)) {
-            let foundExample = false;
-            initialTrips = parsed.map((t: Trip) => {
-              if (t.id === "trip-example-10-oct-2025" || t.id === "t1" || (t.title && t.title.startsWith("ESEMPIO:"))) {
-                foundExample = true;
-                return normalizeTrip(EXAMPLE_TRIP, cleanEmail);
-              }
-              return normalizeTrip(t, cleanEmail);
+            const filtered = parsed.filter((t: Trip) => {
+              if (t.id === "trip-example-10-oct-2025" || t.id === "t1") return false;
+              if (t.title && t.title.startsWith("ESEMPIO:") && t.startDate?.startsWith("2025")) return false;
+              return true;
             });
-            if (!foundExample) {
-              initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
-            }
+            initialTrips = filtered.map((t: Trip) => normalizeTrip(t, cleanEmail));
           }
         }
       }
 
-      // INJECTION: Ensure example trip exists if not present
-      if (!initialTrips.some(t => t.id === EXAMPLE_TRIP.id)) {
-        initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
-      }
+      // INJECTION: Ensure 2020 example trip exists exactly once (remove any other example trips first)
+      initialTrips = initialTrips.filter(t => t.id !== EXAMPLE_TRIP.id && !(t.title && t.title.startsWith("ESEMPIO:")));
+      initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
       
       return initialTrips;
     } catch (e) {
