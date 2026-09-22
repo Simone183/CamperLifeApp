@@ -12,6 +12,7 @@ import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import { formatDateDDMMAA } from "./FuelCardTab";
+import { extractPhotoDate, sortPhotosChronologically, formatPhotoDateBadge } from "../utils/photoDateExtractor";
 import {
   BookOpen,
   Plus,
@@ -51,6 +52,7 @@ import {
   Download,
   FileText,
   Check,
+  ArrowUpDown,
 } from "lucide-react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -77,59 +79,6 @@ const PHOTO_PRESETS = [
 ];
 
 const VAL_DORCIA_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500"><defs><linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%23d4834b"/><stop offset="50%" stop-color="%23f4a261"/><stop offset="100%" stop-color="%23f9dcc4"/></linearGradient><linearGradient id="hill1" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%23606c38"/><stop offset="100%" stop-color="%23283618"/></linearGradient><linearGradient id="hill2" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%238f9779"/><stop offset="100%" stop-color="%23588157"/></linearGradient></defs><rect width="800" height="500" fill="url(%23sky)"/><circle cx="600" cy="110" r="55" fill="%23ffd166" opacity="0.9"/><path d="M0,300 Q280,240 800,320 L800,500 L0,500 Z" fill="url(%23hill1)"/><path d="M0,370 Q420,290 800,380 L800,500 L0,500 Z" fill="url(%23hill2)"/><g fill="%23212518"><rect x="180" y="200" width="14" height="130" rx="4"/><circle cx="187" cy="175" r="38"/><rect x="205" y="220" width="10" height="100" rx="3"/><circle cx="210" cy="200" r="30"/><rect x="155" y="230" width="11" height="90" rx="3"/><circle cx="160" cy="210" r="28"/><rect x="620" y="250" width="16" height="140" rx="4"/><circle cx="628" cy="220" r="45"/><rect x="648" y="270" width="11" height="110" rx="3"/><circle cx="653" cy="245" r="32"/></g><g transform="translate(340, 310)"><rect x="0" y="15" width="95" height="55" rx="8" fill="%23ffffff" stroke="%23333333" stroke-width="2"/><path d="M 95 30 L 125 30 Q 135 35 135 45 L 135 70 L 95 70 Z" fill="%23ffffff" stroke="%23333333" stroke-width="2"/><path d="M 105 35 L 122 35 Q 128 35 128 45 L 128 50 L 105 50 Z" fill="%23457b9d"/><rect x="15" y="22" width="22" height="22" rx="3" fill="%23457b9d"/><rect x="45" y="22" width="22" height="22" rx="3" fill="%23457b9d"/><circle cx="30" cy="72" r="12" fill="%232b2d42" stroke="%238d99ae" stroke-width="3"/><circle cx="110" cy="72" r="12" fill="%232b2d42" stroke="%238d99ae" stroke-width="3"/><rect x="10" y="15" width="80" height="6" fill="%23e63946"/></g><text x="400" y="465" font-family="system-ui, sans-serif" font-weight="900" font-size="26" fill="%23ffffff" text-anchor="middle" filter="drop-shadow(0px 2px 6px rgba(0,0,0,0.6))">Val d'Orcia • Autunno 2020</text></svg>`;
-
-const INITIAL_TRIPS: Trip[] = [
-  {
-    id: "trip-example-10-oct-2020",
-    title: "ESEMPIO: Weekend d'Autunno in Val d'Orcia",
-    startDate: "2020-10-10",
-    endDate: "2020-10-12",
-    description:
-      "Questo è un viaggio di esempio per mostrarti come funziona il diario. Puoi modificarlo o cancellarlo in qualsiasi momento.",
-    startOdometer: 124500,
-    endOdometer: 124820,
-    status: "Completato",
-    expenses: [
-      {
-        id: "te1",
-        title: "Gasolio Eni Siena",
-        amount: 55.0,
-        category: "Carburante",
-        date: "2020-10-10",
-      },
-      {
-        id: "te2",
-        title: "Sosta Pienza comunale",
-        amount: 12.0,
-        category: "Sosta",
-        date: "2020-10-11",
-      },
-      {
-        id: "te3",
-        title: "Pranzo Tipico Trattoria",
-        amount: 48.0,
-        category: "Cibo",
-        date: "2020-10-11",
-      },
-    ],
-    photos: [
-      {
-        id: "tp1",
-        url: VAL_DORCIA_SVG,
-        description:
-          "Il nostro amato camper immerso nell'abbraccio dorato dei cipressi della Val d'Orcia.",
-        date: "2020-10-11",
-      },
-    ],
-    movements: [],
-    routePoints: [
-      { lat: 43.318, lng: 11.330, name: "Siena (Partenza) 🏰" },
-      { lat: 43.058, lng: 11.606, name: "San Quirico d'Orcia 🌳" },
-      { lat: 43.076, lng: 11.678, name: "Pienza (Borgo Storico) 🧀" },
-      { lat: 43.092, lng: 11.782, name: "Montepulciano (Vigneti) 🍷" }
-    ],
-  },
-];
 
 interface DiaryTabProps {
   currentUser?: { email: string; nickname?: string } | null;
@@ -633,7 +582,15 @@ export default function DiaryTab({
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = React.useState<string>("");
-  const [uploadedImages, setUploadedImages] = React.useState<Array<{ url: string; name: string }>>([]);
+  const [uploadedImages, setUploadedImages] = React.useState<Array<{
+    url: string;
+    name: string;
+    date?: string;
+    time?: string;
+    dateSource?: 'exif' | 'filename' | 'file-lastmodified' | 'manual' | 'fallback';
+  }>>([]);
+  const [photoUploadDate, setPhotoUploadDate] = React.useState<string>("");
+  const [photoSortOrder, setPhotoSortOrder] = React.useState<'date-asc' | 'date-desc' | 'manual'>('date-asc');
   const [dragActive, setDragActive] = React.useState(false);
 
   // Album Foto search, filter, and lightbox states
@@ -803,17 +760,23 @@ export default function DiaryTab({
     scanLocalOrphanPhotos();
   }, [scanLocalOrphanPhotos]);
 
-  // Active trip photos strictly filtered from deletions and tombstones
+  // Active trip photos strictly filtered from deletions and tombstones & sorted chronologically
   const activeTripPhotos = React.useMemo(() => {
     if (!activeTrip || !Array.isArray(activeTrip.photos)) return [];
     const deletedPhotos = getDeletedIds('photos', emailKey);
-    return activeTrip.photos.filter((p) => {
+    const filtered = activeTrip.photos.filter((p) => {
       if (!p || p.deleted) return false;
       const pId = String(p.id || '');
       const pUrl = String(p.url || '');
       return !deletedPhotos.has(pId) && (!pUrl || !deletedPhotos.has(pUrl));
     });
-  }, [activeTrip, emailKey]);
+
+    if (photoSortOrder === 'manual') {
+      return filtered;
+    }
+
+    return sortPhotosChronologically(filtered, photoSortOrder === 'date-asc');
+  }, [activeTrip, emailKey, photoSortOrder]);
 
   // Gallery pagination: loads 24 photos at a time for 60fps mobile fluid rendering
   const [visiblePhotosCount, setVisiblePhotosCount] = React.useState<number>(24);
@@ -1725,35 +1688,54 @@ export default function DiaryTab({
       validFiles.push(file);
     }
 
-    // Process each file in parallel using high-performance client-side compression
+    // Process each file in parallel using high-performance client-side compression and date extraction
     const uploadPromises = validFiles.map((file) => {
-      return new Promise<{ url: string; name: string }>(async (resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          try {
-            const base64 = reader.result as string;
+      return new Promise<{
+        url: string;
+        name: string;
+        date?: string;
+        time?: string;
+        dateSource?: 'exif' | 'filename' | 'file-lastmodified' | 'manual' | 'fallback';
+      }>(async (resolve, reject) => {
+        try {
+          // Extract real capture date from EXIF / filename / lastModified BEFORE compressing!
+          const extractedDate = await extractPhotoDate(file, activeTrip?.startDate);
 
-            // Apply compression quality from settings (defaults to medium for optimal speed and memory)
-            const quality = settings?.photoQuality || "medium";
-            let finalBase64 = base64;
+          const reader = new FileReader();
+          reader.onloadend = async () => {
             try {
-              finalBase64 = await compressImage(base64, quality);
-            } catch (cErr) {
-              console.warn("Compressione immagine non riuscita, uso originale:", cErr);
+              const base64 = reader.result as string;
+
+              // Apply compression quality from settings (defaults to medium for optimal speed and memory)
+              const quality = settings?.photoQuality || "medium";
+              let finalBase64 = base64;
+              try {
+                finalBase64 = await compressImage(base64, quality);
+              } catch (cErr) {
+                console.warn("Compressione immagine non riuscita, uso originale:", cErr);
+              }
+
+              // Immediately resolve with the compressed base64 Data URL and extracted date metadata
+              resolve({
+                url: finalBase64,
+                name: file.name,
+                date: extractedDate.date,
+                time: extractedDate.time,
+                dateSource: extractedDate.source,
+              });
+            } catch (err: any) {
+              reject(err);
             }
+          };
 
-            // Immediately resolve with the compressed base64 Data URL so it is 100% offline-ready & instant
-            resolve({ url: finalBase64, name: file.name });
-          } catch (err: any) {
-            reject(err);
-          }
-        };
+          reader.onerror = () => {
+            reject(new Error("Errore durante la lettura locale del file."));
+          };
 
-        reader.onerror = () => {
-          reject(new Error("Errore durante la lettura locale del file."));
-        };
-
-        reader.readAsDataURL(file);
+          reader.readAsDataURL(file);
+        } catch (err: any) {
+          reject(err);
+        }
       });
     });
 
@@ -1770,19 +1752,29 @@ export default function DiaryTab({
 
       const results = await Promise.allSettled(uploadPromises);
       const succeeded = results
-        .filter((r): r is PromiseFulfilledResult<{ url: string; name: string }> => r.status === "fulfilled")
+        .filter((r): r is PromiseFulfilledResult<{
+          url: string;
+          name: string;
+          date?: string;
+          time?: string;
+          dateSource?: 'exif' | 'filename' | 'file-lastmodified' | 'manual' | 'fallback';
+        }> => r.status === "fulfilled")
         .map((r) => r.value);
       const failedCount = results.filter((r) => r.status === "rejected").length;
 
       if (succeeded.length > 0) {
         setUploadedImages((prev) => [...prev, ...succeeded]);
         setUploadedImageUrl(succeeded[succeeded.length - 1].url);
+        if (!photoUploadDate && succeeded[0].date) {
+          setPhotoUploadDate(succeeded[0].date);
+        }
+        const hasExif = succeeded.some((s) => s.dateSource === "exif");
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: `📸 ${succeeded.length} foto caricate con successo!${
-                failedCount > 0 ? ` (${failedCount} fallite)` : ""
-              }`,
+              message: `📸 ${succeeded.length} foto ${succeeded.length === 1 ? 'caricata' : 'caricate'} con successo!${
+                hasExif ? " (data di scatto EXIF rilevata)" : ""
+              }${failedCount > 0 ? ` (${failedCount} fallite)` : ""}`,
             },
           }),
         );
@@ -1833,11 +1825,17 @@ export default function DiaryTab({
     e.preventDefault();
     if (!selectedTripId) return;
 
-    let urls: Array<{ url: string; name: string }> = [];
+    let urls: Array<{
+      url: string;
+      name: string;
+      date?: string;
+      time?: string;
+      dateSource?: 'exif' | 'filename' | 'file-lastmodified' | 'manual' | 'fallback';
+    }> = [];
     if (photoType === "upload") {
       urls = uploadedImages;
       if (urls.length === 0 && uploadedImageUrl) {
-        urls = [{ url: uploadedImageUrl, name: "Foto caricata" }];
+        urls = [{ url: uploadedImageUrl, name: "Foto caricata", date: photoUploadDate }];
       }
       if (urls.length === 0) {
         setUploadError(
@@ -1846,9 +1844,9 @@ export default function DiaryTab({
         return;
       }
     } else if (photoType === "preset") {
-      urls = [{ url: photoPresetUrl, name: "Preset" }];
+      urls = [{ url: photoPresetUrl, name: "Preset", date: photoUploadDate }];
     } else if (photoType === "url") {
-      urls = [{ url: photoCustomUrl, name: "Custom URL" }];
+      urls = [{ url: photoCustomUrl, name: "Custom URL", date: photoUploadDate }];
     }
 
     if (urls.length === 0) {
@@ -1859,20 +1857,27 @@ export default function DiaryTab({
     const newPhotos: DiaryPhoto[] = urls.map((img, idx) => {
       const finalDesc = photoDesc.trim() || undefined;
       const photoId = "photo_" + (Date.now() + idx);
+      const chosenDate = photoUploadDate || img.date || activeTrip?.startDate || new Date().toISOString().split("T")[0];
       return {
         id: photoId,
         url: `/api/photos/${photoId}`,
         description: finalDesc,
-        date: new Date().toISOString().split("T")[0],
+        date: chosenDate,
+        time: img.time,
+        dateSource: photoUploadDate ? 'manual' : (img.dateSource || 'fallback'),
         locationName: photoLocationName || undefined,
       };
     });
 
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
+        const combined = [...t.photos, ...newPhotos];
+        const sorted = photoSortOrder === 'manual'
+          ? combined
+          : sortPhotosChronologically(combined, photoSortOrder === 'date-asc');
         return {
           ...t,
-          photos: [...t.photos, ...newPhotos],
+          photos: sorted,
         };
       }
       return t;
@@ -1926,6 +1931,7 @@ export default function DiaryTab({
     setPhotoCustomUrl("");
     setUploadedImageUrl("");
     setUploadedImages([]);
+    setPhotoUploadDate("");
     setUploadError(null);
 
     window.dispatchEvent(
@@ -1940,6 +1946,7 @@ export default function DiaryTab({
   // Replace / Re-upload a single photo from gallery or camera
   const handleReplacePhoto = async (photoId: string, file: File) => {
     try {
+      const extracted = await extractPhotoDate(file, activeTrip?.startDate);
       const reader = new FileReader();
       reader.onload = async (event) => {
         const rawBase64 = event.target?.result as string;
@@ -1972,7 +1979,18 @@ export default function DiaryTab({
           if (t.id === selectedTripId) {
             return {
               ...t,
-              photos: t.photos.map((p) => (p.id === photoId ? { ...p, url: `/api/photos/${photoId}` } : p)),
+              photos: t.photos.map((p) => {
+                if (p.id === photoId) {
+                  return {
+                    ...p,
+                    url: `/api/photos/${photoId}`,
+                    date: extracted.date || p.date,
+                    time: extracted.time || p.time,
+                    dateSource: extracted.source,
+                  };
+                }
+                return p;
+              }),
             };
           }
           return t;
@@ -1991,7 +2009,7 @@ export default function DiaryTab({
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: "✅ Foto ripristinata e salvata nel Cloud!",
+              message: "✅ Foto sostituita con successo e data aggiornata!",
             },
           }),
         );
@@ -2000,6 +2018,29 @@ export default function DiaryTab({
     } catch (err) {
       console.error("Error replacing photo:", err);
     }
+  };
+
+  // Permanently sort photos in the active trip and save
+  const handleSortTripPhotosPermanently = (ascending: boolean = true) => {
+    if (!selectedTripId || !activeTrip || !activeTrip.photos || activeTrip.photos.length <= 1) return;
+    const sorted = sortPhotosChronologically(activeTrip.photos, ascending);
+    const updated = trips.map((t) => (t.id === selectedTripId ? { ...t, photos: sorted } : t));
+    setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    syncWithCloud(updated, false);
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
+    window.dispatchEvent(new CustomEvent("sync-trips-now", { detail: { trips: updated } }));
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: {
+          message: `📅 Foto riordinate in ordine cronologico (${ascending ? "dal 1° all'ultimo scatto" : "più recenti prima"})!`,
+        },
+      })
+    );
   };
 
   // Restore orphan photos found in local IndexedDB into this trip
@@ -2153,12 +2194,16 @@ export default function DiaryTab({
         } catch (e) {}
 
         const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+        // Extract real capture date from EXIF / filename / lastModified!
+        const extracted = await extractPhotoDate(file, activeTrip?.startDate);
 
         newPhotosToAdd.push({
           id: photoId,
           url: `/api/photos/${photoId}`,
           description: cleanName && cleanName.length > 2 && !cleanName.match(/^(img|dsc|photo|screenshot|whatsapp)/i) ? cleanName : undefined,
-          date: activeTrip?.startDate || new Date().toISOString().split("T")[0],
+          date: extracted.date || activeTrip?.startDate || new Date().toISOString().split("T")[0],
+          time: extracted.time,
+          dateSource: extracted.source,
         });
       } catch (err) {
         console.warn("Error processing gallery photo:", err);
@@ -2168,9 +2213,13 @@ export default function DiaryTab({
     if (newPhotosToAdd.length > 0) {
       const updated = trips.map((t) => {
         if (t.id === selectedTripId) {
+          const combined = [...t.photos, ...newPhotosToAdd];
+          const sorted = photoSortOrder === 'manual'
+            ? combined
+            : sortPhotosChronologically(combined, photoSortOrder === 'date-asc');
           return {
             ...t,
-            photos: [...t.photos, ...newPhotosToAdd],
+            photos: sorted,
           };
         }
         return t;
@@ -2191,7 +2240,7 @@ export default function DiaryTab({
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: {
-            message: `🎉 Aggiunte con successo ${newPhotosToAdd.length} foto al viaggio!`,
+            message: `🎉 Aggiunte ${newPhotosToAdd.length} foto con date di scatto rilevate in ordine cronologico!`,
           },
         })
       );
@@ -3865,6 +3914,11 @@ export default function DiaryTab({
                                               ✓
                                             </span>
                                           </div>
+                                          {img.date && (
+                                            <div className="absolute bottom-0 inset-x-0 bg-black/75 backdrop-blur-2xs text-white text-[7.5px] font-semibold px-1 py-0.5 truncate text-center pointer-events-none">
+                                              📅 {formatDateDDMMAA(img.date)}
+                                            </div>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={(evt) => {
@@ -3971,6 +4025,36 @@ export default function DiaryTab({
                             className="w-full text-xs px-2.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold"
                           />
 
+                          {/* Data dello Scatto Foto */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                                <Calendar className="w-3 h-3 text-[#3E4A35]" />
+                                <span>Data dello Scatto</span>
+                              </label>
+                              {uploadedImages.length > 0 && (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  {uploadedImages.some((i) => i.dateSource === "exif")
+                                    ? "✓ Data da metadati EXIF"
+                                    : uploadedImages.some((i) => i.dateSource === "filename")
+                                    ? "✓ Data da nome file"
+                                    : "✓ Data da timestamp"}
+                                </span>
+                              )}
+                            </div>
+                            <input
+                              type="date"
+                              value={photoUploadDate}
+                              onChange={(e) => setPhotoUploadDate(e.target.value)}
+                              className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none focus:border-[#3E4A35] font-semibold text-slate-700 bg-white"
+                            />
+                            {uploadedImages.length > 1 && (
+                              <p className="text-[8.5px] text-slate-400">
+                                Lascia vuoto per conservare le date di scatto rilevate singolarmente da ciascuna foto.
+                              </p>
+                            )}
+                          </div>
+
                           {/* Select Tappa for Photo */}
                           {activeTrip.movements && activeTrip.movements.length > 0 && (
                             <div className="space-y-1 animate-fade-in">
@@ -4075,11 +4159,64 @@ export default function DiaryTab({
                         )}
 
                         {/* Gallery Fast Actions Bar */}
-                        <div className="flex items-center justify-between gap-2 mb-2 px-1">
-                          <span className="text-[11px] font-bold text-slate-600">
-                            Scatti nel diario ({activeTripPhotos.length})
-                          </span>
-                          <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-between gap-2 mb-2.5 px-1 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-600">
+                              Scatti nel diario ({activeTripPhotos.length})
+                            </span>
+                            {activeTripPhotos.length > 1 && (
+                              <div className="inline-flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-200 text-[9.5px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setPhotoSortOrder('date-asc')}
+                                  className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                    photoSortOrder === 'date-asc'
+                                      ? 'bg-[#3E4A35] text-white shadow-2xs'
+                                      : 'text-stone-600 hover:text-stone-900'
+                                  }`}
+                                  title="Ordina cronologicamente dal primo all'ultimo scatto"
+                                >
+                                  📅 Cronologico
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPhotoSortOrder('date-desc')}
+                                  className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                    photoSortOrder === 'date-desc'
+                                      ? 'bg-[#3E4A35] text-white shadow-2xs'
+                                      : 'text-stone-600 hover:text-stone-900'
+                                  }`}
+                                  title="Mostra prima gli scatti più recenti"
+                                >
+                                  ⏳ Più recenti
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPhotoSortOrder('manual')}
+                                  className={`px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                    photoSortOrder === 'manual'
+                                      ? 'bg-[#3E4A35] text-white shadow-2xs'
+                                      : 'text-stone-600 hover:text-stone-900'
+                                  }`}
+                                  title="Ordine originale di caricamento"
+                                >
+                                  Originale
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {activeTripPhotos.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleSortTripPhotosPermanently(photoSortOrder !== 'date-desc')}
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold rounded-lg cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1 transition-all"
+                                title="Salva in modo permanente l'ordine cronologico nel viaggio"
+                              >
+                                <ArrowUpDown className="w-3 h-3 text-amber-700" />
+                                Salva Ordine
+                              </button>
+                            )}
                             <input
                               type="file"
                               multiple
@@ -4094,7 +4231,7 @@ export default function DiaryTab({
                             <label
                               htmlFor="batch-add-photos"
                               className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold rounded-lg cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1 transition-all"
-                              title="Seleziona e aggiungi molteplici foto dalla galleria"
+                              title="Seleziona e aggiungi molteplici foto dalla galleria con rilevamento automatico data"
                             >
                               <Upload className="w-3 h-3 text-[#3E4A35]" />
                               Carica Multiplo
@@ -4283,23 +4420,35 @@ export default function DiaryTab({
                                       </button>
                                     </div>
 
-                                    {photo.locationName ? (
-                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 rounded text-[9px] font-bold">
-                                        <MapPin className="w-2.5 h-2.5" />
-                                        {photo.locationName}
-                                      </span>
-                                    ) : isRecovered ? (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenEditPhoto(photo);
-                                        }}
-                                        className="text-[9px] font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-0.5 pt-0.5"
-                                      >
-                                        <Pencil className="w-2.5 h-2.5" /> Aggiungi luogo e titolo
-                                      </button>
-                                    ) : null}
+                                    <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                                      {photo.date && (
+                                        <span
+                                          className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-stone-150 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded text-[8.5px] font-bold"
+                                          title={photo.time ? `Scattata alle ${photo.time}` : `Data scatto: ${formatDateDDMMAA(photo.date)}`}
+                                        >
+                                          <Calendar className="w-2.5 h-2.5 text-[#3E4A35]" />
+                                          {formatDateDDMMAA(photo.date)}
+                                          {photo.time ? ` ${photo.time.slice(0, 5)}` : ""}
+                                        </span>
+                                      )}
+                                      {photo.locationName ? (
+                                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 rounded text-[9px] font-bold">
+                                          <MapPin className="w-2.5 h-2.5" />
+                                          {photo.locationName}
+                                        </span>
+                                      ) : isRecovered ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenEditPhoto(photo);
+                                          }}
+                                          className="text-[9px] font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-0.5 pt-0.5"
+                                        >
+                                          <Pencil className="w-2.5 h-2.5" /> Aggiungi luogo e titolo
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   </div>
 
                                   {/* Re-upload photo from gallery input and button */}
@@ -5530,10 +5679,20 @@ export default function DiaryTab({
               {/* Bottom Caption bar with descriptions and Date */}
               <div className="w-full bg-stone-950 p-5 border-t border-stone-855 text-stone-200 text-left space-y-2 font-sans">
                 <div className="flex justify-between items-center text-[10px] text-stone-400 font-bold font-mono">
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5 flex-wrap">
                     <Calendar className="w-3.5 h-3.5 text-stone-500" />
                     Scattata il:{" "}
-                    {activeTripPhotos[selectedLightboxPhotoIndex].date}
+                    {formatDateDDMMAA(activeTripPhotos[selectedLightboxPhotoIndex].date)}
+                    {activeTripPhotos[selectedLightboxPhotoIndex].time && (
+                      <span className="text-stone-300">
+                        ore {activeTripPhotos[selectedLightboxPhotoIndex].time.slice(0, 5)}
+                      </span>
+                    )}
+                    {activeTripPhotos[selectedLightboxPhotoIndex].dateSource === 'exif' && (
+                      <span className="text-[8.5px] px-1 bg-emerald-950/80 border border-emerald-700/60 text-emerald-400 rounded">
+                        EXIF
+                      </span>
+                    )}
                   </span>
                   <span>
                     Foto {selectedLightboxPhotoIndex + 1} di{" "}

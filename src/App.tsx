@@ -30,7 +30,7 @@ import {
 } from "./data/mockData";
 import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
 import { createSocialPostFromTrip } from "./utils/tripSocialShare";
-import { normalizeTrip, mergeTrips } from "./utils/tripSyncHelper";
+import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds } from "./utils/tripSyncHelper";
 import { parseSostaFirestoreDoc } from "./data/userPlacesDataset";
 import { mergeNearbyPlaces, PROXIMITY_MERGE_DISTANCE_KM } from "./utils/placeMergeUtils";
 import { resolveApiUrl } from "./utils/resolveMediaUrl";
@@ -944,13 +944,22 @@ export default function App() {
       
       if (cleanEmail) {
         localStorage.removeItem(`example_deleted_${cleanEmail}`);
+        // Ensure old example trips are recorded as deleted so they don't resurrect from cloud
+        recordDeletedId('trips', 'trip-example-10-oct-2025', cleanEmail);
+        recordDeletedId('trips', 't1', cleanEmail);
+
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
           const parsed = JSON.parse(userSaved);
           if (Array.isArray(parsed)) {
+            const deletedTrips = getDeletedIds('trips', cleanEmail);
             const filtered = parsed.filter((t: Trip) => {
-              if (t.id === "trip-example-10-oct-2025" || t.id === "t1") return false;
-              if (t.title && t.title.startsWith("ESEMPIO:") && t.startDate?.startsWith("2025")) return false;
+              if (t.id === "trip-example-10-oct-2025" || t.id === "t1" || deletedTrips.has(t.id)) return false;
+              if (t.title && (t.title.startsWith("ESEMPIO:") || t.title.startsWith("EXAMPLE:")) && (t.startDate?.startsWith("2025") || t.id === "t1")) {
+                recordDeletedId('trips', t.id, cleanEmail);
+                return false;
+              }
+              if (t.id === EXAMPLE_TRIP.id) return false; // Will be re-injected
               return true;
             });
             initialTrips = filtered.map((t: Trip) => normalizeTrip(t, cleanEmail));
@@ -958,8 +967,7 @@ export default function App() {
         }
       }
 
-      // INJECTION: Ensure 2020 example trip exists exactly once (remove any other example trips first)
-      initialTrips = initialTrips.filter(t => t.id !== EXAMPLE_TRIP.id && !(t.title && t.title.startsWith("ESEMPIO:")));
+      // INJECTION: Ensure 2020 example trip exists exactly once
       initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
       
       return initialTrips;
@@ -1009,20 +1017,38 @@ export default function App() {
     }
 
     if (cleanEmail) {
+      // Ensure old example trips are recorded as deleted so they don't resurrect from cloud
+      recordDeletedId('trips', 'trip-example-10-oct-2025', cleanEmail);
+      recordDeletedId('trips', 't1', cleanEmail);
+
       const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
       if (userSaved) {
         try {
           const parsed = JSON.parse(userSaved);
           if (Array.isArray(parsed)) {
-            const normalized = parsed.map((t: Trip) => normalizeTrip(t, cleanEmail));
-            setTrips(normalized);
-            lastSavedTripsJsonRef.current = JSON.stringify(normalized);
+            const deletedTrips = getDeletedIds('trips', cleanEmail);
+            // Cleanup: remove old example trips and duplicates
+            const filtered = parsed.filter((t: Trip) => {
+              if (t.id === "trip-example-10-oct-2025" || t.id === "t1" || deletedTrips.has(t.id)) return false;
+              if (t.title && (t.title.startsWith("ESEMPIO:") || t.title.startsWith("EXAMPLE:")) && (t.startDate?.startsWith("2025") || t.id === "t1")) {
+                recordDeletedId('trips', t.id, cleanEmail);
+                return false;
+              }
+              if (t.id === EXAMPLE_TRIP.id) return false; // Re-inject later
+              return true;
+            });
+            const normalized = filtered.map((t: Trip) => normalizeTrip(t, cleanEmail));
+            const finalTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...normalized];
+            
+            setTrips(finalTrips);
+            lastSavedTripsJsonRef.current = JSON.stringify(finalTrips);
             return;
           }
         } catch {}
       }
-      setTrips([]);
-      lastSavedTripsJsonRef.current = "[]";
+      const defaultTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail)];
+      setTrips(defaultTrips);
+      lastSavedTripsJsonRef.current = JSON.stringify(defaultTrips);
     } else {
       setTrips([]);
       lastSavedTripsJsonRef.current = "[]";
@@ -1778,11 +1804,29 @@ export default function App() {
           merged = mergeTrips(merged, guestTrips, cleanEmail);
         }
 
+        // CLOUD PURGE: Ensure the 2025 example trip is also removed from the merged state
+        // and force a cloud save if it was present in cloudTrips.
+        const deletedTrips = getDeletedIds('trips', cleanEmail);
+        const prePurgeCount = merged.length;
+        merged = merged.filter(t => {
+          if (t.id === "trip-example-10-oct-2025" || t.id === "t1" || deletedTrips.has(t.id)) return false;
+          if (t.title && (t.title.startsWith("ESEMPIO:") || t.title.startsWith("EXAMPLE:")) && (t.startDate?.startsWith("2025") || t.id === "t1")) {
+            recordDeletedId('trips', t.id, cleanEmail);
+            return false;
+          }
+          return true;
+        });
+
+        const cloudHadBadTrip = cloudTrips.some(t => 
+          t.id === "trip-example-10-oct-2025" || t.id === "t1" || 
+          (t.title && (t.title.startsWith("ESEMPIO:") || t.title.startsWith("EXAMPLE:")) && t.startDate?.startsWith("2025"))
+        );
+
         try {
           localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(merged));
         } catch (e) {}
 
-        // Check if local device has more items than cloud
+        // Check if local device has more items than cloud OR if we just purged a bad trip from cloud
         const localExpensesCount = prevTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
         const cloudExpensesCount = cloudTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
         const localMovsCount = prevTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
@@ -1790,8 +1834,8 @@ export default function App() {
         const localPhotosCount = prevTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
         const cloudPhotosCount = cloudTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
 
-        if (localExpensesCount > cloudExpensesCount || localMovsCount > cloudMovsCount || localPhotosCount > cloudPhotosCount || guestTrips.length > 0) {
-          console.log("[App] Device has new local/guest trip data, auto-syncing to Cloud...");
+        if (localExpensesCount > cloudExpensesCount || localMovsCount > cloudMovsCount || localPhotosCount > cloudPhotosCount || guestTrips.length > 0 || cloudHadBadTrip) {
+          console.log("[App] Device has new data or cloud needs cleanup, auto-syncing to Cloud...");
           setTimeout(() => {
             saveTripsToFirestore(merged);
           }, 800);

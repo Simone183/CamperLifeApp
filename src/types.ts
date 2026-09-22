@@ -401,6 +401,8 @@ export interface DiaryPhoto {
   url: string;
   description?: string;
   date: string;
+  time?: string; // Orario dello scatto "HH:mm:ss"
+  dateSource?: 'exif' | 'filename' | 'file-lastmodified' | 'manual' | 'fallback'; // Origine della data
   locationName?: string; // Tappa in cui è stata scattata la foto
   deleted?: boolean; // Flag per soft delete sincronizzato
 }
