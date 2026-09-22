@@ -76,12 +76,14 @@ const PHOTO_PRESETS = [
   },
 ];
 
+const VAL_DORCIA_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500"><defs><linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%23d4834b"/><stop offset="50%" stop-color="%23f4a261"/><stop offset="100%" stop-color="%23f9dcc4"/></linearGradient><linearGradient id="hill1" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%23606c38"/><stop offset="100%" stop-color="%23283618"/></linearGradient><linearGradient id="hill2" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%238f9779"/><stop offset="100%" stop-color="%23588157"/></linearGradient></defs><rect width="800" height="500" fill="url(%23sky)"/><circle cx="600" cy="110" r="55" fill="%23ffd166" opacity="0.9"/><path d="M0,300 Q280,240 800,320 L800,500 L0,500 Z" fill="url(%23hill1)"/><path d="M0,370 Q420,290 800,380 L800,500 L0,500 Z" fill="url(%23hill2)"/><g fill="%23212518"><rect x="180" y="200" width="14" height="130" rx="4"/><circle cx="187" cy="175" r="38"/><rect x="205" y="220" width="10" height="100" rx="3"/><circle cx="210" cy="200" r="30"/><rect x="155" y="230" width="11" height="90" rx="3"/><circle cx="160" cy="210" r="28"/><rect x="620" y="250" width="16" height="140" rx="4"/><circle cx="628" cy="220" r="45"/><rect x="648" y="270" width="11" height="110" rx="3"/><circle cx="653" cy="245" r="32"/></g><g transform="translate(340, 310)"><rect x="0" y="15" width="95" height="55" rx="8" fill="%23ffffff" stroke="%23333333" stroke-width="2"/><path d="M 95 30 L 125 30 Q 135 35 135 45 L 135 70 L 95 70 Z" fill="%23ffffff" stroke="%23333333" stroke-width="2"/><path d="M 105 35 L 122 35 Q 128 35 128 45 L 128 50 L 105 50 Z" fill="%23457b9d"/><rect x="15" y="22" width="22" height="22" rx="3" fill="%23457b9d"/><rect x="45" y="22" width="22" height="22" rx="3" fill="%23457b9d"/><circle cx="30" cy="72" r="12" fill="%232b2d42" stroke="%238d99ae" stroke-width="3"/><circle cx="110" cy="72" r="12" fill="%232b2d42" stroke="%238d99ae" stroke-width="3"/><rect x="10" y="15" width="80" height="6" fill="%23e63946"/></g><text x="400" y="465" font-family="system-ui, sans-serif" font-weight="900" font-size="26" fill="%23ffffff" text-anchor="middle" filter="drop-shadow(0px 2px 6px rgba(0,0,0,0.6))">Val d'Orcia • Autunno 2020</text></svg>`;
+
 const INITIAL_TRIPS: Trip[] = [
   {
-    id: "t1",
+    id: "trip-example-10-oct-2020",
     title: "ESEMPIO: Weekend d'Autunno in Val d'Orcia",
-    startDate: "2025-10-10",
-    endDate: "2025-10-12",
+    startDate: "2020-10-10",
+    endDate: "2020-10-12",
     description:
       "Questo è un viaggio di esempio per mostrarti come funziona il diario. Puoi modificarlo o cancellarlo in qualsiasi momento.",
     startOdometer: 124500,
@@ -93,30 +95,30 @@ const INITIAL_TRIPS: Trip[] = [
         title: "Gasolio Eni Siena",
         amount: 55.0,
         category: "Carburante",
-        date: "2025-10-10",
+        date: "2020-10-10",
       },
       {
         id: "te2",
         title: "Sosta Pienza comunale",
         amount: 12.0,
         category: "Sosta",
-        date: "2025-10-11",
+        date: "2020-10-11",
       },
       {
         id: "te3",
         title: "Pranzo Tipico Trattoria",
         amount: 48.0,
         category: "Cibo",
-        date: "2025-10-11",
+        date: "2020-10-11",
       },
     ],
     photos: [
       {
         id: "tp1",
-        url: "https://images.unsplash.com/photo-1523987355122-c348ebef72d4?auto=format&fit=crop&q=80&w=600",
+        url: VAL_DORCIA_SVG,
         description:
-          "Il nostro amato mansardato immerso nell'abbraccio dorato dei cipressi toscani.",
-        date: "2025-10-11",
+          "Il nostro amato camper immerso nell'abbraccio dorato dei cipressi della Val d'Orcia.",
+        date: "2020-10-11",
       },
     ],
     movements: [],
@@ -247,19 +249,27 @@ export default function DiaryTab({
     },
   );
 
+  const lastProcessedTripsLengthRef = React.useRef(trips.length);
+  const lastProcessedInitialTripIdRef = React.useRef(initialTripId);
+
   // Sync selectedTripId when trips or initialTripId changes
   React.useEffect(() => {
-    if (initialTripId) {
+    if (initialTripId && initialTripId !== lastProcessedInitialTripIdRef.current) {
+      lastProcessedInitialTripIdRef.current = initialTripId;
       setSelectedTripId(initialTripId);
       return;
     }
-    setSelectedTripId((prev) => {
-      if (prev && trips.some((t) => t.id === prev)) {
-        return prev;
-      }
-      return trips.length > 0 ? trips[0].id : null;
-    });
-  }, [trips, initialTripId]);
+
+    if (trips.length !== lastProcessedTripsLengthRef.current) {
+      lastProcessedTripsLengthRef.current = trips.length;
+      setSelectedTripId((prev) => {
+        if (prev && trips.some((t) => t.id === prev)) {
+          return prev;
+        }
+        return trips.length > 0 ? trips[0].id : null;
+      });
+    }
+  }, [trips.length, initialTripId]);
 
   // Sub-tab selection inside travel diary ('list' contains list/creation of trips, 'details' contains active trip details, 'album' contains global photos)
   const [diarySubTab, setDiarySubTab] = React.useState<"list" | "details" | "album">(
@@ -740,15 +750,14 @@ export default function DiaryTab({
     return () => window.removeEventListener("online", handleOnline);
   }, [autoSyncState, syncWithCloud, computeTripsFingerprint]);
 
-  // Sync incoming trips from Family Crew without overwriting local trip updates
+  const isUserInitiatedSyncRef = React.useRef(false);
+
+  // Sync local trips with propsTrips if they differ (e.g. cloud update)
   React.useEffect(() => {
-    if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips)) {
-      const merged = mergeTrips(tripsRef.current, currentCrew.sharedData!.trips!, emailKey);
-      if (JSON.stringify(merged) !== JSON.stringify(tripsRef.current)) {
-        setTrips(merged);
-      }
+    if (propsTrips && JSON.stringify(propsTrips) !== JSON.stringify(trips)) {
+      setTrips(propsTrips);
     }
-  }, [currentCrew?.sharedData?.trips, isModuleSynced, emailKey]);
+  }, [propsTrips]);
 
   React.useEffect(() => {
     const handleOpenPlanned = (e: any) => {
@@ -1007,7 +1016,7 @@ export default function DiaryTab({
       )
     ) {
       recordDeletedId('trips', tripId, emailKey);
-      if (tripId === "trip-example-10-oct-2025" && currentUser?.email) {
+      if (tripId === "trip-example-10-oct-2020" && currentUser?.email) {
         localStorage.setItem(`example_deleted_${currentUser.email.toLowerCase().trim()}`, "true");
       }
       const filtered = trips.filter((t) => t.id !== tripId);

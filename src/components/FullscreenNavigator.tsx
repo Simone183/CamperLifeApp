@@ -1408,7 +1408,10 @@ out center;`;
       const isDefaultModena = Math.abs(initialStart[0] - 44.5422) < 0.0001 && Math.abs(initialStart[1] - 10.7024) < 0.0001;
       if (isDefaultModena) {
         // If we were on default Modena, update immediately as GPS has resolved
-        setInitialStart([userLocation.lat, userLocation.lng]);
+        const dist = Math.sqrt(Math.pow(initialStart[0] - userLocation.lat, 2) + Math.pow(initialStart[1] - userLocation.lng, 2));
+        if (dist > 0.0001) {
+          setInitialStart([userLocation.lat, userLocation.lng]);
+        }
         lastRecalcPos.current = [userLocation.lat, userLocation.lng];
       } else if (!isPreview) { // Only recalculate route due to off-track deviation during active navigation, not during preview!
         const userPos = [userLocation.lat, userLocation.lng] as [number, number];
@@ -1464,7 +1467,10 @@ out center;`;
               speakInstruction("Ricalcolo del percorso", 'immediate');
 
               isRecalculatedRef.current = true;
-              setInitialStart([userLocation.lat, userLocation.lng]);
+              const dist = Math.sqrt(Math.pow(initialStart[0] - userLocation.lat, 2) + Math.pow(initialStart[1] - userLocation.lng, 2));
+              if (dist > 0.0001) {
+                setInitialStart([userLocation.lat, userLocation.lng]);
+              }
               lastRecalcPos.current = [userLocation.lat, userLocation.lng];
             }
           }

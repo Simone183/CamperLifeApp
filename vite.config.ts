@@ -20,6 +20,8 @@ export default defineConfig(() => {
     },
     build: {
       outDir: 'dist',
+      sourcemap: false,
+      minify: 'esbuild',
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
         output: {

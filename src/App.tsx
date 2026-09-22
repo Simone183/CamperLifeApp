@@ -943,16 +943,28 @@ export default function App() {
       let initialTrips: Trip[] = [];
       
       if (cleanEmail) {
+        localStorage.removeItem(`example_deleted_${cleanEmail}`);
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
           const parsed = JSON.parse(userSaved);
-          if (Array.isArray(parsed)) initialTrips = parsed.map((t: Trip) => normalizeTrip(t, cleanEmail));
+          if (Array.isArray(parsed)) {
+            let foundExample = false;
+            initialTrips = parsed.map((t: Trip) => {
+              if (t.id === "trip-example-10-oct-2025" || t.id === "t1" || (t.title && t.title.startsWith("ESEMPIO:"))) {
+                foundExample = true;
+                return normalizeTrip(EXAMPLE_TRIP, cleanEmail);
+              }
+              return normalizeTrip(t, cleanEmail);
+            });
+            if (!foundExample) {
+              initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
+            }
+          }
         }
       }
 
-      // INJECTION: Ensure example trip exists if not deleted
-      if (!initialTrips.some(t => t.id === EXAMPLE_TRIP.id) && 
-          localStorage.getItem(`example_deleted_${currentUser?.email?.toLowerCase().trim()}`) !== "true") {
+      // INJECTION: Ensure example trip exists if not present
+      if (!initialTrips.some(t => t.id === EXAMPLE_TRIP.id)) {
         initialTrips = [normalizeTrip(EXAMPLE_TRIP, cleanEmail), ...initialTrips];
       }
       
@@ -1137,10 +1149,12 @@ export default function App() {
 
   React.useEffect(() => {
     if (activeTab === "settings_tools" && settingsSubTab === "community") {
-      setLastSeenCommunityCount(totalCommunityMessagesCount);
-      localStorage.setItem("camper_last_seen_community_count", totalCommunityMessagesCount.toString());
+      if (lastSeenCommunityCount !== totalCommunityMessagesCount) {
+        setLastSeenCommunityCount(totalCommunityMessagesCount);
+        localStorage.setItem("camper_last_seen_community_count", totalCommunityMessagesCount.toString());
+      }
     }
-  }, [activeTab, settingsSubTab, totalCommunityMessagesCount]);
+  }, [activeTab, settingsSubTab, totalCommunityMessagesCount, lastSeenCommunityCount]);
 
   // Gestione della cronologia del browser per consentire il tasto "indietro"
   React.useEffect(() => {
@@ -1664,7 +1678,29 @@ export default function App() {
           const serverTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
           if (serverTripsJson !== lastSavedTripsJsonRef.current) {
             lastSavedTripsJsonRef.current = serverTripsJson;
-            setTrips(cleanTripsFromServ);
+            // Merge safely: preserve local data:image or /api/photos/ URLs so they are never lost
+            const cleanTripsFromServ = resData.trips.map((t: any) => {
+              const norm = normalizeTrip(t, cleanEmail);
+              const localMatch = normalized.find((lt: any) => lt.id === norm.id);
+              if (localMatch && Array.isArray(localMatch.photos)) {
+                norm.photos = norm.photos.map((sp: any) => {
+                  const lp = localMatch.photos.find((p: any) => p.id === sp.id);
+                  if (lp && lp.url && (lp.url.startsWith("data:image/") || lp.url.startsWith("/api/photos/"))) {
+                    return { ...sp, url: lp.url };
+                  }
+                  return sp;
+                });
+              }
+              return norm;
+            });
+            
+            // Re-normalize to ensure the string comparison is perfectly consistent with how we store state
+            const finalTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
+            if (finalTripsJson !== lastSavedTripsJsonRef.current) {
+               lastSavedTripsJsonRef.current = finalTripsJson;
+               setTrips(cleanTripsFromServ);
+            }
+
             try {
               localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
             } catch (e) {}
@@ -1795,6 +1831,7 @@ export default function App() {
   }, [currentUser?.email, saveTripsToFirestore]);
 
   // Persist trips to localStorage scoped by user email, and sync to Firestore
+  const syncTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   React.useEffect(() => {
     const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
     if (cleanEmail) {
@@ -1812,10 +1849,16 @@ export default function App() {
     }
 
     if (currentUser?.email && loadedFromFirestore) {
-      const tripsJson = JSON.stringify(trips.map((t: Trip) => normalizeTrip(t, cleanEmail)));
-      if (tripsJson !== lastSavedTripsJsonRef.current) {
-        saveTripsToFirestore(trips);
-      }
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = setTimeout(() => {
+        const tripsJson = JSON.stringify(trips.map((t: Trip) => normalizeTrip(t, cleanEmail)));
+        if (tripsJson !== lastSavedTripsJsonRef.current) {
+          saveTripsToFirestore(trips);
+        }
+      }, 1000);
+    }
+    return () => {
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     }
   }, [trips, currentUser?.email, loadedFromFirestore, saveTripsToFirestore]);
 

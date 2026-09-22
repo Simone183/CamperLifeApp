@@ -61,12 +61,19 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const [logs, setLogs] = React.useState<MaintenanceLog[]>(DEFAULT_LOGS);
   const [loadedFromFirestore, setLoadedFromFirestore] = React.useState(false);
 
+  // Used to prevent circular updates between local state and cloud/context
+  const isSyncingRef = React.useRef(false);
+
   // Sync from family crew if updated
   React.useEffect(() => {
-    if (currentCrew && isModuleSynced('maintenance') && Array.isArray(currentCrew.sharedData?.maintenance) && currentCrew.sharedData.maintenance.length > 0) {
-      setLogs(currentCrew.sharedData.maintenance);
+    if (currentCrew && isModuleSynced('maintenance') && Array.isArray(currentCrew.sharedData?.maintenance)) {
+      const incoming = currentCrew.sharedData.maintenance;
+      if (JSON.stringify(incoming) !== JSON.stringify(logs)) {
+        isSyncingRef.current = true;
+        setLogs(incoming);
+      }
     }
-  }, [currentCrew, isModuleSynced]);
+  }, [currentCrew?.sharedData?.maintenance, isModuleSynced]);
 
   // Leakage sector testing state
   const [sectors, setSectors] = React.useState<SectorLeakage[]>([
@@ -93,7 +100,10 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
     const unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        if (data.logs) setLogs(data.logs);
+        if (data.logs && JSON.stringify(data.logs) !== JSON.stringify(logs)) {
+          isSyncingRef.current = true;
+          setLogs(data.logs);
+        }
       }
       setLoadedFromFirestore(true);
     }, (error) => {
@@ -104,6 +114,12 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   }, []);
 
   const saveLogsToFirestore = (newLogs: MaintenanceLog[]) => {
+    // Break circular update: if this call is initiated by a sync, don't write back to cloud
+    if (isSyncingRef.current) {
+        isSyncingRef.current = false;
+        return;
+    }
+
     const docRef = doc(db, "user_data", "maintenance_logs");
     // Sanitize the object to remove any 'undefined' properties which are unsupported by Firestore
     const cleanedLogs = JSON.parse(JSON.stringify(newLogs));

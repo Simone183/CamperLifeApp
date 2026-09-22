@@ -9986,17 +9986,23 @@ export function LeafletOfflineMap({
   const hasCenteredOnGPSOnceRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (userLocation && leafletMapInstance && !selectedPlace && !clickedCoords && !movedRef.current) {
+    if (userLocation && leafletMapInstance && !selectedPlace && !clickedCoords && !movedRef.current && !hasCenteredOnGPSOnceRef.current) {
       try {
-        (leafletMapInstance as any)._isProgrammatic = true;
-        const currentZoom = leafletMapInstance.getZoom();
-        const targetZoom = (currentZoom && currentZoom > 15) ? currentZoom : 15;
-        leafletMapInstance.setView([userLocation.lat, userLocation.lng], targetZoom);
+        const center = leafletMapInstance.getCenter();
+        const dist = getDistanceKm(center.lat, center.lng, userLocation.lat, userLocation.lng);
+        // Only center if the difference is significant (>100m) or it's the first time
+        if (dist > 0.1 || !hasCenteredOnGPSOnceRef.current) {
+          hasCenteredOnGPSOnceRef.current = true;
+          (leafletMapInstance as any)._isProgrammatic = true;
+          const currentZoom = leafletMapInstance.getZoom();
+          const targetZoom = (currentZoom && currentZoom > 15) ? currentZoom : 15;
+          leafletMapInstance.setView([userLocation.lat, userLocation.lng], targetZoom);
+        }
       } catch (e) {
         console.warn("[Leaflet GPS Centering] Failed to set center:", e);
       }
     }
-  }, [userLocation, leafletMapInstance, selectedPlace, clickedCoords]);
+  }, [userLocation?.lat, userLocation?.lng, leafletMapInstance, selectedPlace?.id, clickedCoords?.lat, clickedCoords?.lng]);
 
   const markersRef = React.useRef<L.Marker[]>([]);
 

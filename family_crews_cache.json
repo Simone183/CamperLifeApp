@@ -836,96 +836,96 @@
       "pantry": {
         "pantry": [
           {
-            "unit": "lattina",
             "name": "Pesto",
-            "category": "scatolame",
-            "quantity": 0,
+            "unit": "lattina",
             "isLow": true,
+            "quantity": 0,
+            "category": "scatolame",
             "id": "pantry_1783250682054"
           },
           {
-            "id": "pantry_1783257740708",
-            "isLow": true,
             "unit": "pacco",
-            "quantity": 0,
+            "id": "pantry_1783257740708",
             "category": "spezie",
-            "name": "Caffè in cialde"
+            "name": "Caffè in cialde",
+            "quantity": 0,
+            "isLow": true
           },
           {
-            "category": "freschi",
-            "quantity": 1,
+            "unit": "pacco",
             "id": "pantry_1786902163725",
+            "category": "freschi",
             "name": "Caffè",
             "isLow": true,
-            "unit": "pacco"
+            "quantity": 1
           }
         ],
         "shoppingList": [
           {
-            "quantityStr": "1 pz",
-            "isCompleted": false,
+            "name": "Frutta",
             "category": "freschi",
             "id": "shop_1786902196326",
-            "name": "Frutta"
+            "quantityStr": "1 pz",
+            "isCompleted": false
           },
           {
-            "name": "Prosciutto",
+            "category": "freschi",
             "id": "shop_1786902187020",
-            "isCompleted": false,
+            "name": "Prosciutto",
             "quantityStr": "1",
-            "category": "freschi"
+            "isCompleted": false
           }
         ]
       },
       "maintenance": [
         {
-          "id": "m1",
+          "cost": 0,
+          "category": "infiltrazioni",
           "title": "Test di Umidità / Infiltrazioni Parentale",
           "date": "2026-04-10",
-          "completed": true,
           "description": "Controllo con igrometro su angoli dinette, mansarda e doccia. Valori rilevati uniformi tra 10% e 14%. Tutto conforme.",
-          "cost": 0,
-          "category": "infiltrazioni"
+          "completed": true,
+          "id": "m1"
         },
         {
-          "id": "m2",
-          "completed": true,
-          "date": "2026-05-18",
-          "category": "acqua",
-          "description": "Pulizia chimica con enzimi antiodore per eliminare depositi grassi e saponi accumulati.",
           "title": "Trattamento Igienizzante Serbatoio Grige",
-          "cost": 15
-        },
-        {
-          "id": "m3",
-          "cost": 38,
-          "description": "Controllo pressione e montaggio nuovo filtro protettivo per olii pesanti del GPL.",
-          "completed": true,
-          "date": "2026-06-01",
-          "category": "gas",
-          "title": "Sostituzione Filtro Regolatore Gas Truma MonoControl"
-        },
-        {
+          "date": "2026-05-18",
+          "description": "Pulizia chimica con enzimi antiodore per eliminare depositi grassi e saponi accumulati.",
+          "id": "m2",
           "category": "acqua",
+          "cost": 15,
+          "completed": true
+        },
+        {
+          "title": "Sostituzione Filtro Regolatore Gas Truma MonoControl",
+          "category": "gas",
+          "id": "m3",
+          "date": "2026-06-01",
           "completed": true,
-          "cost": 24,
-          "id": "m4",
+          "description": "Controllo pressione e montaggio nuovo filtro protettivo per olii pesanti del GPL.",
+          "cost": 38
+        },
+        {
           "description": "Pulizia completa con agente a base di cloro e inserimento della rete agli ioni d'argento per conservazione a lungo termine.",
           "date": "2026-06-15",
-          "title": "Sanificazione Serbatoio Acqua Chiara con Ioni D'argento"
+          "title": "Sanificazione Serbatoio Acqua Chiara con Ioni D'argento",
+          "cost": 24,
+          "category": "acqua",
+          "completed": true,
+          "id": "m4"
         },
         {
-          "cost": 0,
-          "description": "Ispezione esterna del sigillante siliconico perimetrale e rimessa a nuovo dei punti usurati con Terostat.",
-          "title": "Verifica Sigillature Tetto & Oblo",
-          "completed": false,
-          "id": "m5",
           "category": "infiltrazioni",
-          "date": "2026-07-15"
+          "cost": 0,
+          "title": "Verifica Sigillature Tetto & Oblo",
+          "id": "m5",
+          "description": "Ispezione esterna del sigillante siliconico perimetrale e rimessa a nuovo dei punti usurati con Terostat.",
+          "date": "2026-07-15",
+          "completed": false
         },
         {
-          "completed": false,
           "cost": 0,
+          "completed": false,
           "date": "2026-08-01",
           "id": "m6",
           "category": "elettrico",
@@ -934,6 +934,6 @@
         }
       ]
     },
-    "lastUpdated": "2026-09-21T15:10:13.468Z"
+    "lastUpdated": "2026-09-22T07:48:09.402Z"
   }
 }

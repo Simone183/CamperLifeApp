@@ -206,6 +206,9 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
 
   const [loadedFromFirestore, setLoadedFromFirestore] = React.useState(false);
 
+  // Used to prevent circular updates between local state and cloud/context
+  const isSyncingRef = React.useRef(false);
+
   // Firestore Sync
   React.useEffect(() => {
     const docRef = doc(db, "user_data", "pantry_shopping"); // Shared for now
@@ -213,8 +216,16 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
     const unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        if (data.pantry) setPantry(data.pantry);
-        if (data.shoppingList) setShoppingList(data.shoppingList);
+        let changed = false;
+        if (data.pantry && JSON.stringify(data.pantry) !== JSON.stringify(pantry)) {
+          setPantry(data.pantry);
+          changed = true;
+        }
+        if (data.shoppingList && JSON.stringify(data.shoppingList) !== JSON.stringify(shoppingList)) {
+          setShoppingList(data.shoppingList);
+          changed = true;
+        }
+        if (changed) isSyncingRef.current = true;
       }
       setLoadedFromFirestore(true);
     }, (error) => {
@@ -225,6 +236,12 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   }, []);
 
   const saveToFirestore = (newPantry: PantryItem[], newShoppingList: ShoppingItem[]) => {
+    // Break circular update: if this call is initiated by a sync, don't write back to cloud
+    if (isSyncingRef.current) {
+        isSyncingRef.current = false;
+        return;
+    }
+
     const docRef = doc(db, "user_data", "pantry_shopping");
     // Sanitize the objects to remove any 'undefined' properties which are unsupported by Firestore
     const cleanedPantry = JSON.parse(JSON.stringify(newPantry));
