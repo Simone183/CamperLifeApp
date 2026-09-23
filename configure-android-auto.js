@@ -457,6 +457,8 @@ public class ViaCamperCarSession extends Session {
 import android.content.Context;
 import android.location.Location;
 import android.location.LocationManager;
+import android.text.SpannableString;
+import android.text.Spanned;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
@@ -464,6 +466,8 @@ import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
 import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.Distance;
+import androidx.car.app.model.DistanceSpan;
 import androidx.car.app.model.ItemList;
 import androidx.car.app.model.Metadata;
 import androidx.car.app.model.Place;
@@ -509,43 +513,56 @@ public class MainMapScreen extends Screen {
 
         ItemList.Builder listBuilder = new ItemList.Builder();
 
-        // 1. Voce fissa per Registrazione Rifornimento Carburante
+        // 1. Voce fissa per Registrazione Rifornimento Carburante (contrassegnata browsable per navigazione sotto-schermata)
         Row.Builder fuelRow = new Row.Builder()
                 .setTitle("⛽ Registra Rifornimento Carburante")
                 .addText("Segna km, euro spesi e litri dal display")
+                .setBrowsable(true)
                 .setOnClickListener(() -> {
                     getScreenManager().push(new AddFuelLogScreen(getCarContext()));
                 });
         listBuilder.addItem(fuelRow.build());
 
-        // 2. Voce fissa per Aree Sosta & Camper Service
+        // 2. Voce fissa per Aree Sosta & Camper Service (contrassegnata browsable per navigazione sotto-schermata)
         Row.Builder placesRow = new Row.Builder()
                 .setTitle("🚐 Aree di Sosta & Camper Service")
                 .addText("Visualizza punti sosta e scarico vicini sulla mappa")
+                .setBrowsable(true)
                 .setOnClickListener(() -> {
                     getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation));
                 });
         listBuilder.addItem(placesRow.build());
 
-        // 3. Tappe e spostamenti del viaggio attivo con Marker sulla Mappa
-        for (AutoDataBridge.MovementItem m : movements) {
+        // 3. Tappe e spostamenti del viaggio attivo con Marker sulla Mappa e DistanceSpan obbligatorio
+        int maxMovements = Math.min(movements.size(), 4);
+        for (int i = 0; i < maxMovements; i++) {
+            AutoDataBridge.MovementItem m = movements.get(i);
             Row.Builder row = new Row.Builder();
             row.setTitle("📍 " + m.location);
+            row.setBrowsable(true);
+
+            double dKm = m.distanceKm > 0 ? m.distanceKm : 1.0;
+            Distance distance = Distance.create(dKm, Distance.UNIT_KILOMETERS);
+            String distLabel = String.format(Locale.getDefault(), "%.1f km", dKm);
+            SpannableString distSpan = new SpannableString(distLabel);
+            distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+            row.addText(distSpan);
 
             StringBuilder sub = new StringBuilder();
             if (m.odometer > 0) {
                 sub.append(String.format(Locale.getDefault(), "Odo: %.0f km", m.odometer));
             }
             if (m.distanceKm > 0) {
-                if (sub.length() > 0) sub.append(" • ");
                 int etaMin = (int) Math.round((m.distanceKm / 75.0) * 60.0);
-                sub.append(String.format(Locale.getDefault(), "Dist: %.1f km (~%d min)", m.distanceKm, etaMin));
+                if (sub.length() > 0) sub.append(" • ");
+                sub.append(String.format(Locale.getDefault(), "~%d min", etaMin));
             } else if (m.notes != null && !m.notes.isEmpty()) {
                 if (sub.length() > 0) sub.append(" • ");
                 sub.append(m.notes);
             }
-
-            row.addText(sub.toString());
+            if (sub.length() > 0) {
+                row.addText(sub.toString());
+            }
 
             if (m.lat != 0.0 && m.lng != 0.0) {
                 row.setMetadata(
@@ -597,6 +614,8 @@ public class MainMapScreen extends Screen {
   const camperPlacesScreenJava = `package com.ViaCamper.myapp.auto;
 
 import android.location.Location;
+import android.text.SpannableString;
+import android.text.Spanned;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
@@ -604,6 +623,8 @@ import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
 import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.Distance;
+import androidx.car.app.model.DistanceSpan;
 import androidx.car.app.model.ItemList;
 import androidx.car.app.model.Metadata;
 import androidx.car.app.model.Place;
@@ -630,36 +651,52 @@ public class CamperPlacesScreen extends Screen {
 
         ItemList.Builder listBuilder = new ItemList.Builder();
 
-        for (AutoDataBridge.CamperPlaceItem p : places) {
-            Row.Builder row = new Row.Builder();
-            row.setTitle("🚐 " + p.name);
+        if (places.isEmpty()) {
+            listBuilder.setNoItemsMessage("Nessuna area di sosta trovata nelle vicinanze");
+        } else {
+            int maxPlaces = Math.min(places.size(), 6);
+            for (int i = 0; i < maxPlaces; i++) {
+                AutoDataBridge.CamperPlaceItem p = places.get(i);
+                Row.Builder row = new Row.Builder();
+                row.setTitle("🚐 " + p.name);
+                row.setBrowsable(true);
 
-            String sub = String.format(Locale.getDefault(), "%s • A %.1f km", p.type, p.distanceKm);
-            row.addText(sub);
+                double dKm = p.distanceKm > 0 ? p.distanceKm : 1.0;
+                Distance distance = Distance.create(dKm, Distance.UNIT_KILOMETERS);
+                String distLabel = String.format(Locale.getDefault(), "%.1f km", dKm);
+                SpannableString distSpan = new SpannableString(distLabel);
+                distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+                row.addText(distSpan);
 
-            if (p.lat != 0.0 && p.lng != 0.0) {
-                row.setMetadata(
-                    new Metadata.Builder()
-                        .setPlace(
-                            new Place.Builder(CarLocation.create(p.lat, p.lng))
-                                .setMarker(new PlaceMarker.Builder().setColor(CarColor.YELLOW).build())
-                                .build()
-                        )
-                        .build()
-                );
+                if (p.type != null && !p.type.isEmpty()) {
+                    row.addText(p.type);
+                }
+
+                if (p.lat != 0.0 && p.lng != 0.0) {
+                    row.setMetadata(
+                        new Metadata.Builder()
+                            .setPlace(
+                                new Place.Builder(CarLocation.create(p.lat, p.lng))
+                                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.YELLOW).build())
+                                    .build()
+                            )
+                            .build()
+                    );
+                }
+
+                AutoDataBridge.MovementItem m = new AutoDataBridge.MovementItem();
+                m.id = p.id;
+                m.location = p.name;
+                m.lat = p.lat;
+                m.lng = p.lng;
+                m.distanceKm = p.distanceKm;
+
+                row.setOnClickListener(() -> {
+                    getScreenManager().push(new NavigatorChooserScreen(getCarContext(), m));
+                });
+
+                listBuilder.addItem(row.build());
             }
-
-            AutoDataBridge.MovementItem m = new AutoDataBridge.MovementItem();
-            m.id = p.id;
-            m.location = p.name;
-            m.lat = p.lat;
-            m.lng = p.lng;
-
-            row.setOnClickListener(() -> {
-                getScreenManager().push(new NavigatorChooserScreen(getCarContext(), m));
-            });
-
-            listBuilder.addItem(row.build());
         }
 
         ActionStrip actionStrip = new ActionStrip.Builder()

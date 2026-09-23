@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CalendarDays, Search, MapPin, Sparkles, Navigation, Plus, Users, Calendar } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { CalendarDays, Search, MapPin, Sparkles, Navigation, Plus, Users, Calendar, Clock } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { Place } from '../types';
 
@@ -14,19 +14,35 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
   const [searchLocation, setSearchLocation] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [aiEventsResponse, setAiEventsResponse] = useState<string>('');
+  
+  // Debounce & Client Cache refs to prevent rapid successive requests
+  const debounceTimerRef = useRef<any>(null);
+  const clientCacheRef = useRef<Record<string, string>>({});
 
-  const handleAISearch = async () => {
-    if (!searchLocation.trim()) return;
+  const executeSearch = async (locToSearch: string) => {
+    const trimmedLoc = locToSearch.trim();
+    if (!trimmedLoc) return;
+
+    // Check client-side instant cache
+    const cacheKey = trimmedLoc.toLowerCase();
+    if (clientCacheRef.current[cacheKey]) {
+      setAiEventsResponse(clientCacheRef.current[cacheKey]);
+      setIsSearching(false);
+      return;
+    }
+
     setIsSearching(true);
     try {
       const res = await fetch('/api/search-events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: searchLocation })
+        body: JSON.stringify({ location: trimmedLoc })
       });
       if (res.ok) {
         const data = await res.json();
-        setAiEventsResponse(data.eventsText || data.text || 'Nessun risultato trovato.');
+        const text = data.eventsText || data.text || 'Nessun risultato trovato.';
+        clientCacheRef.current[cacheKey] = text;
+        setAiEventsResponse(text);
       } else {
         setAiEventsResponse("⚠️ Si è verificato un errore durante la ricerca degli eventi.");
       }
@@ -36,6 +52,21 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleAISearch = () => {
+    if (!searchLocation.trim() || isSearching) return;
+
+    // Clear any pending debounce
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Apply a light debounce of 400ms to pace user actions
+    setIsSearching(true);
+    debounceTimerRef.current = setTimeout(() => {
+      executeSearch(searchLocation);
+    }, 400);
   };
 
   const handleUseMyLocation = () => {
@@ -123,6 +154,9 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
                       type="text"
                       value={searchLocation}
                       onChange={(e) => setSearchLocation(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAISearch();
+                      }}
                       placeholder="Es: Firenze, Toscana oppure Lago di Garda"
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#3E4A35]/20 focus:border-[#3E4A35] outline-none"
                     />

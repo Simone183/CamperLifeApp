@@ -311,7 +311,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     }
   }, [trip.id, routePointsStr, movementsStr, mode, editMode]);
 
-  // Geocode photos matching their assigned locationNames (only for real movements mode)
+  // Geocode starred photos matching their assigned locationNames (max 3 per location)
   React.useEffect(() => {
     let isSubscribed = true;
     if (mode === 'planned') {
@@ -320,11 +320,18 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     }
     const geocodePhotos = async () => {
       const resolvedPhotos: typeof photoPoints = [];
+      const locationStarredCount = new Map<string, number>();
+
       for (const photo of trip.photos || []) {
         if (!isSubscribed) return;
-        if (photo.locationName) {
+        if (photo.isStarred && photo.locationName) {
+          const locKey = photo.locationName.trim().toLowerCase();
+          const count = locationStarredCount.get(locKey) || 0;
+          if (count >= 3) continue; // Max 3 starred photos per location on the interactive map
+
           const coords = await geocodeLocation(photo.locationName);
           if (coords) {
+            locationStarredCount.set(locKey, count + 1);
             resolvedPhotos.push({
               id: photo.id,
               url: photo.url,

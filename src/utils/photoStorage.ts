@@ -135,3 +135,22 @@ export async function pruneIndexedDBCache(maxEntries = 300): Promise<number> {
   }
 }
 
+/**
+ * Permanently deletes a photo from IndexedDB so it cannot be scanned as an orphan or restored.
+ */
+export async function deletePhotoFromIndexedDB(photoId: string): Promise<void> {
+  if (!photoId) return;
+  try {
+    const db = await getDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const delReq = store.delete(photoId);
+      delReq.onsuccess = () => resolve();
+      delReq.onerror = () => resolve();
+    });
+  } catch (e) {
+    // Ignore error
+  }
+}
+

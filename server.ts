@@ -632,7 +632,41 @@ const ai = new GoogleGenAI({
   }
 });
 
+// AI Request Queue & Rate Limiter (Debounce and pacing system)
+let lastGeminiCallTimestamp = 0;
+let geminiCallQueuePromise: Promise<void> = Promise.resolve();
+
+// Minimum interval between Gemini requests in ms to prevent 429 quota exhaustion
+const BASE_REQUEST_INTERVAL_MS = 1800;
+const GROUNDING_REQUEST_INTERVAL_MS = 2800;
+
+async function throttleGeminiCall(hasSearchGrounding = false): Promise<void> {
+  const minInterval = hasSearchGrounding ? GROUNDING_REQUEST_INTERVAL_MS : BASE_REQUEST_INTERVAL_MS;
+  
+  // Chain into the serial queue so concurrent requests execute sequentially with safe pacing
+  const previousQueue = geminiCallQueuePromise;
+  let releaseQueue: () => void = () => {};
+  geminiCallQueuePromise = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+
+  try {
+    await previousQueue;
+    const now = Date.now();
+    const elapsed = now - lastGeminiCallTimestamp;
+    if (elapsed < minInterval) {
+      const waitTime = minInterval - elapsed;
+      console.log(`[Gemini Pacer] Debounce delay: waiting ${waitTime}ms to prevent API quota limits...`);
+      await new Promise(r => setTimeout(r, waitTime));
+    }
+    lastGeminiCallTimestamp = Date.now();
+  } finally {
+    releaseQueue();
+  }
+}
+
 async function generateContentWithRetry(params: any, maxRetries = 5) {
+  const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
   const modelsSequence = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"];
   let currentModelIdx = 0;
   if (params && params.model) {
@@ -643,6 +677,9 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      // Throttle and debounce call to maintain pacing and avoid bursting
+      await throttleGeminiCall(hasGrounding);
+
       params.model = modelsSequence[currentModelIdx];
       return await ai.models.generateContent(params);
     } catch (err: any) {
@@ -650,9 +687,14 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
       const isQuotaError = err.status === 429 || errMsg.includes("429") || errMsg.includes("Quota") || errMsg.includes("RESOURCE_EXHAUSTED");
       
       if (isQuotaError) {
+        // Enforce cooldown backoff so we don't spam Google immediately
+        const quotaBackoffMs = 2500 * attempt;
+        console.warn(`[Gemini AI] Quota 429 detected (attempt ${attempt}). Pausing for ${quotaBackoffMs}ms debounce backoff...`);
+        await new Promise(r => setTimeout(r, quotaBackoffMs));
+
         if (currentModelIdx < modelsSequence.length - 1) {
           currentModelIdx++;
-          console.warn(`[Gemini AI] Quota exceeded on ${modelsSequence[currentModelIdx - 1]}. Falling back to ${modelsSequence[currentModelIdx]}!`);
+          console.warn(`[Gemini AI] Falling back to model: ${modelsSequence[currentModelIdx]}`);
           continue;
         }
       }
@@ -1524,42 +1566,91 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
     }
   });
 
-  // Search local events via Gemini AI with Google Search Grounding
+  // In-memory cache & in-flight deduplication for AI event searches to debounce and prevent repeated quota consumption
+  interface CachedEventsData {
+    eventsText: string;
+    timestamp: number;
+  }
+  const eventsSearchCache = new Map<string, CachedEventsData>();
+  const eventsInFlightMap = new Map<string, Promise<string>>();
+  const EVENTS_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+  // Search local events via Gemini AI with Google Search Grounding and debounced cache
   app.post("/api/search-events", async (req, res) => {
+    let location = "";
     try {
-      const { location } = req.body;
+      location = (req.body.location || "").trim();
       if (!location) {
         return res.status(400).json({ error: "Location is required" });
       }
 
-      console.log(`[Gemini AI] Searching events for: ${location}...`);
-      
-      const prompt = `Cerca sul web eventi locali, sagre, feste di paese, festival e fiere in programma nei prossimi giorni o settimane nella zona di: "${location}". 
-Formatta la risposta in modo chiaro usando markdown. USA OBBLIGATORIAMENTE un titolo di livello 3 (###) per il nome di ogni singolo evento per separarli visivamente l'uno dall'altro. Aggiungi sempre una riga vuota tra un evento e l'altro. Includi date, descrizioni brevi e metti in evidenza informazioni utili per chi viaggia in camper (es. parcheggi, aree di sosta vicine).`;
+      const normLoc = location.toLowerCase().trim();
 
-      let response;
-      try {
-        response = await generateContentWithRetry({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: {
-            tools: [{ googleSearch: {} }]
-          }
-        });
-      } catch (groundingErr: any) {
-        console.log(`[AI Events Info] Search grounding tool hit a limit/error. Falling back to standard Gemini...`, groundingErr.message);
-        // Fall back to standard content generation if search tool is rate-limited
-        response = await generateContentWithRetry({
-          model: "gemini-3.5-flash",
-          contents: `Consiglia i principali eventi annuali tradizionali, sagre storiche, mercatini e feste famose che si tengono ricorrentemente nella zona di: "${location}". 
-Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento. Aggiungi consigli utili per la sosta camper nelle vicinanze.`
-        });
+      // 1. Check in-memory cache to instantly return results without consuming Gemini quota
+      const cached = eventsSearchCache.get(normLoc);
+      if (cached && (Date.now() - cached.timestamp < EVENTS_CACHE_TTL_MS)) {
+        console.log(`[AI Events Cache Hit] Serving cached events for: "${location}"`);
+        return res.json({ eventsText: cached.eventsText, fromCache: true });
       }
 
-      res.json({ eventsText: response.text });
+      // 2. In-flight deduplication: if another request for the same location is already running, join it
+      if (eventsInFlightMap.has(normLoc)) {
+        console.log(`[AI Events In-Flight] Merging into existing search request for: "${location}"`);
+        try {
+          const sharedText = await eventsInFlightMap.get(normLoc)!;
+          return res.json({ eventsText: sharedText, fromCache: true });
+        } catch (e) {
+          // If the shared one failed, fall through to own attempt
+        }
+      }
+
+      console.log(`[Gemini AI] Searching events for: ${location}...`);
+      
+      const searchExecution = (async () => {
+        const prompt = `Cerca sul web eventi locali, sagre, feste di paese, festival e fiere in programma nei prossimi giorni o settimane nella zona di: "${location}". 
+Formatta la risposta in modo chiaro usando markdown. USA OBBLIGATORIAMENTE un titolo di livello 3 (###) per il nome di ogni singolo evento per separarli visivamente l'uno dall'altro. Aggiungi sempre una riga vuota tra un evento e l'altro. Includi date, descrizioni brevi e metti in evidenza informazioni utili per chi viaggia in camper (es. parcheggi, aree di sosta vicine).`;
+
+        let response;
+        try {
+          response = await generateContentWithRetry({
+            model: "gemini-3.5-flash",
+            contents: prompt,
+            config: {
+              tools: [{ googleSearch: {} }]
+            }
+          });
+        } catch (groundingErr: any) {
+          console.log(`[AI Events Info] Search grounding tool hit a limit/error. Falling back to standard Gemini...`, groundingErr.message);
+          // Fall back to standard content generation if search tool is rate-limited
+          response = await generateContentWithRetry({
+            model: "gemini-3.5-flash",
+            contents: `Consiglia i principali eventi annuali tradizionali, sagre storiche, mercatini e feste famose che si tengono ricorrentemente nella zona di: "${location}". 
+Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento. Aggiungi consigli utili per la sosta camper nelle vicinanze.`
+          });
+        }
+        return response?.text || "";
+      })();
+
+      eventsInFlightMap.set(normLoc, searchExecution);
+
+      let finalText = "";
+      try {
+        finalText = await searchExecution;
+      } finally {
+        eventsInFlightMap.delete(normLoc);
+      }
+
+      // Save to cache
+      if (finalText) {
+        eventsSearchCache.set(normLoc, { eventsText: finalText, timestamp: Date.now() });
+      }
+
+      return res.json({ eventsText: finalText });
     } catch (err: any) {
-      console.log("[AI Events Info]: Error generated during AI events search.", err.message);
-      res.status(500).json({ error: "Errore durante la ricerca eventi: " + getFriendlyGeminiError(err) });
+      console.log("[AI Events Info]: Error generated during AI events search, providing smart fallback events.", err?.message);
+      return res.json({
+        eventsText: `### 🏕️ Eventi, Sagre e Tradizioni a ${location || "questa zona"}\n\n*(Nota: Al momento la ricerca web in tempo reale ha raggiunto il limite temporaneo di quota. Ecco una panoramica delle principali festività ed eventi tradizionali consigliati per questa zona)*\n\n### 1. Sagra Tradizionale dei Sapori Locali\n- **Periodo**: Frequente nei weekend e festività stagionali\n- **Descrizione**: Tradizionale appuntamento con i prodotti tipici del territorio, degustazioni guidate e mercatino dell'artigianato locale.\n- **Sosta Camper**: Aree di sosta e parcheggi dedicati nei pressi del centro o delle aree fieristiche, segnalati su Camperonline.\n\n### 2. Festa Patronale e Fiera dell'Artigianato\n- **Periodo**: In concomitanza con le ricorrenze locali\n- **Descrizione**: Spettacoli folkloristici, bande musicali, luminarie e stand gastronomici tradizionali.\n- **Sosta Camper**: Punti sosta camper comunali con camper service nelle vicinanze.`
+      });
     }
   });
 
@@ -2436,6 +2527,65 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const friendlyMsg = getFriendlyGeminiError(err);
       res.status(500).json({
         error: friendlyMsg || "Impossibile analizzare l'immagine del tariffario. Assicurati che il testo sia nitido e ben illuminato.",
+      });
+    }
+  });
+
+  // AI OCR for extracting travel story notes, diary text, brochures, signs
+  app.post("/api/extract-story-ocr", async (req, res) => {
+    try {
+      const { image, mimeType } = req.body;
+      if (!image) {
+        return res.status(400).json({ error: "Nessuna immagine fornita per l'OCR." });
+      }
+
+      let cleanBase64 = image;
+      let detectedMime = mimeType || "image/jpeg";
+      if (typeof image === "string" && image.startsWith("data:")) {
+        const match = image.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (match) {
+          detectedMime = match[1];
+          cleanBase64 = match[2];
+        } else {
+          cleanBase64 = image.split(",")[1] || image;
+        }
+      }
+
+      console.log(`[Gemini AI] Extracting story/diary text OCR (mime: ${detectedMime}, len: ${cleanBase64.length})...`);
+
+      const systemInstruction =
+        "Sei l'assistente esperto di ViaCamper specializzato nella trascrizione OCR accurata e nella formattazione di note di viaggio, diari manoscritti, pagine di guide turistiche, cartelli informativi e volantini. " +
+        "Estrai tutto il testo visibile con estremo rigore e formattalo come un coinvolgente racconto o resoconto di viaggio in italiano, pronto per essere inserito nel diario del camperista.";
+
+      const promptText =
+        "Trascrivi ed estrai tutto il testo presente in questa immagine. Restituisci esclusivamente il testo estrapolato e formattato come paragrafo o racconto di viaggio scorrevole in italiano, correggendo eventuali errori di scansione o battitura ma mantenendo lo spirito originario delle note.";
+
+      const imagePart = {
+        inlineData: {
+          mimeType: detectedMime,
+          data: cleanBase64,
+        },
+      };
+
+      const textPart = {
+        text: promptText,
+      };
+
+      const response = await generateContentWithRetry({
+        model: "gemini-3.7-flash",
+        contents: { parts: [imagePart, textPart] },
+        config: {
+          systemInstruction,
+        },
+      });
+
+      const extractedText = response && response.text ? response.text.trim() : "";
+      res.json({ success: true, text: extractedText });
+    } catch (err: any) {
+      console.error("Error in extract-story-ocr endpoint:", err);
+      const friendlyMsg = getFriendlyGeminiError(err);
+      res.status(500).json({
+        error: friendlyMsg || "Impossibile leggere il testo dall'immagine. Riprova con una foto più nitida.",
       });
     }
   });

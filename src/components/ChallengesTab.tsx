@@ -60,7 +60,7 @@ export function isChallengeExpired(challenge?: ChallengeItem): boolean {
   return false;
 }
 
-const INITIAL_CHALLENGES: ChallengeItem[] = [
+export const INITIAL_CHALLENGES: ChallengeItem[] = [
   {
     id: 'ch_sea_view',
     title: 'Sfida #1: A caccia di foto vista mare 🌊',
@@ -72,8 +72,9 @@ const INITIAL_CHALLENGES: ChallengeItem[] = [
     progress: 0,
     maxProgress: 1,
     unit: 'foto',
-    endDate: '31 Agosto 2026',
-    isExpired: false
+    endDate: '31 Ottobre 2026',
+    isExpired: true,
+    isCompleted: true
   },
   {
     id: 'ch_new_stop',
@@ -86,8 +87,9 @@ const INITIAL_CHALLENGES: ChallengeItem[] = [
     progress: 1,
     maxProgress: 3,
     unit: 'soste',
-    endDate: '15 Settembre 2026',
-    isExpired: false
+    endDate: '15 Novembre 2026',
+    isExpired: true,
+    isCompleted: true
   },
   {
     id: 'ch_top_review',
@@ -100,23 +102,24 @@ const INITIAL_CHALLENGES: ChallengeItem[] = [
     progress: 1,
     maxProgress: 2,
     unit: 'recensioni',
-    endDate: '20 Settembre 2026',
-    isExpired: false
+    endDate: '30 Novembre 2026',
+    isExpired: true,
+    isCompleted: true
   },
   {
     id: 'ch_expired_sunset',
-    title: 'Sfida Passata: Tramonti d\'Autunno in Camper 🍂',
+    title: 'Sfida: Tramonti d\'Autunno in Camper 🍂',
     badgeTag: 'Tramonto',
     icon: '🌅',
-    description: 'Concorso fotografico autunnale oramai concluso. Le votazioni del concorso sono chiuse.',
+    description: 'Scatta e condividi il tuo miglior tramonto in camper: cielo infuocato, atmosfera autunnale e sosta indimenticabile.',
     reward: 'Badge "Autunno Master" + 120 Punti XP',
     xpPoints: 120,
-    progress: 1,
+    progress: 0,
     maxProgress: 1,
     unit: 'foto',
-    endDate: '15 Ottobre 2025',
-    isCompleted: true,
-    isExpired: true
+    endDate: '31 Dicembre 2026',
+    isCompleted: false,
+    isExpired: false
   }
 ];
 
@@ -548,11 +551,15 @@ export function ChallengesTab({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {challenges.map(ch => {
               const pct = Math.round((ch.progress / ch.maxProgress) * 100);
+              const isClosed = isChallengeExpired(ch);
+
               return (
                 <div
                   key={ch.id}
                   className={`bg-white dark:bg-slate-800 rounded-3xl p-5 border transition-all flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md ${
-                    ch.isCompleted 
+                    isClosed
+                      ? 'border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-slate-900/40 opacity-80'
+                      : ch.isCompleted 
                       ? 'border-emerald-500/50 bg-emerald-50/20 dark:bg-emerald-950/10' 
                       : 'border-slate-200 dark:border-slate-700'
                   }`}
@@ -563,11 +570,18 @@ export function ChallengesTab({
                         {ch.icon}
                       </span>
                       <div className="flex flex-col items-end gap-1">
-                        <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 text-[10px] font-black uppercase tracking-wider">
-                          +{ch.xpPoints} XP
-                        </span>
+                        {isClosed ? (
+                          <span className="px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            Concorso Chiuso
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                            +{ch.xpPoints} XP
+                          </span>
+                        )}
                         <span className="text-[10px] text-slate-400 font-medium">
-                          Scade il {ch.endDate}
+                          {isClosed ? `Concluso (${ch.endDate})` : `Scade il ${ch.endDate}`}
                         </span>
                       </div>
                     </div>
@@ -606,7 +620,12 @@ export function ChallengesTab({
 
                   {/* Actions */}
                   <div className="pt-2">
-                    {ch.isCompleted ? (
+                    {isClosed ? (
+                      <div className="w-full py-2.5 px-4 rounded-xl bg-stone-100 dark:bg-stone-800/80 text-stone-500 dark:text-stone-400 font-extrabold text-xs flex items-center justify-center gap-2 border border-stone-200 dark:border-stone-700 select-none">
+                        <Lock className="w-4 h-4 text-stone-400" />
+                        <span>Concorso Concluso / Scaduto</span>
+                      </div>
+                    ) : ch.isCompleted ? (
                       <div className="w-full py-2.5 rounded-xl bg-emerald-100 text-emerald-900 dark:bg-emerald-950/80 dark:text-emerald-300 font-black text-xs flex items-center justify-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         <span>Sfida Completata! 🏆</span>

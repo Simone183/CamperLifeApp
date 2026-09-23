@@ -405,6 +405,7 @@ export interface DiaryPhoto {
   dateSource?: 'exif' | 'filename' | 'file-lastmodified' | 'manual' | 'fallback'; // Origine della data
   locationName?: string; // Tappa in cui è stata scattata la foto
   deleted?: boolean; // Flag per soft delete sincronizzato
+  isStarred?: boolean; // Foto in evidenza sulla Mappa Interattiva del Viaggio (max 3 per luogo)
 }
 
 export interface AIDayStop {
@@ -535,6 +536,17 @@ export interface TripStop {
   photosUrl?: string[];
 }
 
+export interface TripSosta {
+  id: string;
+  name: string;
+  type: 'area_sosta' | 'campeggio' | 'agricampeggio' | 'parcheggio' | 'altro' | string;
+  address?: string;
+  phone?: string;
+  date: string;
+  expenseEuro: number;
+  notes?: string;
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -547,6 +559,7 @@ export interface Trip {
   expenses: DiaryExpense[];
   photos: DiaryPhoto[];
   movements?: DiaryMovement[];
+  soste?: TripSosta[];
   isShared?: boolean;
   includeExpenses?: boolean;
   shareToSharedTrips?: boolean;

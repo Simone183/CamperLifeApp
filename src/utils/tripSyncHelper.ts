@@ -1,5 +1,55 @@
 import { Trip, DiaryExpense, TripMovement, TripStop, DiaryPhoto } from "../types";
-import { savePhotoToIndexedDB } from "./photoStorage";
+import { savePhotoToIndexedDB, deletePhotoFromIndexedDB } from "./photoStorage";
+
+export const SICILIA_PURGED_PHOTO_IDS = new Set<string>([
+  "photo_1790087208782",
+  "photo_1790087208783",
+  "photo_1790087208784",
+  "photo_1790087208785",
+  "photo_1790087295632",
+  "photo_1790087295634",
+  "photo_1790087295635",
+  "photo_1790087295636",
+  "photo_1790087295637",
+  "photo_1790088702498",
+  "photo_1790088702499",
+  "photo_1790088702500",
+  "photo_1790088702501",
+  "photo_1790088702502",
+  "photo_1790088702503",
+  "photo_1790088702504",
+  "photo_1790088702505",
+]);
+
+export function isSiciliaTrip(trip: any): boolean {
+  if (!trip) return false;
+  const id = String(trip.id || "");
+  const title = String(trip.title || "").toLowerCase();
+  return id === "trip_1787575589438" || title.includes("sicilia");
+}
+
+export function isSicilia29AugPhoto(photo: any, isSicilia = false): boolean {
+  if (!photo) return false;
+  const pid = String(photo.id || "");
+  if (SICILIA_PURGED_PHOTO_IDS.has(pid)) return true;
+  if (!isSicilia) return false;
+  const d = String(photo.date || "").trim();
+  const is29Aug = (
+    d === "2026-08-29" ||
+    d === "29/08/26" ||
+    d === "29/08/2026" ||
+    d.startsWith("2026-08-29") ||
+    d.startsWith("29/08/26") ||
+    d.startsWith("29/08/2026")
+  );
+  // Only purge 29 Aug photos if they are legacy ghost placeholders with no valid image or marked recovered
+  if (is29Aug) {
+    const url = String(photo.url || "");
+    const isGhost = !url || url.startsWith("/uploads/") || photo.description === "Foto recuperata dalla memoria";
+    if (isGhost) return true;
+  }
+  return false;
+}
 
 export type DeletionType = 'photos' | 'trips' | 'expenses' | 'movements';
 
@@ -123,6 +173,7 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
       }))
     : [];
 
+  const isSicilia = isSiciliaTrip(rawTrip);
   const cleanPhotos: DiaryPhoto[] = Array.isArray(rawTrip.photos)
     ? rawTrip.photos
         .filter((p: any) => {
@@ -131,6 +182,10 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
           const photoId = String(p.id || '');
           const photoUrl = String(p.url || '');
           if (deletedPhotos.has(photoId) || (photoUrl && deletedPhotos.has(photoUrl))) {
+            return false;
+          }
+          if (isSicilia29AugPhoto(p, isSicilia)) {
+            deletePhotoFromIndexedDB(photoId).catch(() => {});
             return false;
           }
           return true;
@@ -250,14 +305,23 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
   }
 
   // 3. Merge photos by ID or URL
+  const isSicilia = isSiciliaTrip(localTrip) || isSiciliaTrip(cloudTrip);
   const photoMap = new Map<string, DiaryPhoto>();
   for (const p of localTrip.photos || []) {
     if (p?.id && !deletedPhotos.has(p.id)) {
+      if (isSicilia29AugPhoto(p, isSicilia)) {
+        deletePhotoFromIndexedDB(p.id).catch(() => {});
+        continue;
+      }
       photoMap.set(p.id, p);
     }
   }
   for (const p of cloudTrip.photos || []) {
     if (p?.id && !deletedPhotos.has(p.id)) {
+      if (isSicilia29AugPhoto(p, isSicilia)) {
+        deletePhotoFromIndexedDB(p.id).catch(() => {});
+        continue;
+      }
       if (!photoMap.has(p.id)) {
         const urlExists = Array.from(photoMap.values()).some(existing => existing.url === p.url);
         if (!urlExists) {

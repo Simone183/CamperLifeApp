@@ -2,9 +2,9 @@ import React from "react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue, formatCurrency } from "../unit-helpers";
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement, TripMovement } from "../types";
-import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds, isDeletedId } from "../utils/tripSyncHelper";
+import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds, isDeletedId, isSiciliaTrip, isSicilia29AugPhoto, SICILIA_PURGED_PHOTO_IDS } from "../utils/tripSyncHelper";
 import { compressImage } from "../utils/photoCompressor";
-import { savePhotoToIndexedDB, getAllPhotosFromIndexedDB, pruneIndexedDBCache } from "../utils/photoStorage";
+import { savePhotoToIndexedDB, getAllPhotosFromIndexedDB, pruneIndexedDBCache, deletePhotoFromIndexedDB } from "../utils/photoStorage";
 import { resolveMediaUrl, resolveApiUrl } from "../utils/resolveMediaUrl";
 import { CamperImage } from "./CamperImage";
 import { TripRouteMap } from "./TripRouteMap";
@@ -43,6 +43,7 @@ import {
   Pencil,
   Map as MapIcon,
   Sparkles,
+  Star,
   RefreshCw,
   Cloud,
   CloudOff,
@@ -541,6 +542,14 @@ export default function DiaryTab({
   const [newStartOdo, setNewStartOdo] = React.useState("");
   const [newEndOdo, setNewEndOdo] = React.useState("");
 
+  // OCR Reader modal states
+  const [showOcrModal, setShowOcrModal] = React.useState(false);
+  const [ocrImagePreview, setOcrImagePreview] = React.useState<string | null>(null);
+  const [ocrImageFile, setOcrImageFile] = React.useState<File | null>(null);
+  const [ocrExtractedText, setOcrExtractedText] = React.useState("");
+  const [isProcessingOcr, setIsProcessingOcr] = React.useState(false);
+  const [ocrTargetField, setOcrTargetField] = React.useState<'new' | 'edit'>('new');
+
   // New Expense form state
   const [expenseTitle, setExpenseTitle] = React.useState("");
   const [expenseAmount, setExpenseAmount] = React.useState("");
@@ -551,13 +560,24 @@ export default function DiaryTab({
 
   // Fuel-specific states
   const expenseFormRef = React.useRef<HTMLFormElement>(null);
+  const editTripFormRef = React.useRef<HTMLFormElement>(null);
   const [fuelLiters, setFuelLiters] = React.useState("");
   const [fuelPricePerLiter, setFuelPricePerLiter] = React.useState("");
   const [fuelOdometer, setFuelOdometer] = React.useState("");
   const [fuelCompany, setFuelCompany] = React.useState("Eni");
   const [fuelIsFullTank, setFuelIsFullTank] = React.useState(false);
+  // Sosta-specific states
+  const [sostaName, setSostaName] = React.useState("");
+  const [sostaType, setSostaType] = React.useState<string>("area_sosta");
+  const [sostaAddress, setSostaAddress] = React.useState("");
+  const [sostaPhone, setSostaPhone] = React.useState("");
+  const [sostaDate, setSostaDate] = React.useState("");
+  const [sostaExpense, setSostaExpense] = React.useState("");
+  const [sostaNotes, setSostaNotes] = React.useState("");
+  const [editingSostaId, setEditingSostaId] = React.useState<string | null>(null);
+
   const [expenseSubMode, setExpenseSubMode] = React.useState<
-    "general" | "refuel" | "movement" | "planned" | "photo"
+    "general" | "refuel" | "movement" | "planned" | "photo" | "sosta"
   >("general");
 
   // Movement-specific states
@@ -623,6 +643,12 @@ export default function DiaryTab({
   const [editPhotoDesc, setEditPhotoDesc] = React.useState("");
   const [editPhotoLoc, setEditPhotoLoc] = React.useState("");
   const [editPhotoDate, setEditPhotoDate] = React.useState("");
+  const [applyDateToSameLocation, setApplyDateToSameLocation] = React.useState(false);
+
+  // Batch Date Update Modal State
+  const [showBatchDateModal, setShowBatchDateModal] = React.useState(false);
+  const [batchDateTargetLocation, setBatchDateTargetLocation] = React.useState<string>("all");
+  const [batchDateValue, setBatchDateValue] = React.useState<string>("");
 
   // PDF Export Modal State
   const [showPdfExportModal, setShowPdfExportModal] = React.useState(false);
@@ -745,9 +771,23 @@ export default function DiaryTab({
         setLocalOrphanPhotosCount(0);
         return 0;
       }
+      const isSicilia = isSiciliaTrip(activeTrip);
       const currentIds = new Set((activeTrip?.photos || []).map((p) => p.id));
       const deletedPhotos = getDeletedIds('photos', emailKey);
-      const orphanIds = storedIds.filter((id) => !currentIds.has(id) && !deletedPhotos.has(id));
+      const orphanIds = storedIds.filter((id) => {
+        if (currentIds.has(id)) return false;
+        if (deletedPhotos.has(id)) return false;
+        if (SICILIA_PURGED_PHOTO_IDS.has(id)) {
+          deletePhotoFromIndexedDB(id).catch(() => {});
+          return false;
+        }
+        const b64 = idbPhotos[id];
+        if (!b64 || typeof b64 !== "string" || b64.length < 100) {
+          deletePhotoFromIndexedDB(id).catch(() => {});
+          return false;
+        }
+        return true;
+      });
       setLocalOrphanPhotosCount(orphanIds.length);
       return orphanIds.length;
     } catch (e) {
@@ -764,11 +804,17 @@ export default function DiaryTab({
   const activeTripPhotos = React.useMemo(() => {
     if (!activeTrip || !Array.isArray(activeTrip.photos)) return [];
     const deletedPhotos = getDeletedIds('photos', emailKey);
+    const isSicilia = isSiciliaTrip(activeTrip);
     const filtered = activeTrip.photos.filter((p) => {
       if (!p || p.deleted) return false;
       const pId = String(p.id || '');
       const pUrl = String(p.url || '');
-      return !deletedPhotos.has(pId) && (!pUrl || !deletedPhotos.has(pUrl));
+      if (deletedPhotos.has(pId) || (pUrl && deletedPhotos.has(pUrl))) return false;
+      if (isSicilia29AugPhoto(p, isSicilia)) {
+        deletePhotoFromIndexedDB(pId).catch(() => {});
+        return false;
+      }
+      return true;
     });
 
     if (photoSortOrder === 'manual') {
@@ -800,12 +846,17 @@ export default function DiaryTab({
     const deletedPhotos = getDeletedIds('photos', emailKey);
     const photosList: Array<DiaryPhoto & { tripId: string; tripTitle: string }> = [];
     trips.forEach((trip) => {
+      const isSic = isSiciliaTrip(trip);
       if (trip.photos) {
         trip.photos.forEach((photo) => {
           if (photo.deleted) return;
           const photoId = String(photo.id || '');
           const photoUrl = String(photo.url || '');
           if (deletedPhotos.has(photoId) || (photoUrl && deletedPhotos.has(photoUrl))) {
+            return;
+          }
+          if (isSicilia29AugPhoto(photo, isSic)) {
+            deletePhotoFromIndexedDB(photoId).catch(() => {});
             return;
           }
           photosList.push({
@@ -1435,6 +1486,154 @@ export default function DiaryTab({
     );
   };
 
+  const handleSaveSosta = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTripId || !activeTrip) return;
+    if (!sostaName.trim()) {
+      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "⚠️ Inserisci il nome della sosta" } }));
+      return;
+    }
+
+    const sostaId = editingSostaId || `sosta_${Date.now()}`;
+    const expenseNum = parseFloat(sostaExpense) || 0;
+    const dateVal = sostaDate || new Date().toISOString().split("T")[0];
+
+    const newSosta = {
+      id: sostaId,
+      name: sostaName.trim(),
+      type: sostaType,
+      address: sostaAddress.trim(),
+      phone: sostaPhone.trim(),
+      date: dateVal,
+      expenseEuro: expenseNum,
+      notes: sostaNotes.trim(),
+    };
+
+    const currentSoste = activeTrip.soste || [];
+    let updatedSoste: any[];
+    if (editingSostaId) {
+      updatedSoste = currentSoste.map((s) => (s.id === editingSostaId ? newSosta : s));
+    } else {
+      updatedSoste = [newSosta, ...currentSoste];
+    }
+
+    // Sync with expenses
+    const expenseId = `sosta_exp_${sostaId}`;
+    let currentExpenses = [...activeTrip.expenses];
+    currentExpenses = currentExpenses.filter((ex) => ex.id !== expenseId);
+
+    if (expenseNum > 0) {
+      const typeLabels: Record<string, string> = {
+        area_sosta: "Area Sosta",
+        campeggio: "Campeggio",
+        agricampeggio: "Agricampeggio",
+        parcheggio: "Parcheggio",
+        altro: "Sosta",
+      };
+      const typeLabel = typeLabels[sostaType] || "Sosta";
+      currentExpenses.unshift({
+        id: expenseId,
+        title: `${typeLabel}: ${sostaName.trim()}`,
+        amount: expenseNum,
+        category: "Sosta",
+        date: dateVal,
+      });
+    }
+
+    const newBudget = currentExpenses.reduce((acc, ex) => acc + (ex.amount || 0), 0);
+
+    const updatedTrips = trips.map((t) => {
+      if (t.id === selectedTripId) {
+        return {
+          ...t,
+          soste: updatedSoste,
+          expenses: currentExpenses,
+          budgetEuro: newBudget,
+        };
+      }
+      return t;
+    });
+
+    setTrips(updatedTrips);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
+      } catch (e) {}
+    }
+    syncWithCloud(updatedTrips, false);
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updatedTrips).catch(() => {});
+    }
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updatedTrips } }));
+
+    // Reset form
+    setSostaName("");
+    setSostaType("area_sosta");
+    setSostaAddress("");
+    setSostaPhone("");
+    setSostaDate("");
+    setSostaExpense("");
+    setSostaNotes("");
+    setEditingSostaId(null);
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: editingSostaId ? "✅ Sosta aggiornata e spese sincronizzate!" : "🏕️ Sosta registrata e spesa sincronizzata!" },
+      })
+    );
+  };
+
+  const handleDeleteSosta = (sostaId: string) => {
+    if (!selectedTripId || !activeTrip) return;
+    const currentSoste = activeTrip.soste || [];
+    const updatedSoste = currentSoste.filter((s) => s.id !== sostaId);
+
+    const expenseId = `sosta_exp_${sostaId}`;
+    const currentExpenses = (activeTrip.expenses || []).filter((ex) => ex.id !== expenseId);
+    const newBudget = currentExpenses.reduce((acc, ex) => acc + (ex.amount || 0), 0);
+
+    const updatedTrips = trips.map((t) => {
+      if (t.id === selectedTripId) {
+        return {
+          ...t,
+          soste: updatedSoste,
+          expenses: currentExpenses,
+          budgetEuro: newBudget,
+        };
+      }
+      return t;
+    });
+
+    setTrips(updatedTrips);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
+      } catch (e) {}
+    }
+    syncWithCloud(updatedTrips, false);
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updatedTrips).catch(() => {});
+    }
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updatedTrips } }));
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: "🗑️ Sosta eliminata e spesa rimossa dal bilancio." },
+      })
+    );
+  };
+
+  const handleEditSostaClick = (sosta: any) => {
+    setEditingSostaId(sosta.id);
+    setSostaName(sosta.name || "");
+    setSostaType(sosta.type || "area_sosta");
+    setSostaAddress(sosta.address || "");
+    setSostaPhone(sosta.phone || "");
+    setSostaDate(sosta.date || "");
+    setSostaExpense(sosta.expenseEuro ? String(sosta.expenseEuro) : "");
+    setSostaNotes(sosta.notes || "");
+    setExpenseSubMode("sosta");
+  };
+
   // Save/Update Odometer handler
   const handleSaveOdometer = (movementId: string, valueStr: string) => {
     const parsed = parseFloat(valueStr);
@@ -1546,6 +1745,9 @@ export default function DiaryTab({
     );
     setEditEndOdo(activeTrip.endOdometer ? String(activeTrip.endOdometer) : "");
     setIsEditingTrip(true);
+    setTimeout(() => {
+      editTripFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
   };
 
   // Update Trip Status handler
@@ -1699,7 +1901,7 @@ export default function DiaryTab({
       }>(async (resolve, reject) => {
         try {
           // Extract real capture date from EXIF / filename / lastModified BEFORE compressing!
-          const extractedDate = await extractPhotoDate(file, activeTrip?.startDate);
+          const extractedDate = await extractPhotoDate(file, activeTrip?.startDate, activeTrip?.endDate);
 
           const reader = new FileReader();
           reader.onloadend = async () => {
@@ -1857,14 +2059,17 @@ export default function DiaryTab({
     const newPhotos: DiaryPhoto[] = urls.map((img, idx) => {
       const finalDesc = photoDesc.trim() || undefined;
       const photoId = "photo_" + (Date.now() + idx);
-      const chosenDate = photoUploadDate || img.date || activeTrip?.startDate || new Date().toISOString().split("T")[0];
+      const hasRealDate = img.date && img.dateSource !== 'fallback';
+      const chosenDate = hasRealDate
+        ? img.date
+        : (photoUploadDate || img.date || activeTrip?.startDate || new Date().toISOString().split("T")[0]);
       return {
         id: photoId,
         url: `/api/photos/${photoId}`,
         description: finalDesc,
         date: chosenDate,
         time: img.time,
-        dateSource: photoUploadDate ? 'manual' : (img.dateSource || 'fallback'),
+        dateSource: hasRealDate ? (img.dateSource || 'exif') : (photoUploadDate ? 'manual' : (img.dateSource || 'fallback')),
         locationName: photoLocationName || undefined,
       };
     });
@@ -1946,7 +2151,7 @@ export default function DiaryTab({
   // Replace / Re-upload a single photo from gallery or camera
   const handleReplacePhoto = async (photoId: string, file: File) => {
     try {
-      const extracted = await extractPhotoDate(file, activeTrip?.startDate);
+      const extracted = await extractPhotoDate(file, activeTrip?.startDate, activeTrip?.endDate);
       const reader = new FileReader();
       reader.onload = async (event) => {
         const rawBase64 = event.target?.result as string;
@@ -2052,9 +2257,18 @@ export default function DiaryTab({
       const currentIds = new Set((activeTrip?.photos || []).map((p) => p.id));
       const deletedPhotos = getDeletedIds('photos', emailKey);
 
+      const isSicilia = isSiciliaTrip(activeTrip);
       const recovered: DiaryPhoto[] = [];
       const entries = Object.entries(idbPhotos);
       for (const [id, base64] of entries) {
+        if (SICILIA_PURGED_PHOTO_IDS.has(id)) {
+          deletePhotoFromIndexedDB(id).catch(() => {});
+          continue;
+        }
+        if (!base64 || typeof base64 !== "string" || base64.length < 100) {
+          deletePhotoFromIndexedDB(id).catch(() => {});
+          continue;
+        }
         if (!currentIds.has(id) && !deletedPhotos.has(id)) {
           const match = id.match(/photo_(\d+)/);
           let photoDate = activeTrip?.startDate || new Date().toISOString().split("T")[0];
@@ -2063,6 +2277,10 @@ export default function DiaryTab({
             if (!isNaN(ts) && ts > 1000000000000) {
               photoDate = new Date(ts).toISOString().split("T")[0];
             }
+          }
+          if (isSicilia && (photoDate === "2026-08-29" || photoDate.includes("08-29") || photoDate.includes("29/08"))) {
+            deletePhotoFromIndexedDB(id).catch(() => {});
+            continue;
           }
           recovered.push({
             id,
@@ -2195,12 +2413,12 @@ export default function DiaryTab({
 
         const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
         // Extract real capture date from EXIF / filename / lastModified!
-        const extracted = await extractPhotoDate(file, activeTrip?.startDate);
+        const extracted = await extractPhotoDate(file, activeTrip?.startDate, activeTrip?.endDate);
 
         newPhotosToAdd.push({
           id: photoId,
           url: `/api/photos/${photoId}`,
-          description: cleanName && cleanName.length > 2 && !cleanName.match(/^(img|dsc|photo|screenshot|whatsapp)/i) ? cleanName : undefined,
+          description: cleanName && cleanName.length > 2 && !cleanName.match(/^(img|dsc|pxl|photo|screenshot|whatsapp)/i) ? cleanName : undefined,
           date: extracted.date || activeTrip?.startDate || new Date().toISOString().split("T")[0],
           time: extracted.time,
           dateSource: extracted.source,
@@ -2257,24 +2475,35 @@ export default function DiaryTab({
     const missingPhotos = (activeTripPhotos || []).filter(
       (p) => p.url && (p.url.startsWith("/uploads/") || p.url.includes("trip_photo_"))
     );
+    const targetPhotos = missingPhotos.length > 0 ? missingPhotos : (activeTripPhotos || []);
 
-    if (missingPhotos.length === 0) {
+    if (targetPhotos.length === 0) {
       window.dispatchEvent(
         new CustomEvent("show-toast", {
-          detail: { message: "Tutte le foto del viaggio risultano già collegate!" },
+          detail: { message: "Nessuna foto presente in questo viaggio da ricaricare." },
         }),
       );
       return;
     }
 
     let count = 0;
-
     const reloadedPhotoIds = new Set<string>();
+    const photoDateUpdates = new Map<string, { date: string; time?: string; dateSource?: string }>();
 
-    for (let i = 0; i < Math.min(fileArray.length, missingPhotos.length); i++) {
+    for (let i = 0; i < Math.min(fileArray.length, targetPhotos.length); i++) {
       const file = fileArray[i];
-      const targetPhoto = missingPhotos[i];
+      const targetPhoto = targetPhotos[i];
       try {
+        // Extract real capture date from EXIF or filename BEFORE compression!
+        const extracted = await extractPhotoDate(file, activeTrip?.startDate, activeTrip?.endDate);
+        if (extracted && extracted.date && extracted.source !== 'fallback') {
+          photoDateUpdates.set(targetPhoto.id, {
+            date: extracted.date,
+            time: extracted.time,
+            dateSource: extracted.source,
+          });
+        }
+
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target?.result as string);
@@ -2319,7 +2548,12 @@ export default function DiaryTab({
             ...t,
             photos: t.photos.map((p) => {
               if (reloadedPhotoIds.has(p.id)) {
-                return { ...p, url: `/api/photos/${p.id}` };
+                const dateInfo = photoDateUpdates.get(p.id);
+                return {
+                  ...p,
+                  url: `/api/photos/${p.id}`,
+                  ...(dateInfo ? { date: dateInfo.date, time: dateInfo.time, dateSource: dateInfo.dateSource as any } : {}),
+                };
               }
               return p;
             }),
@@ -2341,7 +2575,7 @@ export default function DiaryTab({
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: {
-            message: `✅ ${count} ${count === 1 ? 'foto ripristinata' : 'foto ripristinate'} e salvate nel Cloud!`,
+            message: `📸 ${count} foto ricaricate con successo con rilevamento data di scatto e salvate nel Cloud!`,
           },
         }),
       );
@@ -2427,6 +2661,92 @@ export default function DiaryTab({
     setEditPhotoDesc(p.description === "Foto recuperata dalla memoria" ? "" : p.description);
     setEditPhotoLoc(p.locationName || "");
     setEditPhotoDate(p.date || activeTrip?.startDate || new Date().toISOString().split("T")[0]);
+    setApplyDateToSameLocation(false);
+  };
+
+  // Toggle star status for photo on Interactive Trip Map (max 3 per location)
+  const handleToggleStarPhoto = (photoId: string) => {
+    if (!activeTrip || !selectedTripId) return;
+
+    const targetPhoto = (activeTrip.photos || []).find((p) => p.id === photoId);
+    if (!targetPhoto) return;
+
+    const isCurrentlyStarred = !!targetPhoto.isStarred;
+
+    if (isCurrentlyStarred) {
+      const updatedTrips = trips.map((t) => {
+        if (t.id === selectedTripId) {
+          return {
+            ...t,
+            photos: (t.photos || []).map((p) => (p.id === photoId ? { ...p, isStarred: false } : p)),
+          };
+        }
+        return t;
+      });
+      setTrips(updatedTrips);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
+        } catch (e) {}
+      }
+      window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updatedTrips } }));
+      syncWithCloud(updatedTrips, false);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⭐ Foto rimossa dalla Mappa Interattiva del Viaggio." },
+        })
+      );
+    } else {
+      const locName = targetPhoto.locationName?.trim();
+      if (!locName) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: { message: "⚠️ Assegna prima un luogo (tappa) a questa foto per poterla aggiungere alla Mappa Interattiva." },
+          })
+        );
+        handleOpenEditPhoto(targetPhoto);
+        return;
+      }
+
+      const locLower = locName.toLowerCase();
+      const starredCount = (activeTrip.photos || []).filter(
+        (p) => p.id !== photoId && p.isStarred && p.locationName?.trim().toLowerCase() === locLower
+      ).length;
+
+      if (starredCount >= 3) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: "⚠️ Limite raggiunto: puoi mostrare massimo 3 foto per ogni luogo sulla Mappa Interattiva. Rimuovi la stella da un'altra foto di questo luogo per aggiungere questa al suo posto.",
+            },
+          })
+        );
+        return;
+      }
+
+      const updatedTrips = trips.map((t) => {
+        if (t.id === selectedTripId) {
+          return {
+            ...t,
+            photos: (t.photos || []).map((p) => (p.id === photoId ? { ...p, isStarred: true } : p)),
+          };
+        }
+        return t;
+      });
+      setTrips(updatedTrips);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
+        } catch (e) {}
+      }
+      window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updatedTrips } }));
+      syncWithCloud(updatedTrips, false);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⭐ Foto aggiunta con successo alla Mappa Interattiva del Viaggio!" },
+        })
+      );
+    }
   };
 
   // Save Photo details (description, locationName, date)
@@ -2448,6 +2768,12 @@ export default function DiaryTab({
                 ...p,
                 description: nextDesc,
                 locationName: nextLoc,
+                date: nextDate,
+              };
+            }
+            if (applyDateToSameLocation && nextLoc && p.locationName?.trim().toLowerCase() === nextLoc.toLowerCase()) {
+              return {
+                ...p,
                 date: nextDate,
               };
             }
@@ -2487,6 +2813,53 @@ export default function DiaryTab({
     }
 
     setPhotoToEdit(null);
+  };
+
+  // Apply batch date to photos in active trip
+  const handleApplyBatchDate = () => {
+    if (!selectedTripId || !batchDateValue) return;
+
+    let updatedCount = 0;
+    const updatedTrips = trips.map((t) => {
+      if (t.id === selectedTripId) {
+        return {
+          ...t,
+          photos: t.photos.map((p) => {
+            const matchesLoc =
+              batchDateTargetLocation === "all" ||
+              (p.locationName && p.locationName.trim().toLowerCase() === batchDateTargetLocation.trim().toLowerCase());
+            if (matchesLoc) {
+              updatedCount++;
+              return {
+                ...p,
+                date: batchDateValue,
+                dateSource: "manual" as const,
+              };
+            }
+            return p;
+          }),
+        };
+      }
+      return t;
+    });
+
+    setTrips(updatedTrips);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
+      } catch (e) {}
+    }
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updatedTrips } }));
+    syncWithCloud(updatedTrips, false);
+
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: {
+          message: `📅 Data ${formatDateDDMMAA(batchDateValue)} applicata a ${updatedCount} foto e sincronizzata nel Cloud!`,
+        },
+      })
+    );
+    setShowBatchDateModal(false);
   };
 
   // Quick suggestions for locationName based on movements and existing trip locations
@@ -3193,9 +3566,26 @@ export default function DiaryTab({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                    Racconto
-                  </label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[10px] uppercase font-bold text-slate-500">
+                      Racconto
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOcrTargetField('new');
+                        setOcrImagePreview(null);
+                        setOcrImageFile(null);
+                        setOcrExtractedText("");
+                        setShowOcrModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-800 dark:text-amber-200 rounded text-[10px] font-bold cursor-pointer transition-all border border-amber-300/60 shadow-xs"
+                      title="Scansiona testo da foto o documento con OCR"
+                    >
+                      <Camera className="w-3 h-3 text-amber-600" />
+                      OCR Leggi Testo
+                    </button>
+                  </div>
                   <textarea
                     rows={3}
                     value={newDesc}
@@ -3409,6 +3799,7 @@ export default function DiaryTab({
                 <div className="border-b border-stone-100 pb-4">
                   {isEditingTrip ? (
                     <form
+                      ref={editTripFormRef}
                       onSubmit={handleSaveTripEdit}
                       className="space-y-4 bg-[#F2EFE9]/25 border border-stone-250 p-4 rounded-xl"
                     >
@@ -3514,9 +3905,26 @@ export default function DiaryTab({
                         </div>
 
                         <div>
-                          <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">
-                            Racconto
-                          </label>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[10px] uppercase font-bold text-slate-500">
+                              Racconto
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOcrTargetField('edit');
+                                setOcrImagePreview(null);
+                                setOcrImageFile(null);
+                                setOcrExtractedText("");
+                                setShowOcrModal(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-800 dark:text-amber-200 rounded text-[10px] font-bold cursor-pointer transition-all border border-amber-300/60 shadow-xs"
+                              title="Scansiona testo da foto o documento con OCR"
+                            >
+                              <Camera className="w-3 h-3 text-amber-600" />
+                              OCR Leggi Testo
+                            </button>
+                          </div>
                           <textarea
                             rows={3}
                             value={editDesc}
@@ -3719,7 +4127,7 @@ export default function DiaryTab({
                   {/* 1. EXPENSES & REFUELING LOG SECTION */}
                   <div className="space-y-4">
                     {/* Toggle Selector for Spese vs Rifornimenti vs Spostamenti */}
-                    <div className="flex p-1 bg-stone-100 rounded-xl border border-stone-200/30 gap-1 flex-wrap md:flex-nowrap">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 p-1 bg-stone-100 rounded-xl border border-stone-200/30 gap-1">
                       <button
                         type="button"
                         onClick={() => setExpenseSubMode("general")}
@@ -3792,9 +4200,242 @@ export default function DiaryTab({
                         <Camera className="w-3.5 h-3.5 text-purple-400" />
                         Foto e ricordi ({activeTripPhotos.length})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpenseSubMode("sosta")}
+                        className={`flex-1 min-w-[20%] py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          expenseSubMode === "sosta"
+                            ? "bg-emerald-700 text-white shadow-xs"
+                            : "text-slate-500 hover:text-emerald-700"
+                        }`}
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                        Soste ({(activeTrip.soste || []).length})
+                      </button>
                     </div>
 
-                    {expenseSubMode === "photo" ? (
+                    {expenseSubMode === "sosta" ? (
+                      /* ---------------- SOSTE & CAMPGROUNDS VIEW ---------------- */
+                      <div className="space-y-4 animate-fade-in font-sans">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                            <MapPin className="w-4 h-4 text-emerald-700" />
+                            {editingSostaId ? "✏️ Modifica Sosta / Campeggio" : "⛺ Registra Nuova Sosta (Area Sosta, Campeggio, ecc.)"}
+                          </h3>
+                        </div>
+
+                        {/* Sosta Form */}
+                        <form
+                          onSubmit={handleSaveSosta}
+                          className="p-3.5 bg-emerald-50/40 rounded-xl border border-emerald-200/60 space-y-3"
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Nome della Sosta / Struttura *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="es. Area Sosta Comunale, Camping Le Palme, Agricampeggio Uliveto"
+                                value={sostaName}
+                                onChange={(e) => setSostaName(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none focus:border-emerald-600 bg-white font-bold text-slate-800"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Tipologia
+                              </label>
+                              <select
+                                value={sostaType}
+                                onChange={(e) => setSostaType(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white font-bold text-slate-800"
+                              >
+                                <option value="area_sosta">🚐 Area Sosta Camper</option>
+                                <option value="campeggio">⛺ Campeggio</option>
+                                <option value="agricampeggio">🌿 Agricampeggio</option>
+                                <option value="parcheggio">🅿️ Parcheggio Sosta</option>
+                                <option value="altro">🏷️ Altro / Altro tipo</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Data Sosta
+                              </label>
+                              <input
+                                type="date"
+                                value={sostaDate}
+                                onChange={(e) => setSostaDate(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white font-bold text-slate-800"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Indirizzo / Località
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="es. Via Roma 15, Firenze"
+                                value={sostaAddress}
+                                onChange={(e) => setSostaAddress(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white font-medium text-slate-800"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Telefono / Contatto
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="es. +39 055 123456"
+                                value={sostaPhone}
+                                onChange={(e) => setSostaPhone(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white font-medium text-slate-800"
+                              />
+                            </div>
+
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Spesa Sosta ({getCurrencySymbol(settings)}) — Sincronizzata con le Spese del Viaggio
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="0.00"
+                                value={sostaExpense}
+                                onChange={(e) => setSostaExpense(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-emerald-300 outline-none bg-white font-mono font-bold text-emerald-900"
+                              />
+                            </div>
+
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="block text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                Note / Servizi (Carico/Scarico, Elettricità, Wi-Fi...)
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="es. Elettricità inclusa, carico acqua comodo"
+                                value={sostaNotes}
+                                onChange={(e) => setSostaNotes(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white font-medium text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              type="submit"
+                              className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                            >
+                              <MapPin className="w-3.5 h-3.5" />
+                              {editingSostaId ? "Aggiorna Sosta" : "Salva Sosta e Sincronizza Spesa"}
+                            </button>
+                            {editingSostaId && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSostaId(null);
+                                  setSostaName("");
+                                  setSostaType("area_sosta");
+                                  setSostaAddress("");
+                                  setSostaPhone("");
+                                  setSostaDate("");
+                                  setSostaExpense("");
+                                  setSostaNotes("");
+                                }}
+                                className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                              >
+                                Annulla
+                              </button>
+                            )}
+                          </div>
+                        </form>
+
+                        {/* List of Soste */}
+                        <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                          {(!activeTrip.soste || activeTrip.soste.length === 0) ? (
+                            <p className="text-xs text-slate-400 py-6 text-center">
+                              Nessuna sosta registrata in questo viaggio. Aggiungi aree sosta o campeggi sopra!
+                            </p>
+                          ) : (
+                            activeTrip.soste
+                              .slice()
+                              .sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime())
+                              .map((s) => {
+                                const typeLabels: Record<string, { label: string; bg: string }> = {
+                                  area_sosta: { label: "Area Sosta", bg: "bg-amber-100 text-amber-900" },
+                                  campeggio: { label: "Campeggio", bg: "bg-emerald-100 text-emerald-900" },
+                                  agricampeggio: { label: "Agricampeggio", bg: "bg-lime-100 text-lime-900" },
+                                  parcheggio: { label: "Parcheggio", bg: "bg-blue-100 text-blue-900" },
+                                  altro: { label: "Sosta", bg: "bg-purple-100 text-purple-900" },
+                                };
+                                const badge = typeLabels[s.type] || typeLabels.altro;
+                                return (
+                                  <div
+                                    key={s.id}
+                                    className="p-3 bg-white border border-stone-200 rounded-xl hover:border-emerald-400 transition-all space-y-1.5 shadow-2xs"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${badge.bg}`}>
+                                          {badge.label}
+                                        </span>
+                                        <h4 className="text-xs font-bold text-slate-900">{s.name}</h4>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        {s.expenseEuro > 0 && (
+                                          <span className="text-xs font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 font-mono">
+                                            -{s.expenseEuro.toFixed(2)} {getCurrencySymbol(settings)}
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleEditSostaClick(s)}
+                                          className="p-1 hover:bg-stone-100 text-slate-500 rounded-lg transition-colors cursor-pointer"
+                                          title="Modifica sosta"
+                                        >
+                                          <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteSosta(s.id)}
+                                          className="p-1 hover:bg-red-50 text-red-600 rounded-lg transition-colors cursor-pointer"
+                                          title="Elimina sosta"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {(s.address || s.phone || s.date) && (
+                                      <div className="text-[11px] text-slate-600 flex items-center gap-3 flex-wrap">
+                                        {s.date && <span>📅 {formatDateDDMMAA(s.date)}</span>}
+                                        {s.address && <span>📍 {s.address}</span>}
+                                        {s.phone && (
+                                          <a href={`tel:${s.phone}`} className="text-emerald-700 font-bold hover:underline">
+                                            📞 {s.phone}
+                                          </a>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {s.notes && (
+                                      <p className="text-[11px] text-slate-500 italic bg-stone-50 p-1.5 rounded-lg border border-stone-100">
+                                        "{s.notes}"
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })
+                          )}
+                        </div>
+                      </div>
+                    ) : expenseSubMode === "photo" ? (
                       <div className="space-y-4 animate-fade-in">
                         <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
                           <Camera className="w-4 h-4 text-[#3E4A35]" />
@@ -4239,6 +4880,21 @@ export default function DiaryTab({
                             {activeTripPhotos.length > 0 && (
                               <button
                                 type="button"
+                                onClick={() => {
+                                  setBatchDateTargetLocation("all");
+                                  setBatchDateValue(activeTrip?.startDate || "");
+                                  setShowBatchDateModal(true);
+                                }}
+                                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold rounded-lg cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1 transition-all"
+                                title="Assegna o correggi la data di scatto a più foto del viaggio"
+                              >
+                                <Calendar className="w-3 h-3 text-blue-700" />
+                                Modifica Date
+                              </button>
+                            )}
+                            {activeTripPhotos.length > 0 && (
+                              <button
+                                type="button"
                                 onClick={() => setShowDeleteAllPhotosConfirm(true)}
                                 className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-bold rounded-lg cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1 transition-all"
                                 title="Elimina tutte le foto di questo viaggio per ricaricarle da zero"
@@ -4422,14 +5078,19 @@ export default function DiaryTab({
 
                                     <div className="flex items-center gap-1 flex-wrap pt-0.5">
                                       {photo.date && (
-                                        <span
-                                          className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-stone-150 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded text-[8.5px] font-bold"
-                                          title={photo.time ? `Scattata alle ${photo.time}` : `Data scatto: ${formatDateDDMMAA(photo.date)}`}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenEditPhoto(photo);
+                                          }}
+                                          className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-stone-150 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 rounded text-[8.5px] font-bold cursor-pointer transition-colors"
+                                          title={photo.time ? `Scattata alle ${photo.time} - Clicca per modificare data o luogo` : `Data scatto: ${formatDateDDMMAA(photo.date)} - Clicca per modificare`}
                                         >
                                           <Calendar className="w-2.5 h-2.5 text-[#3E4A35]" />
                                           {formatDateDDMMAA(photo.date)}
                                           {photo.time ? ` ${photo.time.slice(0, 5)}` : ""}
-                                        </span>
+                                        </button>
                                       )}
                                       {photo.locationName ? (
                                         <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 rounded text-[9px] font-bold">
@@ -5714,6 +6375,19 @@ export default function DiaryTab({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
+                      onClick={() => handleToggleStarPhoto(activeTripPhotos[selectedLightboxPhotoIndex].id)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all border shrink-0 active:scale-95 ${
+                        activeTripPhotos[selectedLightboxPhotoIndex].isStarred
+                          ? "bg-amber-500 text-white border-amber-600"
+                          : "bg-stone-800 hover:bg-amber-600 text-stone-300 hover:text-white border-stone-700"
+                      }`}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${activeTripPhotos[selectedLightboxPhotoIndex].isStarred ? "fill-white" : ""}`} />
+                      {activeTripPhotos[selectedLightboxPhotoIndex].isStarred ? "In evidenza sulla Mappa" : "Metti in evidenza"}
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleOpenEditPhoto(activeTripPhotos[selectedLightboxPhotoIndex])}
                       className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#3E4A35] hover:bg-[#2d3627] text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all border border-[#526346] shrink-0 active:scale-95"
                     >
@@ -5858,6 +6532,19 @@ export default function DiaryTab({
                   onChange={(e) => setEditPhotoDate(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-[#3E4A35]"
                 />
+                {editPhotoLoc.trim() && (
+                  <label className="flex items-center gap-2 mt-2 cursor-pointer select-none text-[11px] text-stone-600 dark:text-stone-400">
+                    <input
+                      type="checkbox"
+                      checked={applyDateToSameLocation}
+                      onChange={(e) => setApplyDateToSameLocation(e.target.checked)}
+                      className="rounded border-stone-300 text-[#3E4A35] focus:ring-[#3E4A35]"
+                    />
+                    <span>
+                      Applica questa data anche a tutte le altre foto di <strong>{editPhotoLoc.trim()}</strong>
+                    </span>
+                  </label>
+                )}
               </div>
             </div>
 
@@ -5891,6 +6578,98 @@ export default function DiaryTab({
                   Salva
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BATCH DATE UPDATE MODAL */}
+      {showBatchDateModal && activeTrip && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowBatchDateModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-stone-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 font-sans animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-stone-200 dark:border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-xl">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900 dark:text-white">
+                    Modifica Date Scatti Fotografici
+                  </h3>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                    Assegna una data di scatto precisa a più foto contemporaneamente
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBatchDateModal(false)}
+                className="p-1 text-stone-400 hover:text-stone-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 dark:text-stone-300 mb-1">
+                  Quali foto vuoi aggiornare?
+                </label>
+                <select
+                  value={batchDateTargetLocation}
+                  onChange={(e) => setBatchDateTargetLocation(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-[#3E4A35]"
+                >
+                  <option value="all">Tutte le foto del viaggio ({activeTripPhotos.length} foto)</option>
+                  {suggestedLocations.map((loc) => {
+                    const count = (activeTrip.photos || []).filter(
+                      (p) => p.locationName?.trim().toLowerCase() === loc.trim().toLowerCase()
+                    ).length;
+                    return (
+                      <option key={loc} value={loc}>
+                        Solo foto con luogo: &quot;{loc}&quot; {count > 0 ? `(${count} foto)` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 dark:text-stone-300 mb-1">
+                  Nuova data dello scatto
+                </label>
+                <input
+                  type="date"
+                  value={batchDateValue}
+                  onChange={(e) => setBatchDateValue(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-[#3E4A35]"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchDateModal(false)}
+                className="px-3 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 hover:text-stone-900 rounded-xl"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyBatchDate}
+                disabled={!batchDateValue}
+                className="px-4 py-2 text-xs font-bold text-white bg-[#3E4A35] hover:bg-[#2d3627] disabled:opacity-50 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Aggiorna Date
+              </button>
             </div>
           </div>
         </div>
@@ -6470,6 +7249,160 @@ export default function DiaryTab({
               >
                 Chiudi
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OCR SCANNER MODAL */}
+      {showOcrModal && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowOcrModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-stone-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 font-sans animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-3">
+              <h3 className="text-sm font-black text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                <Camera className="w-4 h-4 text-amber-500" />
+                Lettore OCR per Racconto Viaggio
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowOcrModal(false)}
+                className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600 dark:text-stone-300">
+              Scatta una foto o carica un&apos;immagine di note, appunti, volantini o pagine di diario. L&apos;intelligenza artificiale estrarrà e formatterà il testo per il tuo racconto.
+            </p>
+
+            <div className="space-y-3">
+              {ocrImagePreview ? (
+                <div className="relative rounded-xl overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center border border-stone-200 dark:border-stone-700">
+                  <img src={ocrImagePreview} alt="OCR Preview" className="max-h-full max-w-full object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOcrImagePreview(null);
+                      setOcrImageFile(null);
+                      setOcrExtractedText("");
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full hover:bg-red-600 transition-colors"
+                    title="Rimuovi immagine"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label className="border-2 border-dashed border-stone-300 dark:border-stone-700 hover:border-amber-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer bg-stone-50 dark:bg-stone-800/50 transition-colors">
+                  <Camera className="w-8 h-8 text-amber-500 mb-2" />
+                  <span className="text-xs font-bold text-stone-700 dark:text-stone-200">Tocca per scattare o caricare foto</span>
+                  <span className="text-[10px] text-stone-400 mt-0.5">Supporta fotocamera o galleria (JPG, PNG)</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        const file = e.target.files[0];
+                        setOcrImageFile(file);
+                        const reader = new FileReader();
+                        reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
+              )}
+
+              {ocrImagePreview && !ocrExtractedText && (
+                <button
+                  type="button"
+                  disabled={isProcessingOcr}
+                  onClick={async () => {
+                    if (!ocrImagePreview) return;
+                    setIsProcessingOcr(true);
+                    try {
+                      const res = await fetch(resolveApiUrl("/api/extract-story-ocr"), {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ image: ocrImagePreview, mimeType: ocrImageFile?.type || "image/jpeg" }),
+                      });
+                      const data = await res.json();
+                      if (data.success && data.text) {
+                        setOcrExtractedText(data.text);
+                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✨ Testo estratto con successo tramite OCR!" } }));
+                      } else {
+                        throw new Error(data.error || "Estrazione fallita");
+                      }
+                    } catch (err: any) {
+                      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: `❌ ${err.message || "Errore durante l'OCR"}` } }));
+                    } finally {
+                      setIsProcessingOcr(false);
+                    }
+                  }}
+                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {isProcessingOcr ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Analisi OCR in corso con AI...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Esegui OCR e Estrai Racconto
+                    </>
+                  )}
+                </button>
+              )}
+
+              {ocrExtractedText && (
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold uppercase text-stone-500">
+                    Testo Estratto (Modificabile)
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={ocrExtractedText}
+                    onChange={(e) => setOcrExtractedText(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 outline-none font-medium"
+                  />
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (ocrTargetField === 'new') {
+                          setNewDesc((prev) => (prev ? prev + "\n\n" + ocrExtractedText : ocrExtractedText));
+                        } else if (ocrTargetField === 'edit') {
+                          setEditDesc((prev) => (prev ? prev + "\n\n" + ocrExtractedText : ocrExtractedText));
+                        }
+                        setShowOcrModal(false);
+                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✅ Testo OCR inserito nel racconto!" } }));
+                      }}
+                      className="flex-1 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Save className="w-3.5 h-3.5" /> Inserisci nel Racconto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(ocrExtractedText);
+                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "📋 Testo copiato negli appunti!" } }));
+                      }}
+                      className="px-4 py-2.5 bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-200 rounded-xl text-xs font-bold hover:bg-stone-300 cursor-pointer"
+                    >
+                      Copia
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

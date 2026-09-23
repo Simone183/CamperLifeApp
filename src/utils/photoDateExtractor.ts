@@ -4,14 +4,68 @@
  * Enables automatic chronological ordering of travel diary photos.
  */
 
+import exifr from "exifr";
 import { DiaryPhoto } from "../types";
 
 export interface ExtractedPhotoDate {
   date: string; // ISO date format "YYYY-MM-DD"
   time?: string; // "HH:mm:ss" if available
   dateTime?: string; // "YYYY-MM-DDTHH:mm:ss"
-  source: 'exif' | 'filename' | 'file-lastmodified' | 'fallback';
+  source: 'exif' | 'filename' | 'file-lastmodified' | 'fallback' | 'manual';
   confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Extracts EXIF capture timestamp using the modern, high-compatibility `exifr` parser.
+ * Works seamlessly across JPEG, HEIC, TIFF, PNG, and WebP images.
+ */
+export async function extractExifWithExifr(
+  input: Blob | File | ArrayBuffer | Uint8Array | string
+): Promise<{ date: string; time?: string; dateTime?: string } | null> {
+  try {
+    const data = await exifr.parse(input, [
+      "DateTimeOriginal",
+      "CreateDate",
+      "ModifyDate",
+      "DateCreated",
+      "GPSDateStamp",
+      "GPSTimeStamp",
+    ]);
+
+    if (!data) return null;
+
+    const rawDate = data.DateTimeOriginal || data.CreateDate || data.DateCreated || data.ModifyDate;
+    if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
+      const year = rawDate.getFullYear();
+      if (year >= 1990 && year <= 2100) {
+        const month = String(rawDate.getMonth() + 1).padStart(2, "0");
+        const day = String(rawDate.getDate()).padStart(2, "0");
+        const hours = String(rawDate.getHours()).padStart(2, "0");
+        const minutes = String(rawDate.getMinutes()).padStart(2, "0");
+        const seconds = String(rawDate.getSeconds()).padStart(2, "0");
+        const date = `${year}-${month}-${day}`;
+        const time = `${hours}:${minutes}:${seconds}`;
+        return {
+          date,
+          time,
+          dateTime: `${date}T${time}`,
+        };
+      }
+    } else if (typeof rawDate === "string") {
+      const parsed = parseExifDateString(rawDate);
+      if (parsed) return parsed;
+    }
+
+    if (data.GPSDateStamp) {
+      const gpsDate = String(data.GPSDateStamp).replace(/:/g, "-");
+      const timeStr = typeof data.GPSTimeStamp === "string" ? data.GPSTimeStamp : undefined;
+      const parsed = parseExifDateString(gpsDate + (timeStr ? ` ${timeStr}` : ""));
+      if (parsed) return parsed;
+    }
+  } catch (err) {
+    // Silently fall back to lightweight binary slice parser
+  }
+  return null;
 }
 
 /**
@@ -195,31 +249,45 @@ function parseTiffHeader(
 
 /**
  * Extracts date and optional time from common camera and phone filenames:
- * - IMG_20240815_143022.jpg
- * - PXL_20240815_143022123.jpg
- * - 20240815_143022.jpg
- * - Screenshot_2024-08-15-14-30-22.png
- * - 2024-08-15 14.30.22.jpg
- * - IMG-20240815-WA0001.jpeg
- * - WP_20240815_001.jpg
+ * - IMG_20240815_143022.jpg / PXL_20240815_143022123.jpg
+ * - 20240815_143022.jpg / 20240815143022.jpg (14 digits)
+ * - Screenshot_2024-08-15-14-30-22.png / 2024-08-15 14.30.22.jpg
+ * - IMG-20240815-WA0001.jpeg (WhatsApp)
+ * - 15-08-2024_143022.jpg (European DD-MM-YYYY)
  */
 export function parseDateFromFilename(name: string): { date: string; time?: string; dateTime?: string } | null {
   if (!name || typeof name !== "string") return null;
 
-  // Regex matches 4 digits year (2000-2099), 2 digits month, 2 digits day
-  const pattern = /(?:^|[_\-\s])(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])(?:[_\-\sT]([01]\d|2[0-3])[-_.:]?([0-5]\d)(?:[-_.:]?([0-5]\d))?)?/i;
-  const match = name.match(pattern);
-  if (match) {
-    const y = match[1];
-    const m = match[2];
-    const d = match[3];
+  // 1. Continuous 14 digits: YYYYMMDDHHmmss (e.g. 20260829152341.jpg)
+  const match14 = name.match(/(?:^|[^\d])(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])([01]\d|2[0-3])([0-5]\d)([0-5]\d)(?:[^\d]|$)/);
+  if (match14) {
+    const date = `${match14[1]}-${match14[2]}-${match14[3]}`;
+    const time = `${match14[4]}:${match14[5]}:${match14[6]}`;
+    return { date, time, dateTime: `${date}T${time}` };
+  }
+
+  // 2. Standard ISO-like YYYYMMDD or YYYY-MM-DD (e.g. IMG_20260829_152341, PXL_20260829_152341123, 2026-08-29 14.30.00)
+  const patternIso = /(?:^|[_\-\sA-Za-z])(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])(?:[_\-\sT]([01]\d|2[0-3])[-_.:]?([0-5]\d)(?:[-_.:]?([0-5]\d))?)?/i;
+  const matchIso = name.match(patternIso);
+  if (matchIso) {
+    const y = matchIso[1];
+    const m = matchIso[2];
+    const d = matchIso[3];
     const date = `${y}-${m}-${d}`;
-    const time = match[4] && match[5] ? `${match[4]}:${match[5]}:${match[6] || "00"}` : undefined;
+    const time = matchIso[4] && matchIso[5] ? `${matchIso[4]}:${matchIso[5]}:${matchIso[6] || "00"}` : undefined;
     return {
       date,
       time,
       dateTime: time ? `${date}T${time}` : date,
     };
+  }
+
+  // 3. European DD-MM-YYYY format (e.g. 29-08-2026_152341)
+  const matchEur = name.match(/(?:^|[_\-\sA-Za-z])(0[1-9]|[12]\d|3[01])[-_.](0[1-9]|1[0-2])[-_.](20\d{2})(?:[_\-\sT]([01]\d|2[0-3])[-_.:]?([0-5]\d)(?:[-_.:]?([0-5]\d))?)?/i);
+  if (matchEur) {
+    const date = `${matchEur[3]}-${matchEur[2]}-${matchEur[1]}`;
+    const time = matchEur[4] && matchEur[5] ? `${matchEur[4]}:${matchEur[5]}:${matchEur[6] || "00"}` : undefined;
+    return { date, time, dateTime: time ? `${date}T${time}` : date };
   }
 
   return null;
@@ -258,16 +326,34 @@ export function parseDateFromLastModified(timestamp: number): { date: string; ti
 
 /**
  * Master date extraction function for uploaded photos:
- * 1. Reads embedded EXIF DateTimeOriginal / DateTime
- * 2. If not present, parses filename (e.g. IMG_20240815_143022)
- * 3. If not present, checks file.lastModified timestamp
- * 4. Fallback to trip start date or current date
+ * 1. Reads embedded EXIF DateTimeOriginal / CreateDate via `exifr` (works with JPEG, HEIC, PNG, WebP)
+ * 2. If not present or stripped, fallback to lightweight binary APP1 slice parser
+ * 3. Parses camera & gallery filename patterns (e.g. IMG_20260829_143022)
+ * 4. Checks file.lastModified ONLY if it is not the current upload/download session time
+ * 5. Intelligent fallback to trip start date or current date
  */
 export async function extractPhotoDate(
   file: File,
-  fallbackDate?: string
+  tripStartDate?: string,
+  tripEndDate?: string
 ): Promise<ExtractedPhotoDate> {
-  // 1. Try embedded EXIF data
+  // 1. High-precision EXIF metadata (captures the real shutter-click timestamp)
+  try {
+    const exifrDate = await extractExifWithExifr(file);
+    if (exifrDate && exifrDate.date) {
+      return {
+        date: exifrDate.date,
+        time: exifrDate.time,
+        dateTime: exifrDate.dateTime,
+        source: 'exif',
+        confidence: 'high',
+      };
+    }
+  } catch (err) {
+    console.debug("exifr parse notice:", err);
+  }
+
+  // 1b. Fallback to lightweight binary EXIF slice parser
   try {
     const exifDate = await extractExifDateFromBlob(file);
     if (exifDate && exifDate.date) {
@@ -280,7 +366,7 @@ export async function extractPhotoDate(
       };
     }
   } catch (err) {
-    console.debug("EXIF extraction error:", err);
+    console.debug("binary EXIF extraction error:", err);
   }
 
   // 2. Try parsing filename (very common on modern Android / iOS exports / WhatsApp)
@@ -296,21 +382,38 @@ export async function extractPhotoDate(
   }
 
   // 3. Try file.lastModified
+  // CRITICAL: On mobile WebViews and Android photo picker, selecting a file creates
+  // a temporary cache file with lastModified = NOW (the upload time).
+  // We must NOT mistake the upload time for the photo capture date!
   if (file.lastModified) {
     const lastModDate = parseDateFromLastModified(file.lastModified);
     if (lastModDate && lastModDate.date) {
-      return {
-        date: lastModDate.date,
-        time: lastModDate.time,
-        dateTime: lastModDate.dateTime,
-        source: 'file-lastmodified',
-        confidence: 'medium',
-      };
+      const now = Date.now();
+      const diffHours = Math.abs(now - file.lastModified) / (1000 * 60 * 60);
+      const isRecentUpload = diffHours < 36; // Within last 36 hours is likely upload/picker time
+
+      const isInTrip =
+        Boolean(tripStartDate &&
+        tripEndDate &&
+        lastModDate.date >= tripStartDate &&
+        lastModDate.date <= tripEndDate);
+
+      // Only trust file.lastModified if it genuinely falls within the trip dates
+      // or is an old file (not created during this upload session)
+      if (isInTrip || !isRecentUpload) {
+        return {
+          date: lastModDate.date,
+          time: lastModDate.time,
+          dateTime: lastModDate.dateTime,
+          source: 'file-lastmodified',
+          confidence: isInTrip ? 'high' : 'medium',
+        };
+      }
     }
   }
 
-  // 4. Fallback
-  const defaultDate = fallbackDate || new Date().toISOString().split("T")[0];
+  // 4. Fallback to trip start date (if known) or today's date
+  const defaultDate = tripStartDate || new Date().toISOString().split("T")[0];
   return {
     date: defaultDate,
     source: 'fallback',

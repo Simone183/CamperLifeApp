@@ -30,7 +30,7 @@ import {
 } from "./data/mockData";
 import { sanitizeCommunityMessagesList } from "./utils/communitySanitizer";
 import { createSocialPostFromTrip } from "./utils/tripSocialShare";
-import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds } from "./utils/tripSyncHelper";
+import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds, SICILIA_PURGED_PHOTO_IDS } from "./utils/tripSyncHelper";
 import { parseSostaFirestoreDoc } from "./data/userPlacesDataset";
 import { mergeNearbyPlaces, PROXIMITY_MERGE_DISTANCE_KM } from "./utils/placeMergeUtils";
 import { resolveApiUrl } from "./utils/resolveMediaUrl";
@@ -76,7 +76,7 @@ import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
 import EventsTab from "./components/EventsTab";
 import OfflineMapsTab from "./components/OfflineMapsTab";
-import { ChallengesTab } from "./components/ChallengesTab";
+import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
 import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
@@ -123,6 +123,7 @@ import {
   Share,
   ExternalLink,
   ArrowLeft,
+  ArrowUp,
   Send,
   Inbox,
   Camera,
@@ -144,6 +145,8 @@ import {
   CalendarDays,
   Plus,
   CheckCircle,
+  CheckCircle2,
+  Edit3,
   Wifi,
   WifiOff,
   Share2,
@@ -370,27 +373,101 @@ export default function App() {
     return sanitizeCommunityMessagesList(INITIAL_COMMUNITY_MESSAGES.filter(m => !deletedSet.has(m.id)));
   });
 
-  const [challenges, setChallenges] = React.useState<ChallengeItem[] | undefined>(() => {
+  const [challenges, setChallenges] = React.useState<ChallengeItem[]>(() => {
     try {
-      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
-      const key = cleanEmail ? `camper_challenges_${cleanEmail}` : "camper_challenges_guest";
-      const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : undefined;
-    } catch {
-      return undefined;
-    }
+      const globalSaved = localStorage.getItem("camper_community_challenges");
+      if (globalSaved) return JSON.parse(globalSaved);
+      const guestSaved = localStorage.getItem("camper_challenges_guest");
+      if (guestSaved) return JSON.parse(guestSaved);
+    } catch {}
+    return INITIAL_CHALLENGES;
   });
 
   const [challengeSubmissions, setChallengeSubmissions] = React.useState<ChallengeSubmission[] | undefined>(() => {
     try {
-      const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
-      const key = cleanEmail ? `camper_challenge_submissions_${cleanEmail}` : "camper_challenge_submissions_guest";
-      const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : undefined;
-    } catch {
-      return undefined;
-    }
+      const globalSaved = localStorage.getItem("camper_community_challenge_submissions");
+      if (globalSaved) return JSON.parse(globalSaved);
+      const guestSaved = localStorage.getItem("camper_challenge_submissions_guest");
+      if (guestSaved) return JSON.parse(guestSaved);
+    } catch {}
+    return undefined;
   });
+
+  const saveCommunityChallenges = React.useCallback((updated: ChallengeItem[]) => {
+    setChallenges(updated);
+    try {
+      localStorage.setItem("camper_community_challenges", JSON.stringify(updated));
+    } catch (e) {
+      console.error("Error saving camper_community_challenges", e);
+    }
+    try {
+      const chalDocRef = doc(db, "system", "challenges");
+      setDoc(chalDocRef, { list: sanitizeForFirestore(updated), updatedAt: new Date().toISOString() }, { merge: true }).catch(err => {
+        console.warn("[Firestore] Error saving community challenges:", err);
+      });
+    } catch (e) {
+      console.warn("[Firestore] Exception saving community challenges:", e);
+    }
+  }, []);
+
+  const saveCommunityChallengeSubmissions = React.useCallback((updated: ChallengeSubmission[]) => {
+    setChallengeSubmissions(updated);
+    try {
+      localStorage.setItem("camper_community_challenge_submissions", JSON.stringify(updated));
+    } catch (e) {
+      console.error("Error saving challenge submissions:", e);
+    }
+    try {
+      const subDocRef = doc(db, "system", "challenge_submissions");
+      setDoc(subDocRef, { list: sanitizeForFirestore(updated), updatedAt: new Date().toISOString() }, { merge: true }).catch(err => {
+        console.warn("[Firestore] Error saving challenge submissions:", err);
+      });
+    } catch (e) {
+      console.warn("[Firestore] Exception saving challenge submissions:", e);
+    }
+  }, []);
+
+  // Real-time listener for community challenges & submissions from Firestore
+  React.useEffect(() => {
+    try {
+      const chalDocRef = doc(db, "system", "challenges");
+      const unsubChal = onSnapshot(chalDocRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && Array.isArray(data.list) && data.list.length > 0) {
+            setChallenges(data.list);
+            try {
+              localStorage.setItem("camper_community_challenges", JSON.stringify(data.list));
+            } catch {}
+          }
+        }
+      }, (err) => {
+        console.warn("[Firestore] challenges listener error:", err);
+      });
+
+      const subDocRef = doc(db, "system", "challenge_submissions");
+      const unsubSub = onSnapshot(subDocRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && Array.isArray(data.list) && data.list.length > 0) {
+            setChallengeSubmissions(data.list);
+            try {
+              localStorage.setItem("camper_community_challenge_submissions", JSON.stringify(data.list));
+            } catch {}
+          }
+        }
+      }, (err) => {
+        console.warn("[Firestore] submissions listener error:", err);
+      });
+
+      return () => {
+        unsubChal();
+        unsubSub();
+      };
+    } catch (e) {
+      console.warn("[Firestore] error setting up challenges listener:", e);
+    }
+  }, []);
 
   React.useEffect(() => {
     const emailToRegister =
@@ -405,30 +482,6 @@ export default function App() {
       });
     }
   }, [currentUser?.email]);
-
-  React.useEffect(() => {
-    if (challenges) {
-      try {
-        const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
-        const key = cleanEmail ? `camper_challenges_${cleanEmail}` : "camper_challenges_guest";
-        localStorage.setItem(key, JSON.stringify(challenges));
-      } catch (e) {
-        console.error("Error saving challenges", e);
-      }
-    }
-  }, [challenges, currentUser?.email]);
-
-  React.useEffect(() => {
-    if (challengeSubmissions) {
-      try {
-        const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
-        const key = cleanEmail ? `camper_challenge_submissions_${cleanEmail}` : "camper_challenge_submissions_guest";
-        localStorage.setItem(key, JSON.stringify(challengeSubmissions));
-      } catch (e) {
-        console.error("Error saving challenge submissions", e);
-      }
-    }
-  }, [challengeSubmissions, currentUser?.email]);
 
   const [checklistItems, setChecklistItems] = React.useState<ChecklistItem[]>(() => {
     try {
@@ -489,12 +542,6 @@ export default function App() {
 
         const savedFavs = localStorage.getItem(`camper_favorites_${cleanEmail}`);
         setFavoriteIds(savedFavs ? JSON.parse(savedFavs) : []);
-
-        const savedChallenges = localStorage.getItem(`camper_challenges_${cleanEmail}`);
-        setChallenges(savedChallenges ? JSON.parse(savedChallenges) : undefined);
-
-        const savedSubmissions = localStorage.getItem(`camper_challenge_submissions_${cleanEmail}`);
-        setChallengeSubmissions(savedSubmissions ? JSON.parse(savedSubmissions) : undefined);
       } catch (e) {
         console.error("Error reloading user scoped items:", e);
       }
@@ -502,8 +549,6 @@ export default function App() {
       setChecklistItems(DEFAULT_CHECKLIST);
       setDeadlines(INITIAL_DEADLINES);
       setFavoriteIds([]);
-      setChallenges(undefined);
-      setChallengeSubmissions(undefined);
     }
   }, [currentUser?.email]);
 
@@ -947,6 +992,7 @@ export default function App() {
         // Ensure old example trips are recorded as deleted so they don't resurrect from cloud
         recordDeletedId('trips', 'trip-example-10-oct-2025', cleanEmail);
         recordDeletedId('trips', 't1', cleanEmail);
+        SICILIA_PURGED_PHOTO_IDS.forEach((pid) => recordDeletedId('photos', pid, cleanEmail));
 
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
@@ -1176,6 +1222,44 @@ export default function App() {
     }
   }, [activeTab, settingsSubTab, totalCommunityMessagesCount, lastSeenCommunityCount]);
 
+  // --- ADMIN MODERATION PANEL REFS & BACK BUTTON STATE ---
+  const [showAdminPanel, setShowAdminPanel] = React.useState(false);
+  const [showAdminChalModal, setShowAdminChalModal] = React.useState(false);
+  const [isAdminScrolled, setIsAdminScrolled] = React.useState(false);
+  const adminModalScrollRef = React.useRef<HTMLDivElement>(null);
+  const adminSubtabsRef = React.useRef<HTMLDivElement>(null);
+  const showAdminPanelRef = React.useRef(false);
+  const showAdminChalModalRef = React.useRef(false);
+  const isAdminScrolledRef = React.useRef(false);
+
+  React.useEffect(() => {
+    showAdminPanelRef.current = showAdminPanel;
+    if (showAdminPanel) {
+      setIsAdminScrolled(false);
+      isAdminScrolledRef.current = false;
+      window.history.pushState({ modal: "admin_panel" }, "");
+    }
+  }, [showAdminPanel]);
+
+  React.useEffect(() => {
+    showAdminChalModalRef.current = showAdminChalModal;
+    if (showAdminChalModal) {
+      window.history.pushState({ modal: "admin_chal_modal" }, "");
+    }
+  }, [showAdminChalModal]);
+
+  const handleAdminScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const st = e.currentTarget.scrollTop;
+    const isScrolled = st > 60;
+    if (isScrolled !== isAdminScrolledRef.current) {
+      isAdminScrolledRef.current = isScrolled;
+      setIsAdminScrolled(isScrolled);
+      if (isScrolled) {
+        window.history.pushState({ modal: "admin_panel_scrolled" }, "");
+      }
+    }
+  };
+
   // Gestione della cronologia del browser per consentire il tasto "indietro"
   React.useEffect(() => {
     const initialState = {
@@ -1188,6 +1272,30 @@ export default function App() {
     }
 
     const handlePopState = (e: PopStateEvent) => {
+      // Gestione prioritaria se il modale concorso è aperto:
+      if (showAdminChalModalRef.current) {
+        setShowAdminChalModal(false);
+        return;
+      }
+
+      // Gestione prioritaria tasto indietro nel pannello moderatore:
+      // se l'utente sta scorrendo, torna all'inizio alle sottoschede anziché uscire!
+      if (showAdminPanelRef.current) {
+        if (adminModalScrollRef.current && adminModalScrollRef.current.scrollTop > 50) {
+          adminModalScrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
+          adminSubtabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          setIsAdminScrolled(false);
+          isAdminScrolledRef.current = false;
+          window.history.pushState({ modal: "admin_panel" }, "");
+          return;
+        } else {
+          setShowAdminPanel(false);
+          setIsAdminScrolled(false);
+          isAdminScrolledRef.current = false;
+          return;
+        }
+      }
+
       if (e.state) {
         if (e.state.activeTab) {
           setActiveTab(e.state.activeTab);
@@ -1246,6 +1354,28 @@ export default function App() {
     if (!Capacitor.isNativePlatform()) return;
 
     const backListener = CapacitorApp.addListener("backButton", ({ canGoBack }) => {
+      // Gestione prioritaria se il modale concorso è aperto:
+      if (showAdminChalModalRef.current) {
+        setShowAdminChalModal(false);
+        return;
+      }
+
+      // Gestione prioritaria tasto indietro Android nel pannello moderatore:
+      if (showAdminPanelRef.current) {
+        if (adminModalScrollRef.current && adminModalScrollRef.current.scrollTop > 50) {
+          adminModalScrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
+          adminSubtabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          setIsAdminScrolled(false);
+          isAdminScrolledRef.current = false;
+          return;
+        } else {
+          setShowAdminPanel(false);
+          setIsAdminScrolled(false);
+          isAdminScrolledRef.current = false;
+          return;
+        }
+      }
+
       // Logic for back button routing
       if (activeTabRef.current === "settings_tools") {
         if (settingsSubTabRef.current !== "hub") {
@@ -1469,7 +1599,6 @@ export default function App() {
   );
 
   // --- ADMIN MODERATION STATES ---
-  const [showAdminPanel, setShowAdminPanel] = React.useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState<boolean>(() => {
     try {
       const savedUser = localStorage.getItem("camper_user");
@@ -1511,7 +1640,19 @@ export default function App() {
     | "ai-discovery"
     | "bulk-import"
     | "debug"
+    | "challenges"
   >("pending");
+  const [adminEditingChal, setAdminEditingChal] = React.useState<ChallengeItem | null>(null);
+  const [chalTitle, setChalTitle] = React.useState("");
+  const [chalBadgeTag, setChalBadgeTag] = React.useState("");
+  const [chalIcon, setChalIcon] = React.useState("🏆");
+  const [chalDesc, setChalDesc] = React.useState("");
+  const [chalReward, setChalReward] = React.useState("");
+  const [chalXp, setChalXp] = React.useState("100");
+  const [chalMaxProg, setChalMaxProg] = React.useState("1");
+  const [chalUnit, setChalUnit] = React.useState("foto");
+  const [chalEndDate, setChalEndDate] = React.useState("31 Dicembre 2026");
+  const [chalIsExpired, setChalIsExpired] = React.useState(false);
   const [osmReports, setOsmReports] = React.useState<OsmReportData[]>([]);
   const [osmReportsLoading, setOsmReportsLoading] = React.useState(false);
   const [selectedReportPhoto, setSelectedReportPhoto] = React.useState<string | null>(null);
@@ -6482,7 +6623,7 @@ out center;`;
                       onOpenChallenges={() => setSettingsSubTab("challenges")}
                       currentUser={currentUser}
                       challengeSubmissions={challengeSubmissions}
-                      onChallengeSubmissionsChange={setChallengeSubmissions}
+                      onChallengeSubmissionsChange={saveCommunityChallengeSubmissions}
                       challenges={challenges}
                       onViewTrip={(tripId) => {
                         setSelectedDiaryTripId(tripId);
@@ -6496,11 +6637,11 @@ out center;`;
                       onOpenAddPlace={() => setActiveTab("map_nav")}
                       currentUser={currentUser}
                       submissions={challengeSubmissions}
-                      onSubmissionsChange={setChallengeSubmissions}
+                      onSubmissionsChange={saveCommunityChallengeSubmissions}
                       communityMessages={communityMessages}
                       onCommunityMessagesChange={handleCommunityChange}
                       challenges={challenges}
-                      onChallengesChange={setChallenges}
+                      onChallengesChange={saveCommunityChallenges}
                     />
                   )}
                   {settingsSubTab === "shared_trips" && (
@@ -7447,8 +7588,12 @@ out center;`;
 
       {/* --- ADMIN MODERATION CONTROL PANEL --- */}
       {showAdminPanel && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-5xl w-full max-h-[90vh] md:max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10000] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div 
+            ref={adminModalScrollRef}
+            onScroll={handleAdminScroll}
+            className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-5xl w-full max-h-[94vh] flex flex-col overflow-y-auto scroll-smooth animate-in fade-in zoom-in-95 duration-150 relative"
+          >
             {/* Header */}
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-amber-50 shrink-0">
               <div className="flex items-center gap-2">
@@ -7559,12 +7704,18 @@ out center;`;
               </div>
             ) : (
               /* If authenticated: display pending queue & OSM Importer tabs */
-              <div className="flex-1 flex flex-col min-h-0 font-sans">
+              <div className="flex-1 flex flex-col font-sans">
                 {/* Admin Subtabs Selector */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 bg-slate-100 p-1.5 border-b border-slate-200 gap-1.5 shrink-0 select-none">
+                <div 
+                  ref={adminSubtabsRef}
+                  className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 bg-slate-100 p-1.5 border-b border-slate-200 gap-1.5 shrink-0 select-none"
+                >
                   <button
                     type="button"
-                    onClick={() => setAdminSubTab("pending")}
+                    onClick={() => {
+                      setAdminSubTab("pending");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "pending"
                         ? "bg-[#3E4A35] text-white shadow-xs"
@@ -7579,6 +7730,7 @@ out center;`;
                     onClick={() => {
                       fetchAllPlaces();
                       setAdminSubTab("all_places");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "all_places"
@@ -7594,6 +7746,7 @@ out center;`;
                     onClick={() => {
                       fetchFeedbacks();
                       setAdminSubTab("feedback");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "feedback"
@@ -7610,6 +7763,7 @@ out center;`;
                     onClick={() => {
                       fetchPendingCommunityItineraries();
                       setAdminSubTab("community_itineraries");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "community_itineraries"
@@ -7622,7 +7776,10 @@ out center;`;
 
                   <button
                     type="button"
-                    onClick={() => setAdminSubTab("osm")}
+                    onClick={() => {
+                      setAdminSubTab("osm");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "osm"
                         ? "bg-[#3E4A35] text-white shadow-xs"
@@ -7638,6 +7795,7 @@ out center;`;
                     onClick={() => {
                       fetchOsmReports();
                       setAdminSubTab("osm_reports");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "osm_reports"
@@ -7657,8 +7815,24 @@ out center;`;
                   <button
                     type="button"
                     onClick={() => {
+                      setAdminSubTab("challenges");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      adminSubTab === "challenges"
+                        ? "bg-[#3E4A35] text-white shadow-xs"
+                        : "text-slate-600 hover:bg-[#3E4A35]/5 hover:text-slate-805"
+                    }`}
+                  >
+                    <span>🏆 Concorsi & Sfide</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
                       fetchAdminUsers();
                       setAdminSubTab("users");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "users"
@@ -7680,6 +7854,7 @@ out center;`;
                     onClick={() => {
                       fetchAdminNotifications();
                       setAdminSubTab("notifications");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "notifications"
@@ -7696,6 +7871,7 @@ out center;`;
                     onClick={() => {
                       fetchCrashReports();
                       setAdminSubTab("crash_reports");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                     }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "crash_reports"
@@ -7709,7 +7885,10 @@ out center;`;
 
                   <button
                     type="button"
-                    onClick={() => setAdminSubTab("bulk-import")}
+                    onClick={() => {
+                      setAdminSubTab("bulk-import");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "bulk-import"
                         ? "bg-emerald-700 text-white shadow-xs"
@@ -7722,7 +7901,10 @@ out center;`;
 
                   <button
                     type="button"
-                    onClick={() => setAdminSubTab("ai-discovery")}
+                    onClick={() => {
+                      setAdminSubTab("ai-discovery");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "ai-discovery"
                         ? "bg-indigo-600 text-white shadow-xs"
@@ -7735,7 +7917,10 @@ out center;`;
 
                   <button
                     type="button"
-                    onClick={() => setAdminSubTab("debug")}
+                    onClick={() => {
+                      setAdminSubTab("debug");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                     className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       adminSubTab === "debug"
                         ? "bg-slate-800 text-white shadow-xs"
@@ -7749,7 +7934,7 @@ out center;`;
 
                 {/* Sub Tab: admin notifications for rejected content */}
                 {adminSubTab === "notifications" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 bg-slate-50/50">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4 bg-slate-50/50">
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <h4 className="font-bold text-slate-800 text-xs">
@@ -7834,7 +8019,7 @@ out center;`;
                 )}
 
                 {adminSubTab === "all_places" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 font-sans">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4 font-sans">
                     <div className="bg-[#3E4A35]/5 border border-[#3E4A35]/10 p-3.5 rounded-xl text-[11px] text-[#3E4A35] leading-relaxed flex items-center justify-between">
                       <div>
                         🗺️ <strong>Dashboard Tutte le Soste ({allPlaces.length} totali):</strong>{" "}
@@ -7923,7 +8108,7 @@ out center;`;
                   </div>
                 )}
                 {adminSubTab === "pending" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4">
                     {/* Visual warning banner if there are new registered users pending approval */}
                     {adminUsers.filter((u) => u.approved === false).length > 0 && (
                       <div 
@@ -8143,7 +8328,7 @@ out center;`;
 
                 {/* Sub Tab: suggestions and feedback replies moderation */}
                 {adminSubTab === "feedback" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 font-sans">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4 font-sans">
                     <div className="bg-[#3E4A35]/5 border border-[#3E4A35]/10 p-3.5 rounded-xl text-[11px] text-[#3E4A35] leading-relaxed">
                       💬 <strong>Dashboard Segnalazioni & Suggerimenti:</strong>{" "}
                       Da qui puoi visionare tutti i feedback reali o di testing
@@ -8308,7 +8493,7 @@ out center;`;
 
                 {/* Sub Tab: Community Itineraries Moderation */}
                 {adminSubTab === "community_itineraries" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4">
                     <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200/80">
                       <div>
                         <h4 className="text-sm font-extrabold text-amber-950 dark:text-amber-200">
@@ -8396,7 +8581,7 @@ out center;`;
 
                 {/* Sub Tab: Community OSM Map Reports */}
                 {adminSubTab === "osm_reports" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 bg-slate-50/50">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4 bg-slate-50/50">
                     {/* Header Banner */}
                     <div className="bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-orange-500/10 rounded-2xl p-4 border border-rose-200/80 text-xs leading-relaxed space-y-2">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -8744,7 +8929,7 @@ out center;`;
 
                 {/* Sub Tab: OpenStreetMap (OSM) Importer UI inside Moderazione Admin */}
                 {adminSubTab === "osm" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4">
                     <div className="space-y-4 font-sans">
                       <div className="bg-sky-50 text-sky-850 rounded-2xl p-4 border border-sky-100 text-xs leading-relaxed space-y-2">
                         <h4 className="font-extrabold text-sm text-sky-900 flex items-center gap-2">
@@ -8950,7 +9135,7 @@ out center;`;
                 )}
 
                 {adminSubTab === "users" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4">
                     <div className="space-y-4 font-sans">
                       <div className="bg-rose-50/50 text-rose-950 rounded-2xl p-4 border border-rose-100 text-xs leading-relaxed space-y-2">
                         <h4 className="font-extrabold text-sm text-rose-900 flex items-center gap-2">
@@ -9484,7 +9669,7 @@ out center;`;
                 )}
 
                 {adminSubTab === "crash_reports" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-4 shrink min-h-0 bg-rose-50/20">
+                  <div className="p-3 sm:p-5 flex-1 space-y-4 bg-rose-50/20">
                     <div className="bg-white p-5 rounded-2xl border border-rose-100 shadow-xs space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-rose-100">
                         <div>
@@ -9649,7 +9834,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
 
                 {/* Sub Tab: Bulk JSON Importer */}
                 {adminSubTab === "bulk-import" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-5 shrink min-h-0 bg-emerald-50/20 font-sans">
+                  <div className="p-3 sm:p-5 flex-1 space-y-5 bg-emerald-50/20 font-sans">
                     <div className="bg-white p-6 rounded-2xl border border-emerald-150 shadow-xs space-y-4">
                       <div className="flex items-start justify-between gap-4">
                         <div>
@@ -9830,15 +10015,167 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                   </div>
                 )}
 
+                {adminSubTab === "challenges" && (
+                  <div className="p-3 sm:p-5 flex-1 space-y-5 bg-stone-50 dark:bg-stone-900 font-sans">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white dark:bg-stone-800 p-5 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-xs">
+                      <div>
+                        <h4 className="font-black text-stone-900 dark:text-stone-100 text-sm flex items-center gap-2">
+                          <Trophy className="w-5 h-5 text-amber-500" />
+                          Gestione Concorsi, Sfide & Badge Camperisti
+                        </h4>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                          Crea nuovi concorsi fotografici, chiudi quelli scaduti o modifica le sfide attive della community.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminEditingChal(null);
+                          setChalTitle("");
+                          setChalBadgeTag("");
+                          setChalIcon("🏆");
+                          setChalDesc("");
+                          setChalReward("");
+                          setChalXp("100");
+                          setChalMaxProg("1");
+                          setChalUnit("foto");
+                          setChalEndDate("31 Dicembre 2026");
+                          setChalIsExpired(false);
+                          setShowAdminChalModal(true);
+                        }}
+                        className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer shrink-0 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Crea Nuovo Concorso / Sfida
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {((challenges && challenges.length > 0) ? challenges : INITIAL_CHALLENGES).map((ch) => {
+                        const isExp = ch.isExpired || false;
+                        return (
+                          <div
+                            key={ch.id}
+                            className={`bg-white dark:bg-stone-800 rounded-2xl p-5 border shadow-xs space-y-4 relative flex flex-col justify-between ${
+                              isExp ? "border-stone-200 dark:border-stone-700 opacity-80" : "border-amber-500/40 dark:border-amber-500/30"
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-2xl p-2 bg-amber-50 dark:bg-stone-700 rounded-xl">{ch.icon}</span>
+                                  <div>
+                                    <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 text-[10px] font-extrabold rounded-full">
+                                      {ch.badgeTag}
+                                    </span>
+                                    <h5 className="font-extrabold text-stone-900 dark:text-stone-100 text-sm mt-1">{ch.title}</h5>
+                                  </div>
+                                </div>
+                                <span className={`px-2.5 py-1 text-[10px] font-black rounded-lg ${
+                                  isExp ? "bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
+                                }`}>
+                                  {isExp ? "Concluso / Scaduto" : "Attivo"}
+                                </span>
+                              </div>
+
+                              <p className="text-xs text-stone-600 dark:text-stone-300 leading-relaxed">{ch.description}</p>
+
+                              <div className="bg-stone-50 dark:bg-stone-900/50 p-2.5 rounded-xl border border-stone-200 dark:border-stone-700/60 text-[11px] space-y-1">
+                                <div className="flex justify-between text-stone-500">
+                                  <span>Premio:</span>
+                                  <span className="font-bold text-stone-700 dark:text-stone-200">{ch.reward}</span>
+                                </div>
+                                <div className="flex justify-between text-stone-500">
+                                  <span>Scadenza:</span>
+                                  <span className="font-bold text-stone-700 dark:text-stone-200">{ch.endDate}</span>
+                                </div>
+                                <div className="flex justify-between text-stone-500">
+                                  <span>Punti XP:</span>
+                                  <span className="font-bold text-amber-600">{ch.xpPoints} XP</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-stone-700">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentList = (challenges && challenges.length > 0) ? challenges : INITIAL_CHALLENGES;
+                                  const willBeExpired = !isExp;
+                                  const updated = currentList.map(item => item.id === ch.id ? {
+                                    ...item,
+                                    isExpired: willBeExpired,
+                                    isCompleted: willBeExpired ? true : false
+                                  } : item);
+                                  saveCommunityChallenges(updated);
+                                  window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: isExp ? "✨ Concorso riaperto con successo!" : "🔒 Concorso chiuso / segnato come scaduto." } }));
+                                }}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                  isExp
+                                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                    : "bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300"
+                                }`}
+                              >
+                                {isExp ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                                {isExp ? "Riapri Concorso" : "Chiudi Concorso"}
+                              </button>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAdminEditingChal(ch);
+                                    setChalTitle(ch.title);
+                                    setChalBadgeTag(ch.badgeTag);
+                                    setChalIcon(ch.icon);
+                                    setChalDesc(ch.description);
+                                    setChalReward(ch.reward);
+                                    setChalXp(String(ch.xpPoints));
+                                    setChalMaxProg(String(ch.maxProgress));
+                                    setChalUnit(ch.unit);
+                                    setChalEndDate(ch.endDate);
+                                    setChalIsExpired(Boolean(ch.isExpired));
+                                    setShowAdminChalModal(true);
+                                  }}
+                                  className="p-2 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 rounded-xl transition-colors cursor-pointer"
+                                  title="Modifica Concorso"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm("Sei sicuro di voler eliminare questo concorso/sfida?")) {
+                                      const currentList = (challenges && challenges.length > 0) ? challenges : INITIAL_CHALLENGES;
+                                      const updated = currentList.filter(item => item.id !== ch.id);
+                                      saveCommunityChallenges(updated);
+                                      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "🗑️ Concorso eliminato." } }));
+                                    }
+                                  }}
+                                  className="p-2 hover:bg-red-50 text-red-600 rounded-xl transition-colors cursor-pointer"
+                                  title="Elimina Concorso"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {adminSubTab === "debug" && (
-                  <div className="p-4 flex-1 flex flex-col min-h-0 bg-slate-50 overflow-hidden">
+                  <div className="p-3 sm:p-4 flex-1 flex flex-col bg-slate-50">
                     <DebugPanelContent />
                   </div>
                 )}
 
                 {/* Sub Tab: AI Discovery */}
                 {adminSubTab === "ai-discovery" && (
-                  <div className="p-5 flex-1 overflow-y-auto space-y-5 shrink min-h-0 bg-indigo-50/30">
+                  <div className="p-3 sm:p-5 flex-1 space-y-5 bg-indigo-50/30">
                     <div className="bg-white p-5 rounded-2xl border border-indigo-100 shadow-xs space-y-4">
                       <div>
                         <h4 className="font-extrabold text-indigo-900 text-sm flex items-center gap-2">
@@ -10123,7 +10460,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                 )}
 
                 {/* Secure admin foot panel controls */}
-                <div className="p-4 border-t border-slate-100 flex justify-between items-center bg-slate-50 shrink-0 select-none">
+                <div className="p-4 border-t border-slate-100 flex justify-between items-center bg-slate-50 shrink-0 select-none mt-auto">
                   <button
                     onClick={() => {
                       setIsAdminLoggedIn(false);
@@ -10142,6 +10479,22 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                     Chiudi
                   </button>
                 </div>
+
+                {/* Floating button when scrolled down to return to subtabs selector */}
+                {isAdminScrolled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                      adminSubtabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    className="sticky bottom-4 ml-auto mr-4 z-30 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white px-3.5 py-2 rounded-full shadow-2xl flex items-center gap-1.5 text-xs font-black select-none cursor-pointer transition-all border border-white/20 active:scale-95 animate-bounce"
+                    title="Torna all'inizio delle sottoschede"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                    <span>Torna alle Schede</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -10402,6 +10755,209 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
           }
         }}
       />
+
+      {/* ADMIN CREATE / EDIT CHALLENGE MODAL */}
+      {showAdminChalModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-md z-[11000] flex items-center justify-center p-3 sm:p-4 animate-fade-in"
+          onClick={() => setShowAdminChalModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-stone-900 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 font-sans animate-scale-up max-h-[92vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-3">
+              <h3 className="text-sm font-black text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-500" />
+                {adminEditingChal ? "Modifica Concorso / Sfida" : "Crea Nuovo Concorso o Sfida"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAdminChalModal(false)}
+                className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full text-stone-400 hover:text-stone-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!chalTitle.trim()) {
+                  window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "⚠️ Inserisci un titolo per il concorso" } }));
+                  return;
+                }
+                const currentList = (challenges && challenges.length > 0) ? challenges : INITIAL_CHALLENGES;
+                let updated: ChallengeItem[];
+                if (adminEditingChal) {
+                  updated = currentList.map(item => item.id === adminEditingChal.id ? {
+                    ...item,
+                    title: chalTitle,
+                    badgeTag: chalBadgeTag || "Speciale",
+                    icon: chalIcon || "🏆",
+                    description: chalDesc,
+                    reward: chalReward,
+                    xpPoints: parseInt(chalXp, 10) || 100,
+                    maxProgress: parseInt(chalMaxProg, 10) || 1,
+                    unit: chalUnit || "foto",
+                    endDate: chalEndDate || "31 Dicembre 2026",
+                    isExpired: chalIsExpired,
+                    isCompleted: chalIsExpired ? true : false
+                  } : item);
+                } else {
+                  const newChal: ChallengeItem = {
+                    id: `ch_custom_${Date.now()}`,
+                    title: chalTitle,
+                    badgeTag: chalBadgeTag || "Speciale",
+                    icon: chalIcon || "🏆",
+                    description: chalDesc,
+                    reward: chalReward,
+                    xpPoints: parseInt(chalXp, 10) || 100,
+                    progress: 0,
+                    maxProgress: parseInt(chalMaxProg, 10) || 1,
+                    unit: chalUnit || "foto",
+                    endDate: chalEndDate || "31 Dicembre 2026",
+                    isExpired: chalIsExpired,
+                    isCompleted: chalIsExpired ? true : false
+                  };
+                  updated = [newChal, ...currentList];
+                }
+                saveCommunityChallenges(updated);
+                setShowAdminChalModal(false);
+                window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: adminEditingChal ? "✅ Concorso modificato con successo!" : "🎉 Nuovo concorso creato con successo!" } }));
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Titolo Concorso / Sfida</label>
+                <input
+                  type="text"
+                  required
+                  value={chalTitle}
+                  onChange={(e) => setChalTitle(e.target.value)}
+                  placeholder="Es. Sfida Fotografica Borghi Storici 📸"
+                  className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Etichetta Badge (Tag)</label>
+                  <input
+                    type="text"
+                    value={chalBadgeTag}
+                    onChange={(e) => setChalBadgeTag(e.target.value)}
+                    placeholder="Es. Borghi"
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Icona / Emoji</label>
+                  <input
+                    type="text"
+                    value={chalIcon}
+                    onChange={(e) => setChalIcon(e.target.value)}
+                    placeholder="🏰"
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Descrizione Regolamento</label>
+                <textarea
+                  rows={3}
+                  value={chalDesc}
+                  onChange={(e) => setChalDesc(e.target.value)}
+                  placeholder="Spiega le regole del concorso per i camperisti..."
+                  className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Premio / Riconoscimento</label>
+                <input
+                  type="text"
+                  value={chalReward}
+                  onChange={(e) => setChalReward(e.target.value)}
+                  placeholder="Es. Badge Master + 200 Punti XP"
+                  className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Punti XP</label>
+                  <input
+                    type="number"
+                    value={chalXp}
+                    onChange={(e) => setChalXp(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Obiettivo (N°)</label>
+                  <input
+                    type="number"
+                    value={chalMaxProg}
+                    onChange={(e) => setChalMaxProg(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Unità (es. foto)</label>
+                  <input
+                    type="text"
+                    value={chalUnit}
+                    onChange={(e) => setChalUnit(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-stone-500 mb-1">Data Scadenza</label>
+                  <input
+                    type="text"
+                    value={chalEndDate}
+                    onChange={(e) => setChalEndDate(e.target.value)}
+                    placeholder="31 Dicembre 2026"
+                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none font-medium"
+                  />
+                </div>
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={chalIsExpired}
+                      onChange={(e) => setChalIsExpired(e.target.checked)}
+                      className="w-4 h-4 text-amber-600 rounded border-stone-300 focus:ring-amber-500"
+                    />
+                    <span className="text-xs font-bold text-stone-700 dark:text-stone-300">Segna come Chiuso / Scaduto</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-stone-200 dark:border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminChalModal(false)}
+                  className="px-4 py-2 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold hover:bg-stone-200 cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md cursor-pointer"
+                >
+                  {adminEditingChal ? "Salva Modifiche" : "Crea Concorso"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox Modal per Ingrandimento Foto Segnalazione OSM */}
       {selectedReportPhoto && (
