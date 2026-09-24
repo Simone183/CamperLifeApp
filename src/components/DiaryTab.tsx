@@ -268,7 +268,8 @@ export default function DiaryTab({
           .map((s) => `${s.id || ''}_${s.name || ''}`)
           .sort()
           .join(",");
-        return `${t.id}:${t.title || ''}:${t.startDate || ''}:${t.endDate || ''}:${t.startOdometer || 0}:${t.endOdometer || 0}:${t.status || ''}:[${expStr}]:[${movStr}]:[${phoStr}]:[${stpStr}]`;
+        const descHash = t.description ? `${t.description.length}_${t.description.slice(0, 30).replace(/[:|\[\]]/g, '')}` : 'nodesc';
+        return `${t.id}:${t.title || ''}:${t.startDate || ''}:${t.endDate || ''}:${t.startOdometer || 0}:${t.endOdometer || 0}:${t.status || ''}:${descHash}:${t.updatedAt || ''}:[${expStr}]:[${movStr}]:[${phoStr}]:[${stpStr}]`;
       })
       .sort()
       .join("|");
@@ -550,7 +551,7 @@ export default function DiaryTab({
   const [ocrExtractedText, setOcrExtractedText] = React.useState("");
   const [isProcessingOcr, setIsProcessingOcr] = React.useState(false);
   const [ocrProgressStatus, setOcrProgressStatus] = React.useState<string>("");
-  const [ocrTargetField, setOcrTargetField] = React.useState<'new' | 'edit'>('new');
+  const [ocrTargetField, setOcrTargetField] = React.useState<'new' | 'edit' | 'active'>('new');
 
   // New Expense form state
   const [expenseTitle, setExpenseTitle] = React.useState("");
@@ -734,6 +735,44 @@ export default function DiaryTab({
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
   }, [autoSyncState, syncWithCloud, computeTripsFingerprint]);
+
+  // Auto-sync from Cloud on mount of DiaryTab to pull latest mobile updates (OCR stories, photos, expenses)
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      syncWithCloud(tripsRef.current, false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [syncWithCloud]);
+
+  // When user switches back to this browser tab or window gains focus, refresh trips from cloud
+  React.useEffect(() => {
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        syncWithCloud(tripsRef.current, false);
+      }
+    };
+    window.addEventListener("focus", handleFocusOrVisible);
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+    return () => {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
+    };
+  }, [syncWithCloud]);
+
+  // Keep internal state aligned if other components dispatch trip-updated
+  React.useEffect(() => {
+    const handleTripUpdated = (e: any) => {
+      if (e?.detail?.trips && Array.isArray(e.detail.trips)) {
+        const incomingHash = computeTripsFingerprint(e.detail.trips);
+        const currentHash = computeTripsFingerprint(tripsRef.current);
+        if (incomingHash !== currentHash) {
+          setTrips(e.detail.trips);
+        }
+      }
+    };
+    window.addEventListener("trip-updated", handleTripUpdated);
+    return () => window.removeEventListener("trip-updated", handleTripUpdated);
+  }, [computeTripsFingerprint, setTrips]);
 
   const isUserInitiatedSyncRef = React.useRef(false);
 
@@ -994,6 +1033,7 @@ export default function DiaryTab({
       notes: "Partenza viaggio",
     }] : [];
 
+    const nowIso = new Date().toISOString();
     const created: Trip = {
       id: "trip_" + Date.now(),
       title: newTitle,
@@ -1006,10 +1046,18 @@ export default function DiaryTab({
       expenses: [],
       photos: [],
       movements: initialMovements,
+      updatedAt: nowIso,
     };
 
     const updated = [created, ...trips];
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    syncWithCloud(updated, false);
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
     setSelectedTripId(created.id);
     setDiarySubTab("details");
     setShowAddTrip(false);
@@ -1781,6 +1829,7 @@ export default function DiaryTab({
     e.preventDefault();
     if (!selectedTripId || !editTitle.trim()) return;
 
+    const nowIso = new Date().toISOString();
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         return {
@@ -1792,16 +1841,24 @@ export default function DiaryTab({
           status: editStatus,
           startOdometer: editStartOdo ? Number(editStartOdo) : undefined,
           endOdometer: editEndOdo ? Number(editEndOdo) : undefined,
+          updatedAt: nowIso,
         };
       }
       return t;
     });
 
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    syncWithCloud(updated, false);
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
     setIsEditingTrip(false);
     window.dispatchEvent(
       new CustomEvent("show-toast", {
-        detail: { message: `✅ Diario di viaggio "${editTitle}" aggiornato!` },
+        detail: { message: `✅ Diario di viaggio "${editTitle}" aggiornato e sincronizzato!` },
       }),
     );
   };
@@ -6230,20 +6287,40 @@ export default function DiaryTab({
 
 
                 {expenseSubMode === "photo" && (
-                <div className="mt-6 p-4 bg-[#F5F2ED]/40 rounded-xl border border-[#3E4A35]/10 animate-fade-in">
-                  <h3 className="text-xs font-black text-[#3E4A35] uppercase tracking-wider mb-2">
-                    Racconto
-                  </h3>
-                  <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                <div className="mt-6 p-4 bg-[#F5F2ED]/40 dark:bg-stone-850/50 rounded-xl border border-[#3E4A35]/10 dark:border-stone-700/50 animate-fade-in">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-black text-[#3E4A35] dark:text-[#889B73] uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>Racconto</span>
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOcrTargetField('active');
+                          setOcrImagePreview(null);
+                          setOcrImageFile(null);
+                          setOcrExtractedText("");
+                          setShowOcrModal(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-lg text-[10px] font-black cursor-pointer transition-all shadow-xs"
+                        title="Scansiona testo da foto o diario cartaceo tramite OCR"
+                      >
+                        <Camera className="w-3 h-3 text-amber-200" />
+                        <span>OCR Leggi Testo</span>
+                      </button>
+                      <button
+                        onClick={startEditingActiveTrip}
+                        className="px-2.5 py-1 bg-white dark:bg-stone-800 text-[10px] font-black text-[#3E4A35] dark:text-stone-200 hover:bg-[#3E4A35] hover:text-white rounded-lg border border-[#3E4A35]/20 dark:border-stone-700 transition-all shadow-xs cursor-pointer"
+                      >
+                        Modifica
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-700 dark:text-stone-300 leading-relaxed whitespace-pre-wrap">
                     {activeTrip.description ||
                       "Nessuna storia o racconto inserito per questa escursione."}
                   </p>
-                  <button
-                    onClick={startEditingActiveTrip}
-                    className="mt-3 px-3 py-1.5 bg-white text-[10px] font-black text-[#3E4A35] hover:bg-[#3E4A35] hover:text-white rounded border border-[#3E4A35]/20 transition-all shadow-xs cursor-pointer"
-                  >
-                    Modifica racconto
-                  </button>
                 </div>
               )}
               </div>
@@ -7497,9 +7574,26 @@ export default function DiaryTab({
                           setNewDesc((prev) => (prev ? prev + "\n\n" + ocrExtractedText : ocrExtractedText));
                         } else if (ocrTargetField === 'edit') {
                           setEditDesc((prev) => (prev ? prev + "\n\n" + ocrExtractedText : ocrExtractedText));
+                        } else if (ocrTargetField === 'active' && selectedTripId) {
+                          const nowIso = new Date().toISOString();
+                          const updated = trips.map((t) => {
+                            if (t.id === selectedTripId) {
+                              const mergedDesc = t.description ? `${t.description}\n\n${ocrExtractedText}` : ocrExtractedText;
+                              return { ...t, description: mergedDesc, updatedAt: nowIso };
+                            }
+                            return t;
+                          });
+                          setTrips(updated);
+                          if (emailKey) {
+                            try {
+                              localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+                            } catch {}
+                          }
+                          syncWithCloud(updated, false);
+                          window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
                         }
                         setShowOcrModal(false);
-                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✅ Testo OCR inserito nel racconto!" } }));
+                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✅ Testo OCR inserito nel racconto e sincronizzato!" } }));
                       }}
                       className="flex-1 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white rounded-xl text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5 transition-all"
                     >

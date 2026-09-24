@@ -4645,15 +4645,42 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const startOdometers = [exTrip.startOdometer, incTrip.startOdometer].filter(n => typeof n === 'number' && n > 0);
           const endOdometers = [exTrip.endOdometer, incTrip.endOdometer].filter(n => typeof n === 'number' && n > 0);
 
+          // Merge description / racconto intelligently so mobile OCR text is never erased by empty web client
+          const incDesc = (incTrip.description || "").trim();
+          const exDesc = (exTrip.description || "").trim();
+          const incTime = incTrip.updatedAt ? new Date(incTrip.updatedAt).getTime() : 0;
+          const exTime = exTrip.updatedAt ? new Date(exTrip.updatedAt).getTime() : 0;
+          let bestDesc = exTrip.description || "";
+
+          if (!isNaN(incTime) && !isNaN(exTime) && incTime > exTime && incDesc) {
+            bestDesc = incTrip.description;
+          } else if (!isNaN(exTime) && !isNaN(incTime) && exTime > incTime && exDesc) {
+            bestDesc = exTrip.description;
+          } else if (!exDesc && incDesc) {
+            bestDesc = incTrip.description;
+          } else if (incDesc && incDesc.length > exDesc.length) {
+            bestDesc = incTrip.description;
+          } else if (exDesc) {
+            bestDesc = exTrip.description;
+          } else {
+            bestDesc = incTrip.description || "";
+          }
+
+          const finalUpdatedAt = (incTime > exTime)
+            ? (incTrip.updatedAt || new Date().toISOString())
+            : (exTrip.updatedAt || incTrip.updatedAt || new Date().toISOString());
+
           mergedTripsMap.set(incTrip.id, {
             ...exTrip,
             ...incTrip,
+            description: bestDesc,
             expenses: Array.from(expMap.values()),
             movements: Array.from(movMap.values()),
             photos: Array.from(phoMap.values()),
             stops: Array.from(stopMap.values()),
             startOdometer: incTrip.startOdometer !== undefined ? incTrip.startOdometer : exTrip.startOdometer,
             endOdometer: incTrip.endOdometer !== undefined ? incTrip.endOdometer : exTrip.endOdometer,
+            updatedAt: finalUpdatedAt,
           });
         } else {
           mergedTripsMap.set(incTrip.id, incTrip);

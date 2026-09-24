@@ -578,6 +578,7 @@ export interface Trip {
   photosCount?: number;
   budgetEuro?: number;
   kmTotal?: number;
+  updatedAt?: string;
 }
 
 export interface NavigationStep {

@@ -232,6 +232,7 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
     stops: cleanStops,
     photos: cleanPhotos,
     routePoints: cleanRoutePoints,
+    ...(rawTrip.updatedAt ? { updatedAt: String(rawTrip.updatedAt) } : {}),
   } as Trip;
 }
 
@@ -355,20 +356,67 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
   const cloudPoints = cloudTrip.routePoints || [];
   const mergedPoints = localPoints.length >= cloudPoints.length ? localPoints : cloudPoints;
 
+  // 6. Intelligent merge for trip metadata & Racconto (description)
+  const localUpdated = localTrip.updatedAt ? new Date(localTrip.updatedAt).getTime() : 0;
+  const cloudUpdated = cloudTrip.updatedAt ? new Date(cloudTrip.updatedAt).getTime() : 0;
+  const isCloudNewer = !isNaN(cloudUpdated) && cloudUpdated > (isNaN(localUpdated) ? 0 : localUpdated);
+  const isLocalNewer = !isNaN(localUpdated) && localUpdated > (isNaN(cloudUpdated) ? 0 : cloudUpdated);
+
+  // Description / Racconto merging
+  const lDesc = (localTrip.description || "").trim();
+  const cDesc = (cloudTrip.description || "").trim();
+  let bestDescription = localTrip.description || cloudTrip.description || "";
+
+  if (isCloudNewer && cDesc) {
+    bestDescription = cloudTrip.description;
+  } else if (isLocalNewer && lDesc) {
+    bestDescription = localTrip.description;
+  } else {
+    // If timestamps are equal, absent, or one side is empty:
+    if (!lDesc && cDesc) {
+      bestDescription = cloudTrip.description;
+    } else if (lDesc && !cDesc) {
+      bestDescription = localTrip.description;
+    } else if (cDesc.length > lDesc.length) {
+      // Prefer richer description (e.g. mobile OCR transcribed story)
+      bestDescription = cloudTrip.description;
+    } else {
+      bestDescription = localTrip.description || cloudTrip.description || "";
+    }
+  }
+
+  const bestTitle = isCloudNewer ? (cloudTrip.title || localTrip.title) : (localTrip.title || cloudTrip.title);
+  const bestStatus = isCloudNewer ? (cloudTrip.status || localTrip.status) : (localTrip.status || cloudTrip.status);
+  const bestStartDate = isCloudNewer ? (cloudTrip.startDate || localTrip.startDate) : (localTrip.startDate || cloudTrip.startDate);
+  const bestEndDate = isCloudNewer ? (cloudTrip.endDate || localTrip.endDate) : (localTrip.endDate || cloudTrip.endDate);
+
+  const bestStartOdo = (isCloudNewer && cloudTrip.startOdometer !== undefined)
+    ? cloudTrip.startOdometer
+    : (localTrip.startOdometer !== undefined ? localTrip.startOdometer : cloudTrip.startOdometer);
+
+  const bestEndOdo = (isCloudNewer && cloudTrip.endOdometer !== undefined)
+    ? cloudTrip.endOdometer
+    : (localTrip.endOdometer !== undefined ? localTrip.endOdometer : cloudTrip.endOdometer);
+
+  const finalUpdatedAt = cloudUpdated > localUpdated
+    ? cloudTrip.updatedAt
+    : (localTrip.updatedAt || cloudTrip.updatedAt || new Date().toISOString());
+
   return {
     ...localTrip,
-    title: localTrip.title || cloudTrip.title,
-    description: localTrip.description || cloudTrip.description,
-    startDate: localTrip.startDate || cloudTrip.startDate,
-    endDate: localTrip.endDate || cloudTrip.endDate,
-    status: localTrip.status || cloudTrip.status,
-    startOdometer: localTrip.startOdometer !== undefined ? localTrip.startOdometer : cloudTrip.startOdometer,
-    endOdometer: localTrip.endOdometer !== undefined ? localTrip.endOdometer : cloudTrip.endOdometer,
+    title: bestTitle,
+    description: bestDescription,
+    startDate: bestStartDate,
+    endDate: bestEndDate,
+    status: bestStatus,
+    startOdometer: bestStartOdo,
+    endOdometer: bestEndOdo,
     expenses: Array.from(expenseMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     movements: Array.from(movementMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     photos: Array.from(photoMap.values()),
     stops: Array.from(stopMap.values()),
     routePoints: mergedPoints,
+    updatedAt: finalUpdatedAt,
   };
 }
 
