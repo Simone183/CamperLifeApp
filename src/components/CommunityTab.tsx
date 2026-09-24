@@ -12,6 +12,7 @@ import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
 import { compressImage } from '../utils/photoCompressor';
+import { isChallengeExpired, INITIAL_CHALLENGES } from './ChallengesTab';
 import {
   MessageSquare,
   Heart,
@@ -40,7 +41,10 @@ import {
   MapPin,
   ThumbsUp,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Trophy,
+  Lock,
+  Calendar
 } from 'lucide-react';
 
 function getRelativeTime(timestamp: string): string {
@@ -462,6 +466,27 @@ export default function CommunityTab({
   // Forum 3-Level Hierarchy State: Level 1 (null, null) -> Level 2 (category, null) -> Level 3 (category, discussionId)
   const [selectedForumCategory, setSelectedForumCategory] = React.useState<CommunityMessage['tag'] | null>(null);
   const [selectedDiscussionId, setSelectedDiscussionId] = React.useState<string | null>(null);
+
+  // Synchronized Challenge / Contest state from props & storage
+  const challengeList = React.useMemo(() => {
+    if (challenges && challenges.length > 0) return challenges;
+    try {
+      const globalSaved = localStorage.getItem("camper_community_challenges");
+      if (globalSaved) {
+        const parsed = JSON.parse(globalSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_CHALLENGES;
+  }, [challenges]);
+
+  const activeChallenge = React.useMemo(() => {
+    return challengeList.find((ch) => !isChallengeExpired(ch)) || null;
+  }, [challengeList]);
+
+  const latestChallenge = React.useMemo(() => {
+    return challengeList[0] || null;
+  }, [challengeList]);
 
   // Category metadata for Level 1 Argomenti
   const forumCategoryMeta: Record<CommunityMessage['tag'], { title: string; desc: string; icon: string; bg: string; border: string }> = {
@@ -1470,37 +1495,106 @@ export default function CommunityTab({
         </span>
       </div>
 
-      {/* Contest Banner - Compact Mobile Friendly - Hidden in SOS mode */}
+      {/* Contest Banner - Fully Readable & Mobile Optimized - Hidden in SOS mode - Fully synchronized with challenges state */}
       {viewMode !== 'sos' && (
-        <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-slate-950 rounded-2xl p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border border-amber-400/60">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-slate-950 text-amber-400 rounded-xl shadow-md text-xl shrink-0">
-              🏆
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950 text-amber-300 font-black text-[9px] uppercase tracking-wider">
-                <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-                <span>Concorso Attivo</span>
+        activeChallenge ? (
+          <div className="bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-slate-950 rounded-2xl p-4 sm:p-5 shadow-md border border-amber-400/60 transition-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 sm:gap-4">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950 text-amber-400 flex items-center justify-center text-xl sm:text-2xl shrink-0 shadow-sm mt-0.5">
+                  {activeChallenge.icon || '🏆'}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  {/* Badges row */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 font-black text-[10px] uppercase tracking-wider shadow-xs">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>Concorso Attivo</span>
+                    </span>
+                    {activeChallenge.endDate && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-950/20 text-slate-950 dark:text-amber-100 font-bold text-[10px]">
+                        <Calendar className="w-3 h-3" />
+                        <span>Fino al {activeChallenge.endDate}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Title: full text, no truncate, perfectly readable on mobile */}
+                  <h3 className="font-black text-slate-950 text-sm sm:text-base leading-snug break-words">
+                    {activeChallenge.title}
+                  </h3>
+
+                  {/* Description: full text, no line-clamp, clear readable font */}
+                  <p className="text-slate-900/95 text-xs sm:text-sm leading-relaxed break-words font-medium">
+                    {activeChallenge.description}
+                  </p>
+
+                  {/* Reward / XP badge if available */}
+                  {(activeChallenge.reward || (activeChallenge.xpPoints && activeChallenge.xpPoints > 0)) && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {activeChallenge.reward && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-950 bg-amber-400/40 px-2 py-0.5 rounded-lg border border-amber-500/40">
+                          🎁 {activeChallenge.reward}
+                        </span>
+                      )}
+                      {activeChallenge.xpPoints && activeChallenge.xpPoints > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-black text-amber-950 bg-amber-300/60 px-2 py-0.5 rounded-lg border border-amber-500/40">
+                          +{activeChallenge.xpPoints} XP
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              <h3 className="font-black text-slate-950 text-xs sm:text-sm leading-tight mt-0.5 truncate">
-                Sfida #1: Foto Vista Mare 🌊
-              </h3>
-              <p className="text-slate-900/90 text-[11px] mt-0.5 line-clamp-1 sm:line-clamp-none">
-                Pubblica una foto con vista mare, aggiungi spot e scala la classifica!
-              </p>
+
+              {onOpenChallenges && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenChallenges();
+                    window.dispatchEvent(new CustomEvent('open-challenge-modal', { detail: { challengeId: activeChallenge.id } }));
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 self-stretch sm:self-center"
+                >
+                  <span>Partecipa Ora</span>
+                  <ChevronRight className="w-4 h-4 text-amber-400" />
+                </button>
+              )}
             </div>
           </div>
-          {onOpenChallenges && (
-            <button
-              type="button"
-              onClick={onOpenChallenges}
-              className="w-full sm:w-auto px-4 py-2 bg-slate-950 hover:bg-slate-900 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-            >
-              <span>Partecipa Ora</span>
-              <ChevronRight className="w-3.5 h-3.5 text-amber-400" />
-            </button>
-          )}
-        </div>
+        ) : (
+          <div className="bg-gradient-to-br from-stone-800 via-slate-800 to-stone-900 text-white rounded-2xl p-4 sm:p-5 shadow-md border border-amber-500/30 transition-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 sm:gap-4">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950/80 text-amber-400 flex items-center justify-center text-xl sm:text-2xl shrink-0 border border-slate-700 shadow-sm mt-0.5">
+                  {latestChallenge?.icon || '🏆'}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] uppercase tracking-wider border border-amber-500/30">
+                    <Lock className="w-3 h-3 text-amber-400" />
+                    <span>Concorso Concluso</span>
+                  </div>
+                  <h3 className="font-black text-white text-sm sm:text-base leading-snug break-words">
+                    {latestChallenge ? `${latestChallenge.title} (Scaduto)` : 'Nessun Concorso Attivo'}
+                  </h3>
+                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed break-words font-medium">
+                    Votazioni chiuse per scadenza termine. Clicca per vedere la galleria foto e la classifica camperisti!
+                  </p>
+                </div>
+              </div>
+              {onOpenChallenges && (
+                <button
+                  type="button"
+                  onClick={onOpenChallenges}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 self-stretch sm:self-center"
+                >
+                  <span>Vedi Classifica &amp; Sfide</span>
+                  <ChevronRight className="w-4 h-4 text-slate-950" />
+                </button>
+              )}
+            </div>
+          </div>
+        )
       )}
 
       {/* Main Mode Navigation Bar: 4-column grid for Social, Forum, Chat Live, SOS */}

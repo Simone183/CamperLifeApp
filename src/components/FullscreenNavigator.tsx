@@ -568,7 +568,7 @@ export default function FullscreenNavigator({
     } catch (err) {}
 
     setFuelLiters('');
-    setFuelCost('');
+    setInputFuelCost('');
     setFuelOdometer('');
     setOpenModal(null);
     window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "⛽ Rifornimento registrato e sincronizzato!" } }));

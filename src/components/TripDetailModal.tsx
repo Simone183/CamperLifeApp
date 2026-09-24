@@ -54,6 +54,8 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
     // Synchronize expense into trip.expenses as well
     const newExpenseEntry: DiaryExpense = {
       id: `exp-${Date.now()}`,
+      title: `Tappa: ${stopName}`,
+      amount: newStopExpenseVal,
       category: 'Tappa',
       description: `Tappa: ${stopName}`,
       amountEuro: newStopExpenseVal,
@@ -98,6 +100,8 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
     // Synchronize sosta expense with trip.expenses and budgetEuro
     const newExpenseEntry: DiaryExpense = {
       id: `exp-sosta-${Date.now()}`,
+      title: `${sostaType.replace('_', ' ')}: ${sostaName}`,
+      amount: expenseVal,
       category: 'Sosta',
       description: `${sostaType.replace('_', ' ')}: ${sostaName} (${sostaAddress || 'Indirizzo non specificato'})`,
       amountEuro: expenseVal,

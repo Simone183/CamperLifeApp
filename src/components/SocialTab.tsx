@@ -1,18 +1,22 @@
 import React, { useState } from 'react';
-import { SocialPost, TabType } from '../types';
+import { SocialPost, TabType, ChallengeItem } from '../types';
+import { isChallengeExpired, INITIAL_CHALLENGES } from './ChallengesTab';
 import {
   Heart, MessageSquare, Share2, Search, MapPin, Camera, Rocket, X, Bell,
   Sparkles, Flame, User, Image as ImageIcon, Shield, Trophy, ArrowLeft,
-  Lightbulb, Send, AlertTriangle, Paperclip, AtSign, PlusCircle, CheckCircle
+  Lightbulb, Send, AlertTriangle, Paperclip, AtSign, PlusCircle, CheckCircle,
+  Lock, ChevronRight, Calendar
 } from 'lucide-react';
 
 interface SocialTabProps {
   posts: SocialPost[];
   onAddPost: (post: Partial<SocialPost>) => void;
   onNavigateToTools?: () => void;
+  challenges?: ChallengeItem[];
+  onOpenChallenges?: () => void;
 }
 
-export const SocialTab: React.FC<SocialTabProps> = ({ posts, onAddPost, onNavigateToTools }) => {
+export const SocialTab: React.FC<SocialTabProps> = ({ posts, onAddPost, onNavigateToTools, challenges, onOpenChallenges }) => {
   const [activeSubTab, setActiveSubTab] = useState<'social' | 'forum' | 'chat' | 'sos'>('social');
   const [searchQuery, setSearchQuery] = useState('');
   const [newPostText, setNewPostText] = useState('');
@@ -227,21 +231,112 @@ export const SocialTab: React.FC<SocialTabProps> = ({ posts, onAddPost, onNaviga
         </div>
       </div>
 
-      {/* 4. Concorso Attivo Banner (Screenshot 11) */}
-      <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white rounded-2xl p-4 shadow-md flex items-center justify-between gap-3">
-        <div className="space-y-1">
-          <span className="px-2.5 py-0.5 rounded-full bg-amber-950/40 text-amber-100 text-[10px] font-extrabold tracking-wider uppercase">
-            🏆 CONCORSO ATTIVO
-          </span>
-          <h4 className="font-extrabold text-sm sm:text-base font-serif">Sfida #1: Foto Vista Mare 🌊</h4>
-          <p className="text-xs text-amber-100/90 leading-tight max-w-md">
-            Pubblica una foto con vista mare, aggiungi spot e accumula punti per vincere il Badge Esclusivo!
-          </p>
-        </div>
-        <button className="px-3.5 py-2 rounded-xl bg-white text-orange-900 hover:bg-amber-50 text-xs font-extrabold shadow-sm shrink-0 transition-transform active:scale-95">
-          Partecipa Ora &gt;
-        </button>
-      </div>
+      {/* 4. Concorso Attivo / Concluso Banner - Fully Readable & Mobile Optimized */}
+      {(() => {
+        const challengeList = (challenges && challenges.length > 0) ? challenges : INITIAL_CHALLENGES;
+        const activeChallenge = challengeList.find((ch) => !isChallengeExpired(ch));
+        const latestChallenge = challengeList[0];
+
+        if (activeChallenge) {
+          return (
+            <div className="bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-slate-950 rounded-2xl p-4 sm:p-5 shadow-md border border-amber-400/60 transition-all">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 sm:gap-4">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950 text-amber-400 flex items-center justify-center text-xl sm:text-2xl shrink-0 shadow-sm mt-0.5">
+                    {activeChallenge.icon || '🏆'}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    {/* Badges row */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 font-black text-[10px] uppercase tracking-wider shadow-xs">
+                        <Sparkles className="w-3 h-3 text-amber-400" />
+                        <span>Concorso Attivo</span>
+                      </span>
+                      {activeChallenge.endDate && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-950/20 text-slate-950 dark:text-amber-100 font-bold text-[10px]">
+                          <Calendar className="w-3 h-3" />
+                          <span>Fino al {activeChallenge.endDate}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Title: full text, no truncate, legible on small mobile screens */}
+                    <h3 className="font-black text-slate-950 text-sm sm:text-base leading-snug break-words">
+                      {activeChallenge.title}
+                    </h3>
+
+                    {/* Description: full text, no line-clamp, clear readable font */}
+                    <p className="text-slate-900/95 text-xs sm:text-sm leading-relaxed break-words font-medium">
+                      {activeChallenge.description}
+                    </p>
+
+                    {/* Reward / XP badge if available */}
+                    {(activeChallenge.reward || (activeChallenge.xpPoints && activeChallenge.xpPoints > 0)) && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        {activeChallenge.reward && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-950 bg-amber-400/40 px-2 py-0.5 rounded-lg border border-amber-500/40">
+                            🎁 {activeChallenge.reward}
+                          </span>
+                        )}
+                        {activeChallenge.xpPoints && activeChallenge.xpPoints > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-black text-amber-950 bg-amber-300/60 px-2 py-0.5 rounded-lg border border-amber-500/40">
+                            +{activeChallenge.xpPoints} XP
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {onOpenChallenges && (
+                  <button
+                    type="button"
+                    onClick={onOpenChallenges}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 self-stretch sm:self-center"
+                  >
+                    <span>Partecipa Ora</span>
+                    <ChevronRight className="w-4 h-4 text-amber-400" />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="bg-gradient-to-br from-stone-800 via-slate-800 to-stone-900 text-white rounded-2xl p-4 sm:p-5 shadow-md border border-amber-500/30 transition-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 sm:gap-4">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-950/80 text-amber-400 flex items-center justify-center text-xl sm:text-2xl shrink-0 border border-slate-700 shadow-sm mt-0.5">
+                  {latestChallenge?.icon || '🏆'}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] uppercase tracking-wider border border-amber-500/30">
+                    <Lock className="w-3 h-3 text-amber-400" />
+                    <span>Concorso Concluso</span>
+                  </div>
+                  <h3 className="font-black text-white text-sm sm:text-base leading-snug break-words">
+                    {latestChallenge ? `${latestChallenge.title} (Scaduto)` : 'Nessun Concorso Attivo'}
+                  </h3>
+                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed break-words font-medium">
+                    Votazioni chiuse per scadenza termine. Clicca per vedere la galleria foto e la classifica camperisti!
+                  </p>
+                </div>
+              </div>
+              {onOpenChallenges && (
+                <button
+                  type="button"
+                  onClick={onOpenChallenges}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 self-stretch sm:self-center"
+                >
+                  <span>Vedi Classifica &amp; Sfide</span>
+                  <ChevronRight className="w-4 h-4 text-slate-950" />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 5. Subtab Navigation Bar */}
       <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-stone-200 dark:bg-slate-900 border border-slate-300/80 dark:border-slate-800 text-xs font-extrabold">

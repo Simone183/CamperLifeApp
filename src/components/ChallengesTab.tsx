@@ -31,32 +31,37 @@ import { ChallengeSubmission, ChallengeItem, CommunityMessage } from '../types';
 export type { ChallengeSubmission, ChallengeItem };
 
 export function isChallengeExpired(challenge?: ChallengeItem): boolean {
-  if (!challenge) return false;
+  if (!challenge) return true;
   if (challenge.isExpired === true) return true;
-  if (challenge.isExpired === false) return false;
 
   try {
     const monthsMap: Record<string, number> = {
       gennaio: 0, febbraio: 1, marzo: 2, aprile: 3, maggio: 4, giugno: 5,
       luglio: 6, agosto: 7, settembre: 8, ottobre: 9, novembre: 10, dicembre: 11
     };
-    const parts = challenge.endDate.toLowerCase().split(' ');
-    if (parts.length >= 3) {
-      const day = parseInt(parts[0], 10);
-      const monthStr = parts[1];
-      const year = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(year) && monthsMap[monthStr] !== undefined) {
-        const endDate = new Date(year, monthsMap[monthStr], day, 23, 59, 59);
-        return endDate.getTime() < Date.now();
+    if (challenge.endDate) {
+      const parts = challenge.endDate.toLowerCase().trim().split(/\s+/);
+      if (parts.length >= 3) {
+        const day = parseInt(parts[0], 10);
+        const monthStr = parts[1];
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(day) && !isNaN(year) && monthsMap[monthStr] !== undefined) {
+          const endDate = new Date(year, monthsMap[monthStr], day, 23, 59, 59);
+          if (endDate.getTime() < Date.now()) {
+            return true;
+          }
+        }
       }
-    }
-    const d = new Date(challenge.endDate);
-    if (!isNaN(d.getTime())) {
-      return d.getTime() < Date.now();
+      const d = new Date(challenge.endDate);
+      if (!isNaN(d.getTime()) && d.getTime() < Date.now()) {
+        return true;
+      }
     }
   } catch {
     // fallback
   }
+
+  if (challenge.isExpired === false) return false;
   return false;
 }
 
@@ -246,6 +251,23 @@ export function ChallengesTab({
   const [modalCaption, setModalCaption] = useState('');
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  React.useEffect(() => {
+    const handler = (e: any) => {
+      const chalId = e.detail?.challengeId;
+      if (chalId) {
+        const found = challenges.find((c) => c.id === chalId);
+        if (found && !isChallengeExpired(found)) {
+          setSelectedChallenge(found);
+          setActiveTab('sfide');
+        } else if (found) {
+          setActiveTab('gallery');
+        }
+      }
+    };
+    window.addEventListener('open-challenge-modal', handler);
+    return () => window.removeEventListener('open-challenge-modal', handler);
+  }, [challenges]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

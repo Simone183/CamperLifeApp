@@ -387,7 +387,9 @@ export interface DiaryExpense {
   id: string;
   title: string;
   amount: number;
-  category: 'Carburante' | 'Autostrada' | 'Cibo' | 'Sosta' | 'Altro';
+  amountEuro?: number;
+  description?: string;
+  category: 'Carburante' | 'Autostrada' | 'Cibo' | 'Sosta' | 'Tappa' | 'Altro';
   date: string;
   liters?: number;
   pricePerLiter?: number;
