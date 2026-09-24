@@ -1370,7 +1370,7 @@ function saveFeedbacks(feedbacks: any[]) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Start-up optimization for all large existing public/ and uploads/ images to prevent mobile browser memory crashes
   (async function optimizeExistingImages() {
@@ -2542,6 +2542,98 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  // Helper function to extract and format story text via Gemini OCR
+  async function processOcrImage(image: string, mimeType?: string): Promise<string> {
+    let cleanBase64 = image;
+    let detectedMime = mimeType || "image/jpeg";
+    if (typeof image === "string" && image.startsWith("data:")) {
+      const match = image.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        detectedMime = match[1];
+        cleanBase64 = match[2];
+      } else {
+        cleanBase64 = image.split(",")[1] || image;
+      }
+    }
+
+    console.log(`[Gemini AI] Extracting story/diary text OCR (mime: ${detectedMime}, len: ${cleanBase64.length})...`);
+
+    const systemInstruction =
+      "Sei l'assistente esperto di ViaCamper specializzato nella trascrizione OCR accurata e nella formattazione di note di viaggio, diari manoscritti, pagine di guide turistiche, cartelli informativi e volantini. " +
+      "Estrai tutto il testo visibile con estremo rigore e formattalo come un coinvolgente racconto o resoconto di viaggio in italiano, pronto per essere inserito nel diario del camperista. Mantieni tutti i toponimi, città, aree sosta, camper service e dettagli indicati.";
+
+    const promptText =
+      "Trascrivi ed estrai con la massima fedeltà tutto il testo presente in questa immagine (anche se manoscritto su fogli o quaderni). " +
+      "Restituisci il testo estrapolato e formattato come resoconto di viaggio scorrevole in italiano, correggendo eventuali lettere poco chiare ma conservando integralmente il senso originario, i nomi di paesi, date, soste e impressioni.";
+
+    const imagePart = {
+      inlineData: {
+        mimeType: detectedMime,
+        data: cleanBase64,
+      },
+    };
+
+    const textPart = {
+      text: promptText,
+    };
+
+    const response = await generateContentWithRetry({
+      model: "gemini-3.8-flash",
+      contents: { parts: [imagePart, textPart] },
+      config: {
+        systemInstruction,
+      },
+    });
+
+    return response && response.text ? response.text.trim() : "";
+  }
+
+  // --- AI OCR REALTIME TASK BRIDGE (Allows native mobile APK apps to bypass Cloud Run cookie auth) ---
+  let isProcessingOcrQueue = false;
+  async function processOcrTasksQueue() {
+    if (isProcessingOcrQueue || !firestoreDb) return;
+    isProcessingOcrQueue = true;
+    try {
+      const pendingTasksSnap = await firestoreDb.collection("ai_ocr_tasks").where("status", "==", "pending").get();
+      if (!pendingTasksSnap.empty) {
+        for (const docSnap of pendingTasksSnap.docs) {
+          const taskData = docSnap.data();
+          if (!taskData || !taskData.image) continue;
+          console.log(`[OCR Task Bridge] Found pending task ${docSnap.id}...`);
+          try {
+            // Mark as processing
+            await firestoreDb.collection("ai_ocr_tasks").doc(docSnap.id).set({
+              status: "processing",
+              processingStartedAt: Date.now()
+            }, { merge: true });
+
+            const extractedText = await processOcrImage(taskData.image, taskData.mimeType);
+            await firestoreDb.collection("ai_ocr_tasks").doc(docSnap.id).set({
+              status: "completed",
+              text: extractedText,
+              completedAt: Date.now()
+            }, { merge: true });
+            console.log(`[OCR Task Bridge] Successfully transcribed task ${docSnap.id}`);
+          } catch (taskErr: any) {
+            console.error(`[OCR Task Bridge] Error processing task ${docSnap.id}:`, taskErr);
+            await firestoreDb.collection("ai_ocr_tasks").doc(docSnap.id).set({
+              status: "error",
+              error: getFriendlyGeminiError(taskErr) || "Errore elaborazione OCR",
+              failedAt: Date.now()
+            }, { merge: true });
+          }
+        }
+      }
+    } catch (loopErr) {
+      // Ignored
+    } finally {
+      isProcessingOcrQueue = false;
+    }
+  }
+
+  // Poll every 2 seconds for mobile app OCR requests
+  setInterval(processOcrTasksQueue, 2000);
+
   // AI OCR for extracting travel story notes, diary text, brochures, signs
   app.post("/api/extract-story-ocr", async (req, res) => {
     try {
@@ -2550,47 +2642,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.status(400).json({ error: "Nessuna immagine fornita per l'OCR." });
       }
 
-      let cleanBase64 = image;
-      let detectedMime = mimeType || "image/jpeg";
-      if (typeof image === "string" && image.startsWith("data:")) {
-        const match = image.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-        if (match) {
-          detectedMime = match[1];
-          cleanBase64 = match[2];
-        } else {
-          cleanBase64 = image.split(",")[1] || image;
-        }
-      }
-
-      console.log(`[Gemini AI] Extracting story/diary text OCR (mime: ${detectedMime}, len: ${cleanBase64.length})...`);
-
-      const systemInstruction =
-        "Sei l'assistente esperto di ViaCamper specializzato nella trascrizione OCR accurata e nella formattazione di note di viaggio, diari manoscritti, pagine di guide turistiche, cartelli informativi e volantini. " +
-        "Estrai tutto il testo visibile con estremo rigore e formattalo come un coinvolgente racconto o resoconto di viaggio in italiano, pronto per essere inserito nel diario del camperista.";
-
-      const promptText =
-        "Trascrivi ed estrai tutto il testo presente in questa immagine. Restituisci esclusivamente il testo estrapolato e formattato come paragrafo o racconto di viaggio scorrevole in italiano, correggendo eventuali errori di scansione o battitura ma mantenendo lo spirito originario delle note.";
-
-      const imagePart = {
-        inlineData: {
-          mimeType: detectedMime,
-          data: cleanBase64,
-        },
-      };
-
-      const textPart = {
-        text: promptText,
-      };
-
-      const response = await generateContentWithRetry({
-        model: "gemini-3.8-flash",
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          systemInstruction,
-        },
-      });
-
-      const extractedText = response && response.text ? response.text.trim() : "";
+      const extractedText = await processOcrImage(image, mimeType);
       res.json({ success: true, text: extractedText });
     } catch (err: any) {
       console.error("Error in extract-story-ocr endpoint:", err);

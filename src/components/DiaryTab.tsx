@@ -13,6 +13,7 @@ import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import { formatDateDDMMAA } from "./FuelCardTab";
 import { extractPhotoDate, sortPhotosChronologically, formatPhotoDateBadge } from "../utils/photoDateExtractor";
+import { extractStoryFromImage } from "../utils/ocrService";
 import {
   BookOpen,
   Plus,
@@ -548,6 +549,7 @@ export default function DiaryTab({
   const [ocrImageFile, setOcrImageFile] = React.useState<File | null>(null);
   const [ocrExtractedText, setOcrExtractedText] = React.useState("");
   const [isProcessingOcr, setIsProcessingOcr] = React.useState(false);
+  const [ocrProgressStatus, setOcrProgressStatus] = React.useState<string>("");
   const [ocrTargetField, setOcrTargetField] = React.useState<'new' | 'edit'>('new');
 
   // New Expense form state
@@ -7416,61 +7418,78 @@ export default function DiaryTab({
                   onClick={async () => {
                     if (!ocrImagePreview) return;
                     setIsProcessingOcr(true);
+                    setOcrProgressStatus("Preparazione immagine...");
                     try {
-                      // Comprimi l'immagine per ottimizzare la velocità di invio e l'elaborazione OCR
-                      let imageToSend = ocrImagePreview;
-                      try {
-                        imageToSend = await compressImage(ocrImagePreview, "high");
-                      } catch (cErr) {
-                        console.warn("Compressione pre-OCR non riuscita, uso anteprima originale:", cErr);
-                      }
-
-                      const res = await fetch(resolveApiUrl("/api/extract-story-ocr"), {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ image: imageToSend, mimeType: ocrImageFile?.type || "image/jpeg" }),
-                      });
-                      const data = await res.json();
-                      if (data.success && data.text) {
-                        setOcrExtractedText(data.text);
-                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✨ Testo estratto con successo tramite OCR!" } }));
+                      const text = await extractStoryFromImage(
+                        ocrImagePreview,
+                        ocrImageFile?.type || "image/jpeg",
+                        (status) => setOcrProgressStatus(status)
+                      );
+                      if (text && text.trim()) {
+                        setOcrExtractedText(text.trim());
+                        window.dispatchEvent(
+                          new CustomEvent("show-toast", {
+                            detail: { message: "✨ Testo estratto con successo tramite OCR!" },
+                          })
+                        );
                       } else {
-                        throw new Error(data.error || "Estrazione fallita");
+                        throw new Error("Nessun testo rilevato. Riprova con una foto più ravvicinata o a fuoco.");
                       }
                     } catch (err: any) {
-                      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: `❌ ${err.message || "Errore durante l'OCR"}` } }));
+                      console.error("[DiaryTab] OCR extraction failed:", err);
+                      window.dispatchEvent(
+                        new CustomEvent("show-toast", {
+                          detail: {
+                            message: `❌ ${err.message || "Errore durante l'OCR"}`,
+                          },
+                        })
+                      );
                     } finally {
                       setIsProcessingOcr(false);
+                      setOcrProgressStatus("");
                     }
                   }}
-                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  className="w-full py-3 bg-gradient-to-r from-amber-600 via-amber-700 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60 active:scale-[0.98]"
                 >
                   {isProcessingOcr ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Analisi OCR in corso con AI...
-                    </>
+                    <div className="flex flex-col items-center justify-center gap-0.5 py-0.5">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span className="font-bold text-xs">Trascrizione in corso...</span>
+                      </div>
+                      {ocrProgressStatus && (
+                        <span className="text-[10px] text-amber-100/90 font-medium animate-pulse">
+                          {ocrProgressStatus}
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" />
-                      Esegui OCR e Estrai Racconto
+                      <Sparkles className="w-4 h-4 text-amber-200" />
+                      <span>Esegui OCR e Trascrivi Racconto</span>
                     </>
                   )}
                 </button>
               )}
 
               {ocrExtractedText && (
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-bold uppercase text-stone-500">
-                    Testo Estratto (Modificabile)
-                  </label>
+                <div className="space-y-2 pt-1 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                      <span>✨ Testo Trascritto (Modificabile)</span>
+                    </label>
+                    <span className="text-[10px] text-stone-500 font-medium">
+                      {ocrExtractedText.length} caratteri • {ocrExtractedText.split(/\s+/).filter(Boolean).length} parole
+                    </span>
+                  </div>
                   <textarea
-                    rows={4}
+                    rows={6}
                     value={ocrExtractedText}
                     onChange={(e) => setOcrExtractedText(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 outline-none font-medium"
+                    placeholder="Il testo riconosciuto apparirà qui..."
+                    className="w-full text-xs sm:text-sm p-3 rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-850 text-stone-900 dark:text-stone-100 outline-none font-sans leading-relaxed focus:ring-2 focus:ring-amber-500 shadow-inner"
                   />
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -7482,20 +7501,32 @@ export default function DiaryTab({
                         setShowOcrModal(false);
                         window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✅ Testo OCR inserito nel racconto!" } }));
                       }}
-                      className="flex-1 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white rounded-xl text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5 transition-all"
                     >
                       <Save className="w-3.5 h-3.5" /> Inserisci nel Racconto
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(ocrExtractedText);
-                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "📋 Testo copiato negli appunti!" } }));
-                      }}
-                      className="px-4 py-2.5 bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-200 rounded-xl text-xs font-bold hover:bg-stone-300 cursor-pointer"
-                    >
-                      Copia
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(ocrExtractedText);
+                          window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "📋 Testo copiato negli appunti!" } }));
+                        }}
+                        className="flex-1 sm:flex-initial px-4 py-2.5 bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-200 rounded-xl text-xs font-bold hover:bg-stone-300 active:scale-95 cursor-pointer transition-all"
+                      >
+                        Copia
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOcrExtractedText("");
+                        }}
+                        className="px-3 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 rounded-xl text-xs font-bold hover:bg-stone-200 active:scale-95 cursor-pointer transition-all"
+                        title="Riprova con un'altra foto"
+                      >
+                        Riscansiona
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

@@ -62,6 +62,7 @@ import { WeatherWidget } from "./WeatherWidget";
 import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
+import { RollyMascotIcon } from "./RollyMascotIcon";
 import { CamperLifeIcon } from "./CamperLifeIcon";
 import { MapPoiIcon, getMapPoiIconHtml, MapCategoryPinMini, MapCategoryBadge } from "./MapPoiIcon";
 import { PlaceOccupancyWidget } from "./PlaceOccupancyWidget";
@@ -661,9 +662,44 @@ export default function MapTab({
   const [showRollyBubble, setShowRollyBubble] = React.useState<boolean>(false);
   const rollyTimerRef = React.useRef<any>(null);
   const rollyHideTimerRef = React.useRef<any>(null);
+  const rollySnoozeUntilRef = React.useRef<number>(0);
+
+  // Swipe dismiss state for Rolly speech bubble
+  const [rollyDragX, setRollyDragX] = React.useState<number>(0);
+  const [isRollyDragging, setIsRollyDragging] = React.useState<boolean>(false);
+  const [rollyDismissDirection, setRollyDismissDirection] = React.useState<'left' | 'right' | null>(null);
+  const rollyDragStartXRef = React.useRef<number>(0);
+  const rollyDragStartYRef = React.useRef<number>(0);
+  const rollyHasDraggedRef = React.useRef<boolean>(false);
+
+  const dismissRollyBubbleWithSnooze = React.useCallback((direction: 'left' | 'right' = 'right', snoozeDurationMs = 20000) => {
+    setRollyDismissDirection(direction);
+    rollySnoozeUntilRef.current = Date.now() + snoozeDurationMs;
+    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
+    if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
+
+    // Give time for swipe animation to complete before removing from DOM
+    setTimeout(() => {
+      setShowRollyBubble(false);
+      setRollyDragX(0);
+      setIsRollyDragging(false);
+      setRollyDismissDirection(null);
+    }, 250);
+
+    // Schedule re-appearance after snooze period (20s) if user is still active
+    rollyTimerRef.current = setTimeout(() => {
+      if (Date.now() >= rollySnoozeUntilRef.current) {
+        showRandomRollyPhrase();
+      }
+    }, snoozeDurationMs);
+  }, []);
 
   const showRandomRollyPhrase = React.useCallback(() => {
+    // If currently snoozed, do not display
+    if (Date.now() < rollySnoozeUntilRef.current) return;
+
     const phrases = [
+      "🛏️ Dove c'è posto stasera? Ti cerco le migliori soste!",
       "Ciao! Dove vuoi che ti porti oggi? 🚐✨",
       "Ti va di pianificare un itinerario con me? 🗺️",
       "Dimmi la tua meta e ti organizzo il viaggio! 🚀",
@@ -673,6 +709,9 @@ export default function MapTab({
     ];
     const randomIdx = Math.floor(Math.random() * phrases.length);
     setRollyBubbleText(phrases[randomIdx]);
+    setRollyDragX(0);
+    setIsRollyDragging(false);
+    setRollyDismissDirection(null);
     setShowRollyBubble(true);
 
     if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
@@ -5718,38 +5757,97 @@ out center;`;
             </div>
           )}
 
-          {/* Pulsante Generatore Itinerari AI Rolly con fumetto a nuvoletta */}
+          {/* Pulsante Generatore Itinerari & Assistente AI Rolly (Icona rotonda con nuvoletta fumetto) */}
           {onNavigateToAI && (
             <div
               className="absolute bottom-16 left-2 z-[1000]"
               onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              {/* Fumetto a nuvoletta Rolly */}
+              {/* Fumetto a nuvoletta Rolly con supporto allo swipe (trascinamento a destra o sinistra per chiudere e silenziare per 20s) */}
               {showRollyBubble && rollyBubbleText && (
                 <div
-                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    rollyDragStartXRef.current = e.clientX;
+                    rollyDragStartYRef.current = e.clientY;
+                    rollyHasDraggedRef.current = false;
+                    setIsRollyDragging(true);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isRollyDragging) return;
+                    e.stopPropagation();
+                    const diffX = e.clientX - rollyDragStartXRef.current;
+                    const diffY = e.clientY - rollyDragStartYRef.current;
+                    // Horizontal threshold to engage drag
+                    if (Math.abs(diffX) > 5) {
+                      rollyHasDraggedRef.current = true;
+                      setRollyDragX(diffX);
+                    }
+                  }}
+                  onPointerUp={(e) => {
+                    if (!isRollyDragging) return;
+                    e.stopPropagation();
+                    setIsRollyDragging(false);
+                    const diffX = rollyDragX;
+                    // If dragged more than 60px either left or right, dismiss and snooze for 20 seconds
+                    if (diffX > 60) {
+                      dismissRollyBubbleWithSnooze('right', 20000);
+                    } else if (diffX < -60) {
+                      dismissRollyBubbleWithSnooze('left', 20000);
+                    } else {
+                      // Snap back smoothly
+                      setRollyDragX(0);
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    setIsRollyDragging(false);
+                    setRollyDragX(0);
+                  }}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    // If user was swiping/dragging, don't trigger click action
+                    if (rollyHasDraggedRef.current) {
+                      rollyHasDraggedRef.current = false;
+                      return;
+                    }
                     setShowRollyBubble(false);
                     if (onNavigateToAI) onNavigateToAI();
                   }}
-                  className="absolute bottom-12 left-0 z-[1001] w-[210px] sm:w-[230px] bg-white text-slate-800 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-400 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-pointer hover:scale-[1.02] active:scale-98 transition-all group select-none"
-                  title="Apri Assistente IA Rolly"
+                  style={{
+                    transform: rollyDismissDirection === 'right'
+                      ? 'translateX(350px) rotate(15deg)'
+                      : rollyDismissDirection === 'left'
+                      ? 'translateX(-350px) rotate(-15deg)'
+                      : `translateX(${rollyDragX}px) rotate(${rollyDragX * 0.05}deg)`,
+                    opacity: rollyDismissDirection ? 0 : Math.max(0.15, 1 - Math.abs(rollyDragX) / 180),
+                    transition: isRollyDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease',
+                    touchAction: 'none',
+                  }}
+                  className="absolute bottom-12 left-0 z-[1001] w-[210px] sm:w-[230px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-500 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-grab active:cursor-grabbing select-none"
+                  title="Trascina verso destra o sinistra per chiudere (silenzia 20s)"
                 >
                   {/* Coda a nuvoletta del fumetto rivolta verso l'icona di Rolly */}
-                  <div className="absolute -bottom-2 left-3.5 w-3.5 h-3.5 bg-white border-b-2 border-r-2 border-emerald-400 transform rotate-45 shadow-xs" />
+                  <div
+                    className="absolute -bottom-2 left-3.5 w-3.5 h-3.5 bg-white dark:bg-slate-900 border-b-2 border-r-2 border-emerald-500 transform rotate-45 shadow-xs"
+                    style={{
+                      opacity: Math.max(0, 1 - Math.abs(rollyDragX) / 50),
+                    }}
+                  />
 
                   <span className="text-base shrink-0 select-none animate-bounce">💬</span>
-                  <div className="flex-1 pr-1">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider bg-emerald-100 px-1.5 py-0.2 rounded-md">
+                  <div className="flex-1 pr-1 pointer-events-none">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded-md">
                         Rolly AI 🚐
                       </span>
+                      <span className="text-[9px] text-slate-400 font-normal">
+                        ⇄ scorri
+                      </span>
                     </div>
-                    <p className="text-[11.5px] text-slate-700 font-bold leading-snug">
+                    <p className="text-[11.5px] text-slate-700 dark:text-slate-200 font-bold leading-snug">
                       {rollyBubbleText}
                     </p>
                   </div>
@@ -5760,16 +5858,17 @@ out center;`;
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setShowRollyBubble(false);
+                      dismissRollyBubbleWithSnooze('right', 20000);
                     }}
-                    className="text-slate-400 hover:text-slate-600 p-0.5 -mr-1 -mt-0.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
-                    title="Chiudi"
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 -mr-1 -mt-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                    title="Chiudi per 20 secondi"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
 
+              {/* Pulsante Rotondo Originale di Rolly */}
               <button
                 type="button"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -5780,10 +5879,10 @@ out center;`;
                   setShowRollyBubble(false);
                   if (onNavigateToAI) onNavigateToAI();
                 }}
-                className="bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer overflow-hidden p-1"
+                className="bg-white dark:bg-slate-900 w-10 h-10 rounded-full shadow-md border border-slate-200 dark:border-slate-700 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95 cursor-pointer overflow-hidden p-1"
                 title="Assistente IA Rolly - Generatore Itinerari"
               >
-                <CartoonCamperAvatar className="w-6 h-6 shrink-0" />
+                <RollyMascotIcon className="w-7 h-7 shrink-0" animate={true} />
               </button>
             </div>
           )}

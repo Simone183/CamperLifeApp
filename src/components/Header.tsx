@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sun, Moon, Truck, Sparkles, Navigation } from 'lucide-react';
 import { VehicleSpecs } from '../types';
+import { RollyMascotIcon } from './RollyMascotIcon';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -47,11 +48,14 @@ export const Header: React.FC<HeaderProps> = ({
           {/* AI Rolly Assistant Trigger */}
           <button
             onClick={onOpenRollyModal}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white text-xs font-bold transition-transform active:scale-95 shadow-xs"
+            className="group flex items-center gap-1.5 pl-1.5 pr-3 py-1 rounded-full bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 hover:from-emerald-800 hover:to-teal-800 dark:from-emerald-600 dark:to-teal-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm hover:shadow-md border border-emerald-500/30"
             title="Chiedi all'Assistente AI Rolly"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+              <RollyMascotIcon className="w-5 h-5" animate={true} />
+            </div>
             <span className="hidden sm:inline">Rolly AI</span>
+            <Sparkles className="w-3 h-3 text-amber-300 animate-pulse hidden xs:inline" />
           </button>
 
           {/* Theme Toggle */}
