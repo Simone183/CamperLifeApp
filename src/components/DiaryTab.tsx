@@ -7284,41 +7284,129 @@ export default function DiaryTab({
 
             <div className="space-y-3">
               {ocrImagePreview ? (
-                <div className="relative rounded-xl overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center border border-stone-200 dark:border-stone-700">
-                  <img src={ocrImagePreview} alt="OCR Preview" className="max-h-full max-w-full object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOcrImagePreview(null);
-                      setOcrImageFile(null);
-                      setOcrExtractedText("");
-                    }}
-                    className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full hover:bg-red-600 transition-colors"
-                    title="Rimuovi immagine"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                <div className="space-y-2">
+                  <div className="relative rounded-xl overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center border border-stone-200 dark:border-stone-700">
+                    <img src={ocrImagePreview} alt="OCR Preview" className="max-h-full max-w-full object-contain" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOcrImagePreview(null);
+                        setOcrImageFile(null);
+                        setOcrExtractedText("");
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full hover:bg-red-600 transition-colors cursor-pointer"
+                      title="Rimuovi immagine"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {/* Pulsanti rapidi per riscatto o cambio foto */}
+                  <div className="flex items-center justify-center gap-2">
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-bold cursor-pointer transition-all active:scale-95">
+                      <Camera className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Riscatta da Fotocamera</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            const file = e.target.files[0];
+                            setOcrImageFile(file);
+                            setOcrExtractedText("");
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-bold cursor-pointer transition-all active:scale-95">
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Cambia da Album</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            const file = e.target.files[0];
+                            setOcrImageFile(file);
+                            setOcrExtractedText("");
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
               ) : (
-                <label className="border-2 border-dashed border-stone-300 dark:border-stone-700 hover:border-amber-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer bg-stone-50 dark:bg-stone-800/50 transition-colors">
-                  <Camera className="w-8 h-8 text-amber-500 mb-2" />
-                  <span className="text-xs font-bold text-stone-700 dark:text-stone-200">Tocca per scattare o caricare foto</span>
-                  <span className="text-[10px] text-stone-400 mt-0.5">Supporta fotocamera o galleria (JPG, PNG)</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        const file = e.target.files[0];
-                        setOcrImageFile(file);
-                        const reader = new FileReader();
-                        reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Pulsante 1: Fotocamera */}
+                  <label className="border-2 border-dashed border-amber-300 dark:border-amber-700 hover:border-amber-500 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-950/40 rounded-2xl p-5 flex flex-col items-center justify-center cursor-pointer transition-all group text-center shadow-xs active:scale-[0.98]">
+                    <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/60 flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform mb-2 shadow-2xs">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-black text-stone-800 dark:text-stone-100">
+                      Apri Fotocamera
+                    </span>
+                    <span className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 leading-tight">
+                      Scatta una foto direttamente
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          const file = e.target.files[0];
+                          setOcrImageFile(file);
+                          setOcrExtractedText("");
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+
+                  {/* Pulsante 2: Album Foto */}
+                  <label className="border-2 border-dashed border-indigo-300 dark:border-indigo-700 hover:border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/20 hover:bg-indigo-100/60 dark:hover:bg-indigo-950/40 rounded-2xl p-5 flex flex-col items-center justify-center cursor-pointer transition-all group text-center shadow-xs active:scale-[0.98]">
+                    <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform mb-2 shadow-2xs">
+                      <ImageIcon className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-black text-stone-800 dark:text-stone-100">
+                      Album Foto
+                    </span>
+                    <span className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 leading-tight">
+                      Scegli dalla galleria immagini
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          const file = e.target.files[0];
+                          setOcrImageFile(file);
+                          setOcrExtractedText("");
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
               )}
 
               {ocrImagePreview && !ocrExtractedText && (
@@ -7329,10 +7417,18 @@ export default function DiaryTab({
                     if (!ocrImagePreview) return;
                     setIsProcessingOcr(true);
                     try {
+                      // Comprimi l'immagine per ottimizzare la velocità di invio e l'elaborazione OCR
+                      let imageToSend = ocrImagePreview;
+                      try {
+                        imageToSend = await compressImage(ocrImagePreview, "high");
+                      } catch (cErr) {
+                        console.warn("Compressione pre-OCR non riuscita, uso anteprima originale:", cErr);
+                      }
+
                       const res = await fetch(resolveApiUrl("/api/extract-story-ocr"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ image: ocrImagePreview, mimeType: ocrImageFile?.type || "image/jpeg" }),
+                        body: JSON.stringify({ image: imageToSend, mimeType: ocrImageFile?.type || "image/jpeg" }),
                       });
                       const data = await res.json();
                       if (data.success && data.text) {

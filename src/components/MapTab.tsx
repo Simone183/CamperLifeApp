@@ -9986,6 +9986,11 @@ export function LeafletOfflineMap({
   const hasCenteredOnGPSOnceRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (userLocation && typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number') {
+      try {
+        localStorage.setItem('camper_last_gps_location', JSON.stringify({ lat: userLocation.lat, lng: userLocation.lng }));
+      } catch (e) {}
+    }
     if (userLocation && leafletMapInstance && !selectedPlace && !clickedCoords && !movedRef.current && !hasCenteredOnGPSOnceRef.current) {
       try {
         const center = leafletMapInstance.getCenter();
@@ -10010,18 +10015,31 @@ export function LeafletOfflineMap({
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // Center map around selected place, or user location, or default (Italy center: 42.5, 12.5)
+    // Center map around selected place, or user location, or stored last GPS location, or default (Italy center: 42.5, 12.5)
+    let storedLat = 42.5;
+    let storedLng = 12.5;
+    try {
+      const cached = localStorage.getItem('camper_last_gps_location');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+          storedLat = parsed.lat;
+          storedLng = parsed.lng;
+        }
+      }
+    } catch (e) {}
+
     const initialLat = selectedPlace
       ? selectedPlace.lat
       : userLocation
         ? userLocation.lat
-        : 42.5;
+        : storedLat;
     const initialLng = selectedPlace
       ? selectedPlace.lng
       : userLocation
         ? userLocation.lng
-        : 12.5;
-    const initialZoom = selectedPlace ? 15 : userLocation ? 15 : 12;
+        : storedLng;
+    const initialZoom = selectedPlace ? 15 : (userLocation || storedLat !== 42.5) ? 15 : 12;
 
     // Create Leaflet Map instance
     const map = L.map(containerRef.current, {

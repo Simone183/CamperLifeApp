@@ -667,13 +667,18 @@ async function throttleGeminiCall(hasSearchGrounding = false): Promise<void> {
 
 async function generateContentWithRetry(params: any, maxRetries = 5) {
   const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
-  const modelsSequence = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"];
-  let currentModelIdx = 0;
-  if (params && params.model) {
-    const idx = modelsSequence.indexOf(params.model);
-    if (idx !== -1) currentModelIdx = idx;
-    else modelsSequence.unshift(params.model);
+  const primaryModel = params?.model || "gemini-3.8-flash";
+  const defaultFallbacks = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash"];
+  
+  // Build a distinct sequence of models to try, starting with the requested model
+  const modelsSequence: string[] = [primaryModel];
+  for (const m of defaultFallbacks) {
+    if (!modelsSequence.includes(m)) {
+      modelsSequence.push(m);
+    }
   }
+
+  let currentModelIdx = 0;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -684,26 +689,32 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
       return await ai.models.generateContent(params);
     } catch (err: any) {
       const errMsg = err.message || "";
-      const isQuotaError = err.status === 429 || errMsg.includes("429") || errMsg.includes("Quota") || errMsg.includes("RESOURCE_EXHAUSTED");
-      
-      if (isQuotaError) {
-        // Enforce cooldown backoff so we don't spam Google immediately
-        const quotaBackoffMs = 2500 * attempt;
-        console.warn(`[Gemini AI] Quota 429 detected (attempt ${attempt}). Pausing for ${quotaBackoffMs}ms debounce backoff...`);
-        await new Promise(r => setTimeout(r, quotaBackoffMs));
+      const isTransientError =
+        err.status === 503 ||
+        err.status === 429 ||
+        err.status === 500 ||
+        errMsg.includes("503") ||
+        errMsg.includes("429") ||
+        errMsg.includes("high demand") ||
+        errMsg.includes("UNAVAILABLE") ||
+        errMsg.includes("Quota") ||
+        errMsg.includes("RESOURCE_EXHAUSTED");
 
+      if (isTransientError) {
+        console.warn(`[Gemini AI] Transient error on attempt ${attempt} with model ${modelsSequence[currentModelIdx]}: ${errMsg.slice(0, 140)}`);
+
+        // If another model is available in the sequence, switch to it immediately
         if (currentModelIdx < modelsSequence.length - 1) {
           currentModelIdx++;
-          console.warn(`[Gemini AI] Falling back to model: ${modelsSequence[currentModelIdx]}`);
+          console.warn(`[Gemini AI] Switching immediately to fallback model: ${modelsSequence[currentModelIdx]}`);
+          await new Promise((r) => setTimeout(r, 600));
           continue;
-        }
-      }
-
-      if (err.status === 503 || err.status === 429 || err.message?.includes("503") || err.message?.includes("429") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE") || err.message?.includes("Quota")) {
-        if (attempt < maxRetries) {
-          const delayMs = attempt * 3000;
-          console.warn(`[Gemini AI] 503/429 on attempt ${attempt} (${modelsSequence[currentModelIdx]}). Retrying in ${delayMs}ms...`);
-          await new Promise(r => setTimeout(r, delayMs));
+        } else if (attempt < maxRetries) {
+          // Wrapped around or reached end; pause with backoff and retry from start of sequence
+          const backoffMs = Math.min(1500 * attempt, 4000);
+          console.warn(`[Gemini AI] Reached end of model sequence. Retrying in ${backoffMs}ms...`);
+          currentModelIdx = 0;
+          await new Promise((r) => setTimeout(r, backoffMs));
           continue;
         }
       }
@@ -713,12 +724,12 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
 }
 
 function getFriendlyGeminiError(err: any): string {
-  const errMsg = err.message || String(err);
+  const errMsg = err?.message || String(err);
   if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota exceeded")) {
     return "Quota gratuita dell'API Gemini temporaneamente superata. Riprova tra 15 secondi.";
   }
   if (errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("high demand") || errMsg.includes("temporarily unavailable")) {
-    return "Il servizio AI di Gemini è momentaneamente sovraccarico. Riprova tra pochi istanti.";
+    return "I server AI sono momentaneamente ad alta richiesta. Riprova tra pochi istanti.";
   }
   return errMsg;
 }
@@ -2437,7 +2448,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       };
 
       const response = await generateContentWithRetry({
-        model: "gemini-3.7-flash",
+        model: "gemini-3.8-flash",
         contents: { parts: [imagePart, textPart] },
         config: {
           systemInstruction,
@@ -2572,7 +2583,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       };
 
       const response = await generateContentWithRetry({
-        model: "gemini-3.7-flash",
+        model: "gemini-3.8-flash",
         contents: { parts: [imagePart, textPart] },
         config: {
           systemInstruction,
