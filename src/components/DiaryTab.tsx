@@ -2,7 +2,7 @@ import React from "react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue, formatCurrency } from "../unit-helpers";
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement, TripMovement } from "../types";
-import { normalizeTrip, mergeTrips, recordDeletedId, getDeletedIds, isDeletedId, isSiciliaTrip, isSicilia29AugPhoto, SICILIA_PURGED_PHOTO_IDS } from "../utils/tripSyncHelper";
+import { normalizeTrip, mergeTrips, recordDeletedId, unrecordDeletedId, getDeletedIds, isDeletedId, isSiciliaTrip, isSicilia29AugPhoto, SICILIA_PURGED_PHOTO_IDS } from "../utils/tripSyncHelper";
 import { compressImage } from "../utils/photoCompressor";
 import { savePhotoToIndexedDB, getAllPhotosFromIndexedDB, pruneIndexedDBCache, deletePhotoFromIndexedDB } from "../utils/photoStorage";
 import { resolveMediaUrl, resolveApiUrl } from "../utils/resolveMediaUrl";
@@ -14,6 +14,7 @@ import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import { formatDateDDMMAA } from "./FuelCardTab";
 import { extractPhotoDate, sortPhotosChronologically, formatPhotoDateBadge } from "../utils/photoDateExtractor";
 import { extractStoryFromImage } from "../utils/ocrService";
+import { cleanTravelStoryText } from "../utils/cleanStoryText";
 import {
   BookOpen,
   Plus,
@@ -238,6 +239,13 @@ export default function DiaryTab({
   const isInitialSyncMounted = React.useRef(false);
   const lastSyncedTripsHashRef = React.useRef<string>("");
   const autoSyncDebounceTimerRef = React.useRef<any>(null);
+
+  const currentCrewRef = React.useRef(currentCrew);
+  currentCrewRef.current = currentCrew;
+  const isModuleSyncedRef = React.useRef(isModuleSynced);
+  isModuleSyncedRef.current = isModuleSynced;
+  const syncWithCloudRef = React.useRef<(tripsToSync: Trip[], isManual?: boolean) => Promise<void>>(() => Promise.resolve());
+  const hasInitialMountSyncedRef = React.useRef(false);
   const [showSyncModal, setShowSyncModal] = React.useState(false);
   const [cloudStatusInfo, setCloudStatusInfo] = React.useState<{
     loading: boolean;
@@ -246,6 +254,19 @@ export default function DiaryTab({
     photos?: number;
     trips?: number;
     error?: string;
+  } | null>(null);
+
+  const [isExportingBackup, setIsExportingBackup] = React.useState(false);
+  const [isImportingBackup, setIsImportingBackup] = React.useState(false);
+  const [backupRestoreSummary, setBackupRestoreSummary] = React.useState<{
+    success: boolean;
+    message: string;
+    tripsCount: number;
+    expensesCount: number;
+    movementsCount: number;
+    photosCount: number;
+    syncedWithCloud: boolean;
+    timestamp: string;
   } | null>(null);
 
   const computeTripsFingerprint = React.useCallback((tripsList: Trip[]): string => {
@@ -261,7 +282,7 @@ export default function DiaryTab({
           .sort()
           .join(",");
         const phoStr = (t.photos || [])
-          .map((p) => `${p.id || p.url || ''}`)
+          .map((p) => `${p.id || p.url || ''}_${p.isStarred ? '1' : '0'}_${p.locationName || ''}_${p.date || ''}`)
           .sort()
           .join(",");
         const stpStr = (t.stops || [])
@@ -339,11 +360,35 @@ export default function DiaryTab({
       }, 16000);
 
       try {
+        const activePhotoIds = new Set<string>();
+        const activeExpenseIds = new Set<string>();
+        const activeMovementIds = new Set<string>();
+        const activeTripIds = new Set<string>();
+
+        for (const t of tripsToSync) {
+          if (t?.id) activeTripIds.add(t.id);
+          for (const p of t.photos || []) {
+            if (p?.id) activePhotoIds.add(p.id);
+            if (p?.url) activePhotoIds.add(p.url);
+          }
+          for (const e of t.expenses || []) {
+            if (e?.id) activeExpenseIds.add(String(e.id));
+          }
+          for (const m of t.movements || []) {
+            if (m?.id) activeMovementIds.add(String(m.id));
+          }
+        }
+
+        const cleanDeletedPhotos = Array.from(getDeletedIds('photos', cleanEmail)).filter(id => !activePhotoIds.has(id));
+        const cleanDeletedExpenses = Array.from(getDeletedIds('expenses', cleanEmail)).filter(id => !activeExpenseIds.has(id));
+        const cleanDeletedMovements = Array.from(getDeletedIds('movements', cleanEmail)).filter(id => !activeMovementIds.has(id));
+        const cleanDeletedTrips = Array.from(getDeletedIds('trips', cleanEmail)).filter(id => !activeTripIds.has(id));
+
         const deletedIds = {
-          photos: Array.from(getDeletedIds('photos', cleanEmail)),
-          expenses: Array.from(getDeletedIds('expenses', cleanEmail)),
-          movements: Array.from(getDeletedIds('movements', cleanEmail)),
-          trips: Array.from(getDeletedIds('trips', cleanEmail)),
+          photos: cleanDeletedPhotos,
+          expenses: cleanDeletedExpenses,
+          movements: cleanDeletedMovements,
+          trips: cleanDeletedTrips,
         };
 
         // Direct sync with server (server loads existing backup, deep merges, and writes to Firestore & disk)
@@ -358,7 +403,8 @@ export default function DiaryTab({
         if (res.ok) {
           const resData = await res.json().catch(() => ({}));
           if (resData.trips && Array.isArray(resData.trips)) {
-            finalTrips = resData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+            const serverTrips = resData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+            finalTrips = mergeTrips(tripsToSync, serverTrips, cleanEmail);
           }
         }
 
@@ -373,7 +419,7 @@ export default function DiaryTab({
           localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(finalTrips));
         } catch (e) {}
 
-        if (currentCrew && isModuleSynced("trips")) {
+        if (currentCrewRef.current && isModuleSyncedRef.current("trips")) {
           syncCrewSection("trips", finalTrips).catch(() => {});
         }
 
@@ -437,69 +483,259 @@ export default function DiaryTab({
         setIsSyncingCloud(false);
         if (pendingSyncAfterCurrentRef.current) {
           pendingSyncAfterCurrentRef.current = false;
-          setTimeout(() => {
-            syncWithCloud(tripsRef.current, false);
-          }, 400);
+          // Only trigger follow-up if trips actually changed during the previous sync
+          const currentHash = computeTripsFingerprint(tripsRef.current);
+          if (currentHash && currentHash !== lastSyncedTripsHashRef.current) {
+            setTimeout(() => {
+              syncWithCloudRef.current(tripsRef.current, false);
+            }, 600);
+          }
         }
       }
     },
-    [currentCrew, isModuleSynced, emailKey, computeTripsFingerprint]
+    [emailKey, computeTripsFingerprint]
   );
+
+  syncWithCloudRef.current = syncWithCloud;
 
   const handleCloudSyncClick = () => {
     syncWithCloud(tripsRef.current, true);
   };
 
-  const handleExportBackupJson = () => {
+  const handleExportBackupJson = async () => {
+    if (isExportingBackup) return;
+    setIsExportingBackup(true);
     try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(trips, null, 2));
-      const downloadAnchor = document.createElement("a");
-      downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `viaggi_camper_backup_${new Date().toISOString().split("T")[0]}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
+      const cleanEmail = getActiveUserEmail();
+      const currentTrips = tripsRef.current && tripsRef.current.length > 0 ? tripsRef.current : trips;
+      
+      // Load all cached offline/local photos from IndexedDB to bundle them in the backup
+      let photosMap: Record<string, string> = {};
+      try {
+        photosMap = await getAllPhotosFromIndexedDB();
+      } catch (err) {
+        console.warn("[Backup Export] Could not read IndexedDB photos:", err);
+      }
+
+      const totExp = currentTrips.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+      const totMov = currentTrips.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
+      const totPho = currentTrips.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
+
+      const backupData = {
+        app: "ViaCamper",
+        format: "viacamper_diary_backup",
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        userEmail: cleanEmail,
+        summary: {
+          tripsCount: currentTrips.length,
+          expensesCount: totExp,
+          movementsCount: totMov,
+          photosCount: totPho,
+          bundledPhotosCount: Object.keys(photosMap).length,
+        },
+        trips: currentTrips,
+        photosData: photosMap,
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const nowStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filename = `viacamper_backup_diario_${nowStr}.json`;
+      const blob = new Blob([jsonStr], { type: "application/json" });
+
+      let handled = false;
+      // 1. On Android / mobile, try navigator.share with File
+      if (typeof navigator !== "undefined" && typeof File !== "undefined" && typeof navigator.canShare === "function") {
+        try {
+          const file = new File([blob], filename, { type: "application/json" });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: "Backup Diario ViaCamper",
+              text: `Backup completo del diario (${currentTrips.length} viaggi, ${totExp} spese, ${totPho} foto).`,
+              files: [file],
+            });
+            handled = true;
+          }
+        } catch (shareErr: any) {
+          if (shareErr?.name === "AbortError") {
+            handled = true; // User cancelled share dialog
+          } else {
+            console.warn("[Backup Export] Native share failed, using download fallback:", shareErr);
+          }
+        }
+      }
+
+      // 2. Standard Web / Blob download fallback
+      if (!handled) {
+        const url = URL.createObjectURL(blob);
+        const downloadAnchor = document.createElement("a");
+        downloadAnchor.href = url;
+        downloadAnchor.download = filename;
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        setTimeout(() => {
+          downloadAnchor.remove();
+          URL.revokeObjectURL(url);
+        }, 1500);
+      }
+
       window.dispatchEvent(
         new CustomEvent("show-toast", {
-          detail: { message: "📥 File di backup salvato! Invialo al tablet o conservalo." },
+          detail: {
+            message: `📥 Backup salvato! Contiene ${currentTrips.length} viaggi, ${totExp} spese, ${totMov} tappe e ${totPho} foto.`,
+          },
         })
       );
-    } catch (e) {
+    } catch (e: any) {
       console.error("Backup export error:", e);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: `❌ Errore durante l'esportazione: ${e.message || "Errore sconosciuto"}`,
+          },
+        })
+      );
+    } finally {
+      setIsExportingBackup(false);
     }
   };
 
   const handleImportBackupJson = (file: File) => {
+    if (isImportingBackup) return;
+    setIsImportingBackup(true);
     const reader = new FileReader();
+
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        const imported = JSON.parse(text);
-        if (Array.isArray(imported)) {
-          const cleanEmail = getActiveUserEmail();
-          const merged = mergeTrips(trips, imported, cleanEmail);
-          setTrips(merged);
-          localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(merged));
-          
-          await fetch("/api/user-trips/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: cleanEmail, trips: merged }),
-          }).catch(() => {});
-          
-          const totExp = merged.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: { message: `✅ Backup importato! Presenti ${totExp} spese e viaggi aggiornati.` },
-            })
-          );
-        } else {
-          alert("Il file non contiene un elenco di viaggi valido.");
+        if (!text || typeof text !== "string") {
+          throw new Error("Il file selezionato è vuoto o non leggibile.");
         }
-      } catch (err) {
-        alert("Errore nella lettura del file JSON di backup.");
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+        } catch (jsonErr) {
+          throw new Error("Il file selezionato non è un file JSON di backup valido.");
+        }
+
+        // Determine format: either array of trips, or structured { trips: [...], photosData?: {...} }
+        let rawTrips: any[] = [];
+        let photosMap: Record<string, string> = {};
+
+        if (Array.isArray(parsed)) {
+          rawTrips = parsed;
+        } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.trips)) {
+          rawTrips = parsed.trips;
+          if (parsed.photosData && typeof parsed.photosData === "object") {
+            photosMap = parsed.photosData;
+          }
+        } else {
+          throw new Error("Il file non contiene un formato di backup o un elenco di viaggi valido.");
+        }
+
+        const cleanEmail = getActiveUserEmail();
+
+        // 1. Restore photos into IndexedDB
+        let restoredPhotosCount = 0;
+        if (photosMap && Object.keys(photosMap).length > 0) {
+          for (const [pId, pData] of Object.entries(photosMap)) {
+            if (pData && typeof pData === "string" && pData.startsWith("data:image/")) {
+              await savePhotoToIndexedDB(pId, pData).catch(() => {});
+              restoredPhotosCount++;
+            }
+          }
+        }
+
+        // 2. Normalize imported trips
+        const importedNormalized = rawTrips.map((t: any) => normalizeTrip(t, cleanEmail));
+
+        // Also check if any photos inside trip objects have base64 data to extract into IndexedDB
+        for (const trip of importedNormalized) {
+          if (Array.isArray(trip.photos)) {
+            for (const ph of trip.photos) {
+              if (ph && ph.id && typeof ph.url === "string" && ph.url.startsWith("data:image/")) {
+                await savePhotoToIndexedDB(ph.id, ph.url).catch(() => {});
+                restoredPhotosCount++;
+              }
+            }
+          }
+        }
+
+        // 3. Intelligently merge with existing local trips (prevents duplicates, deep-merges expenses & movements)
+        const currentLocalTrips = tripsRef.current && tripsRef.current.length > 0 ? tripsRef.current : trips;
+        const merged = mergeTrips(currentLocalTrips, importedNormalized, cleanEmail);
+
+        setTrips(merged);
+        localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(merged));
+
+        // 4. Immediately synchronize with the server so server has the latest backup state and deduplicates!
+        let syncedSuccessfully = false;
+        try {
+          await syncWithCloud(merged, true);
+          syncedSuccessfully = true;
+        } catch (syncErr) {
+          console.warn("[Backup Restore] Cloud sync error after restore:", syncErr);
+        }
+
+        // 5. Calculate statistics for user confirmation
+        const totExp = merged.reduce((acc, t) => acc + (t.expenses?.length || 0), 0);
+        const totMov = merged.reduce((acc, t) => acc + (t.movements?.length || 0), 0);
+        const totPho = merged.reduce((acc, t) => acc + (t.photos?.length || 0), 0);
+
+        setBackupRestoreSummary({
+          success: true,
+          message: "Diario ripristinato con successo e sincronizzato senza duplicati!",
+          tripsCount: merged.length,
+          expensesCount: totExp,
+          movementsCount: totMov,
+          photosCount: totPho,
+          syncedWithCloud: syncedSuccessfully,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        });
+
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: `✅ Backup ripristinato! ${merged.length} viaggi, ${totExp} spese e ${totMov} tappe sincronizzati con il Cloud senza duplicati.`,
+            },
+          })
+        );
+      } catch (err: any) {
+        console.error("Backup import error:", err);
+        setBackupRestoreSummary({
+          success: false,
+          message: err.message || "Errore durante il ripristino del backup.",
+          tripsCount: 0,
+          expensesCount: 0,
+          movementsCount: 0,
+          photosCount: 0,
+          syncedWithCloud: false,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        });
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: `❌ ${err.message || "Errore nella lettura del file JSON di backup."}`,
+            },
+          })
+        );
+      } finally {
+        setIsImportingBackup(false);
       }
     };
+
+    reader.onerror = () => {
+      setIsImportingBackup(false);
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: {
+            message: "❌ Impossibile leggere il file selezionato.",
+          },
+        })
+      );
+    };
+
     reader.readAsText(file);
   };
 
@@ -648,6 +884,13 @@ export default function DiaryTab({
   const [editPhotoDate, setEditPhotoDate] = React.useState("");
   const [applyDateToSameLocation, setApplyDateToSameLocation] = React.useState(false);
 
+  // Interactive Map Star Limit Modal (max 3 per tappa/location)
+  const [starLimitModal, setStarLimitModal] = React.useState<{
+    locationName: string;
+    attemptedPhoto: DiaryPhoto;
+    existingStarredPhotos: DiaryPhoto[];
+  } | null>(null);
+
   // Batch Date Update Modal State
   const [showBatchDateModal, setShowBatchDateModal] = React.useState(false);
   const [batchDateTargetLocation, setBatchDateTargetLocation] = React.useState<string>("all");
@@ -674,16 +917,16 @@ export default function DiaryTab({
 
     // Sync to Family Crew if member
     const handler = setTimeout(() => {
-      if (currentCrew && isModuleSynced('trips') && Array.isArray(currentCrew.sharedData?.trips)) {
-        const isAlreadySynced = JSON.stringify(trips) === JSON.stringify(currentCrew.sharedData.trips);
+      if (currentCrewRef.current && isModuleSyncedRef.current('trips') && Array.isArray(currentCrewRef.current.sharedData?.trips)) {
+        const isAlreadySynced = computeTripsFingerprint(trips) === computeTripsFingerprint(currentCrewRef.current.sharedData.trips);
         if (!isAlreadySynced) {
           syncCrewSection('trips', trips).catch(() => {});
         }
       }
-    }, 500);
+    }, 1000);
 
     return () => clearTimeout(handler);
-  }, [trips, currentCrew?.sharedData?.trips, isModuleSynced, emailKey]);
+  }, [trips, emailKey, computeTripsFingerprint]);
 
   // Autonomous Background Auto-Sync to Cloud whenever trips change (photos, expenses, stages, etc.)
   React.useEffect(() => {
@@ -712,7 +955,9 @@ export default function DiaryTab({
 
     // Debounce by 2000ms to batch sequential user actions (typing, adding multiple photos/expenses)
     autoSyncDebounceTimerRef.current = setTimeout(() => {
-      syncWithCloud(tripsRef.current, false);
+      if (computeTripsFingerprint(tripsRef.current) !== lastSyncedTripsHashRef.current) {
+        syncWithCloudRef.current(tripsRef.current, false);
+      }
     }, 2000);
 
     return () => {
@@ -720,7 +965,7 @@ export default function DiaryTab({
         clearTimeout(autoSyncDebounceTimerRef.current);
       }
     };
-  }, [trips, syncWithCloud, computeTripsFingerprint]);
+  }, [trips, computeTripsFingerprint]);
 
   // When device recovers internet connectivity, automatically sync pending local updates
   React.useEffect(() => {
@@ -729,26 +974,32 @@ export default function DiaryTab({
         lastSyncedTripsHashRef.current !== computeTripsFingerprint(tripsRef.current) ||
         autoSyncState === "offline"
       ) {
-        syncWithCloud(tripsRef.current, false);
+        syncWithCloudRef.current(tripsRef.current, false);
       }
     };
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, [autoSyncState, syncWithCloud, computeTripsFingerprint]);
+  }, [autoSyncState, computeTripsFingerprint]);
 
-  // Auto-sync from Cloud on mount of DiaryTab to pull latest mobile updates (OCR stories, photos, expenses)
+  // Auto-sync from Cloud once on mount of DiaryTab to pull latest mobile updates (OCR stories, photos, expenses)
   React.useEffect(() => {
+    if (hasInitialMountSyncedRef.current) return;
+    hasInitialMountSyncedRef.current = true;
     const timer = setTimeout(() => {
-      syncWithCloud(tripsRef.current, false);
-    }, 500);
+      syncWithCloudRef.current(tripsRef.current, false);
+    }, 1200);
     return () => clearTimeout(timer);
-  }, [syncWithCloud]);
+  }, []);
 
-  // When user switches back to this browser tab or window gains focus, refresh trips from cloud
+  // When user switches back to this browser tab or window gains focus, refresh trips from cloud (throttled to 60s)
   React.useEffect(() => {
+    let lastFocusSyncTime = 0;
     const handleFocusOrVisible = () => {
+      const now = Date.now();
+      if (now - lastFocusSyncTime < 60000) return;
       if (document.visibilityState === "visible" && navigator.onLine) {
-        syncWithCloud(tripsRef.current, false);
+        lastFocusSyncTime = now;
+        syncWithCloudRef.current(tripsRef.current, false);
       }
     };
     window.addEventListener("focus", handleFocusOrVisible);
@@ -757,7 +1008,7 @@ export default function DiaryTab({
       window.removeEventListener("focus", handleFocusOrVisible);
       document.removeEventListener("visibilitychange", handleFocusOrVisible);
     };
-  }, [syncWithCloud]);
+  }, []);
 
   // Keep internal state aligned if other components dispatch trip-updated
   React.useEffect(() => {
@@ -1241,9 +1492,12 @@ export default function DiaryTab({
       }
     }
 
+    const expUniqueId = editingExpenseId || ("exp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7));
+    unrecordDeletedId('expenses', expUniqueId, emailKey);
+
     const mergedExpense: DiaryExpense = {
       ...(existingExpense || {}),
-      id: editingExpenseId || "exp_" + Date.now(),
+      id: expUniqueId,
       title: finalTitle,
       amount: finalAmount,
       category: finalCategory,
@@ -1262,6 +1516,7 @@ export default function DiaryTab({
       if (fuelIsFullTank !== undefined) mergedExpense.isFullTank = fuelIsFullTank;
     }
 
+    const nowIso = new Date().toISOString();
     const updated = trips.map((t) => {
       const hasEditingExp = editingExpenseId && (t.expenses || []).some((exp) => String(exp.id) === String(editingExpenseId));
       if (t.id === selectedTripId || hasEditingExp) {
@@ -1286,6 +1541,7 @@ export default function DiaryTab({
           ...t,
           endOdometer: endOdo,
           expenses: newExpenses,
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -1408,8 +1664,11 @@ export default function DiaryTab({
 
     const isEditingMovement = Boolean(editingMovementId);
 
+    const nowIso = new Date().toISOString();
+
     if (editingMovementId) {
       // Edit mode
+      unrecordDeletedId('movements', editingMovementId, emailKey);
       const updated = trips.map((t) => {
         const hasMovement = (t.movements || []).some((m) => m.id === editingMovementId);
         if (t.id === selectedTripId || hasMovement) {
@@ -1428,7 +1687,7 @@ export default function DiaryTab({
                 }
               : m
           );
-          return { ...t, endOdometer: endOdo, movements: updatedMovements };
+          return { ...t, endOdometer: endOdo, movements: updatedMovements, updatedAt: nowIso };
         }
         return t;
       });
@@ -1450,8 +1709,10 @@ export default function DiaryTab({
       setEditingMovementId(null);
     } else {
       // Add mode
+      const movUniqueId = "mov_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      unrecordDeletedId('movements', movUniqueId, emailKey);
       const newMovement: TripMovement = {
-        id: "mov_" + Date.now(),
+        id: movUniqueId,
         odometer: parsedOdometer,
         location: movementLocation.trim(),
         date: movementDate ? formatForDateInput(movementDate) : new Date().toISOString(),
@@ -1468,6 +1729,7 @@ export default function DiaryTab({
             ...t,
             endOdometer: endOdo,
             movements: [...(t.movements || []), newMovement],
+            updatedAt: nowIso,
           };
         }
         return t;
@@ -1505,12 +1767,14 @@ export default function DiaryTab({
 
   const handleDeleteMovement = (movementId: string) => {
     recordDeletedId('movements', movementId, emailKey);
+    const nowIso = new Date().toISOString();
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         const updatedMovements = (t.movements || []).filter((m) => m.id !== movementId);
         return {
           ...t,
           movements: updatedMovements,
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -1526,6 +1790,11 @@ export default function DiaryTab({
     }
     window.dispatchEvent(
       new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("sync-trips-now", {
         detail: { trips: updated },
       }),
     );
@@ -1743,11 +2012,13 @@ export default function DiaryTab({
   // Delete Expense handler
   const handleDeleteExpense = (expenseId: string) => {
     recordDeletedId('expenses', expenseId, emailKey);
+    const nowIso = new Date().toISOString();
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         return {
           ...t,
           expenses: t.expenses.filter((e) => e.id !== expenseId),
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -1763,6 +2034,11 @@ export default function DiaryTab({
     }
     window.dispatchEvent(
       new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("sync-trips-now", {
         detail: { trips: updated },
       }),
     );
@@ -1788,7 +2064,7 @@ export default function DiaryTab({
     setEditTitle(activeTrip.title || "");
     setEditStart(activeTrip.startDate || "");
     setEditEnd(activeTrip.endDate || "");
-    setEditDesc(activeTrip.description || "");
+    setEditDesc(cleanTravelStoryText(activeTrip.description || ""));
     setEditStatus(activeTrip.status || "Completato");
     setEditStartOdo(
       activeTrip.startOdometer ? String(activeTrip.startOdometer) : "",
@@ -1803,17 +2079,36 @@ export default function DiaryTab({
   // Update Trip Status handler
   const handleUpdateTripStatus = (newStatus: Trip["status"]) => {
     if (!selectedTripId) return;
+    const nowIso = new Date().toISOString();
     let targetTrip: Trip | undefined;
     const updated = trips.map((t) => {
       if (t.id === selectedTripId) {
         const isNowCompleted = newStatus === "Completato";
         const willBeShared = isNowCompleted ? true : t.isShared;
-        targetTrip = { ...t, status: newStatus, isShared: willBeShared };
+        targetTrip = { ...t, status: newStatus, isShared: willBeShared, updatedAt: nowIso };
         return targetTrip;
       }
       return t;
     });
     setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    if (currentCrew && isModuleSynced('trips')) {
+      syncCrewSection('trips', updated).catch(() => {});
+    }
+    window.dispatchEvent(
+      new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("sync-trips-now", {
+        detail: { trips: updated },
+      }),
+    );
 
     if (targetTrip && newStatus === "Completato") {
       window.dispatchEvent(
@@ -1837,7 +2132,7 @@ export default function DiaryTab({
           title: editTitle,
           startDate: editStart || new Date().toISOString().split("T")[0],
           endDate: editEnd || new Date().toISOString().split("T")[0],
-          description: editDesc,
+          description: cleanTravelStoryText(editDesc),
           status: editStatus,
           startOdometer: editStartOdo ? Number(editStartOdo) : undefined,
           endOdometer: editEndOdo ? Number(editEndOdo) : undefined,
@@ -2115,9 +2410,11 @@ export default function DiaryTab({
       return;
     }
 
+    const nowIso = new Date().toISOString();
     const newPhotos: DiaryPhoto[] = urls.map((img, idx) => {
       const finalDesc = photoDesc.trim() || undefined;
-      const photoId = "photo_" + (Date.now() + idx);
+      const photoId = "photo_" + (Date.now() + idx) + "_" + Math.random().toString(36).substring(2, 7);
+      unrecordDeletedId('photos', photoId, emailKey);
       const hasRealDate = img.date && img.dateSource !== 'fallback';
       const chosenDate = hasRealDate
         ? img.date
@@ -2142,6 +2439,7 @@ export default function DiaryTab({
         return {
           ...t,
           photos: sorted,
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -2336,10 +2634,6 @@ export default function DiaryTab({
             if (!isNaN(ts) && ts > 1000000000000) {
               photoDate = new Date(ts).toISOString().split("T")[0];
             }
-          }
-          if (isSicilia && (photoDate === "2026-08-29" || photoDate.includes("08-29") || photoDate.includes("29/08"))) {
-            deletePhotoFromIndexedDB(id).catch(() => {});
-            continue;
           }
           recovered.push({
             id,
@@ -2644,12 +2938,14 @@ export default function DiaryTab({
   // Delete Photo handler
   const handleDeletePhoto = (photoId: string) => {
     recordDeletedId('photos', photoId, emailKey);
+    const nowIso = new Date().toISOString();
     const updated = trips.map((t) => {
       const containsPhoto = t.photos && t.photos.some((p) => p.id === photoId);
       if (containsPhoto) {
         return {
           ...t,
           photos: t.photos.filter((p) => p.id !== photoId),
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -2669,6 +2965,11 @@ export default function DiaryTab({
       }),
     );
     window.dispatchEvent(
+      new CustomEvent("sync-trips-now", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
       new CustomEvent("show-toast", {
         detail: { message: "🗑️ Foto eliminata definitivamente." },
       }),
@@ -2678,6 +2979,7 @@ export default function DiaryTab({
   // Delete all photos for current active trip
   const handleDeleteAllTripPhotos = () => {
     if (!activeTrip || !selectedTripId) return;
+    const nowIso = new Date().toISOString();
     const currentPhotos = activeTrip.photos || [];
     currentPhotos.forEach((p) => {
       recordDeletedId('photos', p.id, emailKey);
@@ -2687,6 +2989,7 @@ export default function DiaryTab({
         return {
           ...t,
           photos: [],
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -2702,6 +3005,11 @@ export default function DiaryTab({
     }
     window.dispatchEvent(
       new CustomEvent("trip-updated", {
+        detail: { trips: updated },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("sync-trips-now", {
         detail: { trips: updated },
       }),
     );
@@ -2723,6 +3031,43 @@ export default function DiaryTab({
     setApplyDateToSameLocation(false);
   };
 
+  // Swap photo starred status directly when replacing 1 of the 3 photos
+  const handleSwapStarredPhoto = (photoToUnstarId: string, photoToStarId: string) => {
+    if (!activeTrip || !selectedTripId) return;
+    const nowIso = new Date().toISOString();
+
+    const updatedTrips = trips.map((t) => {
+      if (t.id === selectedTripId) {
+        return {
+          ...t,
+          photos: (t.photos || []).map((p) => {
+            if (p.id === photoToUnstarId) return { ...p, isStarred: false };
+            if (p.id === photoToStarId) return { ...p, isStarred: true };
+            return p;
+          }),
+          updatedAt: nowIso,
+        };
+      }
+      return t;
+    });
+
+    setTrips(updatedTrips);
+    setInternalTrips(updatedTrips);
+    tripsRef.current = updatedTrips;
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
+      } catch (e) {}
+    }
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updatedTrips } }));
+    syncWithCloud(updatedTrips, false);
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: "⭐ Foto sostituita con successo sulla Mappa Interattiva!" },
+      })
+    );
+  };
+
   // Toggle star status for photo on Interactive Trip Map (max 3 per location)
   const handleToggleStarPhoto = (photoId: string) => {
     if (!activeTrip || !selectedTripId) return;
@@ -2730,6 +3075,7 @@ export default function DiaryTab({
     const targetPhoto = (activeTrip.photos || []).find((p) => p.id === photoId);
     if (!targetPhoto) return;
 
+    const nowIso = new Date().toISOString();
     const isCurrentlyStarred = !!targetPhoto.isStarred;
 
     if (isCurrentlyStarred) {
@@ -2738,11 +3084,14 @@ export default function DiaryTab({
           return {
             ...t,
             photos: (t.photos || []).map((p) => (p.id === photoId ? { ...p, isStarred: false } : p)),
+            updatedAt: nowIso,
           };
         }
         return t;
       });
       setTrips(updatedTrips);
+      setInternalTrips(updatedTrips);
+      tripsRef.current = updatedTrips;
       if (emailKey) {
         try {
           localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
@@ -2752,7 +3101,7 @@ export default function DiaryTab({
       syncWithCloud(updatedTrips, false);
       window.dispatchEvent(
         new CustomEvent("show-toast", {
-          detail: { message: "⭐ Foto rimossa dalla Mappa Interattiva del Viaggio." },
+          detail: { message: "⭐ Foto rimossa dalla Mappa Interattiva." },
         })
       );
     } else {
@@ -2768,15 +3117,21 @@ export default function DiaryTab({
       }
 
       const locLower = locName.toLowerCase();
-      const starredCount = (activeTrip.photos || []).filter(
+      const starredPhotosInSameLocation = (activeTrip.photos || []).filter(
         (p) => p.id !== photoId && p.isStarred && p.locationName?.trim().toLowerCase() === locLower
-      ).length;
+      );
 
-      if (starredCount >= 3) {
+      if (starredPhotosInSameLocation.length >= 3) {
+        setStarLimitModal({
+          locationName: locName,
+          attemptedPhoto: targetPhoto,
+          existingStarredPhotos: starredPhotosInSameLocation,
+        });
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: "⚠️ Limite raggiunto: puoi mostrare massimo 3 foto per ogni luogo sulla Mappa Interattiva. Rimuovi la stella da un'altra foto di questo luogo per aggiungere questa al suo posto.",
+              message: `⚠️ Hai già selezionato 3 foto per la tappa "${locName}". Se vuoi aggiungere questa foto alla mappa interattiva, ne devi deselezionare un'altra.`,
+              duration: 5500,
             },
           })
         );
@@ -2788,11 +3143,14 @@ export default function DiaryTab({
           return {
             ...t,
             photos: (t.photos || []).map((p) => (p.id === photoId ? { ...p, isStarred: true } : p)),
+            updatedAt: nowIso,
           };
         }
         return t;
       });
       setTrips(updatedTrips);
+      setInternalTrips(updatedTrips);
+      tripsRef.current = updatedTrips;
       if (emailKey) {
         try {
           localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updatedTrips));
@@ -2802,7 +3160,7 @@ export default function DiaryTab({
       syncWithCloud(updatedTrips, false);
       window.dispatchEvent(
         new CustomEvent("show-toast", {
-          detail: { message: "⭐ Foto aggiunta con successo alla Mappa Interattiva del Viaggio!" },
+          detail: { message: `⭐ Foto aggiunta alla Mappa Interattiva per "${locName}" (${starredPhotosInSameLocation.length + 1}/3)` },
         })
       );
     }
@@ -3175,17 +3533,17 @@ export default function DiaryTab({
               <span>Nuovo Viaggio</span>
             </button>
 
-            {/* Colonna Destra - In Basso: Stato & Backup */}
+            {/* Colonna Destra - In Basso: Backup & Ripristino */}
             <button
               onClick={() => {
                 checkCloudStatus();
                 setShowSyncModal(true);
               }}
               className="w-full min-h-[40px] px-3 py-2.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-xs active:scale-95 cursor-pointer backdrop-blur-xs"
-              title="Apri pannello diagnostica sincronizzazione e backup file"
+              title="Apri centro di backup, esportazione file e sincronizzazione Cloud"
             >
               <Database className="w-3.5 h-3.5" />
-              <span>Stato & Backup</span>
+              <span>Backup & Ripristino</span>
             </button>
           </div>
         </div>
@@ -3684,13 +4042,39 @@ export default function DiaryTab({
                     Clicca &quot;Nuovo Viaggio&quot; per iniziare ad annotare
                     sogni, foto e spese!
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddTrip(true)}
-                    className="px-4 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Inizia ora
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTrip(true)}
+                      className="px-4 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
+                    >
+                      Inizia ora
+                    </button>
+                    <label className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1.5">
+                      {isImportingBackup ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Ripristino in corso...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Ripristina da Backup (.json)</span>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        disabled={isImportingBackup}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleImportBackupJson(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-sans">
@@ -4137,10 +4521,10 @@ export default function DiaryTab({
                                   setShowSyncModal(true);
                                 }}
                                 className="flex items-center gap-1 px-2 py-1 bg-stone-100 hover:bg-stone-200 text-[#3E4A35] rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
-                                title="Apri diagnostica sincronizzazione e backup file"
+                                title="Apri centro di backup, esportazione file e sincronizzazione Cloud"
                               >
                                 <Database className="w-3.5 h-3.5 shrink-0 text-[#3E4A35]" />
-                                <span className="truncate max-w-[130px] sm:max-w-none">Backup</span>
+                                <span className="truncate max-w-[130px] sm:max-w-none">Backup & Ripristino</span>
                               </button>
                             </div>
                           </div>
@@ -4864,6 +5248,19 @@ export default function DiaryTab({
                             <span className="text-[11px] font-bold text-slate-600">
                               Scatti nel diario ({activeTripPhotos.length})
                             </span>
+                            {(() => {
+                              const starredPhotosTotal = (activeTripPhotos || []).filter((p) => p.isStarred).length;
+                              if (starredPhotosTotal === 0) return null;
+                              return (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 rounded-lg text-[9.5px] font-bold shadow-2xs"
+                                  title="Foto evidenziate con la stellina per la Mappa Interattiva del Viaggio (max 3 per luogo)"
+                                >
+                                  <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                  <span>{starredPhotosTotal} in mappa</span>
+                                </span>
+                              );
+                            })()}
                             {activeTripPhotos.length > 1 && (
                               <div className="inline-flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-200 text-[9.5px]">
                                 <button
@@ -5064,11 +5461,13 @@ export default function DiaryTab({
                                 <div
                                   key={photo.id}
                                   className={`rounded-xl overflow-hidden border relative group cursor-pointer transition-all ${
-                                    isMissing
+                                    photo.isStarred
+                                      ? "bg-amber-50/40 dark:bg-amber-950/20 border-yellow-400 ring-2 ring-yellow-400/50 shadow-md"
+                                      : isMissing
                                       ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/60 hover:border-amber-400"
                                       : isRecovered
                                       ? "bg-stone-50 rounded-xl border-amber-200/80 dark:border-amber-900/50 hover:border-amber-400"
-                                      : "bg-stone-50 rounded-xl border-slate-150"
+                                      : "bg-stone-50 rounded-xl border-slate-150 hover:border-slate-300"
                                   }`}
                                   onClick={() => {
                                     if (isMissing) {
@@ -5122,17 +5521,6 @@ export default function DiaryTab({
                                       }`}>
                                         {photo.description}
                                       </p>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenEditPhoto(photo);
-                                        }}
-                                        className="p-1 hover:bg-stone-200 dark:hover:bg-stone-700 rounded text-stone-400 hover:text-[#3E4A35] shrink-0 transition-colors"
-                                        title="Modifica descrizione e posizione"
-                                      >
-                                        <Pencil className="w-3 h-3" />
-                                      </button>
                                     </div>
 
                                     <div className="flex items-center gap-1 flex-wrap pt-0.5">
@@ -5168,6 +5556,17 @@ export default function DiaryTab({
                                           <Pencil className="w-2.5 h-2.5" /> Aggiungi luogo e titolo
                                         </button>
                                       ) : null}
+
+                                      {/* Star badge on card if starred for interactive map */}
+                                      {photo.isStarred && (
+                                        <span
+                                          className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-950/60 text-yellow-900 dark:text-yellow-200 border border-yellow-400 rounded text-[8.5px] font-bold shadow-2xs"
+                                          title="Foto in evidenza sulla Mappa Interattiva del Viaggio (max 3 foto per luogo)"
+                                        >
+                                          <Star className="w-2.5 h-2.5 fill-yellow-500 text-yellow-500" />
+                                          In Mappa
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
@@ -5192,36 +5591,68 @@ export default function DiaryTab({
                                         const input = document.getElementById(`replace-photo-${photo.id}`) as HTMLInputElement;
                                         input?.click();
                                       }}
-                                      className="absolute top-1.5 left-1.5 p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors z-10 opacity-80 group-hover:opacity-100"
+                                      className="absolute top-1.5 left-1.5 p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors z-10 opacity-80 group-hover:opacity-100 cursor-pointer"
                                       title="Ricarica / Sostituisci foto dalla galleria"
                                     >
                                       <Camera className="w-3 h-3" />
                                     </button>
                                   )}
 
-                                  {/* Edit button on card hover */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenEditPhoto(photo);
-                                    }}
-                                    className="absolute top-1.5 right-8 p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors z-10 opacity-80 group-hover:opacity-100"
-                                    title="Modifica descrizione e posizione"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
+                                  {/* Action Buttons: Star (Interactive Map), Single Edit Pencil, Trash */}
+                                  <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+                                    {/* Star button to indicate/toggle 3 photos for Interactive Map */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleStarPhoto(photo.id);
+                                      }}
+                                      className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-90 ${
+                                        photo.isStarred
+                                          ? "bg-stone-900/90 hover:bg-black text-yellow-400 border border-yellow-400 shadow-md ring-1 ring-yellow-400/70 opacity-100"
+                                          : "bg-black/50 hover:bg-stone-800 text-white/80 hover:text-yellow-400 border border-white/20 hover:border-yellow-400/60 opacity-80 group-hover:opacity-100"
+                                      }`}
+                                      title={
+                                        photo.isStarred
+                                          ? "⭐ Foto selezionata per la Mappa Interattiva (max 3 per tappa). Clicca per deselezionarla"
+                                          : "☆ Clicca la stella per selezionare la foto per la Mappa Interattiva (max 3 per tappa)"
+                                      }
+                                    >
+                                      <Star
+                                        className={`w-3.5 h-3.5 transition-transform ${
+                                          photo.isStarred
+                                            ? "fill-yellow-400 text-yellow-400 scale-110 drop-shadow-[0_0_6px_rgba(250,204,21,0.8)]"
+                                            : "text-white"
+                                        }`}
+                                      />
+                                    </button>
 
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPhotoToDelete(photo.id);
-                                    }}
-                                    className="absolute top-1.5 right-1.5 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-lg transition-colors z-10"
-                                    title="Rimuovi foto"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                    {/* Single Edit Pencil Button */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenEditPhoto(photo);
+                                      }}
+                                      className="p-1.5 bg-black/50 hover:bg-[#3E4A35] text-white rounded-lg transition-colors opacity-80 group-hover:opacity-100 cursor-pointer"
+                                      title="Modifica titolo, data e luogo"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Delete Button */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPhotoToDelete(photo.id);
+                                      }}
+                                      className="p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-lg transition-colors opacity-80 group-hover:opacity-100 cursor-pointer"
+                                      title="Rimuovi foto"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
                               );
                             })
@@ -6318,7 +6749,7 @@ export default function DiaryTab({
                     </div>
                   </div>
                   <p className="text-xs text-slate-700 dark:text-stone-300 leading-relaxed whitespace-pre-wrap">
-                    {activeTrip.description ||
+                    {cleanTravelStoryText(activeTrip.description) ||
                       "Nessuna storia o racconto inserito per questa escursione."}
                   </p>
                 </div>
@@ -6455,14 +6886,14 @@ export default function DiaryTab({
                     <button
                       type="button"
                       onClick={() => handleToggleStarPhoto(activeTripPhotos[selectedLightboxPhotoIndex].id)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all border shrink-0 active:scale-95 ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all border shrink-0 active:scale-95 ${
                         activeTripPhotos[selectedLightboxPhotoIndex].isStarred
-                          ? "bg-amber-500 text-white border-amber-600"
-                          : "bg-stone-800 hover:bg-amber-600 text-stone-300 hover:text-white border-stone-700"
+                          ? "bg-stone-900 border-yellow-400 text-yellow-400 shadow-md ring-1 ring-yellow-400/60"
+                          : "bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-yellow-400 border-stone-700"
                       }`}
                     >
-                      <Star className={`w-3.5 h-3.5 ${activeTripPhotos[selectedLightboxPhotoIndex].isStarred ? "fill-white" : ""}`} />
-                      {activeTripPhotos[selectedLightboxPhotoIndex].isStarred ? "In evidenza sulla Mappa" : "Metti in evidenza"}
+                      <Star className={`w-3.5 h-3.5 ${activeTripPhotos[selectedLightboxPhotoIndex].isStarred ? "fill-yellow-400 text-yellow-400 drop-shadow-xs" : ""}`} />
+                      {activeTripPhotos[selectedLightboxPhotoIndex].isStarred ? "In evidenza sulla Mappa ⭐" : "Metti in evidenza"}
                     </button>
 
                     <button
@@ -6625,6 +7056,35 @@ export default function DiaryTab({
                   </label>
                 )}
               </div>
+
+              {/* Interactive Map Star Toggle */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!photoToEdit) return;
+                    handleToggleStarPhoto(photoToEdit.id);
+                    setPhotoToEdit((prev) => (prev ? { ...prev, isStarred: !prev.isStarred } : null));
+                  }}
+                  className={`w-full py-2 px-3 rounded-xl border flex items-center justify-between text-xs font-bold transition-all cursor-pointer ${
+                    photoToEdit.isStarred
+                      ? "bg-stone-900 border-yellow-400 text-yellow-400 shadow-xs"
+                      : "bg-stone-50 dark:bg-stone-800/60 border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:border-yellow-400"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Star className={`w-4 h-4 ${photoToEdit.isStarred ? "fill-yellow-400 text-yellow-400" : "text-stone-400"}`} />
+                    <span>Mostra sulla Mappa Interattiva (max 3 per tappa)</span>
+                  </span>
+                  <span className={`text-[10px] px-2.5 py-0.5 rounded-md font-bold ${
+                    photoToEdit.isStarred
+                      ? "bg-yellow-400 text-stone-900"
+                      : "bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300"
+                  }`}>
+                    {photoToEdit.isStarred ? "In Mappa ⭐" : "Non attiva"}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Modal Actions */}
@@ -6657,6 +7117,81 @@ export default function DiaryTab({
                   Salva
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INTERACTIVE MAP STAR LIMIT REACHED MODAL (3/3) */}
+      {starLimitModal && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setStarLimitModal(null)}
+        >
+          <div
+            className="bg-white dark:bg-stone-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-yellow-400/50 space-y-4 font-sans animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-yellow-100 dark:bg-yellow-950/80 rounded-xl text-yellow-600 shrink-0">
+                <Star className="w-6 h-6 fill-yellow-400 text-yellow-500" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-stone-900 dark:text-white">
+                  Limite foto per la Mappa raggiunto (3/3)
+                </h3>
+                <p className="text-xs text-stone-600 dark:text-stone-300 mt-1">
+                  Hai già selezionato 3 foto per la tappa di <strong className="text-stone-900 dark:text-yellow-400 font-bold">"{starLimitModal.locationName}"</strong>.
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold mt-1">
+                  Se vuoi aggiungere questa foto alla mappa interattiva, ne devi deselezionare un'altra.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-stone-100 dark:border-stone-800">
+              <span className="text-[11px] font-bold text-stone-600 dark:text-stone-300 block">
+                Tocca una delle 3 foto attuali per sostituirla subito con questa:
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {starLimitModal.existingStarredPhotos.map((existingP) => (
+                  <button
+                    key={existingP.id}
+                    type="button"
+                    onClick={() => {
+                      handleSwapStarredPhoto(existingP.id, starLimitModal.attemptedPhoto.id);
+                      setStarLimitModal(null);
+                    }}
+                    className="group/swap relative rounded-xl overflow-hidden border-2 border-yellow-400 hover:border-red-500 cursor-pointer shadow-xs transition-all text-left"
+                    title="Tocca per deselezionare questa foto e selezionare la nuova"
+                  >
+                    <div className="h-20 w-full bg-stone-100 dark:bg-stone-800 overflow-hidden">
+                      <CamperImage
+                        src={existingP.url}
+                        photoId={existingP.id}
+                        thumbnail={true}
+                        className="w-full h-full object-cover group-hover/swap:scale-105 transition-transform"
+                      />
+                    </div>
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/swap:opacity-100 transition-opacity flex items-center justify-center text-white text-[10.5px] font-bold text-center p-1 leading-tight">
+                      Sostituisci 🔄
+                    </div>
+                    <div className="absolute top-1 right-1 p-0.5 bg-yellow-400 text-stone-900 rounded-md shadow-xs">
+                      <Star className="w-3 h-3 fill-current" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-stone-100 dark:border-stone-800">
+              <button
+                type="button"
+                onClick={() => setStarLimitModal(null)}
+                className="px-4 py-2 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Ho capito, la deseleziono manualmente
+              </button>
             </div>
           </div>
         </div>
@@ -7274,32 +7809,117 @@ export default function DiaryTab({
                 </span>
               </button>
 
-              {/* Direct File Transfer Section */}
-              <div className="pt-3 border-t border-stone-200 dark:border-stone-800">
-                <h4 className="font-bold text-stone-800 dark:text-stone-200 mb-1 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-stone-500" />
-                  Trasferimento Diretto via File (100% Garantito)
-                </h4>
-                <p className="text-[11px] text-stone-500 mb-3 leading-relaxed">
-                  Se hai già tutte le spese sul cellulare e vuoi portarle sul tablet all'istante senza passare dal Cloud:
+              {/* Complete Diary Backup & Restore Section */}
+              <div className="pt-4 border-t border-stone-200 dark:border-stone-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 text-xs">
+                    <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Backup & Ripristino Completo del Diario 📦</span>
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                    File Singolo .json
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-stone-600 dark:text-stone-300 leading-relaxed">
+                  Scarica tutto il tuo diario in un unico file protetto (viaggi, tappe, percorsi, spese e foto incluse). 
+                  In caso di reinstallazione dell&apos;app o cambio cellulare, potrai ricaricare il file e ripristinare tutto all&apos;istante.
                 </p>
 
-                <div className="grid grid-cols-2 gap-2">
+                {/* Live Restore Summary Confirmation Card */}
+                {backupRestoreSummary && (
+                  <div
+                    className={`p-3 rounded-xl border text-[11px] space-y-2 transition-all ${
+                      backupRestoreSummary.success
+                        ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+                        : "bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <div className="flex items-center gap-1.5">
+                        {backupRestoreSummary.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        )}
+                        <span>{backupRestoreSummary.message}</span>
+                      </div>
+                      <span className="text-[10px] opacity-75 font-mono">
+                        ore {backupRestoreSummary.timestamp}
+                      </span>
+                    </div>
+
+                    {backupRestoreSummary.success && (
+                      <>
+                        <div className="grid grid-cols-4 gap-1.5 text-center font-mono text-[10px] pt-1">
+                          <div className="bg-white/80 dark:bg-stone-800/80 p-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            <span className="block text-stone-400 text-[9px]">Viaggi</span>
+                            <span className="font-bold text-stone-800 dark:text-stone-100">{backupRestoreSummary.tripsCount}</span>
+                          </div>
+                          <div className="bg-white/80 dark:bg-stone-800/80 p-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            <span className="block text-stone-400 text-[9px]">Spese</span>
+                            <span className="font-bold text-emerald-700 dark:text-emerald-300">{backupRestoreSummary.expensesCount}</span>
+                          </div>
+                          <div className="bg-white/80 dark:bg-stone-800/80 p-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            <span className="block text-stone-400 text-[9px]">Tappe</span>
+                            <span className="font-bold text-stone-800 dark:text-stone-100">{backupRestoreSummary.movementsCount}</span>
+                          </div>
+                          <div className="bg-white/80 dark:bg-stone-800/80 p-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            <span className="block text-stone-400 text-[9px]">Foto</span>
+                            <span className="font-bold text-stone-800 dark:text-stone-100">{backupRestoreSummary.photosCount}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-900/40 p-2 rounded-lg">
+                          <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>
+                            {backupRestoreSummary.syncedWithCloud
+                              ? "Sincronizzato con il server Cloud: dati unificati con successo senza creare duplicati!"
+                              : "Dati ripristinati in memoria locale. Verranno sincronizzati al prossimo avvio online."}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Action Buttons: Export & Import */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <button
                     onClick={handleExportBackupJson}
-                    className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-[#3E4A35] dark:text-stone-200 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 border border-stone-300 dark:border-stone-700 cursor-pointer active:scale-95"
+                    disabled={isExportingBackup}
+                    className="py-2.5 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-[#3E4A35] dark:text-stone-200 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 border border-stone-300 dark:border-stone-700 cursor-pointer active:scale-95 disabled:opacity-50 shadow-xs"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Esporta Backup (.json)</span>
+                    {isExportingBackup ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                        <span>Preparazione backup...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>Scarica Backup (.json)</span>
+                      </>
+                    )}
                   </button>
 
-                  <label className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-[#3E4A35] dark:text-stone-200 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 border border-stone-300 dark:border-stone-700 cursor-pointer active:scale-95 text-center">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Importa Backup (.json)</span>
+                  <label className="py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs text-center disabled:opacity-50">
+                    {isImportingBackup ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Ripristino in corso...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        <span>Ripristina da Backup (.json)</span>
+                      </>
+                    )}
                     <input
                       type="file"
-                      accept=".json"
+                      accept=".json,application/json"
                       className="hidden"
+                      disabled={isImportingBackup}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) handleImportBackupJson(file);
@@ -7310,14 +7930,17 @@ export default function DiaryTab({
                 </div>
               </div>
 
-              {/* Help box */}
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
-                <strong>💡 Istruzioni rapide:</strong>
-                <ol className="list-decimal list-inside mt-1 space-y-1 text-[10.5px]">
-                  <li>Sul cellulare premi <strong>Esporta Backup (.json)</strong> e salva il file.</li>
-                  <li>Invia il file al tablet (via WhatsApp, Telegram, Email o Drive).</li>
-                  <li>Sul tablet premi <strong>Importa Backup (.json)</strong>: tutte le 52 spese e le foto appariranno all'istante!</li>
-                </ol>
+              {/* Instructions and Deduplication Guarantee Banner */}
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Come funziona il Backup & Sincronizzazione Senza Duplicati:</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-[10.5px] text-amber-800/90 dark:text-amber-200/90">
+                  <li><strong>Scaricamento:</strong> Salva il file sul telefono, su Google Drive o inviatelo via WhatsApp/Email per conservarlo al sicuro.</li>
+                  <li><strong>Ripristino istantaneo:</strong> Anche se disinstalli l&apos;app o cambi dispositivo, ricaricando il file ritrovi subito tutti i tuoi viaggi, tappe, spese e foto anche senza internet.</li>
+                  <li><strong>Zero Duplicati:</strong> All&apos;importazione, l&apos;algoritmo confronta gli ID e le firme delle spese e tappe. Se i dati sono già presenti sul server o sul dispositivo, vengono unificati senza generare voci doppie.</li>
+                </ul>
               </div>
             </div>
 
@@ -7502,11 +8125,12 @@ export default function DiaryTab({
                         ocrImageFile?.type || "image/jpeg",
                         (status) => setOcrProgressStatus(status)
                       );
-                      if (text && text.trim()) {
-                        setOcrExtractedText(text.trim());
+                      const cleanText = cleanTravelStoryText(text);
+                      if (cleanText && cleanText.trim()) {
+                        setOcrExtractedText(cleanText.trim());
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
-                            detail: { message: "✨ Testo estratto con successo tramite OCR!" },
+                            detail: { message: "✨ Testo estratto con successo tramite OCR (senza asterischi né frasi superflue)!" },
                           })
                         );
                       } else {
@@ -7570,16 +8194,17 @@ export default function DiaryTab({
                     <button
                       type="button"
                       onClick={() => {
+                        const sanitizedInput = cleanTravelStoryText(ocrExtractedText);
                         if (ocrTargetField === 'new') {
-                          setNewDesc((prev) => (prev ? prev + "\n\n" + ocrExtractedText : ocrExtractedText));
+                          setNewDesc((prev) => cleanTravelStoryText(prev ? prev + "\n\n" + sanitizedInput : sanitizedInput));
                         } else if (ocrTargetField === 'edit') {
-                          setEditDesc((prev) => (prev ? prev + "\n\n" + ocrExtractedText : ocrExtractedText));
+                          setEditDesc((prev) => cleanTravelStoryText(prev ? prev + "\n\n" + sanitizedInput : sanitizedInput));
                         } else if (ocrTargetField === 'active' && selectedTripId) {
                           const nowIso = new Date().toISOString();
                           const updated = trips.map((t) => {
                             if (t.id === selectedTripId) {
-                              const mergedDesc = t.description ? `${t.description}\n\n${ocrExtractedText}` : ocrExtractedText;
-                              return { ...t, description: mergedDesc, updatedAt: nowIso };
+                              const mergedDesc = t.description ? `${t.description}\n\n${sanitizedInput}` : sanitizedInput;
+                              return { ...t, description: cleanTravelStoryText(mergedDesc), updatedAt: nowIso };
                             }
                             return t;
                           });

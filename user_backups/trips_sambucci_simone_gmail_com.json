@@ -1,0 +1,1474 @@
+{
+  "email": "sambucci.simone@gmail.com",
+  "trips": [
+    {
+      "updatedAt": "2026-09-25T05:47:43.816Z",
+      "endDate": "2025-05-04",
+      "startOdometer": 119057,
+      "description": "🚐 Diario di Bordo: Seconda uscita in camper (4 giorni)\n\nSeconda uscita di 4 giorni a più km di distanza.\nAbbiamo deciso di andare a Gardaland e, con l'occasione, tornare a visitare Borghetto sul Mincio e Sirmione. Abbiamo fatto visita al Parco Sigurtà, molto bello in questo periodo, e, come da programma, a Gardaland ed all'acquario Sea Life.\n\nPurtroppo i tempi ridotti e la stanchezza non ci hanno consentito la visita con cena di pesce che volevamo fare a Peschiera del Garda, mentre il campo gara FIPSAS, che volevo visitare, l'ho visto solo di sfuggita.\n\n📍 Tappe e Punti di Interesse citati:\n- Borghetto sul Mincio (borgo storico sul fiume)\n- Sirmione (Lago di Garda)\n- Parco Giardino Sigurtà (Valeggio sul Mincio)\n- Gardaland & Sea Life Aquarium (Castelnuovo del Garda)\n- Peschiera del Garda (lungolago e centro storico)\n- Campo Gara FIPSAS (pesca sportiva sul Mincio)",
+      "budgetEuro": 415,
+      "startDate": "2025-04-30",
+      "status": "Completato",
+      "movements": [
+        {
+          "notes": "Partenza viaggio",
+          "date": "2025-04-30",
+          "odometer": 119057,
+          "location": "Velletri",
+          "id": "mov_1790315263816"
+        },
+        {
+          "notes": "Sosta per la notte",
+          "date": "2025-04-30",
+          "location": "Orvieto",
+          "odometer": 119217,
+          "id": "mov_1790315485819"
+        },
+        {
+          "id": "mov_1790315521699",
+          "odometer": 119627,
+          "location": "Sirmione",
+          "notes": "",
+          "date": "2025-05-01"
+        },
+        {
+          "odometer": 119654,
+          "location": "Valeggio sul Mincio",
+          "date": "2025-05-02",
+          "notes": "Parco Sigurta",
+          "id": "mov_1790315600757"
+        },
+        {
+          "date": "2025-05-02",
+          "location": "Borghetto sul Mincio",
+          "odometer": 119656,
+          "notes": "",
+          "id": "mov_1790315718663"
+        },
+        {
+          "odometer": 119671,
+          "id": "mov_1790315770960",
+          "location": "Gardaland",
+          "notes": "Parco e Sealife",
+          "date": "2025-05-03"
+        },
+        {
+          "notes": "",
+          "location": "Velletri",
+          "date": "2025-05-04",
+          "odometer": 120214,
+          "id": "mov_1790315808311"
+        }
+      ],
+      "id": "trip_1790315263817",
+      "stops": [],
+      "routePoints": [],
+      "soste": [
+        {
+          "date": "2025-05-03",
+          "id": "sosta_1790315991674",
+          "expenseEuro": 52,
+          "type": "area_sosta",
+          "phone": "3756222939",
+          "address": "",
+          "name": "Area camper Lazise",
+          "notes": ""
+        },
+        {
+          "notes": "",
+          "expenseEuro": 0,
+          "name": "Parcheggio campo sportivo Sirmione",
+          "phone": "",
+          "id": "sosta_1790315928109",
+          "type": "parcheggio",
+          "address": "",
+          "date": "2025-05-01"
+        },
+        {
+          "name": "Parcheggio campo sportivo Orvieto Ciconoa",
+          "id": "sosta_1790315892618",
+          "date": "2025-04-30",
+          "address": "",
+          "notes": "",
+          "type": "parcheggio",
+          "phone": "",
+          "expenseEuro": 0
+        }
+      ],
+      "expenses": [
+        {
+          "date": "2025-05-03",
+          "id": "sosta_exp_sosta_1790315991674",
+          "amount": 52,
+          "category": "Sosta",
+          "title": "Area Sosta: Area camper Lazise"
+        },
+        {
+          "fuelCompany": "Altro",
+          "title": "Rifornimento Altro",
+          "category": "Carburante",
+          "id": "exp_1790315304881",
+          "isFullTank": false,
+          "date": "2025-05-01",
+          "amount": 100
+        },
+        {
+          "category": "Carburante",
+          "fuelCompany": "Altro",
+          "date": "2025-05-04",
+          "isFullTank": false,
+          "amount": 120,
+          "id": "exp_1790315324226",
+          "title": "Rifornimento Altro"
+        },
+        {
+          "date": "2025-05-03",
+          "amount": 143,
+          "id": "exp_1790316080179",
+          "title": "Pranzi vari",
+          "category": "Cibo"
+        }
+      ],
+      "endOdometer": 120214,
+      "title": "Gardaland ",
+      "photos": [
+        {
+          "description": "",
+          "locationName": "Sirmione",
+          "url": "/api/photos/photo_1790316297490",
+          "date": "2025-05-01",
+          "id": "photo_1790316297490",
+          "isStarred": true
+        },
+        {
+          "url": "/api/photos/photo_1790316297491",
+          "date": "2025-05-01",
+          "locationName": "Sirmione",
+          "description": "",
+          "id": "photo_1790316297491"
+        },
+        {
+          "locationName": "Sirmione",
+          "url": "/api/photos/photo_1790316297492",
+          "date": "2025-05-01",
+          "id": "photo_1790316297492",
+          "description": ""
+        },
+        {
+          "date": "2025-05-01",
+          "url": "/api/photos/photo_1790316297493",
+          "locationName": "Sirmione",
+          "description": "",
+          "id": "photo_1790316297493",
+          "isStarred": true
+        },
+        {
+          "locationName": "Sirmione",
+          "id": "photo_1790316297494",
+          "description": "",
+          "date": "2025-05-01",
+          "url": "/api/photos/photo_1790316297494",
+          "isStarred": true
+        },
+        {
+          "description": "",
+          "id": "photo_1790316297495",
+          "locationName": "Sirmione",
+          "date": "2025-05-01",
+          "url": "/api/photos/photo_1790316297495"
+        },
+        {
+          "description": "",
+          "id": "photo_1790316297496",
+          "date": "2025-05-01",
+          "locationName": "Sirmione",
+          "url": "/api/photos/photo_1790316297496"
+        },
+        {
+          "id": "photo_1790329765325",
+          "url": "/api/photos/photo_1790329765325",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio"
+        },
+        {
+          "id": "photo_1790329765326",
+          "url": "/api/photos/photo_1790329765326",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790329765327",
+          "url": "/api/photos/photo_1790329765327",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio",
+          "isStarred": false
+        },
+        {
+          "id": "photo_1790329765328",
+          "url": "/api/photos/photo_1790329765328",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790329765329",
+          "url": "/api/photos/photo_1790329765329",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio"
+        },
+        {
+          "id": "photo_1790329765330",
+          "url": "/api/photos/photo_1790329765330",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790329765331",
+          "url": "/api/photos/photo_1790329765331",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Valeggio sul Mincio"
+        },
+        {
+          "id": "photo_1790330013636",
+          "url": "/api/photos/photo_1790330013636",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790330013637",
+          "url": "/api/photos/photo_1790330013637",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790330013638",
+          "url": "/api/photos/photo_1790330013638",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio"
+        },
+        {
+          "id": "photo_1790330013639",
+          "url": "/api/photos/photo_1790330013639",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio"
+        },
+        {
+          "id": "photo_1790330013640",
+          "url": "/api/photos/photo_1790330013640",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio"
+        },
+        {
+          "id": "photo_1790330013641",
+          "url": "/api/photos/photo_1790330013641",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790330013642",
+          "url": "/api/photos/photo_1790330013642",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio"
+        },
+        {
+          "id": "photo_1790330013643",
+          "url": "/api/photos/photo_1790330013643",
+          "description": "",
+          "date": "2025-05-02",
+          "locationName": "Borghetto sul Mincio"
+        },
+        {
+          "id": "photo_1790330275420",
+          "url": "/api/photos/photo_1790330275420",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland",
+          "isStarred": false
+        },
+        {
+          "id": "photo_1790330275421",
+          "url": "/api/photos/photo_1790330275421",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275422",
+          "url": "/api/photos/photo_1790330275422",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790330275423",
+          "url": "/api/photos/photo_1790330275423",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275424",
+          "url": "/api/photos/photo_1790330275424",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275425",
+          "url": "/api/photos/photo_1790330275425",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275426",
+          "url": "/api/photos/photo_1790330275426",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790330275427",
+          "url": "/api/photos/photo_1790330275427",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275428",
+          "url": "/api/photos/photo_1790330275428",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275429",
+          "url": "/api/photos/photo_1790330275429",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275430",
+          "url": "/api/photos/photo_1790330275430",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275431",
+          "url": "/api/photos/photo_1790330275431",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275432",
+          "url": "/api/photos/photo_1790330275432",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275433",
+          "url": "/api/photos/photo_1790330275433",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790330275434",
+          "url": "/api/photos/photo_1790330275434",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790330275435",
+          "url": "/api/photos/photo_1790330275435",
+          "description": "",
+          "date": "2025-05-03",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790344677925",
+          "url": "/api/photos/photo_1790344677925",
+          "description": "Sealife",
+          "date": "2025-05-04",
+          "time": "10:29:10",
+          "dateSource": "exif",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790344677926",
+          "url": "/api/photos/photo_1790344677926",
+          "description": "Sealife",
+          "date": "2025-05-04",
+          "time": "10:38:09",
+          "dateSource": "exif",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790344677927",
+          "url": "/api/photos/photo_1790344677927",
+          "description": "Sealife",
+          "date": "2025-05-04",
+          "time": "10:43:32",
+          "dateSource": "exif",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790344677928",
+          "url": "/api/photos/photo_1790344677928",
+          "description": "Sealife",
+          "date": "2025-05-04",
+          "time": "10:48:12",
+          "dateSource": "exif",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790344677929",
+          "url": "/api/photos/photo_1790344677929",
+          "description": "Sealife",
+          "date": "2025-05-04",
+          "time": "10:57:47",
+          "dateSource": "exif",
+          "locationName": "Gardaland"
+        },
+        {
+          "id": "photo_1790344677930",
+          "url": "/api/photos/photo_1790344677930",
+          "description": "Sealife",
+          "date": "2025-05-04",
+          "time": "11:00:30",
+          "dateSource": "exif",
+          "locationName": "Gardaland"
+        }
+      ],
+      "isShared": true
+    },
+    {
+      "movements": [],
+      "status": "Completato",
+      "startOdometer": 124500,
+      "title": "ESEMPIO: Weekend d'Autunno in Val d'Orcia",
+      "description": "Questo è un viaggio di esempio per mostrarti come funziona il diario. Puoi modificarlo o cancellarlo in qualsiasi momento.\nAbbiamo visitato borghi stupendi e registrato qui i nostri appunti, costi e spese per tenere traccia di tutto.",
+      "updatedAt": "2026-09-24T15:45:27.950Z",
+      "routePoints": [
+        {
+          "lat": 43.318,
+          "lng": 11.33,
+          "name": "Siena (Partenza) 🏰"
+        },
+        {
+          "lat": 43.058,
+          "lng": 11.606,
+          "name": "San Quirico d'Orcia 🌳"
+        },
+        {
+          "lat": 43.076,
+          "lng": 11.678,
+          "name": "Pienza (Borgo Storico) 🧀"
+        },
+        {
+          "lat": 43.092,
+          "lng": 11.782,
+          "name": "Montepulciano (Vigneti) 🍷"
+        }
+      ],
+      "startDate": "2020-10-10",
+      "photos": [
+        {
+          "id": "tp1",
+          "url": "/api/photos/tp1",
+          "date": "2020-10-11",
+          "description": "Il nostro amato camper immerso nell'abbraccio dorato dei cipressi della Val d'Orcia.",
+          "locationName": "Val d'Orcia"
+        }
+      ],
+      "stops": [],
+      "id": "trip-example-10-oct-2020",
+      "expenses": [
+        {
+          "amount": 12,
+          "id": "te2",
+          "date": "2020-10-11",
+          "category": "Sosta",
+          "title": "Sosta Pienza comunale"
+        },
+        {
+          "category": "Cibo",
+          "id": "te3",
+          "amount": 48,
+          "title": "Pranzo Tipico Trattoria",
+          "date": "2020-10-11"
+        },
+        {
+          "date": "2020-10-10",
+          "liters": 30,
+          "pricePerLiter": 1.833,
+          "title": "Gasolio Eni Siena",
+          "amount": 55,
+          "fuelCompany": "Eni",
+          "odometer": 124500,
+          "category": "Carburante",
+          "id": "te1"
+        }
+      ],
+      "endOdometer": 124820,
+      "endDate": "2020-10-12"
+    },
+    {
+      "expenses": [],
+      "id": "trip_1789979532629",
+      "title": "Acquasparta e SanGemini ",
+      "startOdometer": 118768,
+      "endDate": "2025-03-09",
+      "photos": [
+        {
+          "id": "photo_1789998595722",
+          "date": "2026-09-21",
+          "description": "Acquasparta ",
+          "url": "/api/photos/photo_1789998595722",
+          "locationName": "Acquasparta"
+        },
+        {
+          "date": "2026-09-21",
+          "id": "photo_1789998595723",
+          "url": "/api/photos/photo_1789998595723",
+          "locationName": "Acquasparta",
+          "description": "Acquasparta "
+        },
+        {
+          "id": "photo_1789998595724",
+          "date": "2026-09-21",
+          "description": "Acquasparta ",
+          "url": "/api/photos/photo_1789998595724",
+          "locationName": "Acquasparta"
+        },
+        {
+          "date": "2026-09-21",
+          "id": "photo_1789998595725",
+          "url": "/api/photos/photo_1789998595725",
+          "locationName": "Acquasparta",
+          "description": "Acquasparta "
+        },
+        {
+          "url": "/api/photos/photo_1789998595726",
+          "description": "Acquasparta ",
+          "date": "2026-09-21",
+          "locationName": "Acquasparta",
+          "id": "photo_1789998595726"
+        },
+        {
+          "url": "/api/photos/photo_1789998595727",
+          "locationName": "Acquasparta",
+          "description": "Acquasparta ",
+          "date": "2026-09-21",
+          "id": "photo_1789998595727"
+        },
+        {
+          "locationName": "San Gemini",
+          "description": "San Gemini ",
+          "url": "/api/photos/photo_1789998633821",
+          "date": "2026-09-21",
+          "id": "photo_1789998633821"
+        },
+        {
+          "locationName": "San Gemini",
+          "date": "2026-09-21",
+          "id": "photo_1789998633822",
+          "url": "/api/photos/photo_1789998633822",
+          "description": "San Gemini "
+        },
+        {
+          "locationName": "San Gemini",
+          "id": "photo_1789998633823",
+          "url": "/api/photos/photo_1789998633823",
+          "description": "San Gemini ",
+          "date": "2026-09-21"
+        },
+        {
+          "date": "2026-09-21",
+          "url": "/api/photos/photo_1789998633824",
+          "description": "San Gemini ",
+          "id": "photo_1789998633824",
+          "locationName": "San Gemini"
+        }
+      ],
+      "endOdometer": 119057,
+      "startDate": "2025-03-08",
+      "stops": [],
+      "updatedAt": "2026-09-24T15:45:27.950Z",
+      "description": "Primo viaggio dopo l'acquisto del mio camper, insieme ad Ivano visitiamo qualche paesino nel cuore dell'Italia, in Umbria dove testare il mezzo e vedere come ci troviamo ad utilizzarlo.\n\nAPPUNTI...\n\nPrima uscita ufficiale per un week end nel cuore dell'Umbria visitando questi due paesini.\nIvano è partito venerdì pomeriggio, noi lo abbiamo raggiunto sabato tarda mattinata.\nPrima all'area sosta comunale di Acquasparta, parcheggio comodo e tranquillo a circa 1km dal centro.\nPurtroppo scarico fuori uso.\nDomenica ci siamo spostati a San Gemini presso area sosta comunale, con corrente ma senza pagare, anche carico e scarico, parcheggio momentaneamente in disuso, ma perfettamente funzionante.\n\nWeekend in Umbria: la nostra prima uscita ufficiale!\n\nFinalmente è arrivato il momento della nostra prima uscita ufficiale in camper! Per questa prima avventura su strada abbiamo scelto di regalarci un weekend rigenerante nel cuore verde d'Italia, l'Umbria, con l'obiettivo di esplorare due incantevoli borghi.\n\nIl nostro equipaggio si è mosso in due tempi: Ivano è partito per primo il venerdì pomeriggio per anticipare i tempi, mentre noi lo abbiamo raggiunto nella tarda mattinata di sabato, pronti a goderci ogni momento.\n\nTappa 1: Acquasparta\nLa nostra prima base è stata ad Acquasparta.\n- Sosta: Abbiamo pernottato presso l'Area di Sosta Comunale di Acquasparta.\n- Le nostre impressioni: Si tratta di un parcheggio molto comodo e tranquillo, situato in una posizione strategica a circa 1 km dal centro storico del paese (facilmente raggiungibile a piedi).\n- Nota tecnica per i camperisti: Purtroppo, durante la nostra visita, il servizio di scarico acque era fuori uso. Nonostante questo piccolo inconveniente, la sosta è stata piacevole e silenziosa.\n\nTappa 2: San Gemini\nLa domenica abbiamo deciso di spostarci di pochi chilometri per visitare la bellissima San Gemini.\n- Sosta: Ci siamo appoggiati all'Area di Sosta Comunale di San Gemini.\n- Le nostre impressioni: Una bellissima sorpresa! L'area offre l'allaccio alla corrente elettrica gratuito (senza pagare) e dispone di servizi completi di carico e scarico. Anche se il parcheggio risulta momentaneamente \"in disuso\" dal punto di vista della gestione ufficiale, tutti i servizi camper service si sono rivelati perfettamente funzionanti e fruibili.\n\nUn debutto fantastico che ci lascia con tanta voglia di ripartire subito per la prossima meta!",
+      "routePoints": [],
+      "status": "Completato",
+      "movements": [
+        {
+          "notes": "",
+          "date": "2025-03-09",
+          "id": "mov_1789979807402",
+          "location": "San Gemini",
+          "odometer": 118939
+        },
+        {
+          "notes": "",
+          "location": "Velletri",
+          "date": "2025-03-09",
+          "odometer": 119057,
+          "id": "mov_1789979833730"
+        },
+        {
+          "odometer": 118768,
+          "location": "Velletri",
+          "date": "2025-03-08",
+          "id": "mov_1789979577456",
+          "notes": "Partenza"
+        },
+        {
+          "date": "2025-03-08",
+          "id": "mov_1789979783589",
+          "notes": "",
+          "odometer": 118923,
+          "location": "Acquasparta"
+        }
+      ]
+    },
+    {
+      "endDate": "2026-09-06",
+      "title": "Viaggio in Sicilia",
+      "endOdometer": 129336,
+      "photos": [
+        {
+          "id": "photo_1790087408970",
+          "locationName": "Messina",
+          "url": "/api/photos/photo_1790087408970",
+          "description": "In giro per Messina",
+          "date": "2026-09-22",
+          "isStarred": true
+        },
+        {
+          "locationName": "Messina",
+          "url": "/api/photos/photo_1790087408971",
+          "description": "In giro per Messina",
+          "id": "photo_1790087408971",
+          "date": "2026-09-22"
+        },
+        {
+          "id": "photo_1790087408972",
+          "description": "In giro per Messina",
+          "locationName": "Messina",
+          "url": "/api/photos/photo_1790087408972",
+          "date": "2026-09-22"
+        },
+        {
+          "id": "photo_1790087408973",
+          "date": "2026-09-22",
+          "description": "In giro per Messina",
+          "url": "/api/photos/photo_1790087408973",
+          "locationName": "Messina"
+        },
+        {
+          "id": "photo_1790087408974",
+          "locationName": "Messina",
+          "description": "In giro per Messina",
+          "url": "/api/photos/photo_1790087408974",
+          "date": "2026-09-22"
+        },
+        {
+          "locationName": "Messina",
+          "id": "photo_1790087408975",
+          "date": "2026-09-22",
+          "description": "In giro per Messina",
+          "url": "/api/photos/photo_1790087408975"
+        },
+        {
+          "date": "2026-09-22",
+          "url": "/api/photos/photo_1790087408976",
+          "locationName": "Messina",
+          "description": "In giro per Messina",
+          "id": "photo_1790087408976"
+        },
+        {
+          "description": "In giro per Messina",
+          "id": "photo_1790087408977",
+          "locationName": "Messina",
+          "url": "/api/photos/photo_1790087408977",
+          "date": "2026-09-22",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790087408978",
+          "url": "/api/photos/photo_1790087408978",
+          "locationName": "Messina",
+          "description": "In giro per Messina",
+          "date": "2026-09-22"
+        },
+        {
+          "date": "2026-09-22",
+          "id": "photo_1790087408980",
+          "url": "/api/photos/photo_1790087408980",
+          "locationName": "Messina",
+          "description": "In giro per Messina"
+        },
+        {
+          "id": "photo_1790087408981",
+          "locationName": "Messina",
+          "description": "In giro per Messina",
+          "url": "/api/photos/photo_1790087408981",
+          "date": "2026-09-22"
+        },
+        {
+          "description": "I famosi arancini di Famulari",
+          "locationName": "Messina",
+          "url": "/api/photos/photo_1790087454339",
+          "date": "2026-09-22",
+          "id": "photo_1790087454339",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790087454340",
+          "description": "I famosi arancini di Famulari",
+          "date": "2026-09-22",
+          "locationName": "Messina",
+          "url": "/api/photos/photo_1790087454340"
+        },
+        {
+          "date": "2026-09-22",
+          "locationName": "Scala dei turchi ",
+          "id": "photo_1790087694175",
+          "url": "/api/photos/photo_1790087694175",
+          "description": "Vista della Scala dei Turchi",
+          "isStarred": true
+        },
+        {
+          "locationName": "Agrigento ",
+          "description": "Visita guidata alla Valle dei templi",
+          "url": "/api/photos/photo_1790087785442",
+          "date": "2026-09-22",
+          "id": "photo_1790087785442"
+        },
+        {
+          "url": "/api/photos/photo_1790087785443",
+          "date": "2026-09-22",
+          "locationName": "Agrigento ",
+          "id": "photo_1790087785443",
+          "description": "Visita guidata alla Valle dei templi"
+        },
+        {
+          "date": "2026-09-22",
+          "id": "photo_1790087785444",
+          "url": "/api/photos/photo_1790087785444",
+          "description": "Visita guidata alla Valle dei templi",
+          "locationName": "Agrigento "
+        },
+        {
+          "id": "photo_1790087785445",
+          "locationName": "Agrigento ",
+          "date": "2026-09-22",
+          "description": "Visita guidata alla Valle dei templi",
+          "url": "/api/photos/photo_1790087785445",
+          "isStarred": true
+        },
+        {
+          "date": "2026-09-22",
+          "url": "/api/photos/photo_1790087785446",
+          "locationName": "Agrigento ",
+          "id": "photo_1790087785446",
+          "description": "Visita guidata alla Valle dei templi",
+          "isStarred": true
+        },
+        {
+          "id": "photo_1790087785447",
+          "description": "Visita guidata alla Valle dei templi",
+          "locationName": "Agrigento ",
+          "date": "2026-09-22",
+          "url": "/api/photos/photo_1790087785447"
+        },
+        {
+          "description": "Visita guidata alla Valle dei templi",
+          "id": "photo_1790087785448",
+          "date": "2026-09-22",
+          "locationName": "Agrigento ",
+          "url": "/api/photos/photo_1790087785448"
+        },
+        {
+          "date": "2026-09-22",
+          "url": "/api/photos/photo_1790087785449",
+          "locationName": "Agrigento ",
+          "id": "photo_1790087785449",
+          "description": "Visita guidata alla Valle dei templi"
+        },
+        {
+          "date": "2026-09-22",
+          "url": "/api/photos/photo_1790087785450",
+          "id": "photo_1790087785450",
+          "locationName": "Agrigento ",
+          "description": "Visita guidata alla Valle dei templi"
+        },
+        {
+          "date": "2026-09-22",
+          "url": "/api/photos/photo_1790087785451",
+          "locationName": "Agrigento ",
+          "id": "photo_1790087785451",
+          "description": "Visita guidata alla Valle dei templi",
+          "isStarred": true
+        },
+        {
+          "locationName": "Agrigento ",
+          "id": "photo_1790087785452",
+          "description": "Visita guidata alla Valle dei templi",
+          "url": "/api/photos/photo_1790087785452",
+          "date": "2026-09-22"
+        },
+        {
+          "id": "photo_1790087815517",
+          "locationName": "Agrigento ",
+          "url": "/api/photos/photo_1790087815517",
+          "description": "Tempio della Concordia",
+          "date": "2026-09-22"
+        }
+      ],
+      "isShared": true,
+      "expenses": [
+        {
+          "amount": 16.8,
+          "title": "Autostrada Salerno - Valmontone",
+          "id": "exp_1788712165008",
+          "date": "2026-09-05",
+          "category": "Autostrada"
+        },
+        {
+          "id": "exp_1788860362733",
+          "fuelCompany": "Altro",
+          "liters": 45.68,
+          "pricePerLiter": 2.189,
+          "title": "Rifornimento Altro 45.68L @ 2.189€/L",
+          "date": "2026-09-05",
+          "category": "Carburante",
+          "odometer": 129574,
+          "amount": 99.99,
+          "isFullTank": false
+        },
+        {
+          "category": "Carburante",
+          "amount": 29.99,
+          "title": "Rifornimento Altro 13.7L @ 2.189€/L",
+          "pricePerLiter": 2.189,
+          "odometer": 130042,
+          "date": "2026-09-05",
+          "liters": 13.7,
+          "id": "exp_1788860388168",
+          "fuelCompany": "Altro",
+          "isFullTank": false
+        },
+        {
+          "date": "2026-09-04",
+          "title": "Autogrill",
+          "id": "exp_1788630513152",
+          "category": "Cibo",
+          "amount": 12
+        },
+        {
+          "date": "2026-09-04",
+          "title": "Cena pizzeria Diamante",
+          "amount": 42,
+          "id": "exp_1788630559438",
+          "category": "Cibo"
+        },
+        {
+          "id": "exp_1788712064701",
+          "date": "2026-09-04",
+          "amount": 5,
+          "title": "Souvenir Diamante",
+          "category": "Altro"
+        },
+        {
+          "isFullTank": false,
+          "id": "exp_1788860234524",
+          "amount": 48.48,
+          "date": "2026-09-04",
+          "category": "Carburante",
+          "title": "Rifornimento Altro 21.75L @ 2.229€/L",
+          "liters": 21.75,
+          "fuelCompany": "Altro",
+          "odometer": 129398,
+          "pricePerLiter": 2.229
+        },
+        {
+          "date": "2026-09-03",
+          "id": "exp_1788440507525",
+          "amount": 5.7,
+          "title": "Autobus per Taormina",
+          "category": "Altro"
+        },
+        {
+          "title": "Teatro antico Taormina",
+          "category": "Altro",
+          "amount": 26,
+          "date": "2026-09-03",
+          "id": "exp_1788440581478"
+        },
+        {
+          "category": "Autostrada",
+          "id": "exp_1788440629645",
+          "title": "Bibite teatro antico Taormina",
+          "amount": 8,
+          "date": "2026-09-03"
+        },
+        {
+          "id": "exp_1788440658184",
+          "date": "2026-09-03",
+          "amount": 23,
+          "category": "Cibo",
+          "title": "Pranzo Taormina"
+        },
+        {
+          "date": "2026-09-03",
+          "id": "exp_1788445469990",
+          "amount": 3,
+          "title": "Souvenir Taormina",
+          "category": "Altro"
+        },
+        {
+          "title": "Gelato Taormina",
+          "id": "exp_1788445506254",
+          "category": "Cibo",
+          "date": "2026-09-03",
+          "amount": 11
+        },
+        {
+          "amount": 5.7,
+          "id": "exp_1788449536733",
+          "title": "Autobus per Giardini Naxos",
+          "date": "2026-09-03",
+          "category": "Altro"
+        },
+        {
+          "id": "exp_1788630411605",
+          "date": "2026-09-03",
+          "amount": 15,
+          "title": "Spesa Deco Giardini Naxos",
+          "category": "Cibo"
+        },
+        {
+          "title": "Area sosta Lagani Giardini Naxos",
+          "category": "Sosta",
+          "id": "exp_1788630451548",
+          "date": "2026-09-03",
+          "amount": 62.5
+        },
+        {
+          "amount": 2.9,
+          "category": "Autostrada",
+          "title": "Autostrada",
+          "date": "2026-09-03",
+          "id": "exp_1788630473207"
+        },
+        {
+          "amount": 10,
+          "date": "2026-09-02",
+          "category": "Altro",
+          "id": "exp_1788378482951",
+          "title": "Souvenir Giardini Naxos"
+        },
+        {
+          "category": "Cibo",
+          "id": "exp_1788378511545",
+          "title": "Bottiglia acqua Giardini Naxos",
+          "date": "2026-09-02",
+          "amount": 1.5
+        },
+        {
+          "date": "2026-09-02",
+          "category": "Cibo",
+          "title": "Pranzo Giardini Naxos",
+          "amount": 48,
+          "id": "exp_1788378539578"
+        },
+        {
+          "title": "Giro in barca Giardini Naxos",
+          "amount": 90,
+          "id": "exp_1788416699975",
+          "date": "2026-09-02",
+          "category": "Altro"
+        },
+        {
+          "date": "2026-09-01",
+          "title": "Colazione ad Ortigia",
+          "category": "Cibo",
+          "id": "exp_1788378367485",
+          "amount": 4.9
+        },
+        {
+          "id": "exp_1788378398219",
+          "date": "2026-09-01",
+          "amount": 16.9,
+          "category": "Sosta",
+          "title": "Parcheggio Ortigia"
+        },
+        {
+          "category": "Altro",
+          "date": "2026-09-01",
+          "amount": 27,
+          "title": "Lido Giardini Naxos",
+          "id": "exp_1788378436507"
+        },
+        {
+          "title": "Spesa Giardini Naxos",
+          "category": "Cibo",
+          "id": "exp_1788378457406",
+          "date": "2026-09-01",
+          "amount": 5
+        },
+        {
+          "amount": 8,
+          "title": "Colazione Fontane bianche",
+          "id": "exp_1788378131092",
+          "date": "2026-08-31",
+          "category": "Cibo"
+        },
+        {
+          "id": "exp_1788378157986",
+          "date": "2026-08-31",
+          "title": "Retino Aurora",
+          "amount": 5,
+          "category": "Altro"
+        },
+        {
+          "category": "Cibo",
+          "date": "2026-08-31",
+          "id": "exp_1788378198882",
+          "title": "Pranzo Fontane bianche",
+          "amount": 12
+        },
+        {
+          "amount": 33.67,
+          "date": "2026-08-31",
+          "category": "Cibo",
+          "id": "exp_1788378243024",
+          "title": "Spesa Lidl"
+        },
+        {
+          "title": "Souvenir Ortigia",
+          "category": "Altro",
+          "id": "exp_1788378285245",
+          "date": "2026-08-31",
+          "amount": 3
+        },
+        {
+          "id": "exp_1788378310016",
+          "title": "Cena Ortigia",
+          "category": "Cibo",
+          "date": "2026-08-31",
+          "amount": 29
+        },
+        {
+          "id": "exp_1788378340714",
+          "title": "Gelato ad Ortigia",
+          "amount": 7,
+          "category": "Cibo",
+          "date": "2026-08-31"
+        },
+        {
+          "title": "Colazione Noto",
+          "amount": 9,
+          "date": "2026-08-30",
+          "category": "Cibo",
+          "id": "exp_1788074239482"
+        },
+        {
+          "date": "2026-08-30",
+          "id": "exp_1788377907515",
+          "amount": 7,
+          "category": "Cibo",
+          "title": "Bibite Noto"
+        },
+        {
+          "title": "area sosta Oasi park Falconara Noto Marina",
+          "category": "Sosta",
+          "id": "exp_1788377949405",
+          "date": "2026-08-30",
+          "amount": 42
+        },
+        {
+          "category": "Altro",
+          "amount": 28,
+          "id": "exp_1788378003284",
+          "date": "2026-08-30",
+          "title": "Souvenir Noto"
+        },
+        {
+          "id": "exp_1788378080139",
+          "title": "Cena Noto",
+          "amount": 76.5,
+          "category": "Cibo",
+          "date": "2026-08-30"
+        },
+        {
+          "date": "2026-08-29",
+          "title": "Pranzo Noto",
+          "id": "exp_1788028844106",
+          "amount": 16,
+          "category": "Cibo"
+        },
+        {
+          "amount": 2,
+          "date": "2026-08-29",
+          "category": "Cibo",
+          "title": "Gelato Noto",
+          "id": "exp_1788028854396"
+        },
+        {
+          "date": "2026-08-28",
+          "category": "Sosta",
+          "id": "exp_1788001092073",
+          "amount": 85,
+          "title": "Camping Flintstones park"
+        },
+        {
+          "category": "Cibo",
+          "title": "Gelati per pranzo a Scicli",
+          "id": "exp_1788001135949",
+          "date": "2026-08-28",
+          "amount": 13.6
+        },
+        {
+          "date": "2026-08-28",
+          "id": "exp_1788001167066",
+          "title": "Parcheggio Marzamemi",
+          "category": "Sosta",
+          "amount": 4.6
+        },
+        {
+          "amount": 90.5,
+          "id": "exp_1788001193699",
+          "title": "Cena di pesce a Marzamemi",
+          "category": "Cibo",
+          "date": "2026-08-28"
+        },
+        {
+          "category": "Cibo",
+          "title": "Tonno Marzamemi",
+          "amount": 20,
+          "date": "2026-08-28",
+          "id": "exp_1788001268808"
+        },
+        {
+          "date": "2026-08-27",
+          "id": "exp_1788000953124",
+          "amount": 7,
+          "category": "Cibo",
+          "title": "Colazione a Scicli Flintstones park"
+        },
+        {
+          "date": "2026-08-27",
+          "title": "Pranzo bar spiaggia a Scicli",
+          "category": "Cibo",
+          "amount": 10,
+          "id": "exp_1788001023170"
+        },
+        {
+          "category": "Cibo",
+          "date": "2026-08-27",
+          "title": "Merenda bar spiaggia Scicli",
+          "id": "exp_1788001059157",
+          "amount": 6
+        },
+        {
+          "category": "Cibo",
+          "id": "exp_1788000879497",
+          "amount": 5,
+          "title": "Colazione a Gela",
+          "date": "2026-08-26"
+        },
+        {
+          "id": "exp_1788000607267",
+          "amount": 40,
+          "date": "2026-08-25",
+          "category": "Altro",
+          "title": "Visita guidata Valle dei templi"
+        },
+        {
+          "category": "Cibo",
+          "amount": 51,
+          "id": "exp_1788000644602",
+          "title": "Spesa Conad",
+          "date": "2026-08-25"
+        },
+        {
+          "category": "Altro",
+          "amount": 9,
+          "title": "Taxy valle dei templi",
+          "date": "2026-08-25",
+          "id": "exp_1788000670446"
+        },
+        {
+          "category": "Altro",
+          "title": "Souvenir valle dei templi",
+          "date": "2026-08-25",
+          "amount": 4,
+          "id": "exp_1788000759724"
+        },
+        {
+          "amount": 34,
+          "id": "exp_1788000810838",
+          "title": "Entrata Valle dei templi",
+          "date": "2026-08-25",
+          "category": "Altro"
+        },
+        {
+          "title": "Parcheggio Valle dei templi",
+          "date": "2026-08-25",
+          "category": "Sosta",
+          "id": "exp_1788000844436",
+          "amount": 9.4
+        },
+        {
+          "amount": 70,
+          "id": "exp_1788000475157",
+          "category": "Sosta",
+          "title": "Area sosta camper Capo Peloro",
+          "date": "2026-08-24"
+        },
+        {
+          "title": "Autobus Messina",
+          "category": "Altro",
+          "date": "2026-08-23",
+          "amount": 7.5,
+          "id": "exp_1788000248379"
+        },
+        {
+          "id": "exp_1788000275614",
+          "amount": 8,
+          "date": "2026-08-23",
+          "category": "Altro",
+          "title": "Souvenir Messina"
+        },
+        {
+          "amount": 11.5,
+          "date": "2026-08-23",
+          "id": "exp_1788000389862",
+          "category": "Cibo",
+          "title": "Pranzo con arancini Famulari Messina"
+        },
+        {
+          "date": "2026-08-23",
+          "amount": 7.5,
+          "category": "Cibo",
+          "id": "exp_1788000433393",
+          "title": "Granita e cono da passeggio bar Eden Messina"
+        },
+        {
+          "amount": 86.4,
+          "category": "Autostrada",
+          "date": "2026-08-22",
+          "id": "exp_1788000096548",
+          "title": "Traghetto andata e ritorno"
+        },
+        {
+          "amount": 8,
+          "date": "2026-08-22",
+          "category": "Sosta",
+          "id": "exp_1788000141772",
+          "title": "Area sosta Bonino Messina"
+        },
+        {
+          "id": "exp_1788000203621",
+          "title": "Gelato Messina",
+          "category": "Cibo",
+          "amount": 4.3,
+          "date": "2026-08-22"
+        },
+        {
+          "odometer": 128389,
+          "pricePerLiter": 2.169,
+          "liters": 46.1,
+          "id": "exp_1788001620654",
+          "category": "Carburante",
+          "isFullTank": false,
+          "date": "2026-08-22",
+          "title": "Rifornimento Altro 46.1L @ 2.169€/L",
+          "fuelCompany": "Altro",
+          "amount": 99.99
+        },
+        {
+          "fuelCompany": "Altro",
+          "pricePerLiter": 2.199,
+          "id": "exp_1788001701669",
+          "liters": 57.47,
+          "title": "Rifornimento Altro 57.47L @ 2.199€/L [Pieno ✓]",
+          "isFullTank": true,
+          "odometer": 128775,
+          "amount": 126.38,
+          "date": "2026-08-22",
+          "category": "Carburante"
+        },
+        {
+          "date": "2026-08-21",
+          "amount": 16.8,
+          "title": "Autostrada Valmontone -Salerno",
+          "category": "Autostrada",
+          "id": "exp_1788630631698"
+        },
+        {
+          "liters": 45.48,
+          "title": "Rifornimento Altro 45.48L @ 2.199€/L",
+          "fuelCompany": "Altro",
+          "isFullTank": false,
+          "pricePerLiter": 2.199,
+          "date": "2026-08-17",
+          "odometer": 127890,
+          "amount": 100.01,
+          "category": "Carburante",
+          "id": "exp_1788001544117"
+        }
+      ],
+      "routePoints": [],
+      "stops": [],
+      "updatedAt": "2026-09-25T14:59:33.253Z",
+      "startDate": "2026-08-21",
+      "id": "trip_1787575589438",
+      "movements": [
+        {
+          "notes": "Registrato in tempo reale alle coordinate 41.6594, 12.7471. Inserisci i chilometri manualmente.",
+          "date": "2026-09-05",
+          "id": "auto_1788616489102",
+          "location": "Velletri",
+          "odometer": 130062
+        },
+        {
+          "id": "auto_1788541896637",
+          "location": "Diamante",
+          "odometer": 129637,
+          "date": "2026-09-04",
+          "notes": "Registrato in tempo reale alle coordinate 39.6788, 15.8215. Inserisci i chilometri manualmente."
+        },
+        {
+          "location": "Giardini Naxos",
+          "id": "mov_1788377827549",
+          "date": "2026-09-01",
+          "odometer": 129336,
+          "notes": ""
+        },
+        {
+          "notes": "Ortigia",
+          "date": "2026-08-31",
+          "id": "mov_1788377662470",
+          "odometer": 129223,
+          "location": "Siracusa"
+        },
+        {
+          "id": "mov_1788126551526",
+          "odometer": 129206,
+          "date": "2026-08-30",
+          "notes": "",
+          "location": "Fontane Bianche"
+        },
+        {
+          "location": "Noto",
+          "id": "auto_1788028389270",
+          "notes": "Area sosta Oasy park Falconara Registrato in tempo reale alle coordinate 36.8701, 15.1282. ",
+          "odometer": 129172,
+          "date": "2026-08-29"
+        },
+        {
+          "notes": "",
+          "date": "2026-08-28",
+          "id": "1788032796607",
+          "odometer": 129144,
+          "location": "Marzamemi "
+        },
+        {
+          "id": "1788032733988",
+          "odometer": 129000,
+          "location": "Gela",
+          "date": "2026-08-26",
+          "notes": ""
+        },
+        {
+          "location": "Scicli ",
+          "date": "2026-08-26",
+          "notes": "Camping Flintstones park ",
+          "odometer": 129067,
+          "id": "1788032774529"
+        },
+        {
+          "odometer": 128912,
+          "notes": "Registrato in tempo reale alle coordinate 37.2893, 13.5161. Inserisci i chilometri manualmente.",
+          "date": "2026-08-25",
+          "location": "Porto Empedocle",
+          "id": "auto_1787658824655"
+        },
+        {
+          "location": "Scala dei turchi ",
+          "odometer": 128907,
+          "date": "2026-08-25",
+          "id": "1788032655809",
+          "notes": ""
+        },
+        {
+          "odometer": 128882,
+          "id": "1788029229517",
+          "location": "Agrigento ",
+          "date": "2026-08-24",
+          "notes": ""
+        },
+        {
+          "id": "1788001826364",
+          "odometer": 128130,
+          "location": "Fisciano",
+          "notes": "",
+          "date": "2026-08-22"
+        },
+        {
+          "id": "1788001857488",
+          "date": "2026-08-22",
+          "odometer": 128573,
+          "notes": "",
+          "location": "Messina"
+        },
+        {
+          "id": "1788029001010",
+          "odometer": 128590,
+          "location": "Capo Peloro ",
+          "date": "2026-08-22",
+          "notes": "Area sosta camper Capo Peloro "
+        },
+        {
+          "notes": "Partenza ",
+          "id": "1788001774634",
+          "location": "Velletri",
+          "date": "2026-08-21",
+          "odometer": 127900
+        }
+      ],
+      "description": "",
+      "startOdometer": 127900,
+      "status": "Completato"
+    }
+  ],
+  "updatedAt": "2026-09-25T15:05:59.195Z"
+}

@@ -12,6 +12,7 @@ import { ClientFirestoreAdapter } from "./src/client-firestore.ts";
 import { INITIAL_COMMUNITY_MESSAGES } from "./src/data/mockData.ts";
 import { PROMO_MESSAGES } from "./src/data/promoMessages.ts";
 import { parseSostaFirestoreDoc } from "./src/data/userPlacesDataset.ts";
+import { cleanTravelStoryText } from "./src/utils/cleanStoryText.ts";
 
 // Use dynamic Firebase Project configuration from our provisioned workspace
 let firebaseConfig = {
@@ -1437,7 +1438,6 @@ async function startServer() {
   // CORS middleware to support native mobile apps, web preview, and cross-origin preflights
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    console.log(`[CORS] Request origin: ${origin || 'none'}`);
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
     } else {
@@ -2559,12 +2559,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     console.log(`[Gemini AI] Extracting story/diary text OCR (mime: ${detectedMime}, len: ${cleanBase64.length})...`);
 
     const systemInstruction =
-      "Sei l'assistente esperto di ViaCamper specializzato nella trascrizione OCR accurata e nella formattazione di note di viaggio, diari manoscritti, pagine di guide turistiche, cartelli informativi e volantini. " +
-      "Estrai tutto il testo visibile con estremo rigore e formattalo come un coinvolgente racconto o resoconto di viaggio in italiano, pronto per essere inserito nel diario del camperista. Mantieni tutti i toponimi, città, aree sosta, camper service e dettagli indicati.";
+      "Sei l'assistente di bordo di ViaCamper specializzato nella trascrizione accurata e nella stesura di diari di viaggio per camperisti a partire da immagini di quaderni manoscritti, note, depliant o cartelli.\n" +
+      "REGOLE FONDAMENTALI DI FORMATTAZIONE:\n" +
+      "1. NON inserire MAI frasi introduttive, saluti, preamboli o firme (ad esempio 'Ecco la trascrizione...', 'Ecco il resoconto...', 'Ecco la trascrizione fedele...', ecc.). Inizia IMMEDIATAMENTE con il racconto o le note di viaggio.\n" +
+      "2. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**), nessun corsivo (*testo*), nessun punto elenco con asterischi (* punto). Scrivi tutto in testo piano naturale.\n" +
+      "3. NON usare MAI frecce simboliche (come ->, =>, ➔, →). Usa parole chiare o un semplice trattino (es. 'da Lucca a Pisa' o 'Lucca - Pisa').\n" +
+      "4. Se ci sono elenchi puntati, usa esclusivamente trattini semplici (- elemento).\n" +
+      "5. Organizza il testo in paragrafi leggibili, scorrevoli e spontanei in italiano, preservando fedelmente tutti i toponimi, città, aree sosta, impressioni, chilometri, tappe e date menzionate.";
 
     const promptText =
       "Trascrivi ed estrai con la massima fedeltà tutto il testo presente in questa immagine (anche se manoscritto su fogli o quaderni). " +
-      "Restituisci il testo estrapolato e formattato come resoconto di viaggio scorrevole in italiano, correggendo eventuali lettere poco chiare ma conservando integralmente il senso originario, i nomi di paesi, date, soste e impressioni.";
+      "Restituisci il racconto del viaggio in italiano pulito, scorrevole e naturale, SENZA alcun asterisco (* o **), SENZA frecce (-> o ➔) e SENZA alcuna frase introduttiva. Inizia direttamente con il racconto del viaggio.";
 
     const imagePart = {
       inlineData: {
@@ -2585,7 +2590,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       },
     });
 
-    return response && response.text ? response.text.trim() : "";
+    const rawResult = response && response.text ? response.text.trim() : "";
+    return cleanTravelStoryText(rawResult);
   }
 
   // --- AI OCR REALTIME TASK BRIDGE (Allows native mobile APK apps to bypass Cloud Run cookie auth) ---
@@ -4362,7 +4368,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         console.warn("[User Trips API] Notice reading disk backup:", bErr);
       }
 
-      // Determine best trips between Firestore and Disk (merge smartly so non-zero odometers and user edits are preserved)
+      // Determine best trips between Firestore and Disk (deep merge so expenses, photos, movements, and status are never lost)
       let combinedTrips = firestoreTrips;
       if (diskTrips.length > 0 && firestoreTrips.length === 0) {
         combinedTrips = diskTrips;
@@ -4375,6 +4381,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           if (!dt || !dt.id) continue;
           if (cMap.has(dt.id)) {
             const ft = cMap.get(dt.id);
+
             // Merge movements
             const movs = new Map<string, any>();
             for (const m of (ft.movements || [])) {
@@ -4396,10 +4403,82 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 }
               }
             }
+
+            // Merge expenses (never drop expenses from either side)
+            const exps = new Map<string, any>();
+            for (const e of (ft.expenses || [])) {
+              if (e && e.id) exps.set(String(e.id), e);
+            }
+            for (const e of (dt.expenses || [])) {
+              if (e && e.id) {
+                const strId = String(e.id);
+                if (exps.has(strId)) {
+                  const existingE = exps.get(strId);
+                  const exOdo = typeof existingE.odometer === 'number' && existingE.odometer > 0 ? existingE.odometer : undefined;
+                  const dtOdo = typeof e.odometer === 'number' && e.odometer > 0 ? e.odometer : undefined;
+                  exps.set(strId, {
+                    ...existingE,
+                    ...e,
+                    ...(exOdo || dtOdo ? { odometer: exOdo || dtOdo } : {}),
+                    liters: e.liters !== undefined ? e.liters : existingE.liters,
+                    pricePerLiter: e.pricePerLiter !== undefined ? e.pricePerLiter : existingE.pricePerLiter,
+                    fuelCompany: e.fuelCompany || existingE.fuelCompany,
+                  });
+                } else {
+                  exps.set(strId, e);
+                }
+              }
+            }
+
+            // Merge photos (never drop photos from either side)
+            const phos = new Map<string, any>();
+            for (const p of (ft.photos || [])) {
+              const k = p?.id || p?.url;
+              if (k) phos.set(k, p);
+            }
+            for (const p of (dt.photos || [])) {
+              const k = p?.id || p?.url;
+              if (k) {
+                if (!phos.has(k)) {
+                  phos.set(k, p);
+                } else {
+                  const existingP = phos.get(k);
+                  phos.set(k, { ...existingP, ...p, isStarred: existingP.isStarred !== undefined ? existingP.isStarred : p.isStarred });
+                }
+              }
+            }
+
+            // Merge stops
+            const stops = new Map<string, any>();
+            for (const s of (ft.stops || [])) {
+              if (s && s.id) stops.set(s.id, s);
+            }
+            for (const s of (dt.stops || [])) {
+              if (s && s.id && !stops.has(s.id)) stops.set(s.id, s);
+            }
+
+            // Preserve "Completato" status
+            const ftCompleted = ft.status === "Completato" || ft.status === "COMPLETATO";
+            const dtCompleted = dt.status === "Completato" || dt.status === "COMPLETATO";
+            let bestStatus = ft.status || dt.status || "Completato";
+            if (ftCompleted || dtCompleted) {
+              bestStatus = "Completato";
+            }
+
+            // Pick newest updatedAt
+            const ftTime = ft.updatedAt ? new Date(ft.updatedAt).getTime() : 0;
+            const dtTime = dt.updatedAt ? new Date(dt.updatedAt).getTime() : 0;
+            const finalUpdated = (dtTime > ftTime) ? dt.updatedAt : (ft.updatedAt || dt.updatedAt || new Date().toISOString());
+
             cMap.set(dt.id, {
               ...ft,
               ...dt,
+              status: bestStatus,
               movements: Array.from(movs.values()),
+              expenses: Array.from(exps.values()),
+              photos: Array.from(phos.values()),
+              stops: Array.from(stops.values()),
+              updatedAt: finalUpdated,
             });
           } else {
             cMap.set(dt.id, dt);
@@ -4409,7 +4488,11 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
 
       if (combinedTrips.length > 0) {
-        return res.json({ trips: combinedTrips });
+        const cleanTrips = combinedTrips.map(t => ({
+          ...t,
+          description: cleanTravelStoryText(t.description || ""),
+        }));
+        return res.json({ trips: cleanTrips });
       }
 
       // 3. Fallback to Family Crew if available
@@ -4442,6 +4525,21 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const deletedMovIds = new Set<string>((deletedIds?.movements || []).map((x: any) => String(x || '')));
       const deletedTripIds = new Set<string>((deletedIds?.trips || []).map((x: any) => String(x || '')));
 
+      // Safeguard: Any entity actively present in incoming trips CANNOT be considered deleted!
+      for (const t of trips) {
+        if (t?.id) deletedTripIds.delete(t.id);
+        for (const p of (t?.photos || [])) {
+          if (p?.id) deletedPhotoIds.delete(p.id);
+          if (p?.url) deletedPhotoIds.delete(p.url);
+        }
+        for (const e of (t?.expenses || [])) {
+          if (e?.id) deletedExpIds.delete(String(e.id));
+        }
+        for (const m of (t?.movements || [])) {
+          if (m?.id) deletedMovIds.delete(String(m.id));
+        }
+      }
+
       // Ensure permanent photos storage directory exists in user_backups
       const BACKUP_DIR = path.join(process.cwd(), "user_backups");
       const PHOTOS_DIR = path.join(BACKUP_DIR, "photos");
@@ -4456,7 +4554,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         fs.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
 
-      // Clean up physical photo files and Firestore records for deleted photos
+      // Clean up physical photo files and Firestore records ONLY for truly deleted photos that are not present in trips
       if (deletedPhotoIds.size > 0) {
         for (const pId of deletedPhotoIds) {
           try {
@@ -4556,7 +4654,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         if (!incTrip || !incTrip.id || deletedTripIds.has(incTrip.id)) continue;
         if (mergedTripsMap.has(incTrip.id)) {
           const exTrip = mergedTripsMap.get(incTrip.id);
-          // Merge expenses
+          // Merge expenses (never drop distinct expenses)
           const expMap = new Map<string, any>();
           for (const e of (exTrip.expenses || [])) {
             if (e && e.id && !deletedExpIds.has(String(e.id))) expMap.set(String(e.id), e);
@@ -4569,15 +4667,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                 const existing = expMap.get(strId);
                 expMap.set(strId, { ...existing, ...e });
               } else {
-                const dupEntry = Array.from(expMap.entries()).find(
-                  ([_, x]) => x.date === e.date && Math.abs(Number(x.amount) - Number(e.amount)) < 0.01 && x.title === e.title
-                );
-                if (dupEntry) {
-                  const [dupId, existing] = dupEntry;
-                  expMap.set(dupId, { ...existing, ...e, id: dupId });
-                } else {
-                  expMap.set(strId, e);
-                }
+                expMap.set(strId, e);
               }
             }
           }
@@ -4666,6 +4756,20 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             bestDesc = incTrip.description || "";
           }
 
+          // Preserve "Completato" status across syncs
+          const isExCompleted = exTrip.status === "Completato" || exTrip.status === "COMPLETATO";
+          const isIncCompleted = incTrip.status === "Completato" || incTrip.status === "COMPLETATO";
+          let bestStatus = incTrip.status || exTrip.status || "Completato";
+          if (isExCompleted || isIncCompleted) {
+            if (isExCompleted && !isIncCompleted) {
+              bestStatus = (incTime > exTime && incTrip.status) ? incTrip.status : "Completato";
+            } else if (isIncCompleted && !isExCompleted) {
+              bestStatus = "Completato";
+            } else {
+              bestStatus = "Completato";
+            }
+          }
+
           const finalUpdatedAt = (incTime > exTime)
             ? (incTrip.updatedAt || new Date().toISOString())
             : (exTrip.updatedAt || incTrip.updatedAt || new Date().toISOString());
@@ -4673,7 +4777,8 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           mergedTripsMap.set(incTrip.id, {
             ...exTrip,
             ...incTrip,
-            description: bestDesc,
+            status: bestStatus,
+            description: cleanTravelStoryText(bestDesc),
             expenses: Array.from(expMap.values()),
             movements: Array.from(movMap.values()),
             photos: Array.from(phoMap.values()),
@@ -4683,11 +4788,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             updatedAt: finalUpdatedAt,
           });
         } else {
-          mergedTripsMap.set(incTrip.id, incTrip);
+          mergedTripsMap.set(incTrip.id, {
+            ...incTrip,
+            description: cleanTravelStoryText(incTrip.description || ""),
+          });
         }
       }
 
-      const finalTrips = Array.from(mergedTripsMap.values());
+      const finalTrips = Array.from(mergedTripsMap.values()).map(t => ({
+        ...t,
+        description: cleanTravelStoryText(t.description || ""),
+      }));
 
       try {
         fs.writeFileSync(backupPath, JSON.stringify({ email: cleanEmail, trips: finalTrips, updatedAt: new Date().toISOString() }, null, 2));

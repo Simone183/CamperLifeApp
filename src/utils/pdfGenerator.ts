@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
-import { Trip, AppSettings, AIItineraryResult, VehicleDimensions } from "../types";
+import { Trip, AppSettings, AIItineraryResult, VehicleDimensions, DiaryPhoto } from "../types";
+import { resolveMediaUrl } from "./resolveMediaUrl";
+import { getPhotoFromIndexedDB } from "./photoStorage";
 
 // Helper to convert date from YYYY-MM-DD to DD/MM/YYYY
 const formatDate = (dateStr: string): string => {
@@ -51,6 +53,42 @@ const loadImage = (url: string): Promise<{ dataUrl: string; width: number; heigh
     };
     img.onerror = (e) => reject(e);
   });
+};
+
+// Robust helper to load photo data from dataUrl, IndexedDB, or server URL
+const loadPhotoData = async (
+  photo: DiaryPhoto
+): Promise<{ dataUrl: string; width: number; height: number } | null> => {
+  if (!photo) return null;
+
+  // 1. If photo.url is already a data URL, load it directly
+  if (photo.url && photo.url.startsWith("data:image")) {
+    try {
+      return await loadImage(photo.url);
+    } catch (e) {}
+  }
+
+  // 2. Try IndexedDB if photo.id exists (always local, zero CORS issues, highest quality)
+  if (photo.id) {
+    try {
+      const idbData = await getPhotoFromIndexedDB(photo.id);
+      if (idbData && idbData.startsWith("data:image")) {
+        return await loadImage(idbData);
+      }
+    } catch (e) {}
+  }
+
+  // 3. Try resolved URL
+  if (photo.url) {
+    try {
+      const fullUrl = resolveMediaUrl(photo.url);
+      return await loadImage(fullUrl);
+    } catch (e) {
+      console.warn("Failed to load photo for PDF:", photo.url, e);
+    }
+  }
+
+  return null;
 };
 
 export const generateTripPDF = async (
@@ -529,260 +567,194 @@ export const generateTripPDF = async (
 
   // --- FOTO & RICORDI SECTION ---
   if (options.includePhotos && trip.photos && trip.photos.length > 0) {
-    checkPageBreak(isA4 ? 25 : 20);
+    const validPhotos = (trip.photos || []).filter((p) => p && !p.deleted && (p.url || p.id));
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(isA4 ? 12 : 10);
-    doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-    doc.text("GALLERIA FOTOGRAFICA & RICORDI", marginLeft, y);
-    
-    doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
-    doc.setLineWidth(1);
-    doc.line(marginLeft, y + 2, marginLeft + 25, y + 2);
-    
-    y += 7;
-
-    // Load and render photos in 2 columns
-    const gap = isA4 ? 8 : 6;
-    const colWidth = (usableWidth - gap) / 2;
-    const maxW = colWidth;
-    const maxH = isA4 ? 50 : 35;
-
-    for (let index = 0; index < trip.photos.length; index += 2) {
-      const photo1 = trip.photos[index];
-      const photo2 = trip.photos[index + 1]; // might be undefined
-
-      // Load image data for photo1
-      let imageData1: { dataUrl: string; width: number; height: number } | null = null;
-      try {
-        imageData1 = await loadImage(photo1.url);
-      } catch (err) {
-        console.warn("Failed to load photo for PDF:", photo1.url, err);
+    if (validPhotos.length > 0) {
+      // Start Photo Gallery on a fresh page so every photo page contains exactly 6 photos
+      if (pageNum > 1 || y > marginTop + 25) {
+        doc.addPage(paperSize, "portrait");
+        pageNum++;
+        y = marginTop + 4;
+        drawPageDecorations();
       }
 
-      // Load image data for photo2
-      let imageData2: { dataUrl: string; width: number; height: number } | null = null;
-      if (photo2) {
-        try {
-          imageData2 = await loadImage(photo2.url);
-        } catch (err) {
-          console.warn("Failed to load photo for PDF:", photo2.url, err);
-        }
+      // 6 photos per page layout (2 columns x 3 rows)
+      const PHOTOS_PER_PAGE = 6;
+      const COLS = 2;
+      const ROWS = 3;
+
+      const gapX = isA4 ? 8 : 5;
+      const colWidth = (usableWidth - gapX) / COLS;
+      const maxW = colWidth;
+      const maxImgH = isA4 ? 62 : 43;
+      const textGap = isA4 ? 2.0 : 1.5;
+      const rowGap = isA4 ? 4.5 : 3.0;
+      const rowHeight = isA4 ? 77 : 53;
+
+      // Group photos into pages of exactly 6 photos
+      const photoPages: DiaryPhoto[][] = [];
+      for (let i = 0; i < validPhotos.length; i += PHOTOS_PER_PAGE) {
+        photoPages.push(validPhotos.slice(i, i + PHOTOS_PER_PAGE));
       }
 
-      // Determine the height needed for this row
-      let p1TextHeight = 0;
-      p1TextHeight += isA4 ? 5 : 4; // Title
-      if (photo1.date) p1TextHeight += isA4 ? 4.5 : 3.5;
-      if (photo1.locationName) p1TextHeight += isA4 ? 4.5 : 3.5;
-      if (photo1.description) {
-        const wrapped = doc.splitTextToSize(`"${photo1.description}"`, colWidth);
-        p1TextHeight += wrapped.length * (isA4 ? 4.5 : 3.5);
-      }
-
-      let p2TextHeight = 0;
-      if (photo2) {
-        p2TextHeight += isA4 ? 5 : 4; // Title
-        if (photo2.date) p2TextHeight += isA4 ? 4.5 : 3.5;
-        if (photo2.locationName) p2TextHeight += isA4 ? 4.5 : 3.5;
-        if (photo2.description) {
-          const wrapped = doc.splitTextToSize(`"${photo2.description}"`, colWidth);
-          p2TextHeight += wrapped.length * (isA4 ? 4.5 : 3.5);
-        }
-      }
-
-      // Compute image heights based on aspect ratio
-      let p1ImgHeight = maxH;
-      if (imageData1) {
-        const ratio = imageData1.width / imageData1.height;
-        const boxRatio = maxW / maxH;
-        if (ratio > boxRatio) {
-          p1ImgHeight = maxW / ratio;
-        } else {
-          p1ImgHeight = maxH;
-        }
-      }
-
-      let p2ImgHeight = photo2 ? maxH : 0;
-      if (photo2 && imageData2) {
-        const ratio = imageData2.width / imageData2.height;
-        const boxRatio = maxW / maxH;
-        if (ratio > boxRatio) {
-          p2ImgHeight = maxW / ratio;
-        } else {
-          p2ImgHeight = maxH;
-        }
-      }
-
-      const item1Height = p1ImgHeight + 4 + p1TextHeight;
-      const item2Height = photo2 ? (p2ImgHeight + 4 + p2TextHeight) : 0;
-      const rowHeight = Math.max(item1Height, item2Height);
-
-      // Check dynamic page break for the entire row height
-      checkPageBreak(rowHeight + 10);
-
-      // Render Photo 1
-      const x1 = marginLeft;
-      let img1Width = maxW;
-      let img1Height = maxH;
-      if (imageData1) {
-        const ratio = imageData1.width / imageData1.height;
-        const boxRatio = maxW / maxH;
-        if (ratio > boxRatio) {
-          img1Width = maxW;
-          img1Height = maxW / ratio;
-        } else {
-          img1Height = maxH;
-          img1Width = maxH * ratio;
-        }
-      }
-
-      const img1X = x1 + (colWidth - img1Width) / 2;
-      if (imageData1) {
-        try {
-          doc.addImage(imageData1.dataUrl, "JPEG", img1X, y, img1Width, img1Height);
-        } catch (addImgErr) {
-          console.error("Failed to add image 1 to PDF:", addImgErr);
-          // Fallback to placeholder box
-          doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
-          doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-          doc.rect(x1, y, colWidth, maxH, "FD");
-          doc.setFont("helvetica", "italic");
-          doc.setFontSize(7);
-          doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-          doc.text("[Immagine non caricabile]", x1 + 5, y + (maxH / 2), { maxWidth: colWidth - 10 });
-          img1Height = maxH;
-        }
-      } else {
-        // Fallback placeholder box
+      const drawPlaceholderBox = (x: number, yPos: number, w: number, h: number) => {
         doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
         doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-        doc.rect(x1, y, colWidth, maxH, "FD");
-        
+        doc.rect(x, yPos, w, h, "FD");
+
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(isA4 ? 10 : 8);
+        doc.setFontSize(isA4 ? 9 : 7);
         doc.setTextColor(cSecondary[0], cSecondary[1], cSecondary[2]);
-        doc.text("FOTO", x1 + (colWidth / 2) - 5, y + (maxH / 2) - 2);
-        
+        doc.text("FOTO", x + w / 2, yPos + h / 2 - 1, { align: "center" });
+
         doc.setFont("helvetica", "italic");
-        doc.setFontSize(6);
+        doc.setFontSize(isA4 ? 6.5 : 5);
         doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-        doc.text("Scatto registrato", x1 + (colWidth / 2) - 8, y + (maxH / 2) + 4);
-        img1Height = maxH;
-      }
+        doc.text("Scatto registrato", x + w / 2, yPos + h / 2 + 4, { align: "center" });
+      };
 
-      // Render Text 1 details below photo 1
-      let text1Y = y + img1Height + 4;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(isA4 ? 9.5 : 7.5);
-      doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-      doc.text(`Ricordo #${index + 1}`, x1, text1Y);
-      text1Y += isA4 ? 4.5 : 3.5;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(isA4 ? 8 : 6.5);
-      doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
-      if (photo1.date) {
-        doc.text(`Data: ${formatDate(photo1.date)}`, x1, text1Y);
-        text1Y += isA4 ? 4 : 3;
-      }
-      if (photo1.locationName) {
-        doc.text(`Tappa: ${photo1.locationName}`, x1, text1Y);
-        text1Y += isA4 ? 4 : 3;
-      }
-      if (photo1.description) {
-        doc.setFont("helvetica", "italic");
-        doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-        const wrappedDesc = doc.splitTextToSize(`"${photo1.description}"`, colWidth);
-        for (const line of wrappedDesc) {
-          doc.text(line, x1, text1Y);
-          text1Y += isA4 ? 4 : 3;
-        }
-      }
-
-      // Render Photo 2 (if exists)
-      if (photo2) {
-        const x2 = marginLeft + colWidth + gap;
-        let img2Width = maxW;
-        let img2Height = maxH;
-        if (imageData2) {
-          const ratio = imageData2.width / imageData2.height;
-          const boxRatio = maxW / maxH;
-          if (ratio > boxRatio) {
-            img2Width = maxW;
-            img2Height = maxW / ratio;
-          } else {
-            img2Height = maxH;
-            img2Width = maxH * ratio;
-          }
+      for (let pageIdx = 0; pageIdx < photoPages.length; pageIdx++) {
+        if (pageIdx > 0) {
+          doc.addPage(paperSize, "portrait");
+          pageNum++;
+          y = marginTop + 2.5;
+          drawPageDecorations();
         }
 
-        const img2X = x2 + (colWidth - img2Width) / 2;
-        if (imageData2) {
-          try {
-            doc.addImage(imageData2.dataUrl, "JPEG", img2X, y, img2Width, img2Height);
-          } catch (addImgErr) {
-            console.error("Failed to add image 2 to PDF:", addImgErr);
-            // Fallback to placeholder box
-            doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
-            doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-            doc.rect(x2, y, colWidth, maxH, "FD");
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(7);
-            doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-            doc.text("[Immagine non caricabile]", x2 + 5, y + (maxH / 2), { maxWidth: colWidth - 10 });
-            img2Height = maxH;
-          }
-        } else {
-          // Fallback placeholder box
-          doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
-          doc.setFillColor(cBackground[0], cBackground[1], cBackground[2]);
-          doc.rect(x2, y, colWidth, maxH, "FD");
-          
+        let pageStartY = pageIdx === 0 ? y + (isA4 ? 8 : 6) : marginTop + (isA4 ? 2.5 : 1.5);
+
+        // On the very first photo page, render the gallery title banner
+        if (pageIdx === 0) {
           doc.setFont("helvetica", "bold");
-          doc.setFontSize(isA4 ? 10 : 8);
-          doc.setTextColor(cSecondary[0], cSecondary[1], cSecondary[2]);
-          doc.text("FOTO", x2 + (colWidth / 2) - 5, y + (maxH / 2) - 2);
-          
-          doc.setFont("helvetica", "italic");
-          doc.setFontSize(6);
+          doc.setFontSize(isA4 ? 11 : 9.5);
+          doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
+          doc.text("GALLERIA FOTOGRAFICA & RICORDI", marginLeft, y + 2);
+
+          doc.setDrawColor(cAccent[0], cAccent[1], cAccent[2]);
+          doc.setLineWidth(1);
+          doc.line(marginLeft, y + 4, marginLeft + 25, y + 4);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(isA4 ? 8 : 6.5);
           doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-          doc.text("Scatto registrato", x2 + (colWidth / 2) - 8, y + (maxH / 2) + 4);
-          img2Height = maxH;
+          doc.text(
+            `(${validPhotos.length} ${validPhotos.length === 1 ? "scatto" : "scatti nel diario"})`,
+            marginLeft + 28,
+            y + 2
+          );
         }
 
-        // Render Text 2 details below photo 2
-        let text2Y = y + img2Height + 4;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(isA4 ? 9.5 : 7.5);
-        doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
-        doc.text(`Ricordo #${index + 2}`, x2, text2Y);
-        text2Y += isA4 ? 4.5 : 3.5;
+        const pagePhotos = photoPages[pageIdx];
 
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(isA4 ? 8 : 6.5);
-        doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
-        if (photo2.date) {
-          doc.text(`Data: ${formatDate(photo2.date)}`, x2, text2Y);
-          text2Y += isA4 ? 4 : 3;
-        }
-        if (photo2.locationName) {
-          doc.text(`Tappa: ${photo2.locationName}`, x2, text2Y);
-          text2Y += isA4 ? 4 : 3;
-        }
-        if (photo2.description) {
-          doc.setFont("helvetica", "italic");
-          doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
-          const wrappedDesc = doc.splitTextToSize(`"${photo2.description}"`, colWidth);
-          for (const line of wrappedDesc) {
-            doc.text(line, x2, text2Y);
-            text2Y += isA4 ? 4 : 3;
+        // Render up to 3 rows of 2 photos each (= 6 photos per page)
+        for (let r = 0; r < ROWS; r++) {
+          const rowPhotos = pagePhotos.slice(r * COLS, r * COLS + COLS);
+          if (rowPhotos.length === 0) break;
+
+          const rowY = pageStartY + r * (rowHeight + rowGap);
+
+          for (let c = 0; c < rowPhotos.length; c++) {
+            const photo = rowPhotos[c];
+            const globalIndex = pageIdx * PHOTOS_PER_PAGE + r * COLS + c;
+            const cellX = marginLeft + c * (colWidth + gapX);
+
+            // Load photo data (via data URL, IndexedDB, or server URL)
+            const imageData = await loadPhotoData(photo);
+
+            // Calculate image aspect ratio fitting: works uniformly for vertical and horizontal photos
+            let imgW = maxW;
+            let imgH = maxImgH;
+            let imgX = cellX;
+            let imgY = rowY;
+
+            if (imageData) {
+              const ratio = imageData.width / imageData.height;
+              const boxRatio = maxW / maxImgH;
+
+              if (ratio > boxRatio) {
+                // Horizontal photo: spans width, centered vertically
+                imgW = maxW;
+                imgH = maxW / ratio;
+                imgX = cellX;
+                imgY = rowY + (maxImgH - imgH) / 2;
+              } else {
+                // Vertical (portrait) photo: spans maxImgH, centered horizontally
+                imgH = maxImgH;
+                imgW = maxImgH * ratio;
+                imgX = cellX + (maxW - imgW) / 2;
+                imgY = rowY;
+              }
+
+              try {
+                doc.addImage(imageData.dataUrl, "JPEG", imgX, imgY, imgW, imgH);
+
+                // Elegant subtle border around photo
+                doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
+                doc.setLineWidth(0.15);
+                doc.rect(imgX, imgY, imgW, imgH);
+              } catch (addErr) {
+                console.error("Failed to add image to PDF:", addErr);
+                drawPlaceholderBox(cellX, rowY, colWidth, maxImgH);
+              }
+            } else {
+              drawPlaceholderBox(cellX, rowY, colWidth, maxImgH);
+            }
+
+            // Text metadata below the image at a consistent uniform baseline
+            let textY = rowY + maxImgH + textGap;
+
+            // 1. Title line
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(isA4 ? 8.5 : 7);
+            doc.setTextColor(cPrimary[0], cPrimary[1], cPrimary[2]);
+
+            let titleStr = `Ricordo #${globalIndex + 1}`;
+            if (photo.isStarred) {
+              titleStr += "  [In Mappa]";
+            }
+            doc.text(titleStr, cellX, textY);
+            textY += isA4 ? 3.3 : 2.5;
+
+            // 2. Data
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(isA4 ? 7.2 : 6);
+            doc.setTextColor(cTextDark[0], cTextDark[1], cTextDark[2]);
+
+            if (photo.date) {
+              doc.text(`Data: ${formatDate(photo.date)}`, cellX, textY);
+              textY += isA4 ? 2.9 : 2.2;
+            }
+
+            // 3. Tappa
+            if (photo.locationName) {
+              const wrappedLoc = doc.splitTextToSize(`Tappa: ${photo.locationName}`, colWidth);
+              doc.text(wrappedLoc[0], cellX, textY);
+              textY += isA4 ? 2.9 : 2.2;
+            }
+
+            // 4. Description (optional, max 2 lines with clean ellipsis)
+            if (photo.description && photo.description !== "Foto recuperata dalla memoria") {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(isA4 ? 6.5 : 5.2);
+              doc.setTextColor(cTextLight[0], cTextLight[1], cTextLight[2]);
+
+              const wrappedDesc = doc.splitTextToSize(`"${photo.description}"`, colWidth);
+              const maxDescLines = 2;
+              for (let l = 0; l < Math.min(wrappedDesc.length, maxDescLines); l++) {
+                let line = wrappedDesc[l];
+                if (l === maxDescLines - 1 && wrappedDesc.length > maxDescLines) {
+                  line = line.replace(/[,.]?$/, "...");
+                }
+                doc.text(line, cellX, textY);
+                textY += isA4 ? 2.6 : 2.0;
+              }
+            }
           }
         }
-      }
 
-      // Row advance spacing based on maximum row elements height
-      y += rowHeight + 10;
+        // Set y for any following content
+        y = pageStartY + Math.ceil(pagePhotos.length / COLS) * (rowHeight + rowGap);
+      }
     }
   }
 

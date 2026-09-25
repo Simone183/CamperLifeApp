@@ -27,14 +27,23 @@ export function resolveMediaUrl(url?: string): string {
   }
 
   // Detect if the app is running in a mobile native WebView (Capacitor/Cordova)
+  const isWeb =
+    typeof window !== "undefined" &&
+    (window.location.hostname.includes("run.app") ||
+      window.location.hostname.includes("webcontainer") ||
+      window.location.port === "3000" ||
+      window.location.port === "5173");
+
+  const cap = typeof window !== "undefined" ? (window as any).Capacitor : undefined;
+  const isCapacitorNative = Boolean(cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform());
+
   const isMobileNative =
-    typeof (window as any).Capacitor !== "undefined" ||
-    window.location.protocol.startsWith("capacitor") ||
-    window.location.protocol.startsWith("file:") ||
-    (typeof window !== "undefined" &&
-      window.location.hostname === "localhost" &&
-      window.location.port !== "3000" &&
-      window.location.port !== "5173");
+    !isWeb &&
+    (isCapacitorNative ||
+      (typeof window !== "undefined" &&
+        (window.location.protocol.startsWith("capacitor") ||
+          window.location.protocol.startsWith("file:") ||
+          window.location.protocol.startsWith("ionic:"))));
 
   if (isMobileNative) {
     // Public production Cloud Run URL

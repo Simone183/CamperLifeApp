@@ -992,7 +992,6 @@ export default function App() {
         // Ensure old example trips are recorded as deleted so they don't resurrect from cloud
         recordDeletedId('trips', 'trip-example-10-oct-2025', cleanEmail);
         recordDeletedId('trips', 't1', cleanEmail);
-        SICILIA_PURGED_PHOTO_IDS.forEach((pid) => recordDeletedId('photos', pid, cleanEmail));
 
         const userSaved = localStorage.getItem(`camper_trips_${cleanEmail}`);
         if (userSaved) {
@@ -1821,9 +1820,9 @@ export default function App() {
       if (res.ok) {
         const resData = await res.json().catch(() => ({}));
         if (resData.trips && Array.isArray(resData.trips) && resData.trips.length > 0) {
-          // Merge safely: preserve local data:image or /api/photos/ URLs so they are never lost
-          const cleanTripsFromServ = resData.trips.map((t: any) => {
-            const norm = normalizeTrip(t, cleanEmail);
+          const serverTrips = resData.trips.map((t: any) => normalizeTrip(t, cleanEmail));
+          const mergedWithServer = mergeTrips(normalized, serverTrips, cleanEmail);
+          const cleanTripsFromServ = mergedWithServer.map((norm: Trip) => {
             const localMatch = normalized.find((lt: any) => lt.id === norm.id);
             if (localMatch && Array.isArray(localMatch.photos)) {
               norm.photos = norm.photos.map((sp: any) => {
@@ -1836,32 +1835,11 @@ export default function App() {
             }
             return norm;
           });
+
           const serverTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
           if (serverTripsJson !== lastSavedTripsJsonRef.current) {
             lastSavedTripsJsonRef.current = serverTripsJson;
-            // Merge safely: preserve local data:image or /api/photos/ URLs so they are never lost
-            const cleanTripsFromServ = resData.trips.map((t: any) => {
-              const norm = normalizeTrip(t, cleanEmail);
-              const localMatch = normalized.find((lt: any) => lt.id === norm.id);
-              if (localMatch && Array.isArray(localMatch.photos)) {
-                norm.photos = norm.photos.map((sp: any) => {
-                  const lp = localMatch.photos.find((p: any) => p.id === sp.id);
-                  if (lp && lp.url && (lp.url.startsWith("data:image/") || lp.url.startsWith("/api/photos/"))) {
-                    return { ...sp, url: lp.url };
-                  }
-                  return sp;
-                });
-              }
-              return norm;
-            });
-            
-            // Re-normalize to ensure the string comparison is perfectly consistent with how we store state
-            const finalTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
-            if (finalTripsJson !== lastSavedTripsJsonRef.current) {
-               lastSavedTripsJsonRef.current = finalTripsJson;
-               setTrips(cleanTripsFromServ);
-            }
-
+            setTrips(cleanTripsFromServ);
             try {
               localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
             } catch (e) {}

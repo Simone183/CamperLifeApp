@@ -61,20 +61,67 @@ const geocodeLocation = async (location: string): Promise<{ lat: number; lng: nu
     return geocodeCache[cleanLoc];
   }
   try {
+    const cached = sessionStorage.getItem(`geocode_${cleanLoc}`);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      geocodeCache[cleanLoc] = parsed;
+      return parsed;
+    }
+  } catch (_) {}
+
+  // 1. Try local/proxy /api/nominatim
+  try {
     const res = await fetch(`/api/nominatim?q=${encodeURIComponent(location)}`);
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data[0] && data[0].lat && data[0].lon) {
         const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         geocodeCache[cleanLoc] = coords;
+        try { sessionStorage.setItem(`geocode_${cleanLoc}`, JSON.stringify(coords)); } catch (_) {}
         return coords;
       }
     }
   } catch (err) {
-    console.error("Geocoding failed for " + location, err);
+    console.warn("Geocoding proxy failed for " + location, err);
   }
+
+  // 2. Direct Nominatim fallback
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}`, {
+      headers: { "User-Agent": "ViaCamperApp/2.0" }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data[0] && data[0].lat && data[0].lon) {
+        const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        geocodeCache[cleanLoc] = coords;
+        try { sessionStorage.setItem(`geocode_${cleanLoc}`, JSON.stringify(coords)); } catch (_) {}
+        return coords;
+      }
+    }
+  } catch (err2) {
+    console.warn("Direct geocoding failed for " + location, err2);
+  }
+
+  // 3. Remote Cloud Run backend fallback
+  try {
+    const res = await fetch(`https://ais-pre-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app/api/nominatim?q=${encodeURIComponent(location)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data[0] && data[0].lat && data[0].lon) {
+        const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        geocodeCache[cleanLoc] = coords;
+        try { sessionStorage.setItem(`geocode_${cleanLoc}`, JSON.stringify(coords)); } catch (_) {}
+        return coords;
+      }
+    }
+  } catch (_) {}
+
   return null;
 };
+
+// Global in-memory cache for computed road segments
+const routeSegmentCache = new Map<string, L.LatLng[]>();
 
 export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateToAIItinerary, mode = 'movements' }: TripRouteMapProps) {
   const [editMode, setEditMode] = React.useState(false);
@@ -406,41 +453,127 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
           }
 
           const fetchSegment = async (): Promise<L.LatLng[]> => {
-            // 1. Try OSRM Proxy
+            const cacheKey = `${p1.lat.toFixed(4)},${p1.lng.toFixed(4)}_${p2.lat.toFixed(4)},${p2.lng.toFixed(4)}`;
+            if (routeSegmentCache.has(cacheKey)) {
+              return routeSegmentCache.get(cacheKey)!;
+            }
+
+            // 1. Try local/proxy /api/osrm
             try {
               const url = `/api/osrm?start=${p1.lng},${p1.lat}&end=${p2.lng},${p2.lat}`;
-              const res = await fetch(url);
+              const controller = new AbortController();
+              const tId = setTimeout(() => controller.abort(), 5000);
+              const res = await fetch(url, { signal: controller.signal });
+              clearTimeout(tId);
               if (res.ok) {
                 const data = await res.json();
                 if (data && data.routes && data.routes[0] && data.routes[0].geometry) {
                   const geom = data.routes[0].geometry;
                   if (geom.type === "LineString" && Array.isArray(geom.coordinates) && geom.coordinates.length > 1) {
-                    return geom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                    const result = geom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                    routeSegmentCache.set(cacheKey, result);
+                    return result;
                   }
                 }
               }
             } catch (err) {
-              console.warn(`OSRM proxy failed for segment ${i}, trying BRouter fallback:`, err);
+              console.warn(`OSRM proxy failed for segment ${i}, trying direct routing:`, err);
             }
 
-            // 2. Retry with BRouter Proxy fallback
+            // 2. Try direct OpenStreetMap routing servers (CORS enabled public servers)
+            const directServers = [
+              `https://routing.openstreetmap.de/routed-car/route/v1/driving/${p1.lng},${p1.lat};${p2.lng},${p2.lat}?overview=full&geometries=geojson`,
+              `https://router.project-osrm.org/route/v1/driving/${p1.lng},${p1.lat};${p2.lng},${p2.lat}?overview=full&geometries=geojson`
+            ];
+            for (const sUrl of directServers) {
+              try {
+                const controller = new AbortController();
+                const tId = setTimeout(() => controller.abort(), 4500);
+                const sRes = await fetch(sUrl, {
+                  headers: { "User-Agent": "ViaCamperApp/2.0" },
+                  signal: controller.signal
+                });
+                clearTimeout(tId);
+                if (sRes.ok) {
+                  const sData = await sRes.json();
+                  if (sData && sData.routes && sData.routes[0] && sData.routes[0].geometry) {
+                    const geom = sData.routes[0].geometry;
+                    if (geom.type === "LineString" && Array.isArray(geom.coordinates) && geom.coordinates.length > 1) {
+                      const result = geom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                      routeSegmentCache.set(cacheKey, result);
+                      return result;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            // 3. Retry with BRouter Proxy fallback
             try {
               const brouterUrl = `/api/brouter?start=${p1.lng},${p1.lat}&end=${p2.lng},${p2.lat}`;
-              const bRes = await fetch(brouterUrl);
+              const controller = new AbortController();
+              const tId = setTimeout(() => controller.abort(), 5000);
+              const bRes = await fetch(brouterUrl, { signal: controller.signal });
+              clearTimeout(tId);
               if (bRes.ok) {
                 const bData = await bRes.json();
                 if (bData && bData.features && bData.features[0] && bData.features[0].geometry) {
                   const bGeom = bData.features[0].geometry;
                   if (bGeom.type === "LineString" && Array.isArray(bGeom.coordinates) && bGeom.coordinates.length > 1) {
-                    return bGeom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                    const result = bGeom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                    routeSegmentCache.set(cacheKey, result);
+                    return result;
                   }
                 }
               }
             } catch (bErr) {
-              console.warn(`BRouter proxy also failed for segment ${i}:`, bErr);
+              console.warn(`BRouter proxy failed for segment ${i}, trying direct BRouter:`, bErr);
             }
 
-            // 3. Straight line interpolation fallback only if both routing engines fail
+            // 4. Try direct BRouter server
+            try {
+              const directBrouterUrl = `https://brouter.de/brouter?lonlats=${encodeURIComponent(`${p1.lng},${p1.lat}|${p2.lng},${p2.lat}`)}&profile=car-eco&format=geojson`;
+              const controller = new AbortController();
+              const tId = setTimeout(() => controller.abort(), 6000);
+              const dBRes = await fetch(directBrouterUrl, {
+                headers: { "User-Agent": "ViaCamperApp/2.0" },
+                signal: controller.signal
+              });
+              clearTimeout(tId);
+              if (dBRes.ok) {
+                const dBData = await dBRes.json();
+                if (dBData && dBData.features && dBData.features[0] && dBData.features[0].geometry) {
+                  const bGeom = dBData.features[0].geometry;
+                  if (bGeom.type === "LineString" && Array.isArray(bGeom.coordinates) && bGeom.coordinates.length > 1) {
+                    const result = bGeom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                    routeSegmentCache.set(cacheKey, result);
+                    return result;
+                  }
+                }
+              }
+            } catch (_) {}
+
+            // 5. Try Remote Cloud Run backend
+            try {
+              const remoteUrl = `https://ais-pre-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app/api/osrm?start=${p1.lng},${p1.lat}&end=${p2.lng},${p2.lat}`;
+              const controller = new AbortController();
+              const tId = setTimeout(() => controller.abort(), 5000);
+              const rRes = await fetch(remoteUrl, { signal: controller.signal });
+              clearTimeout(tId);
+              if (rRes.ok) {
+                const rData = await rRes.json();
+                if (rData && rData.routes && rData.routes[0] && rData.routes[0].geometry) {
+                  const geom = rData.routes[0].geometry;
+                  if (geom.type === "LineString" && Array.isArray(geom.coordinates) && geom.coordinates.length > 1) {
+                    const result = geom.coordinates.map((c: number[]) => new L.LatLng(c[1], c[0]));
+                    routeSegmentCache.set(cacheKey, result);
+                    return result;
+                  }
+                }
+              }
+            } catch (_) {}
+
+            // 6. Straight line interpolation fallback only if all routing engines fail
             const segmentCoords: L.LatLng[] = [];
             const steps = 30;
             for (let step = 0; step <= steps; step++) {

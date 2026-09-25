@@ -47,8 +47,31 @@ try {
       console.warn("Could not patch localStorage:", storageErr);
     }
 
-    if (isMobileNative && window.fetch) {
+    const checkIsMobileNative = (): boolean => {
+      if (typeof window === "undefined") return false;
+      // 1. Any web browser environment (Cloud Run, local Vite dev) is strictly WEB, not mobile native
+      if (
+        window.location.hostname.includes("run.app") ||
+        window.location.hostname.includes("webcontainer") ||
+        window.location.port === "3000" ||
+        window.location.port === "5173"
+      ) {
+        return false;
+      }
+      // 2. Capacitor native runtime check
+      const cap = (window as any).Capacitor;
+      if (cap && typeof cap.isNativePlatform === "function") {
+        return Boolean(cap.isNativePlatform());
+      }
+      // 3. Custom protocols used exclusively by native mobile wrappers (Capacitor/Cordova)
+      const isCustomProto =
+        window.location.protocol.startsWith("capacitor") ||
+        window.location.protocol.startsWith("file:") ||
+        window.location.protocol.startsWith("ionic:");
+      return isCustomProto;
+    };
 
+    if (window.fetch) {
       const originalFetch = window.fetch;
 
       const customFetch = async function (
@@ -56,6 +79,10 @@ try {
         init?: RequestInit,
       ) {
         try {
+          if (!checkIsMobileNative()) {
+            return originalFetch.call(window, input, init);
+          }
+
           let urlStr = "";
           if (typeof input === "string") {
             urlStr = input;
@@ -90,7 +117,7 @@ try {
           }
 
           if (isApiCall && apiPath) {
-            // Intercettazioni di servizi cartografici pubblici per bypassare il server sandbox quando siamo su mobile nativo
+            // 1. Intercettazione Overpass OSM proxy
             if (apiPath.startsWith("/api/map-data-proxy")) {
               try {
                 let query = "";
@@ -144,47 +171,169 @@ try {
               }
             }
 
+            // 2. Nominatim Reverse
             if (apiPath.startsWith("/api/nominatim-reverse")) {
               try {
                 const urlObj = new URL(urlStr, window.location.href);
                 const lat = urlObj.searchParams.get("lat") || "";
                 const lon = urlObj.searchParams.get("lon") || "";
                 const targetUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&addressdetails=1`;
-                return originalFetch.call(window, targetUrl, {
+                const res = await originalFetch.call(window, targetUrl, {
                   headers: { "User-Agent": "ViaCamperApp/2.0" },
                 });
+                if (res.ok) return res;
               } catch (err) {
                 console.warn("[Capacitor Proxy] Failed direct Nominatim Reverse:", err);
               }
             }
 
+            // 3. Nominatim Search
             if (apiPath.startsWith("/api/nominatim")) {
               try {
                 const urlObj = new URL(urlStr, window.location.href);
                 const q = urlObj.searchParams.get("q") || "";
                 const targetUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`;
-                return originalFetch.call(window, targetUrl, {
+                const res = await originalFetch.call(window, targetUrl, {
                   headers: { "User-Agent": "ViaCamperApp/2.0" },
                 });
+                if (res.ok) return res;
               } catch (err) {
                 console.warn("[Capacitor Proxy] Failed direct Nominatim Search:", err);
               }
             }
 
-            if (apiPath.startsWith("/api/routing-osrm")) {
+            // 4. OSRM Driving Route (/api/osrm and /api/routing-osrm)
+            if (apiPath.startsWith("/api/osrm") || apiPath.startsWith("/api/routing-osrm")) {
               try {
                 const urlObj = new URL(urlStr, window.location.href);
+                const start = urlObj.searchParams.get("start") || "";
+                const end = urlObj.searchParams.get("end") || "";
                 const coordinates = urlObj.searchParams.get("coordinates") || "";
-                const profile = urlObj.searchParams.get("profile") || "driving";
-                const overview = urlObj.searchParams.get("overview") || "full";
-                const steps = urlObj.searchParams.get("steps") || "true";
-                const targetUrl = `https://router.project-osrm.org/route/v1/${encodeURIComponent(profile)}/${coordinates}?overview=${encodeURIComponent(overview)}&geometries=geojson&steps=${encodeURIComponent(steps)}`;
-                return originalFetch.call(window, targetUrl, {
-                  headers: { "User-Agent": "ViaCamperApp/2.0" },
-                });
+                const heading = urlObj.searchParams.get("heading") || "";
+
+                let pair = "";
+                if (start && end) {
+                  pair = `${start};${end}`;
+                } else if (coordinates) {
+                  pair = coordinates.replace(/,/g, ";");
+                }
+
+                if (pair) {
+                  const bearingsParam = (heading && !isNaN(Number(heading)))
+                    ? `&bearings=${Math.round((Number(heading) % 360 + 360) % 360)},45;`
+                    : "";
+
+                  const servers = [
+                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+                    `https://router.project-osrm.org/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true`,
+                    `https://router.project-osrm.org/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true`,
+                  ];
+
+                  for (const sUrl of servers) {
+                    try {
+                      const controller = new AbortController();
+                      const tId = setTimeout(() => controller.abort(), 4500);
+                      const sRes = await originalFetch.call(window, sUrl, {
+                        headers: { "User-Agent": "ViaCamperApp/2.0" },
+                        signal: controller.signal,
+                      });
+                      clearTimeout(tId);
+                      if (sRes.ok) {
+                        const sData = await sRes.json();
+                        if (sData && sData.code === "Ok" && sData.routes && sData.routes.length > 0) {
+                          return new Response(JSON.stringify(sData), {
+                            status: 200,
+                            headers: { "Content-Type": "application/json" },
+                          });
+                        }
+                      }
+                    } catch (_) {}
+                  }
+
+                  // Fallback BRouter convertito a formato OSRM
+                  if (start && end) {
+                    try {
+                      const brouterUrl = `https://brouter.de/brouter?lonlats=${encodeURIComponent(`${start}|${end}`)}&profile=car-eco&format=geojson`;
+                      const controller = new AbortController();
+                      const tId = setTimeout(() => controller.abort(), 6000);
+                      const bRes = await originalFetch.call(window, brouterUrl, {
+                        headers: { "User-Agent": "ViaCamperApp/2.0" },
+                        signal: controller.signal,
+                      });
+                      clearTimeout(tId);
+                      if (bRes.ok) {
+                        const bData = await bRes.json();
+                        if (bData && bData.features && bData.features[0] && bData.features[0].geometry) {
+                          const feature = bData.features[0];
+                          const coords = feature.geometry.coordinates || [];
+                          const trackLength = parseFloat(feature.properties?.["track-length"] || "0");
+                          const converted = {
+                            code: "Ok",
+                            routes: [
+                              {
+                                geometry: {
+                                  coordinates: coords,
+                                  type: "LineString",
+                                },
+                                legs: [
+                                  {
+                                    steps: [],
+                                    distance: trackLength,
+                                    duration: trackLength / 13,
+                                  },
+                                ],
+                                distance: trackLength,
+                                duration: trackLength / 13,
+                              },
+                            ],
+                          };
+                          return new Response(JSON.stringify(converted), {
+                            status: 200,
+                            headers: { "Content-Type": "application/json" },
+                          });
+                        }
+                      }
+                    } catch (_) {}
+                  }
+                }
               } catch (err) {
                 console.warn("[Capacitor Proxy] Failed direct OSRM routing:", err);
               }
+            }
+
+            // 5. BRouter Proxy
+            if (apiPath.startsWith("/api/brouter")) {
+              try {
+                const urlObj = new URL(urlStr, window.location.href);
+                const start = urlObj.searchParams.get("start") || "";
+                const end = urlObj.searchParams.get("end") || "";
+                const lonlats = urlObj.searchParams.get("lonlats") || (start && end ? `${start}|${end}` : "");
+                if (lonlats) {
+                  try {
+                    const brouterUrl = `https://brouter.de/brouter?lonlats=${encodeURIComponent(lonlats)}&profile=car-eco&format=geojson`;
+                    const controller = new AbortController();
+                    const tId = setTimeout(() => controller.abort(), 6000);
+                    const bRes = await originalFetch.call(window, brouterUrl, {
+                      headers: { "User-Agent": "ViaCamperApp/2.0" },
+                      signal: controller.signal,
+                    });
+                    clearTimeout(tId);
+                    if (bRes.ok) return bRes;
+                  } catch (_) {}
+                }
+              } catch (err) {
+                console.warn("[Capacitor Proxy] Failed direct BRouter:", err);
+              }
+            }
+
+            // 6. Per qualsiasi altra richiesta /api/* non intercettata sopra, inoltra al Cloud Run di produzione
+            const remoteBase = "https://ais-pre-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
+            const targetUrl = `${remoteBase}${apiPath.startsWith("/") ? apiPath : `/${apiPath}`}`;
+            try {
+              return await originalFetch.call(window, targetUrl, init);
+            } catch (remoteErr) {
+              console.warn("[Capacitor Proxy] Remote Cloud Run fallback error:", remoteErr);
             }
           }
 

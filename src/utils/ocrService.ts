@@ -1,6 +1,7 @@
 import { db } from "../lib/firebase";
 import { doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import { compressImage } from "./photoCompressor";
+import { cleanTravelStoryText } from "./cleanStoryText";
 
 export type OcrProgressCallback = (statusText: string) => void;
 
@@ -57,7 +58,7 @@ export async function extractStoryFromImage(
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.text && data.text.trim()) {
-          return data.text.trim();
+          return cleanTravelStoryText(data.text);
         }
       }
     } catch (httpErr: any) {
@@ -103,7 +104,7 @@ export async function extractStoryFromImage(
             try {
               await deleteDoc(taskRef);
             } catch {}
-            resolve(data.text || "");
+            resolve(cleanTravelStoryText(data.text || ""));
           } else if (data?.status === "error") {
             clearTimeout(timeout);
             unsubscribe();
@@ -119,7 +120,7 @@ export async function extractStoryFromImage(
       });
 
       if (textFromFirestore && textFromFirestore.trim()) {
-        return textFromFirestore.trim();
+        return cleanTravelStoryText(textFromFirestore);
       }
     } catch (fbErr: any) {
       console.warn("[OCR Service] Firestore AI Task Bridge error, falling back to local OCR engine:", fbErr?.message);
@@ -139,7 +140,7 @@ export async function extractStoryFromImage(
 
     const localText = ret?.data?.text?.trim() || "";
     if (localText) {
-      return localText;
+      return cleanTravelStoryText(localText);
     }
     throw new Error("Nessun testo leggibile trovato nell'immagine.");
   } catch (localErr: any) {
