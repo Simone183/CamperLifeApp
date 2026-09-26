@@ -3261,8 +3261,13 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         success: true, 
         user: { 
           email: userData.email, 
-          name: userData.name, 
-          nickname: userData.nickname,
+          name: userData.name || "",
+          surname: userData.surname || "",
+          nickname: userData.nickname || "",
+          dob: userData.dob || "",
+          city: userData.city || "",
+          camperModel: userData.camperModel || "",
+          bio: userData.bio || "",
           profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
           favorites: userData.favorites || [],
           isModerator: isMod,
@@ -3274,6 +3279,50 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err: any) {
       console.error("Error in login endpoint:", err);
       res.status(500).json({ error: err.message || "Unknown login error" });
+    }
+  });
+
+  app.post("/api/update-profile", async (req, res) => {
+    try {
+      const { email, name, surname, nickname, dob, city, camperModel, bio, profilePhoto } = req.body || {};
+      const cleanEmail = String(email || '').toLowerCase().trim();
+      if (!cleanEmail) {
+        return res.status(400).json({ error: "Email obbligatoria per aggiornare il profilo." });
+      }
+
+      const updateData: any = {
+        updatedAt: new Date().toISOString()
+      };
+      if (name !== undefined) updateData.name = String(name).trim();
+      if (surname !== undefined) updateData.surname = String(surname).trim();
+      if (nickname !== undefined) updateData.nickname = String(nickname).trim();
+      if (dob !== undefined) updateData.dob = String(dob).trim();
+      if (city !== undefined) updateData.city = String(city).trim();
+      if (camperModel !== undefined) updateData.camperModel = String(camperModel).trim();
+      if (bio !== undefined) updateData.bio = String(bio).trim();
+      if (profilePhoto !== undefined) updateData.profilePhoto = profilePhoto;
+
+      // 1. Update Firestore
+      try {
+        await firestoreDb.collection("users").doc(cleanEmail).set(updateData, { merge: true });
+      } catch (fsErr) {
+        console.warn("[Profile Update] Firestore direct update warning:", fsErr);
+      }
+
+      // 2. Update local cached users list
+      try {
+        const cachedUsers = getCachedUsers();
+        const existingIdx = cachedUsers.findIndex(u => (u.email || "").toLowerCase().trim() === cleanEmail);
+        if (existingIdx >= 0) {
+          cachedUsers[existingIdx] = { ...cachedUsers[existingIdx], ...updateData };
+          cacheUsers(cachedUsers);
+        }
+      } catch (cErr) {}
+
+      res.json({ success: true, message: "Profilo aggiornato con successo.", user: updateData });
+    } catch (err: any) {
+      console.error("Error in update-profile endpoint:", err);
+      res.status(500).json({ error: err.message || "Errore aggiornamento profilo" });
     }
   });
 

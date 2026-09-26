@@ -56,6 +56,7 @@ import AIItineraryTab from "./components/AIItineraryTab";
 import FavoritesTab from "./components/FavoritesTab";
 import FuelCardTab from "./components/FuelCardTab";
 import GeneralSettingsTab from "./components/GeneralSettingsTab";
+import ProfileSettingsTab from "./components/ProfileSettingsTab";
 import { BubbleLevelTab } from "./components/BubbleLevelTab";
 import { WeightCalculatorTab } from "./components/WeightCalculatorTab";
 import { OffGridEstimatorTab } from "./components/OffGridEstimatorTab";
@@ -137,6 +138,7 @@ import {
   Trophy,
   LogOut,
   Users,
+  User,
   Eye,
   EyeOff,
   Fuel,
@@ -185,6 +187,11 @@ export default function App() {
     nickname: string;
     email: string;
     name: string;
+    surname?: string;
+    dob?: string;
+    city?: string;
+    camperModel?: string;
+    bio?: string;
     profilePhoto?: string;
     isModerator?: boolean;
     moderatorRoles?: {
@@ -1183,6 +1190,7 @@ export default function App() {
     | "offline_maps"
     | "dashboard_settings"
     | "general"
+    | "profile"
     | "delete_account"
   >("hub");
 
@@ -6181,6 +6189,41 @@ out center;`;
                         </span>
                       </div>
                       <div className="divide-y divide-slate-100">
+                        {/* Profilo Utente & Social */}
+                        <div
+                          onClick={() => setSettingsSubTab("profile")}
+                          className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
+                            <div className="p-2.5 rounded-xl shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 group-hover:scale-105 transition-transform">
+                              <User className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-1.5">
+                                Profilo Utente
+                                {currentUser?.nickname && (
+                                  <span className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                                    @{currentUser.nickname}
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                                Nome, cognome, nickname, data di nascita e foto profilo social
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            {currentUser?.profilePhoto ? (
+                              <img
+                                src={currentUser.profilePhoto}
+                                alt="Avatar"
+                                className="w-6 h-6 rounded-full object-cover border border-emerald-300 dark:border-emerald-600"
+                              />
+                            ) : null}
+                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
+                          </div>
+                        </div>
+
                         {/* Impostazioni Generali */}
                         <div
                           onClick={() => setSettingsSubTab("general")}
@@ -6470,6 +6513,8 @@ out center;`;
                             "Personalizzazione Dashboard"}
                           {settingsSubTab === "general" &&
                             "Impostazioni Generali"}
+                          {settingsSubTab === "profile" &&
+                            "Profilo Utente"}
                           {settingsSubTab === "delete_account" &&
                             "Cancellazione Definitiva Account"}
                         </span>
@@ -7404,6 +7449,22 @@ out center;`;
                       onToggleTopNotifications={(val) => setDashboardSettings({ ...dashboardSettings, showTopNotifications: val })}
                       dashboardSettings={dashboardSettings}
                       onUpdateDashboardSettings={setDashboardSettings}
+                    />
+                  )}
+
+                  {settingsSubTab === "profile" && (
+                    <ProfileSettingsTab
+                      currentUser={currentUser}
+                      onUpdateUser={(updatedUser) => {
+                        setCurrentUser(updatedUser);
+                        try {
+                          localStorage.setItem("camper_user", JSON.stringify(updatedUser));
+                        } catch (e) {}
+                      }}
+                      onBack={() => setSettingsSubTab("hub")}
+                      onNavigateToLogin={() => setSettingsSubTab("login")}
+                      onNavigateToRegistration={() => setSettingsSubTab("registration")}
+                      firestore={firestore}
                     />
                   )}
 

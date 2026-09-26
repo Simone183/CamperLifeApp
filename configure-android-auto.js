@@ -333,6 +333,71 @@ public class AutoDataBridge {
     }
 
     /**
+     * Cerca località, aree sosta, camper service o città per la barra di ricerca Android Auto.
+     */
+    public static List<MovementItem> searchLocations(Context context, String query, Location currentLoc) {
+        List<MovementItem> results = new ArrayList<>();
+        if (query == null) query = "";
+        String qLower = query.toLowerCase().trim();
+
+        // 1. Ricerca tra le aree di sosta e punti sosta memorizzati
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String placesJson = prefs.getString("camper_cached_places", null);
+            if (placesJson != null) {
+                JSONArray arr = new JSONArray(placesJson);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject obj = arr.getJSONObject(i);
+                    String title = obj.optString("title", obj.optString("name", ""));
+                    String desc = obj.optString("description", obj.optString("type", ""));
+                    String region = obj.optString("region", obj.optString("province", ""));
+                    
+                    if (qLower.isEmpty() || title.toLowerCase().contains(qLower) || desc.toLowerCase().contains(qLower) || region.toLowerCase().contains(qLower)) {
+                        MovementItem m = new MovementItem();
+                        m.id = obj.optString("id", "place_" + i);
+                        m.location = title;
+                        m.notes = desc;
+                        m.lat = obj.optDouble("lat", 0.0);
+                        m.lng = obj.optDouble("lng", 0.0);
+                        if (currentLoc != null && m.lat != 0.0 && m.lng != 0.0) {
+                            float[] res = new float[1];
+                            Location.distanceBetween(currentLoc.getLatitude(), currentLoc.getLongitude(), m.lat, m.lng, res);
+                            m.distanceKm = res[0] / 1000.0;
+                        }
+                        results.add(m);
+                        if (results.size() >= 8) break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 2. Ricerca tra le tappe del viaggio attivo
+        List<MovementItem> movs = getActiveMovements(context, currentLoc);
+        for (MovementItem m : movs) {
+            if (qLower.isEmpty() || (m.location != null && m.location.toLowerCase().contains(qLower))) {
+                boolean already = false;
+                for (MovementItem r : results) {
+                    if (r.location.equalsIgnoreCase(m.location)) { already = true; break; }
+                }
+                if (!already) results.add(m);
+            }
+        }
+
+        // 3. Risultato personalizzato di ricerca diretta per la località digitata
+        if (!qLower.isEmpty()) {
+            MovementItem custom = new MovementItem();
+            custom.id = "custom_" + System.currentTimeMillis();
+            custom.location = query.trim();
+            custom.notes = "Avvia navigazione verso: " + query.trim();
+            custom.lat = 0.0;
+            custom.lng = 0.0;
+            results.add(0, custom);
+        }
+
+        return results;
+    }
+
+    /**
      * Salva un nuovo rifornimento carburante effettuato dal display di Android Auto.
      */
     public static boolean saveFuelLog(Context context, double odometer, double totalCost, double liters, String company) {
@@ -451,38 +516,28 @@ public class ViaCamperCarSession extends Session {
 `;
   fs.writeFileSync(path.join(javaDir, 'ViaCamperCarSession.java'), sessionJava, 'utf-8');
 
-  // D. MainMapScreen.java (Schermata Iniziale MAPPA con POI, Pulsanti Rifornimento, Aree Sosta e Spostamenti)
+  // D. MainMapScreen.java (Schermata Iniziale MAPPA Full-Screen SENZA pannello laterale, con pulsanti in alto)
   const mainMapScreenJava = `package com.ViaCamper.myapp.auto;
 
 import android.content.Context;
 import android.location.Location;
 import android.location.LocationManager;
-import android.text.SpannableString;
-import android.text.Spanned;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
-import androidx.car.app.model.CarColor;
-import androidx.car.app.model.CarLocation;
-import androidx.car.app.model.Distance;
-import androidx.car.app.model.DistanceSpan;
-import androidx.car.app.model.ItemList;
-import androidx.car.app.model.Metadata;
-import androidx.car.app.model.Place;
-import androidx.car.app.model.PlaceListMapTemplate;
-import androidx.car.app.model.PlaceMarker;
-import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
-import java.util.List;
-import java.util.Locale;
+import androidx.car.app.navigation.model.NavigationTemplate;
 
 /**
- * Schermata Iniziale Mappa per Android Auto:
- * - Mostra la Mappa interattiva con le tappe e punti sosta del camper
- * - Barra dei pulsanti rapidi (ActionStrip): Rifornimenti, Aree Sosta, Salva Spostamento
- * - Lista interattiva con tappe e scelta navigatore
+ * Schermata Iniziale Mappa per Android Auto (Full-Screen pulito, senza pannello/lista a sinistra):
+ * - Mappa a pieno schermo senza ingombri laterali
+ * - Pulsanti rapidi centrati in alto per l'accesso immediato:
+ *   1. ⛽ Rifornimento
+ *   2. 🚐 Aree Sosta
+ *   3. 📍 Spostamento
+ *   4. 🗺️ Tappe Viaggio
  */
 public class MainMapScreen extends Screen {
 
@@ -509,82 +564,13 @@ public class MainMapScreen extends Screen {
     @Override
     public Template onGetTemplate() {
         acquireLocation();
-        List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), lastLocation);
 
-        ItemList.Builder listBuilder = new ItemList.Builder();
-
-        // 1. Voce fissa per Registrazione Rifornimento Carburante (contrassegnata browsable per navigazione sotto-schermata)
-        Row.Builder fuelRow = new Row.Builder()
-                .setTitle("⛽ Registra Rifornimento Carburante")
-                .addText("Segna km, euro spesi e litri dal display")
-                .setBrowsable(true)
-                .setOnClickListener(() -> {
-                    getScreenManager().push(new AddFuelLogScreen(getCarContext()));
-                });
-        listBuilder.addItem(fuelRow.build());
-
-        // 2. Voce fissa per Aree Sosta & Camper Service (contrassegnata browsable per navigazione sotto-schermata)
-        Row.Builder placesRow = new Row.Builder()
-                .setTitle("🚐 Aree di Sosta & Camper Service")
-                .addText("Visualizza punti sosta e scarico vicini sulla mappa")
-                .setBrowsable(true)
-                .setOnClickListener(() -> {
-                    getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation));
-                });
-        listBuilder.addItem(placesRow.build());
-
-        // 3. Tappe e spostamenti del viaggio attivo con Marker sulla Mappa e DistanceSpan obbligatorio
-        int maxMovements = Math.min(movements.size(), 4);
-        for (int i = 0; i < maxMovements; i++) {
-            AutoDataBridge.MovementItem m = movements.get(i);
-            Row.Builder row = new Row.Builder();
-            row.setTitle("📍 " + m.location);
-            row.setBrowsable(true);
-
-            double dKm = m.distanceKm > 0 ? m.distanceKm : 1.0;
-            Distance distance = Distance.create(dKm, Distance.UNIT_KILOMETERS);
-            String distLabel = String.format(Locale.getDefault(), "%.1f km", dKm);
-            SpannableString distSpan = new SpannableString(distLabel);
-            distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-            row.addText(distSpan);
-
-            StringBuilder sub = new StringBuilder();
-            if (m.odometer > 0) {
-                sub.append(String.format(Locale.getDefault(), "Odo: %.0f km", m.odometer));
-            }
-            if (m.distanceKm > 0) {
-                int etaMin = (int) Math.round((m.distanceKm / 75.0) * 60.0);
-                if (sub.length() > 0) sub.append(" • ");
-                sub.append(String.format(Locale.getDefault(), "~%d min", etaMin));
-            } else if (m.notes != null && !m.notes.isEmpty()) {
-                if (sub.length() > 0) sub.append(" • ");
-                sub.append(m.notes);
-            }
-            if (sub.length() > 0) {
-                row.addText(sub.toString());
-            }
-
-            if (m.lat != 0.0 && m.lng != 0.0) {
-                row.setMetadata(
-                    new Metadata.Builder()
-                        .setPlace(
-                            new Place.Builder(CarLocation.create(m.lat, m.lng))
-                                .setMarker(new PlaceMarker.Builder().setColor(CarColor.BLUE).build())
-                                .build()
-                        )
-                        .build()
-                );
-            }
-
-            row.setOnClickListener(() -> {
-                getScreenManager().push(new NavigatorChooserScreen(getCarContext(), m));
-            });
-
-            listBuilder.addItem(row.build());
-        }
-
-        // ActionStrip con pulsanti d'azione rapidi sopra la Mappa
+        // Barra pulsanti rapidi centrata in alto sul cruscotto
         ActionStrip actionStrip = new ActionStrip.Builder()
+                .addAction(new Action.Builder()
+                        .setTitle("🔍 Cerca")
+                        .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
+                        .build())
                 .addAction(new Action.Builder()
                         .setTitle("⛽ Rifornimento")
                         .setOnClickListener(() -> getScreenManager().push(new AddFuelLogScreen(getCarContext())))
@@ -597,18 +583,239 @@ public class MainMapScreen extends Screen {
                         .setTitle("📍 Spostamento")
                         .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
                         .build())
+                .addAction(new Action.Builder()
+                        .setTitle("🗺️ Tappe")
+                        .setOnClickListener(() -> getScreenManager().push(new MovementsListScreen(getCarContext(), lastLocation)))
+                        .build())
                 .build();
 
-        return new PlaceListMapTemplate.Builder()
-                .setTitle("ViaCamper • Mappa Camper")
-                .setHeaderAction(Action.APP_ICON)
+        // MapActionStrip fluttuante sulla mappa per la ricerca immediata e azioni rapide
+        ActionStrip mapActionStrip = new ActionStrip.Builder()
+                .addAction(new Action.Builder()
+                        .setTitle("🔍 Cerca Località / Sosta")
+                        .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
+                        .build())
+                .addAction(new Action.Builder()
+                        .setTitle("🚐 Soste Vicine")
+                        .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
+                        .build())
+                .addAction(new Action.Builder()
+                        .setTitle("📍 Salva GPS")
+                        .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
+                        .build())
+                .build();
+
+        return new NavigationTemplate.Builder()
                 .setActionStrip(actionStrip)
-                .setItemList(listBuilder.build())
+                .setMapActionStrip(mapActionStrip)
                 .build();
     }
 }
 `;
   fs.writeFileSync(path.join(javaDir, 'MainMapScreen.java'), mainMapScreenJava, 'utf-8');
+
+  // D0. SearchLocationScreen.java (Barra di Ricerca Località, Città o Aree di Sosta)
+  const searchLocationScreenJava = `package com.ViaCamper.myapp.auto;
+
+import android.location.Location;
+import android.text.SpannableString;
+import android.text.Spanned;
+import androidx.annotation.NonNull;
+import androidx.car.app.CarContext;
+import androidx.car.app.Screen;
+import androidx.car.app.model.Action;
+import androidx.car.app.model.CarColor;
+import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.Distance;
+import androidx.car.app.model.DistanceSpan;
+import androidx.car.app.model.ItemList;
+import androidx.car.app.model.Metadata;
+import androidx.car.app.model.Place;
+import androidx.car.app.model.PlaceMarker;
+import androidx.car.app.model.Row;
+import androidx.car.app.model.SearchTemplate;
+import androidx.car.app.model.Template;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Schermata di Ricerca per Android Auto:
+ * - Barra di ricerca touch / dettatura vocale
+ * - Mostra risultati corrispondenti (città, soste, camper service, tappe)
+ * - Toccando un risultato, apre NavigatorChooserScreen per scegliere con quale navigatore continuare
+ */
+public class SearchLocationScreen extends Screen {
+
+    private final Location currentLocation;
+    private String currentQuery = "";
+
+    public SearchLocationScreen(@NonNull CarContext carContext, Location loc) {
+        super(carContext);
+        this.currentLocation = loc;
+    }
+
+    @NonNull
+    @Override
+    public Template onGetTemplate() {
+        SearchTemplate.SearchCallback searchCallback = new SearchTemplate.SearchCallback() {
+            @Override
+            public void onSearchTextChanged(@NonNull String searchText) {
+                currentQuery = searchText;
+                invalidate();
+            }
+
+            @Override
+            public void onSearchSubmitted(@NonNull String searchText) {
+                currentQuery = searchText;
+                invalidate();
+            }
+        };
+
+        List<AutoDataBridge.MovementItem> searchResults = AutoDataBridge.searchLocations(getCarContext(), currentQuery, currentLocation);
+
+        ItemList.Builder listBuilder = new ItemList.Builder();
+
+        if (searchResults.isEmpty()) {
+            listBuilder.setNoItemsMessage("Nessuna località o area di sosta trovata");
+        } else {
+            for (int i = 0; i < searchResults.size() && i < 6; i++) {
+                AutoDataBridge.MovementItem item = searchResults.get(i);
+                Row.Builder row = new Row.Builder();
+                row.setTitle("📍 " + item.location);
+                row.setBrowsable(true);
+
+                if (item.distanceKm > 0) {
+                    Distance distance = Distance.create(item.distanceKm, Distance.UNIT_KILOMETERS);
+                    String distLabel = String.format(Locale.getDefault(), "%.1f km", item.distanceKm);
+                    SpannableString distSpan = new SpannableString(distLabel);
+                    distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+                    row.addText(distSpan);
+                }
+
+                if (item.notes != null && !item.notes.isEmpty()) {
+                    row.addText(item.notes);
+                }
+
+                if (item.lat != 0.0 && item.lng != 0.0) {
+                    row.setMetadata(
+                        new Metadata.Builder()
+                            .setPlace(
+                                new Place.Builder(CarLocation.create(item.lat, item.lng))
+                                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.BLUE).build())
+                                    .build()
+                            )
+                            .build()
+                    );
+                }
+
+                row.setOnClickListener(() -> {
+                    // Cliccando sopra al risultato, richiede con quale navigatore continuare
+                    getScreenManager().push(new NavigatorChooserScreen(getCarContext(), item));
+                });
+
+                listBuilder.addItem(row.build());
+            }
+        }
+
+        return new SearchTemplate.Builder(searchCallback)
+                .setHeaderAction(Action.BACK)
+                .setSearchHint("Cerca località, città o area sosta...")
+                .setInitialSearchText(currentQuery)
+                .setItemList(listBuilder.build())
+                .setShowKeyboardByDefault(true)
+                .build();
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'SearchLocationScreen.java'), searchLocationScreenJava, 'utf-8');
+
+  // D1. MovementsListScreen.java (Elenco tappe del viaggio attivo quando selezionate da "🗺️ Tappe")
+  const movementsListScreenJava = `package com.ViaCamper.myapp.auto;
+
+import android.location.Location;
+import android.text.SpannableString;
+import android.text.Spanned;
+import androidx.annotation.NonNull;
+import androidx.car.app.CarContext;
+import androidx.car.app.Screen;
+import androidx.car.app.model.Action;
+import androidx.car.app.model.Distance;
+import androidx.car.app.model.DistanceSpan;
+import androidx.car.app.model.ItemList;
+import androidx.car.app.model.ListTemplate;
+import androidx.car.app.model.Row;
+import androidx.car.app.model.Template;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Schermata Tappe del Viaggio:
+ * Mostra le tappe del viaggio attivo con calcolo km in tempo reale e selezione navigatore.
+ */
+public class MovementsListScreen extends Screen {
+
+    private final Location currentLocation;
+
+    public MovementsListScreen(@NonNull CarContext carContext, Location loc) {
+        super(carContext);
+        this.currentLocation = loc;
+    }
+
+    @NonNull
+    @Override
+    public Template onGetTemplate() {
+        List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), currentLocation);
+        ItemList.Builder listBuilder = new ItemList.Builder();
+
+        if (movements.isEmpty()) {
+            listBuilder.setNoItemsMessage("Nessuna tappa attiva nel diario di bordo");
+        } else {
+            for (int i = 0; i < movements.size(); i++) {
+                AutoDataBridge.MovementItem m = movements.get(i);
+                Row.Builder row = new Row.Builder();
+                row.setTitle("📍 " + m.location);
+                row.setBrowsable(true);
+
+                double dKm = m.distanceKm > 0 ? m.distanceKm : 1.0;
+                Distance distance = Distance.create(dKm, Distance.UNIT_KILOMETERS);
+                String distLabel = String.format(Locale.getDefault(), "%.1f km", dKm);
+                SpannableString distSpan = new SpannableString(distLabel);
+                distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+                row.addText(distSpan);
+
+                StringBuilder sub = new StringBuilder();
+                if (m.odometer > 0) {
+                    sub.append(String.format(Locale.getDefault(), "Odo: %.0f km", m.odometer));
+                }
+                if (m.distanceKm > 0) {
+                    int etaMin = (int) Math.round((m.distanceKm / 75.0) * 60.0);
+                    if (sub.length() > 0) sub.append(" • ");
+                    sub.append(String.format(Locale.getDefault(), "~%d min", etaMin));
+                } else if (m.notes != null && !m.notes.isEmpty()) {
+                    if (sub.length() > 0) sub.append(" • ");
+                    sub.append(m.notes);
+                }
+                if (sub.length() > 0) {
+                    row.addText(sub.toString());
+                }
+
+                row.setOnClickListener(() -> {
+                    getScreenManager().push(new NavigatorChooserScreen(getCarContext(), m));
+                });
+
+                listBuilder.addItem(row.build());
+            }
+        }
+
+        return new ListTemplate.Builder()
+                .setTitle("Tappe del Viaggio Attivo")
+                .setHeaderAction(Action.BACK)
+                .setSingleList(listBuilder.build())
+                .build();
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'MovementsListScreen.java'), movementsListScreenJava, 'utf-8');
 
   // D2. CamperPlacesScreen.java (Mappa e Lista Aree Sosta / Camper Service Vicini)
   const camperPlacesScreenJava = `package com.ViaCamper.myapp.auto;

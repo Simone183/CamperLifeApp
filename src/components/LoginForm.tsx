@@ -129,9 +129,15 @@ export default function LoginForm({ onBack, onSuccess, onSwitchToRegistration, h
       );
       const isMod = isSuper || (Boolean(userData.isModerator) && hasAnyModRole);
       const userObj = {
+        ...userData,
         email: formattedEmail,
-        name: userData.name,
-        nickname: userData.nickname,
+        name: userData.name || "",
+        surname: userData.surname || "",
+        nickname: userData.nickname || "",
+        dob: userData.dob || "",
+        city: userData.city || "",
+        camperModel: userData.camperModel || "",
+        bio: userData.bio || "",
         profilePhoto: userData.profilePhoto || userData.avatarUrl || "",
         favorites: userData.favorites || [],
         isModerator: isMod,
