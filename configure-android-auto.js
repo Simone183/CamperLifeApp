@@ -516,28 +516,38 @@ public class ViaCamperCarSession extends Session {
 `;
   fs.writeFileSync(path.join(javaDir, 'ViaCamperCarSession.java'), sessionJava, 'utf-8');
 
-  // D. MainMapScreen.java (Schermata Iniziale MAPPA Full-Screen SENZA pannello laterale, con pulsanti in alto)
+  // D. MainMapScreen.java (Schermata Iniziale MAPPA NATIVA con Pin e Pulsanti Compatti)
   const mainMapScreenJava = `package com.ViaCamper.myapp.auto;
 
 import android.content.Context;
 import android.location.Location;
 import android.location.LocationManager;
+import android.text.SpannableString;
+import android.text.Spanned;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
+import androidx.car.app.model.CarColor;
+import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.Distance;
+import androidx.car.app.model.DistanceSpan;
+import androidx.car.app.model.ItemList;
+import androidx.car.app.model.Metadata;
+import androidx.car.app.model.Place;
+import androidx.car.app.model.PlaceListMapTemplate;
+import androidx.car.app.model.PlaceMarker;
+import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
-import androidx.car.app.navigation.model.NavigationTemplate;
+import java.util.List;
+import java.util.Locale;
 
 /**
- * Schermata Iniziale Mappa per Android Auto (Full-Screen pulito, senza pannello/lista a sinistra):
- * - Mappa a pieno schermo senza ingombri laterali
- * - Pulsanti rapidi centrati in alto per l'accesso immediato:
- *   1. ⛽ Rifornimento
- *   2. 🚐 Aree Sosta
- *   3. 📍 Spostamento
- *   4. 🗺️ Tappe Viaggio
+ * Schermata Iniziale Mappa per Android Auto:
+ * - Mappa nativa renderizzata con le strade, rilievi e posizione GPS dell'auto (evita schermo nero)
+ * - Pulsanti rapidi compatti in alto per adattarsi a tutti gli schermi (nessun overflow a destra)
+ * - Visualizzazione delle tappe e punto sosta come pin interattivi su mappa
  */
 public class MainMapScreen extends Screen {
 
@@ -565,35 +575,81 @@ public class MainMapScreen extends Screen {
     public Template onGetTemplate() {
         acquireLocation();
 
-        // Barra pulsanti rapidi centrata in alto sul cruscotto (limite massimo 4 azioni per Car App Library)
+        // Pulsanti rapidi compatti in alto per adattarsi a qualsiasi display auto (nessun overflow)
         ActionStrip actionStrip = new ActionStrip.Builder()
                 .addAction(new Action.Builder()
                         .setTitle("🔍 Cerca")
                         .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
                         .build())
                 .addAction(new Action.Builder()
-                        .setTitle("⛽ Rifornimento")
+                        .setTitle("⛽ Spesa")
                         .setOnClickListener(() -> getScreenManager().push(new AddFuelLogScreen(getCarContext())))
                         .build())
                 .addAction(new Action.Builder()
-                        .setTitle("🚐 Aree Sosta")
+                        .setTitle("🚐 Soste")
                         .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
                         .build())
-                .addAction(new Action.Builder()
-                        .setTitle("📍 Tappe & GPS")
-                        .setOnClickListener(() -> getScreenManager().push(new MovementsListScreen(getCarContext(), lastLocation)))
-                        .build())
                 .build();
 
-        // MapActionStrip standard per la navigazione su mappa (Pan/Spostamento)
-        ActionStrip mapActionStrip = new ActionStrip.Builder()
-                .addAction(Action.PAN)
-                .build();
+        ItemList.Builder listBuilder = new ItemList.Builder();
 
-        return new NavigationTemplate.Builder()
+        // 1. Voce rapida per salvare la posizione GPS attuale
+        listBuilder.addItem(new Row.Builder()
+                .setTitle("📍 Salva Posizione GPS")
+                .addText("Registra tappa o sosta nel diario di bordo")
+                .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
+                .build());
+
+        // 2. Tappe del viaggio attivo da mostrare come pin sulla mappa
+        List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), lastLocation);
+        if (!movements.isEmpty()) {
+            int maxItems = Math.min(movements.size(), 5);
+            for (int i = 0; i < maxItems; i++) {
+                AutoDataBridge.MovementItem m = movements.get(i);
+                Row.Builder row = new Row.Builder();
+                row.setTitle("🗺️ " + m.location);
+                row.setBrowsable(true);
+
+                if (m.distanceKm > 0) {
+                    Distance distance = Distance.create(m.distanceKm, Distance.UNIT_KILOMETERS);
+                    String distLabel = String.format(Locale.getDefault(), "%.1f km", m.distanceKm);
+                    SpannableString distSpan = new SpannableString(distLabel);
+                    distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+                    row.addText(distSpan);
+                }
+
+                if (m.lat != 0.0 && m.lng != 0.0) {
+                    row.setMetadata(
+                        new Metadata.Builder()
+                            .setPlace(
+                                new Place.Builder(CarLocation.create(m.lat, m.lng))
+                                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.BLUE).build())
+                                    .build()
+                            )
+                            .build()
+                    );
+                }
+
+                row.setOnClickListener(() -> {
+                    getScreenManager().push(new NavigatorChooserScreen(getCarContext(), m));
+                });
+
+                listBuilder.addItem(row.build());
+            }
+        }
+
+        PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
+                .setTitle("ViaCamper GPS")
+                .setHeaderAction(Action.APP_ICON)
                 .setActionStrip(actionStrip)
-                .setMapActionStrip(mapActionStrip)
-                .build();
+                .setItemList(listBuilder.build());
+
+        if (lastLocation != null) {
+            templateBuilder.setAnchor(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude()));
+            templateBuilder.setCurrentLocationEnabled(true);
+        }
+
+        return templateBuilder.build();
     }
 }
 `;
