@@ -749,6 +749,9 @@ public class MovementsListScreen extends Screen {
     @NonNull
     @Override
     public Template onGetTemplate() {
+        ItemList.Builder listBuilder = new ItemList.Builder();
+        List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), currentLocation);
+
         // 1. Voce fissa per registrare istantaneamente la posizione GPS attuale
         listBuilder.addItem(new Row.Builder()
                 .setTitle("📍 Registra Posizione GPS Attuale")
