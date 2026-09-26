@@ -565,7 +565,7 @@ public class MainMapScreen extends Screen {
     public Template onGetTemplate() {
         acquireLocation();
 
-        // Barra pulsanti rapidi centrata in alto sul cruscotto
+        // Barra pulsanti rapidi centrata in alto sul cruscotto (limite massimo 4 azioni per Car App Library)
         ActionStrip actionStrip = new ActionStrip.Builder()
                 .addAction(new Action.Builder()
                         .setTitle("🔍 Cerca")
@@ -580,29 +580,14 @@ public class MainMapScreen extends Screen {
                         .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
                         .build())
                 .addAction(new Action.Builder()
-                        .setTitle("📍 Spostamento")
-                        .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
-                        .build())
-                .addAction(new Action.Builder()
-                        .setTitle("🗺️ Tappe")
+                        .setTitle("📍 Tappe & GPS")
                         .setOnClickListener(() -> getScreenManager().push(new MovementsListScreen(getCarContext(), lastLocation)))
                         .build())
                 .build();
 
-        // MapActionStrip fluttuante sulla mappa per la ricerca immediata e azioni rapide
+        // MapActionStrip standard per la navigazione su mappa (Pan/Spostamento)
         ActionStrip mapActionStrip = new ActionStrip.Builder()
-                .addAction(new Action.Builder()
-                        .setTitle("🔍 Cerca Località / Sosta")
-                        .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
-                        .build())
-                .addAction(new Action.Builder()
-                        .setTitle("🚐 Soste Vicine")
-                        .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
-                        .build())
-                .addAction(new Action.Builder()
-                        .setTitle("📍 Salva GPS")
-                        .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
-                        .build())
+                .addAction(Action.PAN)
                 .build();
 
         return new NavigationTemplate.Builder()
@@ -764,12 +749,16 @@ public class MovementsListScreen extends Screen {
     @NonNull
     @Override
     public Template onGetTemplate() {
-        List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), currentLocation);
-        ItemList.Builder listBuilder = new ItemList.Builder();
+        // 1. Voce fissa per registrare istantaneamente la posizione GPS attuale
+        listBuilder.addItem(new Row.Builder()
+                .setTitle("📍 Registra Posizione GPS Attuale")
+                .addText("Salva la posizione e i km correnti nel diario di bordo")
+                .setOnClickListener(() -> {
+                    getScreenManager().push(new AddMovementScreen(getCarContext(), currentLocation));
+                })
+                .build());
 
-        if (movements.isEmpty()) {
-            listBuilder.setNoItemsMessage("Nessuna tappa attiva nel diario di bordo");
-        } else {
+        if (!movements.isEmpty()) {
             for (int i = 0; i < movements.size(); i++) {
                 AutoDataBridge.MovementItem m = movements.get(i);
                 Row.Builder row = new Row.Builder();
