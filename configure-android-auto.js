@@ -593,9 +593,10 @@ public class MainMapScreen extends Screen {
 
         ItemList.Builder listBuilder = new ItemList.Builder();
 
-        // 1. Voce rapida per salvare la posizione GPS attuale
+        // 1. Voce rapida per salvare la posizione GPS attuale (browsable true per conformità PlaceListMapTemplate)
         listBuilder.addItem(new Row.Builder()
                 .setTitle("📍 Salva Posizione GPS")
+                .setBrowsable(true)
                 .addText("Registra tappa o sosta nel diario di bordo")
                 .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
                 .build());
@@ -610,13 +611,12 @@ public class MainMapScreen extends Screen {
                 row.setTitle("🗺️ " + m.location);
                 row.setBrowsable(true);
 
-                if (m.distanceKm > 0) {
-                    Distance distance = Distance.create(m.distanceKm, Distance.UNIT_KILOMETERS);
-                    String distLabel = String.format(Locale.getDefault(), "%.1f km", m.distanceKm);
-                    SpannableString distSpan = new SpannableString(distLabel);
-                    distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-                    row.addText(distSpan);
-                }
+                double dKm = m.distanceKm > 0 ? m.distanceKm : 1.0;
+                Distance distance = Distance.create(dKm, Distance.UNIT_KILOMETERS);
+                String distLabel = String.format(Locale.getDefault(), "%.1f km", dKm);
+                SpannableString distSpan = new SpannableString(distLabel);
+                distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+                row.addText(distSpan);
 
                 if (m.lat != 0.0 && m.lng != 0.0) {
                     row.setMetadata(
@@ -812,6 +812,7 @@ public class MovementsListScreen extends Screen {
         // 1. Voce fissa per registrare istantaneamente la posizione GPS attuale
         listBuilder.addItem(new Row.Builder()
                 .setTitle("📍 Registra Posizione GPS Attuale")
+                .setBrowsable(true)
                 .addText("Salva la posizione e i km correnti nel diario di bordo")
                 .setOnClickListener(() -> {
                     getScreenManager().push(new AddMovementScreen(getCarContext(), currentLocation));
