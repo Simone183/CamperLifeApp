@@ -645,7 +645,8 @@ public class MainMapScreen extends Screen {
                 .setItemList(listBuilder.build());
 
         if (lastLocation != null) {
-            templateBuilder.setAnchor(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude()));
+            Place anchorPlace = new Place.Builder(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude())).build();
+            templateBuilder.setAnchor(anchorPlace);
             templateBuilder.setCurrentLocationEnabled(true);
         }
 
