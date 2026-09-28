@@ -5,7 +5,7 @@ import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-re
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
-import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+import { resolveMediaUrl, resolveApiUrl } from '../utils/resolveMediaUrl';
 import { useFamilyCrew } from '../context/FamilyCrewContext';
 import { FamilyCrewTabBanner } from './FamilyCrewModal';
 
@@ -152,7 +152,7 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
             for (const aLog of autoLogs) {
               if (aLog && aLog.id && aLog.id.startsWith('fuel_auto_')) {
                 // Invia a server per sincronizzazione duratura
-                fetch(`/api/fuel-logs/${encodeURIComponent(emailLower)}`, {
+                fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}`), {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(aLog)

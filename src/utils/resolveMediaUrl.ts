@@ -14,14 +14,26 @@ export function resolveMediaUrl(url?: string): string {
     return url;
   }
 
-  // Local static files bundled in the app must remain relative for offline / native access
+  // Check if this is a dynamic backend route or upload path
+  const isDynamicServerPath =
+    url.startsWith("/uploads/") ||
+    url.startsWith("uploads/") ||
+    url.startsWith("/api/") ||
+    url.startsWith("api/");
+
+  // Local static bundled files in public/ must remain relative for offline / native access
   if (
-    url.includes("soste_catalog.json") ||
-    url.endsWith(".json") ||
-    url.endsWith(".png") ||
-    url.endsWith(".jpg") ||
-    url.endsWith(".svg") ||
-    url.endsWith(".ico")
+    !isDynamicServerPath &&
+    (url.includes("soste_catalog.json") ||
+      url.startsWith("/icons/") ||
+      url.startsWith("icons/") ||
+      url.startsWith("/assets/") ||
+      url.startsWith("assets/") ||
+      url === "/logo.png" ||
+      url === "logo.png" ||
+      url === "/favicon.ico" ||
+      url.endsWith(".svg") ||
+      url.endsWith(".ico"))
   ) {
     return url.startsWith("/") ? url : `/${url}`;
   }
@@ -31,21 +43,25 @@ export function resolveMediaUrl(url?: string): string {
     typeof window !== "undefined" &&
     (window.location.hostname.includes("run.app") ||
       window.location.hostname.includes("webcontainer") ||
-      window.location.port === "3000" ||
-      window.location.port === "5173");
+      (window.location.hostname === "localhost" && (window.location.port === "3000" || window.location.port === "5173")) ||
+      (window.location.hostname === "127.0.0.1" && (window.location.port === "3000" || window.location.port === "5173")));
 
   const cap = typeof window !== "undefined" ? (window as any).Capacitor : undefined;
-  const isCapacitorNative = Boolean(cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform());
+  const isCapacitorNative = Boolean(
+    (cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform()) ||
+    (cap && cap.platform && cap.platform !== "web") ||
+    (typeof window !== "undefined" && (
+      window.location.protocol.startsWith("capacitor") ||
+      window.location.protocol.startsWith("ionic:") ||
+      window.location.protocol.startsWith("file:") ||
+      (window.location.hostname === "localhost" && window.location.port === "") ||
+      (window.location.hostname === "localhost" && window.location.port === "80")
+    ))
+  );
 
-  const isMobileNative =
-    !isWeb &&
-    (isCapacitorNative ||
-      (typeof window !== "undefined" &&
-        (window.location.protocol.startsWith("capacitor") ||
-          window.location.protocol.startsWith("file:") ||
-          window.location.protocol.startsWith("ionic:"))));
+  const isMobileNative = (!isWeb || isCapacitorNative);
 
-  if (isMobileNative) {
+  if (isMobileNative || isDynamicServerPath) {
     // Public production Cloud Run URL
     const preBase = "https://ais-pre-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
     const devBase = "https://ais-dev-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
@@ -57,13 +73,15 @@ export function resolveMediaUrl(url?: string): string {
     if (typeof window !== "undefined" && (window.location.hostname.includes("ais-dev-") || window.location.href.includes("ais-dev-"))) {
       base = devBase;
     }
-    
-    const cleanBase = base.replace(/\/$/, "");
-    const cleanUrl = url.startsWith("/") ? url : `/${url}`;
-    return `${cleanBase}${cleanUrl}`;
+
+    if (isMobileNative) {
+      const cleanBase = base.replace(/\/$/, "");
+      const cleanUrl = url.startsWith("/") ? url : `/${url}`;
+      return `${cleanBase}${cleanUrl}`;
+    }
   }
 
-  return url;
+  return url.startsWith("/") ? url : `/${url}`;
 }
 
 /**
@@ -78,5 +96,44 @@ export function resolveApiUrl(apiPath: string): string {
   ) {
     return apiPath.startsWith("/") ? apiPath : `/${apiPath}`;
   }
-  return resolveMediaUrl(apiPath);
+
+  if (apiPath.startsWith("http://") || apiPath.startsWith("https://")) {
+    return apiPath;
+  }
+
+  const isWeb =
+    typeof window !== "undefined" &&
+    (window.location.hostname.includes("run.app") ||
+      window.location.hostname.includes("webcontainer") ||
+      (window.location.hostname === "localhost" && (window.location.port === "3000" || window.location.port === "5173")) ||
+      (window.location.hostname === "127.0.0.1" && (window.location.port === "3000" || window.location.port === "5173")));
+
+  const cap = typeof window !== "undefined" ? (window as any).Capacitor : undefined;
+  const isCapacitorNative = Boolean(
+    (cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform()) ||
+    (cap && cap.platform && cap.platform !== "web") ||
+    (typeof window !== "undefined" && (
+      window.location.protocol.startsWith("capacitor") ||
+      window.location.protocol.startsWith("ionic:") ||
+      window.location.protocol.startsWith("file:") ||
+      (window.location.hostname === "localhost" && window.location.port === "") ||
+      (window.location.hostname === "localhost" && window.location.port === "80")
+    ))
+  );
+
+  const isMobileNative = (!isWeb || isCapacitorNative);
+
+  if (isMobileNative) {
+    const preBase = "https://ais-pre-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
+    const devBase = "https://ais-dev-tv6qat75tur3z7i63xxkna-942333460354.europe-west2.run.app";
+    let base = preBase;
+    if (typeof window !== "undefined" && (window.location.hostname.includes("ais-dev-") || window.location.href.includes("ais-dev-"))) {
+      base = devBase;
+    }
+    const cleanBase = base.replace(/\/$/, "");
+    const cleanPath = apiPath.startsWith("/") ? apiPath : `/${apiPath}`;
+    return `${cleanBase}${cleanPath}`;
+  }
+
+  return apiPath;
 }

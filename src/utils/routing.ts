@@ -1,5 +1,6 @@
 import { OSMObstacle } from '../types';
 import { parseDimToNumber } from '../unit-helpers';
+import { resolveApiUrl } from './resolveMediaUrl';
 
 export const isNearRoute = (obstacleLat: number, obstacleLng: number, routeCoords: [number, number][], thresholdMeters = 400) => {
   const degThreshold = thresholdMeters / 111000;
@@ -68,7 +69,7 @@ out body;>;out skel qt;`;
     const payload = new URLSearchParams();
     payload.append("data", query);
 
-    const res = await fetch("/api/map-data-proxy", {
+    const res = await fetch(resolveApiUrl("/api/map-data-proxy"), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: payload.toString()

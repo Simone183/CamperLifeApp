@@ -3,8 +3,36 @@ import { createRoot } from "react-dom/client";
 import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./index.css";
+import "./utils/leafletPatch";
 import App from "./App.tsx";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary.tsx";
+
+import L from "leaflet";
+
+// Monkey-patch Leaflet DomUtil to safely handle undefined elements and avoid "_leaflet_pos" errors
+try {
+  if (typeof L !== "undefined" && L.DomUtil) {
+    const origGetPos = L.DomUtil.getPosition;
+    L.DomUtil.getPosition = function (el: any) {
+      if (!el) return new L.Point(0, 0);
+      try {
+        return origGetPos.call(L.DomUtil, el) || new L.Point(0, 0);
+      } catch {
+        return new L.Point(0, 0);
+      }
+    };
+
+    const origSetPos = L.DomUtil.setPosition;
+    L.DomUtil.setPosition = function (el: any, point: any) {
+      if (!el) return;
+      try {
+        origSetPos.call(L.DomUtil, el, point);
+      } catch {}
+    };
+  }
+} catch (e) {
+  console.warn("Could not patch Leaflet DomUtil:", e);
+}
 
 // 1. Intercettatore API trasparente per ambienti app ibridi nativi (come Capacitor APK)
 try {

@@ -10,6 +10,7 @@ import { Place, VehicleDimensions, OSMObstacle, NavigationStep } from '../types'
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
 import { applyTtsVoiceAndPitch, speakSampleTts, TtsGender } from '../utils/ttsHelper';
+import { resolveApiUrl } from '../utils/resolveMediaUrl';
 import { 
   ArrowLeft, 
   Compass, 
@@ -559,7 +560,7 @@ export default function FullscreenNavigator({
     try {
       localStorage.setItem('camper_last_fuel_logs', JSON.stringify(updated));
       if (currentUser?.email) {
-        await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`, {
+        await fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newLog)
@@ -588,7 +589,7 @@ export default function FullscreenNavigator({
     if (!currentUser?.email) return;
     const fetchFuelLogs = async () => {
       try {
-        const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`);
+        const res = await fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`));
         if (res.ok) {
           const data = await res.json();
           setFuelLogs(data);

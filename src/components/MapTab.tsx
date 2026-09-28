@@ -54,10 +54,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 import L from "leaflet";
+import "../utils/leafletPatch";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { CategoryIllustration } from "./CategoryIllustration";
+import { resolveApiUrl } from "../utils/resolveMediaUrl";
 import { WeatherWidget } from "./WeatherWidget";
 import NearbyPlacesWidget from "./NearbyPlacesWidget";
 import { RollyOnboardingGuide } from "./RollyOnboardingGuide";
@@ -503,6 +505,7 @@ interface MapTabProps {
   onNavigateToMovementLog?: () => void;
   trips?: Trip[];
   setTrips?: (trips: Trip[]) => void;
+  onClose?: () => void;
 }
 
 // Helper to calculate distance in km between two GPS point coordinates
@@ -608,6 +611,7 @@ export default function MapTab({
   onNavigateToMovementLog,
   trips = [],
   setTrips,
+  onClose,
 }: MapTabProps) {
   const settings = useAppSettings();
   console.log("MapTab props:", { onNavigateToAI });
@@ -1083,7 +1087,7 @@ export default function MapTab({
     const fetchMapFuelLogs = async () => {
       try {
         setFuelStatsLoading(true);
-        const res = await fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`);
+        const res = await fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`));
         if (res.ok) {
           const data = await res.json();
           setFuelLogs(data);
@@ -1240,7 +1244,7 @@ export default function MapTab({
         reader.readAsDataURL(file);
       });
 
-      const res = await fetch("/api/extract-tariffs-from-image", {
+      const res = await fetch(resolveApiUrl("/api/extract-tariffs-from-image"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1470,7 +1474,7 @@ export default function MapTab({
     // 3. Persist to Firestore via the admin API
     if (targetPlace) {
       try {
-        const response = await fetch("/api/admin/update-place", {
+        const response = await fetch(resolveApiUrl("/api/admin/update-place"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: selectedPlace.id, updatedData: targetPlace }),
@@ -1536,7 +1540,7 @@ export default function MapTab({
     // 4. Persist to Firestore via the admin API
     if (targetPlace) {
       try {
-        const response = await fetch("/api/admin/update-place", {
+        const response = await fetch(resolveApiUrl("/api/admin/update-place"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: selectedPlace.id, updatedData: targetPlace }),
@@ -1828,7 +1832,7 @@ export default function MapTab({
         throw new Error("offline");
       }
 
-      const res = await fetch("/api/propose-place", {
+      const res = await fetch(resolveApiUrl("/api/propose-place"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -2210,7 +2214,7 @@ export default function MapTab({
       `Coordinate: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`,
     );
     setIsResolvingClick(true);
-    fetch(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`)
+    fetch(resolveApiUrl(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`))
       .then((res) => {
         if (!res.ok) {
           return {
@@ -3031,7 +3035,7 @@ out center;`;
     if (!selectedPlace || !reviewerName.trim() || !commentText.trim()) return;
 
     try {
-      const res = await fetch("/api/check-profanity", {
+      const res = await fetch(resolveApiUrl("/api/check-profanity"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3201,7 +3205,7 @@ out center;`;
       // Query Firestore soste collection in parallel for this 20km area
       let firestoreSoste: Place[] = [];
       try {
-        const sosteRes = await fetch(`/api/soste?minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&limit=500`);
+        const sosteRes = await fetch(resolveApiUrl(`/api/soste?minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&limit=500`));
         if (sosteRes.ok) {
           const rawSoste = await sosteRes.json();
           if (Array.isArray(rawSoste)) {
@@ -4866,7 +4870,7 @@ out center;`;
                         }),
                       );
 
-                      fetch(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`)
+                      fetch(resolveApiUrl(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`))
                         .then((res) => {
                           if (!res.ok) {
                             return {
@@ -5360,6 +5364,19 @@ out center;`;
               />
               <span className="hidden sm:inline">{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
             </button>
+
+            {/* Pulsante Chiusura Mappa (X) */}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-9 px-2.5 sm:px-3.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black rounded-xl shadow-lg border-2 border-white transition-all flex items-center justify-center gap-1 shrink-0 cursor-pointer text-xs"
+                title="Chiudi Mappa e torna indietro"
+              >
+                <X className="w-4 h-4 text-white" />
+                <span className="hidden sm:inline">Chiudi</span>
+              </button>
+            )}
           </div>
 
           {/* Pulsante di Ricentramento GPS SUBITO SOTTO al pulsante GPS (in alto a destra) */}

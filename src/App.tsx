@@ -75,6 +75,9 @@ import { CartoonCamperAvatar } from "./components/CartoonCamperAvatar";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
+import { WeatherAlertBanner } from "./components/WeatherAlertBanner";
+import { ReportWeatherModal } from "./components/ReportWeatherModal";
+import { WeatherRadarModal } from "./components/WeatherRadarModal";
 import EventsTab from "./components/EventsTab";
 import OfflineMapsTab from "./components/OfflineMapsTab";
 import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
@@ -1469,6 +1472,14 @@ export default function App() {
 
   const [showGPSWeatherModal, setShowGPSWeatherModal] =
     React.useState<boolean>(false);
+  const [showWeatherRadarModal, setShowWeatherRadarModal] =
+    React.useState<boolean>(false);
+  const [showReportWeatherModal, setShowReportWeatherModal] =
+    React.useState<boolean>(false);
+  const [returnTabAfterMap, setReturnTabAfterMap] = React.useState<{
+    tab: "map_nav" | "diary" | "settings_tools";
+    subTab?: string;
+  } | null>(null);
 
   React.useEffect(() => {
     setIsInIframe(window.self !== window.top);
@@ -1819,10 +1830,17 @@ export default function App() {
     
     // 1. Direct server-side API write to ensure cross-device, AI Studio sync, and base64 photo offloading
     try {
-      const res = await fetch("/api/user-trips/sync", {
+      const deletedIds = {
+        photos: Array.from(getDeletedIds('photos', cleanEmail)),
+        expenses: Array.from(getDeletedIds('expenses', cleanEmail)),
+        movements: Array.from(getDeletedIds('movements', cleanEmail)),
+        trips: Array.from(getDeletedIds('trips', cleanEmail)),
+      };
+
+      const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail, trips: normalized }),
+        body: JSON.stringify({ email: cleanEmail, trips: normalized, deletedIds }),
         signal: AbortSignal.timeout(15000),
       });
       if (res.ok) {
@@ -1899,7 +1917,7 @@ export default function App() {
 
       // Query server-side API as well (guarantees data availability in AI Studio preview & disk backup)
       try {
-        const res = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`);
+        const res = await fetch(resolveApiUrl(`/api/user-trips/${encodeURIComponent(cleanEmail)}`));
         if (res.ok) {
           const apiData = await res.json();
           if (apiData && Array.isArray(apiData.trips) && apiData.trips.length > 0) {
@@ -1963,12 +1981,15 @@ export default function App() {
 
         if (localExpensesCount > cloudExpensesCount || localMovsCount > cloudMovsCount || localPhotosCount > cloudPhotosCount || guestTrips.length > 0 || cloudHadBadTrip) {
           console.log("[App] Device has new data or cloud needs cleanup, auto-syncing to Cloud...");
+          // Reset lastSavedTripsJsonRef so saveTripsToFirestore is guaranteed to execute and push the merged local data
+          lastSavedTripsJsonRef.current = "";
           setTimeout(() => {
             saveTripsToFirestore(merged);
-          }, 800);
+          }, 400);
+        } else {
+          lastSavedTripsJsonRef.current = JSON.stringify(merged);
         }
 
-        lastSavedTripsJsonRef.current = JSON.stringify(merged);
         return merged;
       });
 
@@ -3835,7 +3856,7 @@ out center;`;
 
       // 1. First try fetching from Express backend API (which already filters deleted messages)
       try {
-        const res = await fetch("/api/community-messages");
+        const res = await fetch(resolveApiUrl("/api/community-messages"));
         if (res.ok) {
           const contentType = res.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
@@ -3953,7 +3974,7 @@ out center;`;
         if (firestore) {
           firestore.collection("communityMessages").doc(addedMsg.id).set(addedMsg).catch((e: any) => console.warn("Direct Firestore set error:", e));
         }
-        await fetch("/api/community-messages", {
+        await fetch(resolveApiUrl("/api/community-messages"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(addedMsg),
@@ -3971,7 +3992,7 @@ out center;`;
             if (firestore) {
               firestore.collection("communityMessages").doc(newMsg.id).update({ likes: newMsg.likes }).catch((e: any) => console.warn("Direct Firestore like error:", e));
             }
-            await fetch("/api/community-messages/like", {
+            await fetch(resolveApiUrl("/api/community-messages/like"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, likes: newMsg.likes }),
@@ -3983,7 +4004,7 @@ out center;`;
             if (firestore) {
               firestore.collection("communityMessages").doc(newMsg.id).update({ isResolved: newMsg.isResolved }).catch((e: any) => console.warn("Direct Firestore resolve error:", e));
             }
-            await fetch("/api/community-messages/resolve", {
+            await fetch(resolveApiUrl("/api/community-messages/resolve"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, isResolved: newMsg.isResolved }),
@@ -3998,7 +4019,7 @@ out center;`;
             if (firestore) {
               firestore.collection("communityMessages").doc(newMsg.id).update({ replies: newReplies }).catch((e: any) => console.warn("Direct Firestore reply error:", e));
             }
-            await fetch("/api/community-messages/reply", {
+            await fetch(resolveApiUrl("/api/community-messages/reply"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, reply: addedReply }),
@@ -4021,7 +4042,7 @@ out center;`;
             if (firestore) {
               firestore.collection("communityMessages").doc(newMsg.id).update({ replies: newReplies }).catch((e: any) => console.warn("Direct Firestore reply delete error:", e));
             }
-            await fetch("/api/community-messages/reply-delete", {
+            await fetch(resolveApiUrl("/api/community-messages/reply-delete"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: newMsg.id, replies: newReplies, deletedReplyId: deletedReply?.id }),
@@ -5065,6 +5086,48 @@ out center;`;
         </div>
       )}
 
+      {/* Severe Weather & Hail 30km Emergency Banner */}
+      <WeatherAlertBanner
+        userLocation={userLocation}
+        currentUser={currentUser}
+        onOpenRadarModal={() => setShowWeatherRadarModal(true)}
+        onShowOnMap={() => {
+          setReturnTabAfterMap({
+            tab: activeTab,
+            subTab: activeTab === 'settings_tools' ? settingsSubTab : mapNavSubTab
+          });
+          setActiveTab("map_nav");
+          setMapNavSubTab("map");
+        }}
+      />
+
+      {/* Floating Return / Close Map Button when navigated from Weather Radar / Modals */}
+      {returnTabAfterMap && activeTab === "map_nav" && (
+        <div className="fixed top-16 sm:top-20 right-3 sm:right-6 z-[9999] animate-fade-in pointer-events-auto">
+          <button
+            onClick={() => {
+              if (returnTabAfterMap) {
+                if (returnTabAfterMap.tab !== "map_nav") {
+                  setActiveTab(returnTabAfterMap.tab);
+                  if (returnTabAfterMap.tab === "settings_tools" && returnTabAfterMap.subTab) {
+                    setSettingsSubTab(returnTabAfterMap.subTab as any);
+                  }
+                }
+                setReturnTabAfterMap(null);
+              }
+            }}
+            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-2xl shadow-2xl border-2 border-white backdrop-blur-md transition-all active:scale-95 cursor-pointer text-xs sm:text-sm"
+            title="Chiudi mappa e torna indietro"
+          >
+            <ArrowLeft className="w-4 h-4 text-white" />
+            <span>Chiudi Mappa</span>
+            <div className="w-5 h-5 rounded-full bg-white/25 flex items-center justify-center ml-1">
+              <X className="w-3.5 h-3.5 text-white" />
+            </div>
+          </button>
+        </div>
+      )}
+
       {/* Main Bar Navigation Header - Scalable adaptive spacing across all devices */}
       <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs w-full overflow-hidden">
         <div className="max-w-7xl mx-auto px-2 min-[360px]:px-3 sm:px-6 lg:px-8 py-1.5 sm:py-2 flex flex-row items-center justify-between gap-2 min-[360px]:gap-3 sm:gap-4 min-w-0">
@@ -5365,6 +5428,17 @@ out center;`;
                   onNavigateToMovementLog={() => {
                     setMapNavSubTab("movement_log");
                   }}
+                  onClose={returnTabAfterMap ? () => {
+                    if (returnTabAfterMap) {
+                      setActiveTab(returnTabAfterMap.tab);
+                      if (returnTabAfterMap.tab === "settings_tools" && returnTabAfterMap.subTab) {
+                        setSettingsSubTab(returnTabAfterMap.subTab as any);
+                      } else if (returnTabAfterMap.tab === "map_nav" && returnTabAfterMap.subTab) {
+                        setMapNavSubTab(returnTabAfterMap.subTab as any);
+                      }
+                      setReturnTabAfterMap(null);
+                    }
+                  } : undefined}
                 />
               )}
             </div>
@@ -10662,6 +10736,14 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                 lat={userLocation.lat}
                 lng={userLocation.lng}
                 placeName="La tua posizione"
+                onOpenRadar={() => {
+                  setShowGPSWeatherModal(false);
+                  setShowWeatherRadarModal(true);
+                }}
+                onOpenReport={() => {
+                  setShowGPSWeatherModal(false);
+                  setShowReportWeatherModal(true);
+                }}
               />
 
               <button
@@ -10674,6 +10756,46 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Weather Radar & MeteoAlarm Modal */}
+      <AnimatePresence>
+        {showWeatherRadarModal && (
+          <WeatherRadarModal
+            userLocation={userLocation}
+            currentUser={currentUser}
+            onClose={() => setShowWeatherRadarModal(false)}
+            onOpenReportModal={() => {
+              setShowWeatherRadarModal(false);
+              setShowReportWeatherModal(true);
+            }}
+            onShowOnMap={() => {
+              setShowWeatherRadarModal(false);
+              setReturnTabAfterMap({
+                tab: activeTab,
+                subTab: activeTab === 'settings_tools' ? settingsSubTab : mapNavSubTab
+              });
+              setActiveTab("map_nav");
+              setMapNavSubTab("map");
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Report Weather & Hail Modal */}
+      <AnimatePresence>
+        {showReportWeatherModal && (
+          <ReportWeatherModal
+            userLocation={userLocation}
+            currentUser={currentUser}
+            onClose={() => setShowReportWeatherModal(false)}
+            onSuccess={() => {
+              setShowReportWeatherModal(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+
 
       {/* Confirmation Modal for Detected Stop / Auto Movement */}
       <AnimatePresence>

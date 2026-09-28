@@ -392,7 +392,7 @@ export default function DiaryTab({
         };
 
         // Direct sync with server (server loads existing backup, deep merges, and writes to Firestore & disk)
-        const res = await fetch("/api/user-trips/sync", {
+        const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: cleanEmail, trips: tripsToSync, deletedIds }),
@@ -743,7 +743,7 @@ export default function DiaryTab({
     setCloudStatusInfo({ loading: true });
     const cleanEmail = getActiveUserEmail();
     try {
-      const res = await fetch(`/api/user-trips/${encodeURIComponent(cleanEmail)}`, {
+      const res = await fetch(resolveApiUrl(`/api/user-trips/${encodeURIComponent(cleanEmail)}`), {
         signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
@@ -818,6 +818,7 @@ export default function DiaryTab({
   const [expenseSubMode, setExpenseSubMode] = React.useState<
     "general" | "refuel" | "movement" | "planned" | "photo" | "sosta"
   >("general");
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = React.useState<"all" | DiaryExpense["category"]>("all");
 
   // Movement-specific states
   const [movementOdometer, setMovementOdometer] = React.useState("");
@@ -1571,7 +1572,7 @@ export default function DiaryTab({
     );
 
     if (expenseSubMode === "refuel" && currentUser?.email) {
-      fetch(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`, {
+      fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4394,33 +4395,35 @@ export default function DiaryTab({
                       </div>
                     </form>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 w-full">
-                        <div className="min-w-0 w-full sm:flex-1">
-                          <div className="flex flex-wrap items-center gap-2 w-full">
-                            <span className="text-[10px] font-black tracking-widest text-[#5A6B4E] uppercase shrink-0">
-                              Diario Attivo
-                            </span>
+                    <div className="space-y-3 w-full min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 w-full min-w-0">
+                        <div className="min-w-0 w-full sm:flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 w-full min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[10px] font-black tracking-widest text-[#5A6B4E] uppercase shrink-0">
+                                Diario Attivo:
+                              </span>
 
-                            <select
-                              value={activeTrip.status}
-                              onChange={(e) =>
-                                handleUpdateTripStatus(
-                                  e.target.value as Trip["status"],
-                                )
-                              }
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono uppercase tracking-wider cursor-pointer outline-none border-none shrink-0 ${
-                                activeTrip.status === "Completato"
-                                  ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                                  : "bg-orange-100 text-amber-800"
-                              }`}
-                            >
-                              <option value="Completato">Completato</option>
-                              <option value="Attivo">In Corso (Attivo)</option>
-                              <option value="Pianificato">
-                                Pianificato per il futuro
-                              </option>
-                            </select>
+                              <select
+                                value={activeTrip.status}
+                                onChange={(e) =>
+                                  handleUpdateTripStatus(
+                                    e.target.value as Trip["status"],
+                                  )
+                                }
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono uppercase tracking-wider cursor-pointer outline-none border-none shrink-0 ${
+                                  activeTrip.status === "Completato"
+                                    ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                                    : "bg-orange-100 text-amber-800"
+                                }`}
+                              >
+                                <option value="Completato">Completato</option>
+                                <option value="Attivo">In Corso (Attivo)</option>
+                                <option value="Pianificato">
+                                  Pianificato per il futuro
+                                </option>
+                              </select>
+                            </div>
 
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <button
@@ -4528,6 +4531,24 @@ export default function DiaryTab({
                               </button>
                             </div>
                           </div>
+
+                          {trips.length > 1 && (
+                            <div className="w-full min-w-0 mt-1.5">
+                              <select
+                                value={selectedTripId || activeTrip.id}
+                                onChange={(e) => setSelectedTripId(e.target.value)}
+                                className="w-full max-w-full px-3 py-1.5 bg-white border border-[#3E4A35]/25 hover:border-[#3E4A35] text-[#3E4A35] rounded-xl text-xs font-bold outline-none cursor-pointer shadow-2xs transition-all truncate block box-border"
+                                title="Seleziona e passa a un altro viaggio"
+                              >
+                                {trips.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    🧳 {t.title} ({t.expenses?.length || 0} spese, {t.movements?.length || 0} tappe)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
                           <h2 className="text-xl font-bold tracking-tight text-[#2D2926] mt-2 break-words leading-snug w-full">
                             {activeTrip.title}
                           </h2>
@@ -4581,13 +4602,7 @@ export default function DiaryTab({
                         }`}
                       >
                         <Euro className="w-3.5 h-3.5 text-[#A45C40]" />
-                        Spese (
-                        {
-                          activeTrip.expenses.filter(
-                            (e) => e.category !== "Carburante",
-                          ).length
-                        }
-                        )
+                        Spese ({activeTrip.expenses.length})
                       </button>
                       <button
                         type="button"
@@ -5737,7 +5752,7 @@ export default function DiaryTab({
                               onChange={(e) => setExpenseAmount(e.target.value)}
                               className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-[#A45C40] text-slate-800 font-bold font-mono"
                             />
-                            <select
+                             <select
                               value={expenseCategory}
                               onChange={(e) =>
                                 setExpenseCategory(
@@ -5751,6 +5766,7 @@ export default function DiaryTab({
                               <option value="Sosta">
                                 ⛺ Area Sosta / Camping / Parcheggio
                               </option>
+                              <option value="Carburante">⛽ Carburante / Rifornimento</option>
                               <option value="Altro">🏷️ Altro / Extra</option>
                             </select>
                           </div>
@@ -5790,18 +5806,101 @@ export default function DiaryTab({
                           </div>
                         </form>
 
+                        {/* Category Filter Pills */}
+                        {activeTrip.expenses.length > 0 && (
+                          <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setExpenseCategoryFilter("all")}
+                              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                expenseCategoryFilter === "all"
+                                  ? "bg-[#A45C40] text-white shadow-2xs font-black"
+                                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                              }`}
+                            >
+                              Tutte ({activeTrip.expenses.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExpenseCategoryFilter("Autostrada")}
+                              className={`px-2 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                expenseCategoryFilter === "Autostrada"
+                                  ? "bg-[#A45C40] text-white shadow-2xs font-black"
+                                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                              }`}
+                            >
+                              🛣️ Autostrada ({activeTrip.expenses.filter((e) => e.category === "Autostrada").length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExpenseCategoryFilter("Cibo")}
+                              className={`px-2 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                expenseCategoryFilter === "Cibo"
+                                  ? "bg-[#A45C40] text-white shadow-2xs font-black"
+                                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                              }`}
+                            >
+                              🛒 Cibo ({activeTrip.expenses.filter((e) => e.category === "Cibo").length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExpenseCategoryFilter("Sosta")}
+                              className={`px-2 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                expenseCategoryFilter === "Sosta"
+                                  ? "bg-[#A45C40] text-white shadow-2xs font-black"
+                                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                              }`}
+                            >
+                              ⛺ Sosta ({activeTrip.expenses.filter((e) => e.category === "Sosta").length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExpenseCategoryFilter("Carburante")}
+                              className={`px-2 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                expenseCategoryFilter === "Carburante"
+                                  ? "bg-[#A45C40] text-white shadow-2xs font-black"
+                                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                              }`}
+                            >
+                              ⛽ Carburante ({activeTrip.expenses.filter((e) => e.category === "Carburante").length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExpenseCategoryFilter("Altro")}
+                              className={`px-2 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                expenseCategoryFilter === "Altro"
+                                  ? "bg-[#A45C40] text-white shadow-2xs font-black"
+                                  : "bg-stone-100 text-slate-600 hover:bg-stone-200"
+                              }`}
+                            >
+                              🏷️ Extra ({activeTrip.expenses.filter((e) => e.category === "Altro").length})
+                            </button>
+                          </div>
+                        )}
+
                         {/* General Expenses list */}
-                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                        <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                           {activeTrip.expenses.filter(
-                            (e) => e.category !== "Carburante",
+                            (e) => expenseCategoryFilter === "all" || e.category === expenseCategoryFilter,
                           ).length === 0 ? (
-                            <p className="text-xs text-slate-400 py-6 text-center">
-                              Nessuna spesa di viaggio inserita.
-                            </p>
+                            <div className="py-6 text-center space-y-1">
+                              <p className="text-xs text-slate-400">
+                                Nessuna spesa trovata in questa categoria.
+                              </p>
+                              {expenseCategoryFilter !== "all" && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpenseCategoryFilter("all")}
+                                  className="text-xs text-[#A45C40] font-bold underline cursor-pointer"
+                                >
+                                  Mostra tutte le {activeTrip.expenses.length} spese del viaggio
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             activeTrip.expenses
-                              .filter((e) => e.category !== "Carburante")
-                              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                              .filter((e) => expenseCategoryFilter === "all" || e.category === expenseCategoryFilter)
+                              .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
                               .map((exp) => (
                                 <div
                                   key={exp.id}
@@ -5814,7 +5913,9 @@ export default function DiaryTab({
                                           ? "Cibo"
                                           : exp.category === "Sosta"
                                             ? "Sosta/Parcheggio"
-                                            : exp.category}
+                                            : exp.category === "Carburante"
+                                              ? "Carburante"
+                                              : exp.category}
                                       </span>
                                       <p className="text-xs font-bold text-slate-800 line-clamp-1">
                                         {exp.title}

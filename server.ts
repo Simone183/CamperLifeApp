@@ -3353,28 +3353,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       // Send email if Resend is configured
       if (process.env.RESEND_API_KEY) {
-        try {
-          const { Resend } = await import('resend');
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          resend.emails.send({
-            from: 'ViaCamperApp <onboarding@resend.dev>',
-            to: formattedEmail,
-            subject: '🔑 Ripristino Password ViaCamper',
-            html: `<div style="font-family: sans-serif; padding: 20px;">
-              <h2>Ripristino Password ViaCamper</h2>
-              <p>Ciao <strong>${userDoc.data()?.nickname || 'Camperista'}</strong>,</p>
-              <p>La tua password per l'account <code>${formattedEmail}</code> è stata aggiornata:</p>
-              <p style="font-size: 18px; font-weight: bold; background: #f1f5f9; padding: 10px; border-radius: 8px;">${updatedPass}</p>
-              <p>Puoi accedere all'app utilizzando questa password.</p>
-            </div>`
-          }).then(res => {
-            console.log("[Reset Password] Email sent successfully to:", formattedEmail);
-          }).catch(e => {
-            console.warn("[Reset Password] Errore invio email resend in promise:", e);
-          });
-        } catch (e) {
-          console.warn("[Reset Password] Errore configurazione email resend:", e);
-        }
+        sendResendEmail({
+          to: formattedEmail,
+          subject: '🔑 Ripristino Password ViaCamper',
+          html: `<div style="font-family: sans-serif; padding: 20px;">
+            <h2>Ripristino Password ViaCamper</h2>
+            <p>Ciao <strong>${userDoc.data()?.nickname || 'Camperista'}</strong>,</p>
+            <p>La tua password per l'account <code>${formattedEmail}</code> è stata aggiornata:</p>
+            <p style="font-size: 18px; font-weight: bold; background: #f1f5f9; padding: 10px; border-radius: 8px;">${updatedPass}</p>
+            <p>Puoi accedere all'app utilizzando questa password.</p>
+          </div>`
+        }).catch(e => console.warn("[Reset Password] Errore invio email resend:", e));
       }
 
       res.json({
@@ -3385,6 +3374,103 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err: any) {
       console.error("Error in reset-password endpoint:", err);
       res.status(500).json({ error: err.message || "Errore durante il ripristino password." });
+    }
+  });
+
+  const WEATHER_ALERTS_FILE = path.join(process.cwd(), "data", "community_weather_alerts.json");
+
+  const getCachedWeatherAlerts = (): any[] => {
+    try {
+      if (fs.existsSync(WEATHER_ALERTS_FILE)) {
+        const raw = fs.readFileSync(WEATHER_ALERTS_FILE, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const now = Date.now();
+          return parsed.filter(a => new Date(a.expiresAt || 0).getTime() > now);
+        }
+      }
+    } catch (e) {}
+    return [];
+  };
+
+  const saveCachedWeatherAlerts = (alerts: any[]) => {
+    try {
+      const dataDir = path.dirname(WEATHER_ALERTS_FILE);
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(WEATHER_ALERTS_FILE, JSON.stringify(alerts, null, 2), "utf-8");
+    } catch (e) {}
+  };
+
+  app.get("/api/weather-alerts", async (req, res) => {
+    try {
+      const now = Date.now();
+      let alerts: any[] = [];
+      try {
+        const snapshot = await firestoreDb.collection("community_weather_alerts").get();
+        snapshot.forEach((doc: any) => {
+          const data = doc.data();
+          if (new Date(data.expiresAt || 0).getTime() > now) {
+            alerts.push({ id: doc.id, ...data });
+          }
+        });
+      } catch (fsErr) {
+        alerts = getCachedWeatherAlerts();
+      }
+      res.json({ success: true, alerts });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Errore recupero allerte meteo" });
+    }
+  });
+
+  app.post("/api/weather-alerts", async (req, res) => {
+    try {
+      const alert = req.body;
+      if (!alert || !alert.id || typeof alert.lat !== 'number' || typeof alert.lng !== 'number') {
+        return res.status(400).json({ error: "Dati allerta non validi." });
+      }
+
+      // 1. Save to Firestore
+      try {
+        await firestoreDb.collection("community_weather_alerts").doc(alert.id).set(alert);
+      } catch (fsErr) {
+        console.warn("[WeatherAlerts] Firestore save fallback:", fsErr);
+      }
+
+      // 2. Save locally
+      const current = getCachedWeatherAlerts();
+      const updated = [alert, ...current.filter(a => a.id !== alert.id)];
+      saveCachedWeatherAlerts(updated);
+
+      res.json({ success: true, alert });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Errore salvataggio allerta" });
+    }
+  });
+
+  app.post("/api/weather-alerts/confirm", async (req, res) => {
+    try {
+      const { alertId, userEmail } = req.body || {};
+      if (!alertId) return res.status(400).json({ error: "ID allerta obbligatorio." });
+
+      try {
+        const alertRef = firestoreDb.collection("community_weather_alerts").doc(alertId);
+        const docSnap = await alertRef.get();
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          const verifiedBy = Array.isArray(data.verifiedBy) ? data.verifiedBy : [];
+          if (userEmail && !verifiedBy.includes(userEmail)) {
+            verifiedBy.push(userEmail);
+          }
+          await alertRef.update({
+            verifiedCount: (data.verifiedCount || 1) + 1,
+            verifiedBy
+          });
+        }
+      } catch (e) {}
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Errore conferma allerta" });
     }
   });
 
@@ -3463,33 +3549,18 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       // Send email to the user letting them know they are approved! (If Resend is configured)
       if (process.env.RESEND_API_KEY) {
-        try {
-          const { Resend } = await import('resend');
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          resend.emails.send({
-            from: 'ViaCamperApp <onboarding@resend.dev>',
-            to: cleanEmail,
-            subject: 'Il tuo account ViaCamperApp è stato approvato! 🎉',
-            html: `
-              <h2>Benvenuto su ViaCamperApp!</h2>
-              <p>Siamo felici di comunicarti che il tuo account è stato approvato dall'amministratore.</p>
-              <p>Ora puoi effettuare il login con la tua email e password e iniziare ad utilizzare l'applicazione.</p>
-              <br/>
-              <p>Buon viaggio! 🚐💨</p>
-            `
-          }).then((emailRes: any) => {
-            if (emailRes?.error) {
-              console.log(`[Email Notice] Resend approval: ${emailRes.error.message || 'validation notice'}`);
-            } else {
-              console.log(`[Email] Approval notification sent successfully to user: ${cleanEmail}`);
-            }
-          }).catch(emailErr => {
-            console.log("Approval email notice to user:", emailErr?.message || emailErr);
-          });
-          console.log(`[Email] Approval notification triggered in background for user: ${cleanEmail}`);
-        } catch (setupErr) {
-          console.error("Error setting up approval email to user:", setupErr);
-        }
+        sendResendEmail({
+          to: cleanEmail,
+          subject: 'Il tuo account ViaCamperApp è stato approvato! 🎉',
+          html: `
+            <h2>Benvenuto su ViaCamperApp!</h2>
+            <p>Siamo felici di comunicarti che il tuo account è stato approvato dall'amministratore.</p>
+            <p>Ora puoi effettuare il login con la tua email e password e iniziare ad utilizzare l'applicazione.</p>
+            <br/>
+            <p>Buon viaggio! 🚐💨</p>
+          `
+        }).catch(e => console.warn("[Approve User] Errore invio email resend:", e));
+        console.log(`[Email] Approval notification triggered in background for user: ${cleanEmail}`);
       }
 
       res.json({ success: true, message: `Utente ${cleanEmail} approvato con successo.` });
@@ -4375,6 +4446,25 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  // Helper for normalizing server-side expenses so no item or format is lost
+  const normalizeServerExpense = (e: any, idx: number): any => {
+    if (!e || typeof e !== "object") return null;
+    const rawAmount = e.amount !== undefined ? e.amount : (e.totalCost !== undefined ? e.totalCost : (e.cost !== undefined ? e.cost : (e.importo !== undefined ? e.importo : e.valore)));
+    const amount = typeof rawAmount === "number" && !isNaN(rawAmount) ? rawAmount : parseFloat(String(rawAmount || 0).replace(',', '.')) || 0;
+    const title = String(e.title || e.description || e.name || e.voce || e.label || "Spesa");
+    const category = e.category || e.type || "Altro";
+    const date = String(e.date || e.createdDate || e.timestamp || new Date().toISOString().split("T")[0]);
+    const id = String(e.id || `exp_${date}_${amount}_${title.replace(/[^a-zA-Z0-9]/g, '')}_${idx}`);
+    return {
+      ...e,
+      id,
+      title,
+      amount,
+      category,
+      date,
+    };
+  };
+
   // ----------------------------------------------------
   // USER TRIPS API: Direct, guaranteed Firestore & Crew synchronization
   // ----------------------------------------------------
@@ -4455,17 +4545,18 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
             // Merge expenses (never drop expenses from either side)
             const exps = new Map<string, any>();
-            for (const e of (ft.expenses || [])) {
-              if (e && e.id) exps.set(String(e.id), e);
-            }
-            for (const e of (dt.expenses || [])) {
+            (ft.expenses || []).forEach((rawE: any, idx: number) => {
+              const e = normalizeServerExpense(rawE, idx);
+              if (e && e.id) exps.set(e.id, e);
+            });
+            (dt.expenses || []).forEach((rawE: any, idx: number) => {
+              const e = normalizeServerExpense(rawE, idx);
               if (e && e.id) {
-                const strId = String(e.id);
-                if (exps.has(strId)) {
-                  const existingE = exps.get(strId);
+                if (exps.has(e.id)) {
+                  const existingE = exps.get(e.id);
                   const exOdo = typeof existingE.odometer === 'number' && existingE.odometer > 0 ? existingE.odometer : undefined;
                   const dtOdo = typeof e.odometer === 'number' && e.odometer > 0 ? e.odometer : undefined;
-                  exps.set(strId, {
+                  exps.set(e.id, {
                     ...existingE,
                     ...e,
                     ...(exOdo || dtOdo ? { odometer: exOdo || dtOdo } : {}),
@@ -4474,10 +4565,10 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                     fuelCompany: e.fuelCompany || existingE.fuelCompany,
                   });
                 } else {
-                  exps.set(strId, e);
+                  exps.set(e.id, e);
                 }
               }
-            }
+            });
 
             // Merge photos (never drop photos from either side)
             const phos = new Map<string, any>();
@@ -4705,37 +4796,41 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
           const exTrip = mergedTripsMap.get(incTrip.id);
           // Merge expenses (never drop distinct expenses)
           const expMap = new Map<string, any>();
-          for (const e of (exTrip.expenses || [])) {
-            if (e && e.id && !deletedExpIds.has(String(e.id))) expMap.set(String(e.id), e);
-          }
-          for (const e of (incTrip.expenses || [])) {
-            if (e && e.id && !deletedExpIds.has(String(e.id))) {
-              const strId = String(e.id);
-              if (expMap.has(strId)) {
+          (exTrip.expenses || []).forEach((rawE: any, idx: number) => {
+            const e = normalizeServerExpense(rawE, idx);
+            if (e && e.id && !deletedExpIds.has(e.id)) expMap.set(e.id, e);
+          });
+          (incTrip.expenses || []).forEach((rawE: any, idx: number) => {
+            const e = normalizeServerExpense(rawE, idx);
+            if (e && e.id && !deletedExpIds.has(e.id)) {
+              if (expMap.has(e.id)) {
                 // Incoming expense updates existing expense
-                const existing = expMap.get(strId);
-                expMap.set(strId, { ...existing, ...e });
+                const existing = expMap.get(e.id);
+                expMap.set(e.id, { ...existing, ...e });
               } else {
-                expMap.set(strId, e);
+                expMap.set(e.id, e);
               }
             }
-          }
+          });
           // Merge movements: existing movements + incoming updates
           const movMap = new Map<string, any>();
           for (const m of (exTrip.movements || [])) {
-            if (m && m.id && !deletedMovIds.has(String(m.id))) movMap.set(m.id, m);
-          }
-          for (const m of (incTrip.movements || [])) {
             if (m && m.id && !deletedMovIds.has(String(m.id))) {
-              const existing = movMap.get(m.id);
-              if (existing) {
-                // Incoming movement is the latest user submission: update all fields from incoming!
-                movMap.set(m.id, {
-                  ...existing,
-                  ...m,
-                });
-              } else {
-                movMap.set(m.id, m);
+              movMap.set(String(m.id), m);
+            }
+          }
+          if (Array.isArray(incTrip.movements)) {
+            const incMovIds = new Set((incTrip.movements || []).map((m: any) => String(m?.id || '')));
+            for (const existingId of Array.from(movMap.keys())) {
+              if (!incMovIds.has(existingId)) {
+                movMap.delete(existingId);
+              }
+            }
+            for (const m of incTrip.movements) {
+              if (m && m.id && !deletedMovIds.has(String(m.id))) {
+                const strId = String(m.id);
+                const existing = movMap.get(strId);
+                movMap.set(strId, existing ? { ...existing, ...m } : m);
               }
             }
           }
@@ -6210,11 +6305,12 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       } catch (uploadErr) {
         console.warn("[Upload API] Failed to upload to GCS, saving Base64 to Firestore instead", uploadErr);
         // Fallback to storing in Firestore `shared_photos` collection
-        const photoId = `photo_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+        const photoId = (req.body && req.body.photoId) || `photo_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
         const base64Data = processedBuffer.toString('base64');
         await firestoreDb.collection('shared_photos').doc(photoId).set({
           base64: base64Data,
-          mimeType: `image/${fileExt}`
+          mimeType: `image/${fileExt}`,
+          createdAt: new Date().toISOString()
         });
         
         fileUrl = `/api/photos/${photoId}`;
@@ -6230,7 +6326,8 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
   app.get("/api/photos/:photoId", async (req, res) => {
     try {
-      const doc = await firestoreDb.collection("shared_photos").doc(req.params.photoId).get();
+      const cleanPhotoId = (req.params.photoId || "").replace(/\.[a-zA-Z0-9]+$/, "");
+      const doc = await firestoreDb.collection("shared_photos").doc(cleanPhotoId).get();
       if (!doc.exists) {
         return res.status(404).send("Image not found");
       }
@@ -6245,49 +6342,77 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     }
   });
 
+  // --- HELPER CENTRALIZZATO RESEND EMAIL ---
+  async function sendResendEmail(options: { to: string; subject: string; html: string }): Promise<{ success: boolean; data?: any; error?: any }> {
+    if (!process.env.RESEND_API_KEY) {
+      return { success: false, error: "RESEND_API_KEY non definita" };
+    }
+    try {
+      const cleanTo = (options.to || "").trim().toLowerCase();
+      if (!cleanTo || !cleanTo.includes("@")) {
+        return { success: false, error: "Indirizzo destinatario non valido" };
+      }
+
+      const rawFrom = (process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev").trim();
+      const fromEmail = rawFrom.includes("<") ? rawFrom : `ViaCamperApp <${rawFrom}>`;
+      const isSandbox = rawFrom.toLowerCase().includes("resend.dev");
+
+      const allowedOwnerEmail = (process.env.RESEND_ALLOWED_RECIPIENT || process.env.ADMIN_EMAIL || "viacamperapp@gmail.com").trim().toLowerCase();
+
+      if (isSandbox && cleanTo !== allowedOwnerEmail) {
+        console.log(`[Resend Service] Sandbox notice: Email to '${cleanTo}' ("${options.subject}") deferred because Resend test domain 'resend.dev' allows owner recipient ('${allowedOwnerEmail}') only. Verify custom domain at resend.com/domains to send to external recipients.`);
+        return { success: false, error: { name: "sandbox_restriction", message: `Resend sandbox allows owner email ${allowedOwnerEmail} only.` } };
+      }
+
+      const { Resend } = await import("resend");
+      const resend = new Resend(process.env.RESEND_API_KEY);
+
+      const res: any = await resend.emails.send({
+        from: fromEmail,
+        to: cleanTo,
+        subject: options.subject,
+        html: options.html
+      });
+
+      if (res?.error) {
+        console.warn(`[Resend Service] Notice for ${cleanTo}: [${res.error.name || 'error'}] ${res.error.message || 'validation notice'}`);
+        return { success: false, error: res.error };
+      }
+
+      console.log(`[Resend Service] Email sent successfully to ${cleanTo}: "${options.subject}"`);
+      return { success: true, data: res?.data };
+    } catch (err: any) {
+      console.warn(`[Resend Service] Exception sending to ${options.to}:`, err?.message || err);
+      return { success: false, error: err };
+    }
+  }
+
   // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
   async function sendAdminNotificationEmail(subject: string, htmlContent: string) {
     const adminTargets = Array.from(
       new Set([
-        "sambucci.simone@gmail.com",
         "viacamperapp@gmail.com",
+        "sambucci.simone@gmail.com",
         ...(process.env.ADMIN_EMAIL ? [process.env.ADMIN_EMAIL.toLowerCase().trim()] : [])
       ])
     );
-    console.log(`[Email Service] Preparing to send email to [${adminTargets.join(", ")}]: "${subject}"`);
+    console.log(`[Email Service] Preparing notification for: "${subject}"`);
     
-    if (process.env.RESEND_API_KEY) {
-      try {
-        const { Resend } = await import('resend');
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        let anySuccess = false;
-        for (const recipient of adminTargets) {
-          try {
-            const res: any = await resend.emails.send({
-              from: 'ViaCamperApp <onboarding@resend.dev>',
-              to: recipient,
-              subject: subject,
-              html: htmlContent
-            });
-            if (res?.error) {
-              console.log(`[Email Service] Resend notice for ${recipient}: ${res.error.message || 'validation notice'}`);
-            } else {
-              anySuccess = true;
-              console.log(`[Email Service] Email sent successfully via Resend to ${recipient}:`, res.data);
-            }
-          } catch (itemErr: any) {
-            console.warn(`[Email Service] Could not send to ${recipient}:`, itemErr?.message || itemErr);
-          }
-        }
-        return { success: anySuccess };
-      } catch (err: any) {
-        console.error(`[Email Service] Failed to send email via Resend:`, err?.message || err);
-        return { success: false, error: err };
-      }
-    } else {
-      console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email a [${adminTargets.join(", ")}] per: "${subject}".`);
+    if (!process.env.RESEND_API_KEY) {
+      console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email per: "${subject}".`);
       return { success: false, reason: "RESEND_API_KEY missing" };
     }
+
+    let anySuccess = false;
+    for (const recipient of adminTargets) {
+      const res = await sendResendEmail({
+        to: recipient,
+        subject: subject,
+        html: htmlContent
+      });
+      if (res.success) anySuccess = true;
+    }
+    return { success: anySuccess };
   }
 
   // --- NOTIFY PHOTO SUBMISSION ROUTE (Concorsi, Aree Sosta, Foto Generiche) ---
@@ -6514,33 +6639,22 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
       // Optional email notification to admin
       if (process.env.RESEND_API_KEY) {
-        try {
-          const { Resend } = await import("resend");
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-          resend.emails.send({
-            from: "ViaCamperApp <onboarding@resend.dev>",
-            to: targetAdminEmail,
-            subject: `🚨 ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
-            html: `
-              <div style="font-family: sans-serif; padding: 20px; background: #fff1f2; border-radius: 12px; border: 1px solid #fecdd3;">
-                <h2 style="color: #9f1239; margin-top: 0;">🚨 Segnalazione Crash / Errore Runtime</h2>
-                <p><strong>Utente:</strong> ${report.userEmail}</p>
-                <p><strong>Errore:</strong> ${report.message}</p>
-                <p><strong>Pagina/URL:</strong> ${report.url}</p>
-                <p><strong>Data/Ora:</strong> ${report.timestamp}</p>
-                <pre style="background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 8px; font-size: 11px; overflow-x: auto;">${report.stack || 'Nessuno stack trace'}</pre>
-                <p style="font-size: 12px; color: #475569;">Puoi gestire questo crash log direttamente dal Pannello Moderatore in ViaCamperApp sotto <strong>Crash & Logs</strong>.</p>
-              </div>
-            `
-          }).then(res => {
-            console.log("[Crash API] Email alert sent successfully to:", targetAdminEmail);
-          }).catch(e => {
-            console.warn("[Crash API] Failed to send email alert in promise:", e);
-          });
-        } catch (e) {
-          console.warn("[Crash API] Failed to setup email alert:", e);
-        }
+        const targetAdminEmail = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
+        sendResendEmail({
+          to: targetAdminEmail,
+          subject: `🚨 ViaCamper: Nuovo Crash Log [${report.userEmail}]`,
+          html: `
+            <div style="font-family: sans-serif; padding: 20px; background: #fff1f2; border-radius: 12px; border: 1px solid #fecdd3;">
+              <h2 style="color: #9f1239; margin-top: 0;">🚨 Segnalazione Crash / Errore Runtime</h2>
+              <p><strong>Utente:</strong> ${report.userEmail}</p>
+              <p><strong>Errore:</strong> ${report.message}</p>
+              <p><strong>Pagina/URL:</strong> ${report.url}</p>
+              <p><strong>Data/Ora:</strong> ${report.timestamp}</p>
+              <pre style="background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 8px; font-size: 11px; overflow-x: auto;">${report.stack || 'Nessuno stack trace'}</pre>
+              <p style="font-size: 12px; color: #475569;">Puoi gestire questo crash log direttamente dal Pannello Moderatore in ViaCamperApp sotto <strong>Crash & Logs</strong>.</p>
+            </div>
+          `
+        }).catch(e => console.warn("[Crash API] Failed to send email alert:", e));
       }
 
       res.json({ success: true, id: docId });

@@ -11,9 +11,11 @@ import {
   CloudSnow, 
   CloudLightning,
   Compass,
-  Loader2
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import { getWeatherData } from '../lib/weatherService';
+import { communityWeatherAlertsService } from '../lib/communityWeatherAlertsService';
 
 interface HeaderGPSWeatherProps {
   lat: number | null;
@@ -32,6 +34,7 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
   const [temp, setTemp] = useState<number | null>(null);
   const [code, setCode] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [hasNearbyAlerts, setHasNearbyAlerts] = useState<boolean>(false);
 
   const getWeatherIcon = (weatherCode: number) => {
     const s = "w-4.5 h-4.5 sm:w-5 sm:h-5";
@@ -64,7 +67,7 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
       case 95:
       case 96:
       case 99:
-        return <CloudLightning className={`${s} text-yellow-500`} />;
+        return <CloudLightning className={`${s} text-yellow-500 animate-bounce`} />;
       default:
         return <Cloud className={`${s} text-slate-400`} />;
     }
@@ -92,11 +95,22 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
 
     fetchCompact();
 
+    // Check for nearby weather alerts within 30 km
+    const checkAlerts = () => {
+      if (lat !== null && lng !== null) {
+        const alerts = communityWeatherAlertsService.getNearbyAlerts(lat, lng, 30);
+        setHasNearbyAlerts(alerts.length > 0);
+      }
+    };
+    checkAlerts();
+    const unsubAlerts = communityWeatherAlertsService.subscribe(checkAlerts);
+
     // Refresh every 30 minutes
     const interval = setInterval(fetchCompact, 30 * 60 * 1000);
 
     return () => {
       active = false;
+      unsubAlerts();
       clearInterval(interval);
     };
   }, [lat, lng]);
@@ -127,17 +141,31 @@ export const HeaderGPSWeather: React.FC<HeaderGPSWeatherProps> = ({
   return (
     <button
       onClick={onClick}
-      className="h-8.5 min-[360px]:h-9 sm:h-10 flex items-center justify-center gap-1.5 px-2 min-[360px]:px-2.5 sm:px-3 bg-[#F4F6F0] hover:bg-[#E7EBDC] active:bg-[#D1CDBF]/70 text-[#3E4A35] dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-xl border border-[#3E4A35]/15 dark:border-slate-500 transition-all cursor-pointer shadow-xs active:scale-95 text-[11px] min-[360px]:text-xs sm:text-[13px] font-black shrink-0"
-      title="Meteo GPS della tua posizione (Clicca per dettagli)"
+      className={`h-8.5 min-[360px]:h-9 sm:h-10 flex items-center justify-center gap-1.5 px-2 min-[360px]:px-2.5 sm:px-3 rounded-xl border transition-all cursor-pointer shadow-xs active:scale-95 text-[11px] min-[360px]:text-xs sm:text-[13px] font-black shrink-0 ${
+        hasNearbyAlerts
+          ? 'bg-rose-500 text-white hover:bg-rose-600 border-rose-600 animate-pulse'
+          : 'bg-[#F4F6F0] hover:bg-[#E7EBDC] active:bg-[#D1CDBF]/70 text-[#3E4A35] dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white border-[#3E4A35]/15 dark:border-slate-500'
+      }`}
+      title={hasNearbyAlerts ? "⚠️ Allerta Meteo / Grandine entro 30 km! Clicca per dettagli" : "Meteo GPS della tua posizione (Clicca per dettagli e radar)"}
     >
       <div className="flex items-center gap-1 min-[360px]:gap-1.5">
-        {code !== null ? getWeatherIcon(code) : <Sun className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-amber-500" />}
-        <span className="text-[#3E4A35] dark:text-white font-mono font-extrabold tracking-tight text-[11px] min-[360px]:text-xs sm:text-[13px]">
+        {hasNearbyAlerts ? (
+          <AlertTriangle className="w-4 h-4 text-yellow-300 animate-bounce" />
+        ) : code !== null ? (
+          getWeatherIcon(code)
+        ) : (
+          <Sun className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-amber-500" />
+        )}
+        <span className="font-mono font-extrabold tracking-tight text-[11px] min-[360px]:text-xs sm:text-[13px]">
           {temp !== null ? `${formatTemperature(temp, settings)}` : settings.temperatureUnit === 'fahrenheit' ? '--°F' : '--°C'}
         </span>
       </div>
-      <span className="text-[9px] sm:text-[9.5px] bg-[#3E4A35]/10 text-[#3E4A35] dark:bg-slate-500 dark:text-white font-black px-1.5 py-0.5 rounded-md hidden md:inline">
-        GPS METEO
+      <span className={`text-[9px] sm:text-[9.5px] font-black px-1.5 py-0.5 rounded-md hidden md:inline ${
+        hasNearbyAlerts
+          ? 'bg-yellow-400 text-slate-950 uppercase'
+          : 'bg-[#3E4A35]/10 text-[#3E4A35] dark:bg-slate-500 dark:text-white'
+      }`}>
+        {hasNearbyAlerts ? '⚠️ ALLERTA 30KM' : 'GPS METEO'}
       </span>
     </button>
   );

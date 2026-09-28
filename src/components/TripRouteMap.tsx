@@ -1,7 +1,9 @@
 import React from "react";
 import L from "leaflet";
+import "../utils/leafletPatch";
 import { Trip } from "../types";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
+import { resolveApiUrl } from "../utils/resolveMediaUrl";
 import {
   Play,
   Pause,
@@ -71,7 +73,7 @@ const geocodeLocation = async (location: string): Promise<{ lat: number; lng: nu
 
   // 1. Try local/proxy /api/nominatim
   try {
-    const res = await fetch(`/api/nominatim?q=${encodeURIComponent(location)}`);
+    const res = await fetch(resolveApiUrl(`/api/nominatim?q=${encodeURIComponent(location)}`));
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data[0] && data[0].lat && data[0].lon) {
@@ -215,7 +217,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
 
         let resolvedName = `Tappa GPS (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
         try {
-          const res = await fetch(`/api/nominatim-reverse?lat=${latitude}&lon=${longitude}`);
+          const res = await fetch(resolveApiUrl(`/api/nominatim-reverse?lat=${latitude}&lon=${longitude}`));
           if (res.ok) {
             const data = await res.json();
             if (data && data.display_name) {
@@ -729,7 +731,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
         // Fetch reverse geocoding to get a clean name
         let resolvedName = `Tappa ${points.length + 1}`;
         try {
-          const res = await fetch(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`);
+          const res = await fetch(resolveApiUrl(`/api/nominatim-reverse?lat=${lat}&lon=${lng}`));
           if (res.ok) {
             const data = await res.json();
             if (data && data.display_name) {
@@ -966,7 +968,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     console.log("TripRouteMap: Searching for:", searchQuery);
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/nominatim?q=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(resolveApiUrl(`/api/nominatim?q=${encodeURIComponent(searchQuery)}`));
       const data = await res.json();
       console.log("TripRouteMap: Search result:", data);
       if (Array.isArray(data)) {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Trip, DiaryMovement } from '../types';
 import { MapPin, Trash2, ArrowLeft, Navigation } from 'lucide-react';
+import { resolveApiUrl } from '../utils/resolveMediaUrl';
 
 interface MovementLogProps {
   trip: Trip;
@@ -37,7 +38,7 @@ export function MovementLog({ trip, onUpdateTrip, onBack }: MovementLogProps) {
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
-          const res = await fetch(`/api/nominatim-reverse?lat=${latitude}&lon=${longitude}`);
+          const res = await fetch(resolveApiUrl(`/api/nominatim-reverse?lat=${latitude}&lon=${longitude}`));
           if (res.ok) {
             const data = await res.json();
             let placeName = `Posizione GPS (${Number(latitude).toFixed(4)}, ${Number(longitude).toFixed(4)})`;

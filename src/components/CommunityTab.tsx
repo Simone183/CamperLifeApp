@@ -44,8 +44,10 @@ import {
   RefreshCw,
   Trophy,
   Lock,
-  Calendar
+  Calendar,
+  AlertTriangle
 } from 'lucide-react';
+import { recoverPhoto, persistCommunityPhoto } from '../utils/photoPersistence';
 
 function getRelativeTime(timestamp: string): string {
   try {
@@ -96,6 +98,112 @@ function QuotedReplyBox({ replyTo }: { replyTo?: { id: string; user: string; tex
         "{replyTo.text}"
       </p>
     </div>
+  );
+}
+
+function SafePostMedia({
+  mediaUrl,
+  mediaType = 'image',
+  alt = 'Foto allegata',
+  className = 'w-full h-auto max-h-[420px] object-cover hover:scale-[1.01] transition-transform duration-300',
+  onClick,
+}: {
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video';
+  alt?: string;
+  className?: string;
+  onClick?: () => void;
+}) {
+  const [imgSrc, setImgSrc] = React.useState<string>(() => resolveMediaUrl(mediaUrl));
+  const [hasError, setHasError] = React.useState<boolean>(false);
+  const [isRetrying, setIsRetrying] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    setHasError(false);
+    const resolved = resolveMediaUrl(mediaUrl);
+    setImgSrc(resolved);
+
+    // If it's a dynamic photo URL, try to pre-check or recover from local cache
+    if (mediaUrl && (mediaUrl.includes('photo_') || mediaUrl.includes('upload_'))) {
+      recoverPhoto(mediaUrl).then((recovered) => {
+        if (isMounted && recovered) {
+          setImgSrc(recovered);
+        }
+      });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [mediaUrl]);
+
+  if (!mediaUrl) return null;
+
+  if (mediaType === 'video') {
+    return (
+      <div className="relative aspect-video flex items-center justify-center bg-black cursor-pointer" onClick={onClick}>
+        <video src={imgSrc} className="w-full h-full object-cover max-h-[380px]" controls />
+      </div>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <div className="w-full py-6 px-4 bg-amber-500/10 dark:bg-amber-900/20 rounded-xl border border-amber-300/80 dark:border-amber-700/60 flex flex-col items-center justify-center text-center gap-2.5 my-2">
+        <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-800/40 flex items-center justify-center text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="w-5 h-5" />
+        </div>
+        <div className="space-y-1 max-w-sm">
+          <p className="text-xs font-black text-amber-900 dark:text-amber-200">
+            Foto non presente sul Cloud
+          </p>
+          <p className="text-[11px] text-amber-700 dark:text-amber-300/80 leading-relaxed">
+            Questo scatto risale a una sessione precedente all'attivazione del Cloud permanente e il file originale non è reperibile. Tutti i nuovi scatti vengono ora archiviati su Firebase & Storage sicuro e non andranno mai più persi.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={async (e) => {
+            e.stopPropagation();
+            setIsRetrying(true);
+            const recovered = await recoverPhoto(mediaUrl);
+            if (recovered) {
+              setImgSrc(recovered);
+              setHasError(false);
+            } else {
+              const retryUrl = `${resolveMediaUrl(mediaUrl)}${mediaUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+              setImgSrc(retryUrl);
+            }
+            setTimeout(() => setIsRetrying(false), 800);
+          }}
+          className="mt-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`} />
+          <span>{isRetrying ? 'Ricerca nel Cloud in corso...' : 'Riprova ricerca nel Cloud'}</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imgSrc}
+      alt={alt}
+      className={className}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={async () => {
+        // Try recovering from IndexedDB or direct Firestore query before showing error UI
+        const recovered = await recoverPhoto(mediaUrl);
+        if (recovered) {
+          setImgSrc(recovered);
+        } else {
+          setHasError(true);
+        }
+      }}
+      onClick={onClick}
+    />
   );
 }
 
@@ -606,32 +714,14 @@ export default function CommunityTab({
       try {
         // 1. High-fidelity compression (1920px max Full HD, 85% quality: crystal clear, zero blurriness, ~150-250KB)
         const compressedBase64 = await compressImage(rawResult, 'high');
-        let finalUrl = compressedBase64;
-
-        // 2. Upload to Cloud Storage via /api/upload
-        try {
-          const uploadRes = await fetch(resolveApiUrl('/api/upload'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: file.name || `community_${Date.now()}.jpg`,
-              base64: compressedBase64,
-            }),
-          });
-          if (uploadRes.ok) {
-            const data = await uploadRes.json();
-            if (data && data.url) {
-              finalUrl = data.url;
-            }
-          }
-        } catch (uploadErr) {
-          console.warn('[Community] Cloud upload failed, using compressed base64 fallback:', uploadErr);
-        }
+        
+        // 2. Double Cloud + Local Persistence (Firestore permanent collection + IndexedDB backup + API)
+        const { url: finalUrl } = await persistCommunityPhoto(compressedBase64, file.name);
 
         onSuccess(finalUrl, 'image', file.name);
         window.dispatchEvent(
           new CustomEvent("show-toast", {
-            detail: { message: "✨ Foto ottimizzata in Full HD e pronta per la pubblicazione!" },
+            detail: { message: "✨ Foto salvata in modo permanente nel Cloud & pronta!" },
           })
         );
       } catch (err) {
@@ -932,7 +1022,7 @@ export default function CommunityTab({
       } catch {}
 
       // 2. Call backend delete API directly
-      fetch("/api/community-messages/delete", {
+      fetch(resolveApiUrl("/api/community-messages/delete"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: targetId }),
@@ -974,7 +1064,7 @@ export default function CommunityTab({
       const newReplies = (targetMsg?.replies || []).filter((r) => r.id !== replyId);
 
       // 2. Call backend reply delete API directly
-      fetch("/api/community-messages/reply-delete", {
+      fetch(resolveApiUrl("/api/community-messages/reply-delete"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: msgId, replies: newReplies, deletedReplyId: replyId }),
@@ -1958,25 +2048,14 @@ export default function CommunityTab({
                           setDoubleTapLikedId(msg.id);
                           setTimeout(() => setDoubleTapLikedId(null), 1000);
                         }}
-                        onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
                       >
-                        {msg.mediaType === 'video' ? (
-                          <div className="relative aspect-video flex items-center justify-center bg-black">
-                            <video src={resolveMediaUrl(msg.mediaUrl)} className="w-full h-full object-cover max-h-[380px]" />
-                            <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center group-hover:bg-slate-950/20 transition-all">
-                              <div className="w-12 h-12 rounded-full bg-white/90 text-slate-900 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                <Play className="w-6 h-6 ml-1 fill-current" />
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <img
-                            src={resolveMediaUrl(msg.mediaUrl)}
-                            alt="Scatto social camper"
-                            className="w-full h-auto max-h-[420px] object-cover hover:scale-[1.01] transition-transform duration-300"
-                            referrerPolicy="no-referrer"
-                          />
-                        )}
+                        <SafePostMedia
+                          mediaUrl={msg.mediaUrl}
+                          mediaType={msg.mediaType}
+                          alt="Scatto social camper"
+                          className="w-full h-auto max-h-[420px] object-cover hover:scale-[1.01] transition-transform duration-300"
+                          onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
+                        />
 
                         {/* Double tap heart animation overlay */}
                         {showDoubleTapAnim && (
@@ -2095,8 +2174,9 @@ export default function CommunityTab({
 
                                 {reply.mediaUrl && (
                                   <div className="pl-8 pt-1">
-                                    <img
-                                      src={resolveMediaUrl(reply.mediaUrl)}
+                                    <SafePostMedia
+                                      mediaUrl={reply.mediaUrl}
+                                      mediaType={reply.mediaType}
                                       alt="Allegato commento"
                                       className="w-24 h-24 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
                                       onClick={() => setMediaModal({ url: resolveMediaUrl(reply.mediaUrl!), type: reply.mediaType || 'image' })}
@@ -2286,19 +2366,13 @@ export default function CommunityTab({
                       {/* Attached Media in Chat Bubble */}
                       {msg.mediaUrl && (
                         <div className="mt-2 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 max-w-full">
-                          {msg.mediaType === 'video' ? (
-                            <video src={resolveMediaUrl(msg.mediaUrl)} controls className="w-full max-h-60 object-contain rounded-xl bg-black" />
-                          ) : (
-                            <div
-                              className="relative group cursor-pointer"
-                              onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: 'image' })}
-                            >
-                              <img src={resolveMediaUrl(msg.mediaUrl)} alt="Foto allegata" className="w-full max-h-60 object-cover rounded-xl" />
-                              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-[10px] text-white bg-black/60 px-2 py-0.5 rounded-full font-bold">Ingrandisci</span>
-                              </div>
-                            </div>
-                          )}
+                          <SafePostMedia
+                            mediaUrl={msg.mediaUrl}
+                            mediaType={msg.mediaType}
+                            alt="Foto allegata"
+                            className="w-full max-h-60 object-cover rounded-xl"
+                            onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
+                          />
                         </div>
                       )}
 
@@ -2589,15 +2663,14 @@ export default function CommunityTab({
 
                     {/* Media Attachment if present */}
                     {msg.mediaUrl && (
-                      <div
-                        className="mx-4 rounded-xl overflow-hidden bg-slate-950 cursor-pointer"
-                        onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
-                      >
-                        {msg.mediaType === 'video' ? (
-                          <video src={resolveMediaUrl(msg.mediaUrl)} controls className="w-full max-h-72 object-cover" />
-                        ) : (
-                          <img src={resolveMediaUrl(msg.mediaUrl)} alt="Foto SOS" className="w-full max-h-72 object-cover hover:scale-[1.01] transition-transform" />
-                        )}
+                      <div className="mx-4 rounded-xl overflow-hidden bg-slate-950 cursor-pointer">
+                        <SafePostMedia
+                          mediaUrl={msg.mediaUrl}
+                          mediaType={msg.mediaType}
+                          alt="Foto SOS"
+                          className="w-full max-h-72 object-cover hover:scale-[1.01] transition-transform"
+                          onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
+                        />
                       </div>
                     )}
 
@@ -3029,21 +3102,13 @@ export default function CommunityTab({
                     {/* Topic Media */}
                     {msg.mediaUrl && (
                       <div className="my-3 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900">
-                        {msg.mediaType === 'video' ? (
-                          <video src={resolveMediaUrl(msg.mediaUrl)} controls className="w-full max-h-96 object-contain" />
-                        ) : (
-                          <div
-                            className="relative group cursor-pointer"
-                            onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: 'image' })}
-                          >
-                            <img src={resolveMediaUrl(msg.mediaUrl)} alt="Foto allegata" className="w-full max-h-96 object-cover" />
-                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <span className="text-xs text-white bg-black/70 px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 backdrop-blur-xs">
-                                <ImageIcon className="w-4 h-4" /> Ingrandisci immagine
-                              </span>
-                            </div>
-                          </div>
-                        )}
+                        <SafePostMedia
+                          mediaUrl={msg.mediaUrl}
+                          mediaType={msg.mediaType}
+                          alt="Foto allegata"
+                          className="w-full max-h-96 object-cover"
+                          onClick={() => setMediaModal({ url: resolveMediaUrl(msg.mediaUrl!), type: msg.mediaType || 'image' })}
+                        />
                       </div>
                     )}
 
@@ -3557,23 +3622,7 @@ export default function CommunityTab({
           const photoName = `foto_diretta_${Date.now()}.jpg`;
           try {
             const compressed = await compressImage(dataUrl, 'high');
-            let finalUrl = compressed;
-            try {
-              const res = await fetch(resolveApiUrl('/api/upload'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  name: photoName,
-                  base64: compressed,
-                }),
-              });
-              if (res.ok) {
-                const uploadData = await res.json();
-                if (uploadData?.url) finalUrl = uploadData.url;
-              }
-            } catch (upErr) {
-              console.warn('[LiveCamera] Cloud upload error fallback:', upErr);
-            }
+            const { url: finalUrl } = await persistCommunityPhoto(compressed, photoName);
             setPostMedia({
               url: finalUrl,
               type: 'image',
@@ -3581,7 +3630,7 @@ export default function CommunityTab({
             });
             window.dispatchEvent(
               new CustomEvent("show-toast", {
-                detail: { message: "📸 Foto scattata in Full HD e pronta per il Cloud!" },
+                detail: { message: "📸 Foto scattata in Full HD e archiviata in modo permanente nel Cloud!" },
               })
             );
           } catch (e) {

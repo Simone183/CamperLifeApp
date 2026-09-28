@@ -31,8 +31,6 @@ export function getDeletedIds(type: DeletionType, email?: string): Set<string> {
           if (!id || typeof id !== 'string') continue;
           const trimmed = id.trim();
           if (!trimmed) continue;
-          // Protect against generic index IDs accidentally purging records across trips
-          if (/^(exp|mov|photo)_(\d+|.*_\d+)$/.test(trimmed)) continue;
           set.add(trimmed);
         }
       }
@@ -48,7 +46,7 @@ export function recordDeletedId(type: DeletionType, id: string, email?: string):
   const cleanEmail = (email || '').toLowerCase().trim();
   if (!id || typeof id !== 'string') return;
   const trimmed = id.trim();
-  if (!trimmed || /^(exp|mov|photo)_(\d+|.*_\d+)$/.test(trimmed)) return;
+  if (!trimmed) return;
   try {
     const key = cleanEmail ? `camper_deleted_${type}_${cleanEmail}` : `camper_deleted_${type}_guest`;
     const set = getDeletedIds(type, cleanEmail);
@@ -96,20 +94,30 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
 
   const tripId = String(rawTrip.id || `trip_${Date.now()}`);
 
-  // When normalizing an active trip record, do NOT destructively purge its own items.
-  // If an expense, movement, or photo is present in the object, keep it.
+  const deletedExpenses = userEmail ? getDeletedIds('expenses', userEmail) : new Set<string>();
+  const deletedMovements = userEmail ? getDeletedIds('movements', userEmail) : new Set<string>();
+  const deletedPhotos = userEmail ? getDeletedIds('photos', userEmail) : new Set<string>();
+
   const cleanExpenses: DiaryExpense[] = Array.isArray(rawTrip.expenses)
     ? rawTrip.expenses
         .filter((e: any) => e && (e as any).deleted !== true)
         .map((e: any, idx: number) => {
-          const expId = String(e?.id || `exp_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`);
-          if (userEmail) unrecordDeletedId('expenses', expId, userEmail);
+          const rawAmount = e?.amount !== undefined ? e.amount : (e?.totalCost !== undefined ? e.totalCost : (e?.cost !== undefined ? e.cost : (e?.importo !== undefined ? e.importo : e?.valore)));
+          const amount = typeof rawAmount === "number" && !isNaN(rawAmount) ? rawAmount : parseFloat(String(rawAmount || 0).replace(',', '.')) || 0;
+          const title = String(e?.title || e?.description || e?.name || e?.voce || e?.label || "Spesa");
+          const category = e?.category || e?.type || "Altro";
+          const date = String(e?.date || e?.createdDate || e?.timestamp || new Date().toISOString().split("T")[0]);
+          const expId = String(e?.id || `exp_${date}_${amount}_${title.replace(/[^a-zA-Z0-9]/g, '')}_${idx}`);
+
+          if (e.id && deletedExpenses.has(expId)) return null;
+
           const item: DiaryExpense = {
+            ...e,
             id: expId,
-            title: String(e?.title || "Spesa"),
-            amount: typeof e?.amount === "number" && !isNaN(e.amount) ? e.amount : parseFloat(e?.amount) || 0,
-            category: e?.category || "Altro",
-            date: String(e?.date || "2025-01-01"),
+            title,
+            amount,
+            category,
+            date,
           };
           if (e?.liters !== undefined && e?.liters !== null && !isNaN(Number(e.liters))) {
             item.liters = Number(e.liters);
@@ -128,14 +136,14 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
           }
           return item;
         })
+        .filter((e): e is DiaryExpense => e !== null)
     : [];
 
   const cleanMovements: TripMovement[] = Array.isArray(rawTrip.movements)
     ? rawTrip.movements
-        .filter((m: any) => m && (m as any).deleted !== true)
+        .filter((m: any) => m && (m as any).deleted !== true && (!m.id || !deletedMovements.has(String(m.id))))
         .map((m: any, idx: number) => {
           const movId = String(m?.id || `mov_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`);
-          if (userEmail) unrecordDeletedId('movements', movId, userEmail);
           return {
             id: movId,
             location: String(m?.location || "Tappa"),
@@ -160,10 +168,9 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
 
   const cleanPhotos: DiaryPhoto[] = Array.isArray(rawTrip.photos)
     ? rawTrip.photos
-        .filter((p: any) => p && p.deleted !== true)
+        .filter((p: any) => p && p.deleted !== true && (!p.id || !deletedPhotos.has(String(p.id))))
         .map((p: any, idx: number) => {
           const photoId = String(p?.id || `photo_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`);
-          if (userEmail) unrecordDeletedId('photos', photoId, userEmail);
           let photoUrl = String(p?.url || "");
           if (photoUrl.startsWith("data:image/")) {
             // Offload base64 data to IndexedDB to keep trip documents ultra-lightweight (<1MB)
@@ -240,61 +247,51 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
   const deletedMovements = getDeletedIds('movements', userEmail);
   const deletedPhotos = getDeletedIds('photos', userEmail);
 
-  // If items exist locally in localTrip, they CANNOT be considered deleted tombstones
-  for (const exp of localTrip.expenses || []) {
-    if (exp?.id && deletedExpenses.has(exp.id)) {
-      unrecordDeletedId('expenses', exp.id, userEmail);
-      deletedExpenses.delete(exp.id);
-    }
-  }
-  for (const mov of localTrip.movements || []) {
-    if (mov?.id && deletedMovements.has(mov.id)) {
-      unrecordDeletedId('movements', mov.id, userEmail);
-      deletedMovements.delete(mov.id);
-    }
-  }
-  for (const p of localTrip.photos || []) {
-    if (p?.id && deletedPhotos.has(p.id)) {
-      unrecordDeletedId('photos', p.id, userEmail);
-      deletedPhotos.delete(p.id);
-    }
-  }
-
-  // 1. Merge expenses: all local expenses + any cloud expense not locally deleted
+  // 1. Merge expenses: all local expenses not deleted + any cloud expense not locally deleted
   const expenseMap = new Map<string, DiaryExpense>();
-  for (const exp of localTrip.expenses || []) {
-    if (exp?.id) {
-      expenseMap.set(exp.id, exp);
-    }
-  }
-  for (const exp of cloudTrip.expenses || []) {
-    if (exp?.id && !deletedExpenses.has(exp.id)) {
-      if (expenseMap.has(exp.id)) {
-        const localExp = expenseMap.get(exp.id)!;
-        const localOdo = typeof localExp.odometer === 'number' && localExp.odometer > 0 ? localExp.odometer : undefined;
-        const cloudOdo = typeof exp.odometer === 'number' && exp.odometer > 0 ? exp.odometer : undefined;
-        const bestOdo = localOdo !== undefined ? localOdo : cloudOdo;
-        
-        const merged: DiaryExpense = {
-          ...exp,
-          ...localExp,
-          ...(bestOdo !== undefined ? { odometer: bestOdo } : {}),
-          liters: localExp.liters !== undefined ? localExp.liters : exp.liters,
-          pricePerLiter: localExp.pricePerLiter !== undefined ? localExp.pricePerLiter : exp.pricePerLiter,
-          fuelCompany: localExp.fuelCompany || exp.fuelCompany,
-          isFullTank: localExp.isFullTank !== undefined ? localExp.isFullTank : exp.isFullTank,
-        };
-        expenseMap.set(exp.id, merged);
-      } else {
-        expenseMap.set(exp.id, exp);
+  (localTrip.expenses || []).forEach((exp, idx) => {
+    if (exp) {
+      const expId = String(exp.id || `exp_${exp.date || ''}_${exp.amount || 0}_${(exp.title || '').replace(/[^a-zA-Z0-9]/g, '')}_${idx}`);
+      if (!deletedExpenses.has(expId)) {
+        expenseMap.set(expId, { ...exp, id: expId });
       }
     }
-  }
+  });
+  (cloudTrip.expenses || []).forEach((exp, idx) => {
+    if (exp) {
+      const expId = String(exp.id || `exp_${exp.date || ''}_${exp.amount || 0}_${(exp.title || '').replace(/[^a-zA-Z0-9]/g, '')}_${idx}`);
+      if (!deletedExpenses.has(expId)) {
+        if (expenseMap.has(expId)) {
+          const localExp = expenseMap.get(expId)!;
+          const localOdo = typeof localExp.odometer === 'number' && localExp.odometer > 0 ? localExp.odometer : undefined;
+          const cloudOdo = typeof exp.odometer === 'number' && exp.odometer > 0 ? exp.odometer : undefined;
+          const bestOdo = localOdo !== undefined ? localOdo : cloudOdo;
+          
+          const merged: DiaryExpense = {
+            ...exp,
+            ...localExp,
+            amount: localExp.amount || exp.amount,
+            title: localExp.title || exp.title,
+            category: localExp.category || exp.category,
+            date: localExp.date || exp.date,
+            ...(bestOdo !== undefined ? { odometer: bestOdo } : {}),
+            liters: localExp.liters !== undefined ? localExp.liters : exp.liters,
+            pricePerLiter: localExp.pricePerLiter !== undefined ? localExp.pricePerLiter : exp.pricePerLiter,
+            fuelCompany: localExp.fuelCompany || exp.fuelCompany,
+            isFullTank: localExp.isFullTank !== undefined ? localExp.isFullTank : exp.isFullTank,
+          };
+          expenseMap.set(expId, merged);
+        } else {
+          expenseMap.set(expId, { ...exp, id: expId });
+        }
+      }
+    }
+  });
 
-  // 2. Merge movements: all local movements + any cloud movement not locally deleted
+  // 2. Merge movements: all local movements not deleted + any cloud movement not locally deleted
   const movementMap = new Map<string, TripMovement>();
   for (const mov of localTrip.movements || []) {
-    if (mov?.id) {
+    if (mov?.id && !deletedMovements.has(mov.id)) {
       movementMap.set(mov.id, mov);
     }
   }
@@ -319,10 +316,10 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     }
   }
 
-  // 3. Merge photos: all local photos + any cloud photo not locally deleted
+  // 3. Merge photos: all local photos not deleted + any cloud photo not locally deleted
   const photoMap = new Map<string, DiaryPhoto>();
   for (const p of localTrip.photos || []) {
-    if (p?.id) {
+    if (p?.id && !deletedPhotos.has(p.id)) {
       photoMap.set(p.id, p);
     }
   }
