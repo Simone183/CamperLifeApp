@@ -1828,7 +1828,19 @@ export default function App() {
     isSavingTripsRef.current = true;
     lastSavedTripsJsonRef.current = tripsJson;
     
-    // 1. Direct server-side API write to ensure cross-device, AI Studio sync, and base64 photo offloading
+    // Sanitize normalized trips so base64 photo data URLs are offloaded to /api/photos/photo_id
+    const lightweightTrips = normalized.map((t: Trip) => ({
+      ...t,
+      photos: (t.photos || []).map((p: any) => {
+        if (p && typeof p.url === "string" && p.url.startsWith("data:image/")) {
+          const photoId = (p.id || `photo_${Date.now()}_${Math.floor(Math.random() * 10000)}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+          return { ...p, url: `/api/photos/${photoId}` };
+        }
+        return p;
+      }),
+    }));
+
+    // 1. Direct server-side API write to ensure cross-device and AI Studio sync
     try {
       const deletedIds = {
         photos: Array.from(getDeletedIds('photos', cleanEmail)),
@@ -1840,7 +1852,7 @@ export default function App() {
       const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail, trips: normalized, deletedIds }),
+        body: JSON.stringify({ email: cleanEmail, trips: lightweightTrips, deletedIds }),
         signal: AbortSignal.timeout(15000),
       });
       if (res.ok) {
@@ -1879,19 +1891,9 @@ export default function App() {
     // 2. Client Firestore write (guarantees cloud persistence with document size protection)
     try {
       const docRef = doc(db, "users", cleanEmail, "data", "trips");
-      const rawTrips = JSON.parse(tripsJson);
-      if (Array.isArray(rawTrips) && (rawTrips.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
-        const firestoreSafeTrips = rawTrips.map((t: any) => ({
-          ...t,
-          photos: (t.photos || []).map((p: any) => {
-            if (p && typeof p.url === "string" && p.url.startsWith("data:image/") && p.url.length > 25000) {
-              const photoId = (p.id || `photo_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-              return { ...p, url: `/api/photos/${photoId}` };
-            }
-            return p;
-          })
-        }));
-        await setDoc(docRef, { trips: firestoreSafeTrips, updatedAt: new Date().toISOString() }, { merge: true });
+      if (Array.isArray(lightweightTrips) && (lightweightTrips.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
+        const sanitized = sanitizeForFirestore(JSON.parse(JSON.stringify(lightweightTrips)));
+        await setDoc(docRef, { trips: sanitized, updatedAt: new Date().toISOString() }, { merge: true });
       }
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);

@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { sanitizeForFirestore } from "../utils/firestoreHelper";
 import { useFamilyCrew } from "../context/FamilyCrewContext";
 import { FamilyCrewTabBanner } from "./FamilyCrewModal";
 
@@ -391,33 +392,37 @@ export default function DiaryTab({
           trips: cleanDeletedTrips,
         };
 
+        // Sanitize trips object so base64 data URLs are stripped and replaced with lightweight /api/photos/photo_id
+        const cloudSafeTrips = tripsToSync.map((t) => ({
+          ...t,
+          photos: (t.photos || []).map((p) => {
+            if (p && typeof p.url === "string" && p.url.startsWith("data:image/")) {
+              const photoId = (p.id || `photo_${Date.now()}_${Math.floor(Math.random() * 10000)}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+              savePhotoToIndexedDB(photoId, p.url).catch(() => {});
+              return { ...p, url: `/api/photos/${photoId}` };
+            }
+            return p;
+          }),
+        }));
+
         // 1. Direct Firestore write (guarantees cloud persistence natively on mobile APK and Web)
         let firestoreSuccess = false;
         try {
           const docRef = doc(db, "users", cleanEmail, "data", "trips");
-          const firestoreSafeTrips = tripsToSync.map((t) => ({
-            ...t,
-            photos: (t.photos || []).map((p) => {
-              if (p && typeof p.url === "string" && p.url.startsWith("data:image/") && p.url.length > 25000) {
-                const photoId = (p.id || `photo_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-                return { ...p, url: `/api/photos/${photoId}` };
-              }
-              return p;
-            }),
-          }));
-          await setDoc(docRef, { trips: firestoreSafeTrips, updatedAt: new Date().toISOString() }, { merge: true });
+          const sanitized = sanitizeForFirestore(JSON.parse(JSON.stringify(cloudSafeTrips)));
+          await setDoc(docRef, { trips: sanitized, updatedAt: new Date().toISOString() }, { merge: true });
           firestoreSuccess = true;
         } catch (fsWriteErr: any) {
           console.warn("[Cloud Sync] Firestore direct write notice:", fsWriteErr?.message);
         }
 
         // 2. Server-side API write with disk backup & image extraction
-        let finalTrips = tripsToSync;
+        let finalTrips = cloudSafeTrips;
         try {
           const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: cleanEmail, trips: tripsToSync, deletedIds }),
+            body: JSON.stringify({ email: cleanEmail, trips: cloudSafeTrips, deletedIds }),
             signal: AbortSignal.timeout(15000),
           });
 
@@ -425,7 +430,7 @@ export default function DiaryTab({
             const resData = await res.json().catch(() => ({}));
             if (resData.trips && Array.isArray(resData.trips)) {
               const serverTrips = resData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
-              finalTrips = mergeTrips(tripsToSync, serverTrips, cleanEmail);
+              finalTrips = mergeTrips(cloudSafeTrips, serverTrips, cleanEmail);
             }
           }
         } catch (apiErr: any) {
@@ -2669,16 +2674,22 @@ export default function DiaryTab({
     );
   };
 
-  // Restore orphan photos found in local IndexedDB into this trip
+  // Restore orphan photos found in local IndexedDB into this trip (with strict date & trip matching)
   const handleRestoreOrphanPhotos = async () => {
     if (!selectedTripId || !activeTrip) return;
     setIsRestoringLocalPhotos(true);
     try {
       const idbPhotos = await getAllPhotosFromIndexedDB();
-      const currentIds = new Set((activeTrip?.photos || []).map((p) => p.id));
       const deletedPhotos = getDeletedIds('photos', emailKey);
 
-      const isSicilia = isSiciliaTrip(activeTrip);
+      // Collect ALL photo IDs assigned across ALL trips to avoid duplicating or cross-assigning photos
+      const assignedPhotoIds = new Set<string>();
+      trips.forEach((t) => {
+        (t.photos || []).forEach((p) => {
+          if (p?.id) assignedPhotoIds.add(p.id);
+        });
+      });
+
       const recovered: DiaryPhoto[] = [];
       const entries = Object.entries(idbPhotos);
       for (const [id, base64] of entries) {
@@ -2690,20 +2701,35 @@ export default function DiaryTab({
           deletePhotoFromIndexedDB(id).catch(() => {});
           continue;
         }
-        if (!currentIds.has(id) && !deletedPhotos.has(id)) {
+        
+        // ONLY restore if the photo is NOT already assigned to ANY trip and NOT deleted
+        if (!assignedPhotoIds.has(id) && !deletedPhotos.has(id)) {
           const match = id.match(/photo_(\d+)/);
-          let photoDate = activeTrip?.startDate || new Date().toISOString().split("T")[0];
+          let photoDate: string | null = null;
           if (match) {
             const ts = Number(match[1]);
             if (!isNaN(ts) && ts > 1000000000000) {
               photoDate = new Date(ts).toISOString().split("T")[0];
             }
           }
+
+          // Strict date range check: only add if date matches active trip timeframe (+/- 3 days buffer)
+          if (photoDate && activeTrip.startDate) {
+            const pTime = new Date(photoDate).getTime();
+            const startTime = new Date(activeTrip.startDate).getTime() - (3 * 86400000);
+            const endTime = activeTrip.endDate 
+              ? new Date(activeTrip.endDate).getTime() + (3 * 86400000)
+              : startTime + (30 * 86400000);
+            if (!isNaN(pTime) && (pTime < startTime || pTime > endTime)) {
+              continue; // Skip photos outside the trip's date range!
+            }
+          }
+
           recovered.push({
             id,
             url: `/api/photos/${id}`,
             description: "Foto recuperata dalla memoria",
-            date: photoDate,
+            date: photoDate || activeTrip?.startDate || new Date().toISOString().split("T")[0],
           });
 
           // Upload to Firestore shared_photos for cross-device sync
@@ -2777,6 +2803,65 @@ export default function DiaryTab({
     } finally {
       setIsRestoringLocalPhotos(false);
     }
+  };
+
+  // Remove photos that don't belong to this trip's timeframe (e.g. photos from 2026 erroneously restored into a 2025 trip)
+  const handleCleanUnrelatedPhotos = () => {
+    if (!activeTrip || !selectedTripId) return;
+
+    const startDate = activeTrip.startDate;
+    const endDate = activeTrip.endDate;
+
+    if (!startDate) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "⚠️ Imposta le date del viaggio per poter filtrare le foto non pertinenti." },
+        })
+      );
+      return;
+    }
+
+    // 3 days margin around start and end date
+    const startTs = new Date(startDate).getTime() - (3 * 86400000);
+    const endTs = endDate ? new Date(endDate).getTime() + (3 * 86400000) : startTs + (30 * 86400000);
+
+    const currentPhotos = activeTrip.photos || [];
+    const keptPhotos = currentPhotos.filter((p) => {
+      if (p.date) {
+        const pTs = new Date(p.date).getTime();
+        if (!isNaN(pTs)) {
+          if (pTs < startTs || pTs > endTs) {
+            return false; // Remove photo taken outside trip date range!
+          }
+        }
+      }
+      return true;
+    });
+
+    const removedCount = currentPhotos.length - keptPhotos.length;
+    if (removedCount === 0) {
+      window.dispatchEvent(
+        new CustomEvent("show-toast", {
+          detail: { message: "ℹ️ Tutte le foto in questo viaggio sono pertinenti per data!" },
+        })
+      );
+      return;
+    }
+
+    const updated = trips.map((t) => (t.id === selectedTripId ? { ...t, photos: keptPhotos } : t));
+    setTrips(updated);
+    if (emailKey) {
+      try {
+        localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+      } catch (e) {}
+    }
+    syncWithCloud(updated, false);
+    window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
+    window.dispatchEvent(
+      new CustomEvent("show-toast", {
+        detail: { message: `🧹 Rimosse ${removedCount} foto non pertinenti da questo viaggio!` },
+      })
+    );
   };
 
   // Batch import multiple photos directly from gallery into this trip
@@ -5490,7 +5575,7 @@ export default function DiaryTab({
                           );
                         })()}
 
-                        {/* Banner for recovered photos with generic description */}
+                        {/* Banner for recovered photos with generic description & clean action */}
                         {(() => {
                           const recoveredPhotos = (activeTripPhotos || []).filter(
                             (p) => p.description === "Foto recuperata dalla memoria"
@@ -5505,18 +5590,28 @@ export default function DiaryTab({
                                     {recoveredPhotos.length} {recoveredPhotos.length === 1 ? "foto ha" : "foto hanno"} la dicitura automatica "Foto recuperata"
                                   </span>
                                   <span className="text-[10.5px] text-blue-700 dark:text-blue-300">
-                                    Questi scatti sono stati recuperati senza titolo e posizione originale. Tocca la matita su ciascuna foto o premi il pulsante per completare velocemente luogo e descrizione.
+                                    Questi scatti sono stati recuperati senza titolo e posizione originale. Tocca la matita su ciascuna foto o usa i pulsanti per sistemarli.
                                   </span>
                                 </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditPhoto(recoveredPhotos[0])}
-                                className="w-full sm:w-auto text-center px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white text-[11px] font-bold rounded-lg cursor-pointer shadow-xs active:scale-95 flex items-center justify-center gap-1.5 transition-all shrink-0"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                                Compila dettagli foto
-                              </button>
+                              <div className="w-full sm:w-auto flex flex-wrap items-center gap-1.5 shrink-0 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={handleCleanUnrelatedPhotos}
+                                  className="w-full sm:w-auto text-center px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg cursor-pointer shadow-xs active:scale-95 flex items-center justify-center gap-1 transition-all"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Pulisci foto non di questo viaggio
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditPhoto(recoveredPhotos[0])}
+                                  className="w-full sm:w-auto text-center px-2.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white text-[11px] font-bold rounded-lg cursor-pointer shadow-xs active:scale-95 flex items-center justify-center gap-1 transition-all"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  Compila dettagli foto
+                                </button>
+                              </div>
                             </div>
                           );
                         })()}
