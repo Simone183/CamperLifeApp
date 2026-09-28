@@ -90,6 +90,7 @@ import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
 import { AppPermissionModal } from "./components/AppPermissionModal";
+import { AdminNotificationSchedulerWidget } from "./components/AdminNotificationSchedulerWidget";
 
 // Guard to prevent multiple welcome toast/speech invocations
 let welcomeSpeechTriggered = false;
@@ -1659,6 +1660,7 @@ export default function App() {
     | "bulk-import"
     | "debug"
     | "challenges"
+    | "push_notifications"
   >("pending");
   const [adminEditingChal, setAdminEditingChal] = React.useState<ChallengeItem | null>(null);
   const [chalTitle, setChalTitle] = React.useState("");
@@ -2183,63 +2185,22 @@ export default function App() {
       }
     };
 
-    // 1. Try Firestore onSnapshot listener first
-    // let unsubscribeFirestore: (() => void) | null = null;
-    // try {
-    //   const docRef = doc(db, "system_metadata", "last_promo_push");
-    //   let isInitialLoad = true;
-    //
-    //   unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
-    //     if (isInitialLoad) {
-    //       isInitialLoad = false;
-    //       // Capture initial load timestamp to prevent displaying historic push notifications
-    //       if (docSnap.exists()) {
-    //         const data = docSnap.data();
-    //         if (data?.sentAt) {
-    //           lastDisplayedTime = new Date(data.sentAt).getTime();
-    //         }
-    //       }
-    //       return;
-    //     }
-    //
-    //     if (docSnap.exists()) {
-    //       const data = docSnap.data();
-    //       if (data && data.title && data.body && data.sentAt) {
-    //         handleNewPushNotification(data.title, data.body, data.sentAt);
-    //       }
-    //     }
-    //   }, (error) => {
-    //     console.warn("[Push Simulation] Firestore onSnapshot simulation listener failed (quota/limits):", error);
-    //   });
-    // } catch (err) {
-    //   console.warn("[Push Simulation] Failed initializing Firestore listener:", err);
-    // }
+    // Setup local polling for web/PWA simulated push notifications (runs every 10 seconds)
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch("/api/push-simulation/latest");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.title && data.body && data.sentAt) {
+          handleNewPushNotification(data.title, data.body, data.sentAt);
+        }
+      } catch (pollErr) {
+        // Silent catch for network or dev server restart situations
+      }
+    }, 10000);
 
-    // 2. Setup safe Local Polling fallback that bypasses all Firestore quotas/limits (runs every 4 seconds)
-    // const intervalId = setInterval(async () => {
-    //   try {
-    //     const res = await fetch("/api/push-simulation/latest");
-    //     if (!res.ok) return;
-    //     const data = await res.json();
-    //     if (data && data.title && data.body && data.sentAt) {
-    //       handleNewPushNotification(data.title, data.body, data.sentAt);
-    //     }
-    //   } catch (pollErr) {
-    //     // Silent catch for network or dev server restart situations
-    //   }
-    // }, 4000);
-    //
-    // return () => {
-    //   if (unsubscribeFirestore) {
-    //     unsubscribeFirestore();
-    //   }
-    //   clearInterval(intervalId);
-    // };
     return () => {
-      // if (unsubscribeFirestore) {
-      //   unsubscribeFirestore();
-      // }
-      // clearInterval(intervalId);
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -7084,7 +7045,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.4.54",
+                                      appVersion: "2.4.55",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,
@@ -7506,6 +7467,7 @@ out center;`;
                   {settingsSubTab === "fuel_card" && (
                     <FuelCardTab
                       currentUser={currentUser}
+                      trips={trips}
                       onOpenCrewModal={() => setShowFamilyCrewModal(true)}
                     />
                   )}
@@ -8038,6 +8000,22 @@ out center;`;
                   >
                     <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
                     <span>✨ AI Import</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSubTab("push_notifications");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      adminSubTab === "push_notifications"
+                        ? "bg-[#3E4A35] text-white shadow-xs"
+                        : "text-slate-600 hover:bg-[#3E4A35]/5 hover:text-slate-805"
+                    }`}
+                  >
+                    <Bell className="w-3.5 h-3.5 text-amber-300" />
+                    <span>🔔 Pianifica Notifiche</span>
                   </button>
 
                   <button
@@ -10295,6 +10273,29 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                 {adminSubTab === "debug" && (
                   <div className="p-3 sm:p-4 flex-1 flex flex-col bg-slate-50">
                     <DebugPanelContent />
+                  </div>
+                )}
+
+                {/* Sub Tab: Push Notifications Scheduler */}
+                {adminSubTab === "push_notifications" && (
+                  <div className="p-4 sm:p-6 flex-1 space-y-6 bg-slate-50">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                        <div className="p-2.5 bg-amber-100 text-amber-800 rounded-xl">
+                          <Bell className="w-5 h-5 text-amber-700" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-base">
+                            Gestione & Pianificazione Notifiche (Pannello Moderatore)
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            Pianifica le notifiche locali ogni 2 giorni sul dispositivo ed invia notifiche push di prova agli utenti.
+                          </p>
+                        </div>
+                      </div>
+
+                      <AdminNotificationSchedulerWidget />
+                    </div>
                   </div>
                 )}
 

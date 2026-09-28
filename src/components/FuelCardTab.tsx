@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { getCurrencySymbol, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue } from '../unit-helpers';
-import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle, MapPin } from 'lucide-react';
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
@@ -11,6 +11,7 @@ import { FamilyCrewTabBanner } from './FamilyCrewModal';
 
 interface FuelCardTabProps {
   currentUser: { email: string; nickname?: string } | null;
+  trips?: any[];
   onOpenCrewModal?: () => void;
 }
 
@@ -24,6 +25,8 @@ export interface FuelLog {
   isFullTank: boolean;
   fuelCompany: string;
   createdAt: any;
+  tripId?: string;
+  tripTitle?: string;
 }
 
 export function formatDateDDMMAA(dateStr?: string | null): string {
@@ -68,10 +71,65 @@ export function sortFuelLogsDesc(arr: FuelLog[]): FuelLog[] {
   });
 }
 
-export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTabProps) {
+export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrewModal }: FuelCardTabProps) {
   const settings = useAppSettings();
   const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
   const emailLower = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+
+  const [allTrips, setAllTrips] = React.useState<any[]>(() => {
+    if (propsTrips && propsTrips.length > 0) return propsTrips;
+    if (!emailLower) return [];
+    try {
+      const cached = localStorage.getItem(`camper_trips_${emailLower}`) || localStorage.getItem('camper_trips');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
+
+  React.useEffect(() => {
+    if (propsTrips && propsTrips.length > 0) {
+      setAllTrips(propsTrips);
+    }
+  }, [propsTrips]);
+
+  const getLogTripInfo = React.useCallback(
+    (log: FuelLog) => {
+      if (!allTrips || allTrips.length === 0) return null;
+      // 1. Explicit match by tripId or tripTitle
+      if (log.tripId) {
+        const found = allTrips.find((t) => t.id === log.tripId);
+        if (found) return found;
+      }
+      if (log.tripTitle) {
+        const found = allTrips.find((t) => t.title === log.tripTitle);
+        if (found) return found;
+      }
+      // 2. Match by expense ID inside trip.expenses
+      const expMatch = allTrips.find((t) =>
+        (t.expenses || []).some((e: any) => e.id === log.id)
+      );
+      if (expMatch) return expMatch;
+
+      // 3. Match by date range (if log.date falls inside trip dates +/- 1 day)
+      if (log.date) {
+        const logTime = new Date(log.date).getTime();
+        if (!isNaN(logTime)) {
+          const dateMatch = allTrips.find((t) => {
+            if (!t.startDate) return false;
+            const start = new Date(t.startDate).getTime() - 86400000;
+            const end = t.endDate
+              ? new Date(t.endDate).getTime() + 86400000
+              : start + 30 * 86400000;
+            return logTime >= start && logTime <= end;
+          });
+          if (dateMatch) return dateMatch;
+        }
+      }
+
+      return null;
+    },
+    [allTrips]
+  );
 
   const [logs, setLogs] = React.useState<FuelLog[]>(() => {
     if (!emailLower) return [];
@@ -114,6 +172,7 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
   const [odometer, setOdometer] = React.useState('');
   const [fuelCompany, setFuelCompany] = React.useState('Eni');
   const [isFullTank, setIsFullTank] = React.useState(false);
+  const [selectedTripId, setSelectedTripId] = React.useState<string>('auto');
 
   const fetchLogs = React.useCallback(async () => {
     if (!emailLower) {
@@ -285,6 +344,37 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
 
     setIsSubmitting(true);
     const newLogId = `fuel_${Date.now()}`;
+
+    // Resolve trip association
+    let targetTripId: string | undefined = undefined;
+    let targetTripTitle: string | undefined = undefined;
+
+    if (selectedTripId === 'auto') {
+      const activeTrip = allTrips.find((t) => t.status === 'In Corso' || t.status === 'Attivo');
+      if (activeTrip) {
+        targetTripId = activeTrip.id;
+        targetTripTitle = activeTrip.title;
+      } else if (date) {
+        const dateTime = new Date(date).getTime();
+        const matched = allTrips.find((t) => {
+          if (!t.startDate) return false;
+          const s = new Date(t.startDate).getTime() - 86400000;
+          const e = t.endDate ? new Date(t.endDate).getTime() + 86400000 : s + 30 * 86400000;
+          return dateTime >= s && dateTime <= e;
+        });
+        if (matched) {
+          targetTripId = matched.id;
+          targetTripTitle = matched.title;
+        }
+      }
+    } else if (selectedTripId !== 'none') {
+      const selectedTrip = allTrips.find((t) => t.id === selectedTripId);
+      if (selectedTrip) {
+        targetTripId = selectedTrip.id;
+        targetTripTitle = selectedTrip.title;
+      }
+    }
+
     const newLog: FuelLog = {
       id: newLogId,
       date: date || new Date().toISOString().split('T')[0],
@@ -294,7 +384,9 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
       odometer: finalOdo,
       isFullTank,
       fuelCompany: fuelCompany.trim() || 'Eni',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      tripId: targetTripId,
+      tripTitle: targetTripTitle,
     };
 
     try {
@@ -487,14 +579,18 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
   const totalLiters = logs.reduce((sum, log) => sum + (log.liters || 0), 0);
   const avgPrice = totalLiters > 0 ? (totalFuelCost / totalLiters).toFixed(3) : '0.000';
 
-  // Calculate consumption
+  // Calculate consumption accurately filtering out logs with missing/zero odometer or missing liters
   let averageConsumption = '---';
-  if (logs.length >= 2) {
-    const sortedLogs = [...logs].sort((a, b) => a.odometer - b.odometer);
-    const startOdo = sortedLogs[0].odometer;
-    const endOdo = sortedLogs[sortedLogs.length - 1].odometer;
+  const validFuelLogs = logs.filter(
+    (l) => typeof l.odometer === 'number' && l.odometer > 0 && typeof l.liters === 'number' && l.liters > 0
+  );
+
+  if (validFuelLogs.length >= 2) {
+    const sortedValidLogs = [...validFuelLogs].sort((a, b) => a.odometer - b.odometer);
+    const startOdo = sortedValidLogs[0].odometer;
+    const endOdo = sortedValidLogs[sortedValidLogs.length - 1].odometer;
     const distanceCovered = endOdo - startOdo;
-    const litersBurned = sortedLogs.slice(1).reduce((sum, l) => sum + l.liters, 0);
+    const litersBurned = sortedValidLogs.slice(1).reduce((sum, l) => sum + (Number(l.liters) || 0), 0);
 
     if (distanceCovered > 0 && litersBurned > 0) {
       averageConsumption = getFuelEfficiencyValue(litersBurned, distanceCovered, settings);
@@ -750,6 +846,25 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
               </div>
             </div>
 
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                Collega a Viaggio
+              </label>
+              <select
+                value={selectedTripId}
+                onChange={(e) => setSelectedTripId(e.target.value)}
+                className="w-full bg-white border border-slate-300 p-2.5 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              >
+                <option value="auto">✨ Rileva in automatico da data o stato attivo</option>
+                <option value="none">🏠 Nessun viaggio (Uso quotidiano / Fuori viaggio)</option>
+                {allTrips.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    🗺️ {t.title} ({formatDateDDMMAA(t.startDate)}{t.endDate ? ` - ${formatDateDDMMAA(t.endDate)}` : ''})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex items-center gap-2 bg-emerald-50 p-3 rounded-xl border border-emerald-100/50">
               <input
                 type="checkbox"
@@ -786,6 +901,8 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
                            companyLower.includes('tamoil') ? 'bg-emerald-600 text-white' :
                            'bg-slate-200 text-slate-700';
 
+            const trip = getLogTripInfo(log);
+
             return (
               <div key={log.id} className="bg-white rounded-xl border border-slate-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs transition-all hover:border-[#3E4A35]/30">
                 <div className="flex items-center gap-3">
@@ -793,16 +910,31 @@ export default function FuelCardTab({ currentUser, onOpenCrewModal }: FuelCardTa
                     {(log.fuelCompany || 'Eni').substring(0, 4)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h4 className="font-bold text-slate-800 text-sm">
                         {(log.totalCost || 0).toFixed(2)} {getCurrencySymbol(settings)}
                       </h4>
                       {log.isFullTank && <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800">Pieno</span>}
+                      {trip ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/80 shrink-0">
+                          <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          {trip.title}
+                        </span>
+                      ) : log.tripTitle ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/80 shrink-0">
+                          <MapPin className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          {log.tripTitle}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200/80 dark:border-slate-700 shrink-0">
+                          Uso quotidiano
+                        </span>
+                      )}
                     </div>
-                    <div className="text-xs text-slate-500 flex items-center gap-1.5 font-mono">
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 font-mono mt-0.5">
                       <span className="font-semibold text-slate-700">{formatDateDDMMAA(log.date)}</span>
                       <span>&bull;</span>
-                      <span>{(log.odometer || 0).toLocaleString()} {getDistanceUnit(settings)}</span>
+                      <span>{log.odometer && log.odometer > 0 ? `${log.odometer.toLocaleString()} ${getDistanceUnit(settings)}` : 'km n.d.'}</span>
                     </div>
                   </div>
                 </div>

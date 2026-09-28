@@ -8,6 +8,11 @@ import { DashboardSettings } from '../types';
 import { speakSampleTts, TtsGender } from '../utils/ttsHelper';
 import { resetAllRollyGuides } from './RollyOnboardingGuide';
 import { CartoonCamperAvatar } from './CartoonCamperAvatar';
+import { 
+  scheduleLocalPromoNotifications, 
+  sendTestLocalNotification, 
+  getScheduledNotificationsCount 
+} from '../utils/localNotifications';
 
 
 interface Props {
@@ -83,6 +88,13 @@ export default function GeneralSettingsTab({
   const [photoQuality, setPhotoQuality] = React.useState(initialSettings.photoQuality ?? "medium");
   const [deadlineReminder, setDeadlineReminder] = React.useState(initialSettings.deadlineReminder ?? "15");
   const [mapTheme, setMapTheme] = React.useState(initialSettings.mapTheme ?? "standard");
+
+  const [scheduledNotifsCount, setScheduledNotifsCount] = React.useState<number | null>(null);
+  const [isSchedulingNotifs, setIsSchedulingNotifs] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    getScheduledNotificationsCount().then((count) => setScheduledNotifsCount(count));
+  }, []);
   const [mapEngine, setMapEngine] = React.useState(initialSettings.mapEngine ?? "google");
   const [shareLocation, setShareLocation] = React.useState(initialSettings.shareLocation ?? false);
   const [weatherAlerts, setWeatherAlerts] = React.useState(initialSettings.weatherAlerts ?? true);

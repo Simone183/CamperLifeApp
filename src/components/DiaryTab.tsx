@@ -1122,9 +1122,12 @@ export default function DiaryTab({
   const [isBatchImporting, setIsBatchImporting] = React.useState<boolean>(false);
   const [batchImportProgress, setBatchImportProgress] = React.useState<{ current: number; total: number } | null>(null);
 
-  // Scan IndexedDB for photos stored locally on this device that are missing from activeTrip.photos
+  // Scan IndexedDB for photos stored locally on this device that belong to activeTrip timeframe and are missing from ALL trips
   const scanLocalOrphanPhotos = React.useCallback(async () => {
-    if (!activeTrip) return 0;
+    if (!activeTrip) {
+      setLocalOrphanPhotosCount(0);
+      return 0;
+    }
     try {
       const idbPhotos = await getAllPhotosFromIndexedDB();
       const storedIds = Object.keys(idbPhotos);
@@ -1132,11 +1135,20 @@ export default function DiaryTab({
         setLocalOrphanPhotosCount(0);
         return 0;
       }
-      const isSicilia = isSiciliaTrip(activeTrip);
-      const currentIds = new Set((activeTrip?.photos || []).map((p) => p.id));
+
       const deletedPhotos = getDeletedIds('photos', emailKey);
+
+      // Collect ALL photo IDs assigned across ALL trips to avoid duplicating or cross-assigning photos
+      const assignedPhotoIds = new Set<string>();
+      trips.forEach((t) => {
+        (t.photos || []).forEach((p) => {
+          if (p?.id) assignedPhotoIds.add(p.id);
+        });
+      });
+
       const orphanIds = storedIds.filter((id) => {
-        if (currentIds.has(id)) return false;
+        // If already assigned to ANY trip, it's NOT an orphan for this trip
+        if (assignedPhotoIds.has(id)) return false;
         if (deletedPhotos.has(id)) return false;
         if (SICILIA_PURGED_PHOTO_IDS.has(id)) {
           deletePhotoFromIndexedDB(id).catch(() => {});
@@ -1147,15 +1159,39 @@ export default function DiaryTab({
           deletePhotoFromIndexedDB(id).catch(() => {});
           return false;
         }
+
+        // Strict date range check: only count as orphan if date matches active trip timeframe (+/- 3 days buffer)
+        const match = id.match(/photo_(\d+)/);
+        let photoDate: string | null = null;
+        if (match) {
+          const ts = Number(match[1]);
+          if (!isNaN(ts) && ts > 1000000000000) {
+            photoDate = new Date(ts).toISOString().split("T")[0];
+          }
+        }
+
+        if (photoDate && activeTrip.startDate) {
+          const pTime = new Date(photoDate).getTime();
+          const startTime = new Date(activeTrip.startDate).getTime() - (3 * 86400000);
+          const endTime = activeTrip.endDate 
+            ? new Date(activeTrip.endDate).getTime() + (3 * 86400000)
+            : startTime + (30 * 86400000);
+          if (!isNaN(pTime) && (pTime < startTime || pTime > endTime)) {
+            return false; // Skip photos outside active trip's date window!
+          }
+        }
+
         return true;
       });
+
       setLocalOrphanPhotosCount(orphanIds.length);
       return orphanIds.length;
     } catch (e) {
       console.warn("Scan local photos error:", e);
+      setLocalOrphanPhotosCount(0);
       return 0;
     }
-  }, [activeTrip, emailKey]);
+  }, [activeTrip, trips, emailKey]);
 
   React.useEffect(() => {
     scanLocalOrphanPhotos();
