@@ -6324,24 +6324,6 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     }
   });
 
-  app.get("/api/photos/:photoId", async (req, res) => {
-    try {
-      const cleanPhotoId = (req.params.photoId || "").replace(/\.[a-zA-Z0-9]+$/, "");
-      const doc = await firestoreDb.collection("shared_photos").doc(cleanPhotoId).get();
-      if (!doc.exists) {
-        return res.status(404).send("Image not found");
-      }
-      const data = doc.data();
-      const buffer = Buffer.from(data.base64, "base64");
-      res.setHeader("Content-Type", data.mimeType || "image/jpeg");
-      res.setHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
-      res.send(buffer);
-    } catch (err) {
-      console.error("Error in /api/photos GET:", err);
-      res.status(500).send("Server Error");
-    }
-  });
-
   // --- HELPER CENTRALIZZATO RESEND EMAIL ---
   async function sendResendEmail(options: { to: string; subject: string; html: string }): Promise<{ success: boolean; data?: any; error?: any }> {
     if (!process.env.RESEND_API_KEY) {

@@ -1876,12 +1876,22 @@ export default function App() {
       console.warn("[App] user-trips sync server notice:", e);
     }
 
-    // 2. Client Firestore write (only if non-empty or initialized)
+    // 2. Client Firestore write (guarantees cloud persistence with document size protection)
     try {
       const docRef = doc(db, "users", cleanEmail, "data", "trips");
-      const cleanedTrips = JSON.parse(tripsJson);
-      if (cleanedTrips && (cleanedTrips.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
-        await setDoc(docRef, { trips: cleanedTrips, updatedAt: new Date().toISOString() }, { merge: true });
+      const rawTrips = JSON.parse(tripsJson);
+      if (Array.isArray(rawTrips) && (rawTrips.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
+        const firestoreSafeTrips = rawTrips.map((t: any) => ({
+          ...t,
+          photos: (t.photos || []).map((p: any) => {
+            if (p && typeof p.url === "string" && p.url.startsWith("data:image/") && p.url.length > 25000) {
+              const photoId = (p.id || `photo_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+              return { ...p, url: `/api/photos/${photoId}` };
+            }
+            return p;
+          })
+        }));
+        await setDoc(docRef, { trips: firestoreSafeTrips, updatedAt: new Date().toISOString() }, { merge: true });
       }
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);
@@ -7072,7 +7082,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "1.2.0-prod",
+                                      appVersion: "2.4.53",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,

@@ -57,7 +57,7 @@ import {
   Check,
   ArrowUpDown,
 } from "lucide-react";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useFamilyCrew } from "../context/FamilyCrewContext";
 import { FamilyCrewTabBanner } from "./FamilyCrewModal";
@@ -391,20 +391,47 @@ export default function DiaryTab({
           trips: cleanDeletedTrips,
         };
 
-        // Direct sync with server (server loads existing backup, deep merges, and writes to Firestore & disk)
-        const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: cleanEmail, trips: tripsToSync, deletedIds }),
-          signal: AbortSignal.timeout(15000),
-        });
+        // 1. Direct Firestore write (guarantees cloud persistence natively on mobile APK and Web)
+        let firestoreSuccess = false;
+        try {
+          const docRef = doc(db, "users", cleanEmail, "data", "trips");
+          const firestoreSafeTrips = tripsToSync.map((t) => ({
+            ...t,
+            photos: (t.photos || []).map((p) => {
+              if (p && typeof p.url === "string" && p.url.startsWith("data:image/") && p.url.length > 25000) {
+                const photoId = (p.id || `photo_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+                return { ...p, url: `/api/photos/${photoId}` };
+              }
+              return p;
+            }),
+          }));
+          await setDoc(docRef, { trips: firestoreSafeTrips, updatedAt: new Date().toISOString() }, { merge: true });
+          firestoreSuccess = true;
+        } catch (fsWriteErr: any) {
+          console.warn("[Cloud Sync] Firestore direct write notice:", fsWriteErr?.message);
+        }
 
+        // 2. Server-side API write with disk backup & image extraction
         let finalTrips = tripsToSync;
-        if (res.ok) {
-          const resData = await res.json().catch(() => ({}));
-          if (resData.trips && Array.isArray(resData.trips)) {
-            const serverTrips = resData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
-            finalTrips = mergeTrips(tripsToSync, serverTrips, cleanEmail);
+        try {
+          const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, trips: tripsToSync, deletedIds }),
+            signal: AbortSignal.timeout(15000),
+          });
+
+          if (res.ok) {
+            const resData = await res.json().catch(() => ({}));
+            if (resData.trips && Array.isArray(resData.trips)) {
+              const serverTrips = resData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+              finalTrips = mergeTrips(tripsToSync, serverTrips, cleanEmail);
+            }
+          }
+        } catch (apiErr: any) {
+          console.warn("[Cloud Sync] Server API sync notice:", apiErr?.message);
+          if (!firestoreSuccess) {
+            throw apiErr;
           }
         }
 
@@ -742,13 +769,49 @@ export default function DiaryTab({
   const checkCloudStatus = async () => {
     setCloudStatusInfo({ loading: true });
     const cleanEmail = getActiveUserEmail();
+    if (!cleanEmail) {
+      setCloudStatusInfo({ loading: false, error: "Nessun account attivo." });
+      return;
+    }
+
     try {
-      const res = await fetch(resolveApiUrl(`/api/user-trips/${encodeURIComponent(cleanEmail)}`), {
-        signal: AbortSignal.timeout(10000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const cTrips = Array.isArray(data?.trips) ? data.trips : [];
+      let cTrips: any[] = [];
+      let fetched = false;
+
+      // 1. Direct Firebase Firestore SDK read (highest reliability on mobile APK)
+      try {
+        const docRef = doc(db, "users", cleanEmail, "data", "trips");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && Array.isArray(data.trips)) {
+            cTrips = data.trips;
+            fetched = true;
+          }
+        }
+      } catch (fsErr: any) {
+        console.warn("[Cloud Status] Firestore direct read notice:", fsErr?.message);
+      }
+
+      // 2. Server API fallback / enhancement
+      if (!fetched) {
+        try {
+          const res = await fetch(resolveApiUrl(`/api/user-trips/${encodeURIComponent(cleanEmail)}`), {
+            signal: AbortSignal.timeout(6000),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && Array.isArray(data.trips)) {
+              cTrips = data.trips;
+              fetched = true;
+            }
+          }
+        } catch (apiErr: any) {
+          console.warn("[Cloud Status] Server API notice:", apiErr?.message);
+        }
+      }
+
+      if (fetched) {
         const exp = cTrips.reduce((acc: number, t: any) => acc + (t.expenses?.length || 0), 0);
         const mov = cTrips.reduce((acc: number, t: any) => acc + (t.movements?.length || 0), 0);
         const pho = cTrips.reduce((acc: number, t: any) => acc + (t.photos?.length || 0), 0);
@@ -760,7 +823,7 @@ export default function DiaryTab({
           photos: pho,
         });
       } else {
-        setCloudStatusInfo({ loading: false, error: "Server non raggiungibile." });
+        setCloudStatusInfo({ loading: false, error: "Cloud non raggiungibile." });
       }
     } catch (err: any) {
       setCloudStatusInfo({ loading: false, error: err.message || "Errore di connessione." });
