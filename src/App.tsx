@@ -1823,79 +1823,114 @@ export default function App() {
       return;
     }
 
-    const tripsJson = JSON.stringify(normalized);
-    if (tripsJson === lastSavedTripsJsonRef.current || isSavingTripsRef.current) {
-      return;
-    }
+    if (isSavingTripsRef.current) return;
     isSavingTripsRef.current = true;
-    lastSavedTripsJsonRef.current = tripsJson;
-    
-    // Sanitize normalized trips so base64 photo data URLs are offloaded to /api/photos/photo_id
-    const lightweightTrips = normalized.map((t: Trip) => ({
-      ...t,
-      photos: (t.photos || []).map((p: any) => {
-        if (p && typeof p.url === "string" && p.url.startsWith("data:image/")) {
-          const photoId = (p.id || `photo_${Date.now()}_${Math.floor(Math.random() * 10000)}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-          return { ...p, url: `/api/photos/${photoId}` };
-        }
-        return p;
-      }),
-    }));
 
-    // 1. Direct server-side API write to ensure cross-device and AI Studio sync
     try {
-      const deletedIds = {
-        photos: Array.from(getDeletedIds('photos', cleanEmail)),
-        expenses: Array.from(getDeletedIds('expenses', cleanEmail)),
-        movements: Array.from(getDeletedIds('movements', cleanEmail)),
-        trips: Array.from(getDeletedIds('trips', cleanEmail)),
-      };
-
-      const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail, trips: lightweightTrips, deletedIds }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (res.ok) {
-        const resData = await res.json().catch(() => ({}));
-        if (resData.trips && Array.isArray(resData.trips) && resData.trips.length > 0) {
-          const serverTrips = resData.trips.map((t: any) => normalizeTrip(t, cleanEmail));
-          const mergedWithServer = mergeTrips(normalized, serverTrips, cleanEmail);
-          const cleanTripsFromServ = mergedWithServer.map((norm: Trip) => {
-            const localMatch = normalized.find((lt: any) => lt.id === norm.id);
-            if (localMatch && Array.isArray(localMatch.photos)) {
-              norm.photos = norm.photos.map((sp: any) => {
-                const lp = localMatch.photos.find((p: any) => p.id === sp.id);
-                if (lp && lp.url && (lp.url.startsWith("data:image/") || lp.url.startsWith("/api/photos/"))) {
-                  return { ...sp, url: lp.url };
-                }
-                return sp;
-              });
-            }
-            return norm;
-          });
-
-          const serverTripsJson = JSON.stringify(cleanTripsFromServ.map((t: Trip) => normalizeTrip(t, cleanEmail)));
-          if (serverTripsJson !== lastSavedTripsJsonRef.current) {
-            lastSavedTripsJsonRef.current = serverTripsJson;
-            setTrips(cleanTripsFromServ);
-            try {
-              localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(cleanTripsFromServ));
-            } catch (e) {}
+      // Pre-fetch cloud trips from Firestore & Server API to prevent overwriting trips added from another device (PC/Mobile)
+      let cloudTrips: Trip[] = [];
+      const docRef = doc(db, "users", cleanEmail, "data", "trips");
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && Array.isArray(data.trips)) {
+            cloudTrips = data.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
           }
         }
-      }
-    } catch (e) {
-      console.warn("[App] user-trips sync server notice:", e);
-    }
+      } catch (e) {}
 
-    // 2. Client Firestore write (guarantees cloud persistence with document size protection)
-    try {
-      const docRef = doc(db, "users", cleanEmail, "data", "trips");
-      if (Array.isArray(lightweightTrips) && (lightweightTrips.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
-        const sanitized = sanitizeForFirestore(JSON.parse(JSON.stringify(lightweightTrips)));
+      try {
+        const fetchRes = await fetch(resolveApiUrl(`/api/user-trips/${encodeURIComponent(cleanEmail)}`), {
+          signal: AbortSignal.timeout(5000)
+        });
+        if (fetchRes.ok) {
+          const fetchJson = await fetchRes.json().catch(() => ({}));
+          if (fetchJson?.trips && Array.isArray(fetchJson.trips)) {
+            const apiTrips = fetchJson.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+            cloudTrips = mergeTrips(cloudTrips, apiTrips, cleanEmail);
+          }
+        }
+      } catch (e) {}
+
+      const mergedWithCloud = cloudTrips.length > 0 ? mergeTrips(normalized, cloudTrips, cleanEmail) : normalized;
+
+      const tripsJson = JSON.stringify(mergedWithCloud);
+      if (tripsJson === lastSavedTripsJsonRef.current) {
+        isSavingTripsRef.current = false;
+        return;
+      }
+      lastSavedTripsJsonRef.current = tripsJson;
+
+      // Sanitize normalized trips so base64 photo data URLs are offloaded to /api/photos/photo_id
+      const lightweightTrips = mergedWithCloud.map((t: Trip) => ({
+        ...t,
+        photos: (t.photos || []).map((p: any) => {
+          if (p && typeof p.url === "string" && p.url.startsWith("data:image/")) {
+            const photoId = (p.id || `photo_${Date.now()}_${Math.floor(Math.random() * 10000)}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+            return { ...p, url: `/api/photos/${photoId}` };
+          }
+          return p;
+        }),
+      }));
+
+      let cleanTripsFromServ: Trip[] | null = null;
+
+      // 1. Direct server-side API write to ensure cross-device and AI Studio sync
+      try {
+        const deletedIds = {
+          photos: Array.from(getDeletedIds('photos', cleanEmail)),
+          expenses: Array.from(getDeletedIds('expenses', cleanEmail)),
+          movements: Array.from(getDeletedIds('movements', cleanEmail)),
+          trips: Array.from(getDeletedIds('trips', cleanEmail)),
+        };
+
+        const res = await fetch(resolveApiUrl("/api/user-trips/sync"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: cleanEmail, trips: lightweightTrips, deletedIds }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) {
+          const resData = await res.json().catch(() => ({}));
+          if (resData.trips && Array.isArray(resData.trips) && resData.trips.length > 0) {
+            const serverTrips = resData.trips.map((t: any) => normalizeTrip(t, cleanEmail));
+            const mergedWithServer = mergeTrips(lightweightTrips, serverTrips, cleanEmail);
+            cleanTripsFromServ = mergedWithServer.map((norm: Trip) => {
+              const localMatch = lightweightTrips.find((lt: any) => lt.id === norm.id);
+              if (localMatch && Array.isArray(localMatch.photos)) {
+                norm.photos = norm.photos.map((sp: any) => {
+                  const lp = localMatch.photos.find((p: any) => p.id === sp.id);
+                  if (lp && lp.url && (lp.url.startsWith("data:image/") || lp.url.startsWith("/api/photos/"))) {
+                    return { ...sp, url: lp.url };
+                  }
+                  return sp;
+                });
+              }
+              return norm;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("[App] user-trips sync server notice:", e);
+      }
+
+      // 2. Client Firestore write (guarantees cloud persistence with document size protection)
+      const tripsToPersist = cleanTripsFromServ && Array.isArray(cleanTripsFromServ) && cleanTripsFromServ.length > 0
+        ? cleanTripsFromServ
+        : lightweightTrips;
+
+      if (Array.isArray(tripsToPersist) && (tripsToPersist.length > 0 || lastSavedTripsJsonRef.current === "[]")) {
+        const sanitized = sanitizeForFirestore(JSON.parse(JSON.stringify(tripsToPersist)));
         await setDoc(docRef, { trips: sanitized, updatedAt: new Date().toISOString() }, { merge: true });
+      }
+
+      // If new trips were merged from cloud, update local state
+      if (tripsToPersist.length > newTrips.length) {
+        setTrips(tripsToPersist);
+        try {
+          localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(tripsToPersist));
+        } catch (e) {}
       }
     } catch (err) {
       console.error("Errore salvataggio viaggi su Firestore:", err);

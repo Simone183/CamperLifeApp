@@ -15,6 +15,26 @@ export function isSicilia29AugPhoto(_photo: any, _isSicilia = false): boolean {
 export type DeletionType = 'photos' | 'trips' | 'expenses' | 'movements';
 
 /**
+ * Helper to check if a photo's date falls within a trip's start and end date range (+/- 48 hours buffer)
+ */
+export function isPhotoDateInTripRange(
+  photoDateStr?: string | null,
+  startDateStr?: string | null,
+  endDateStr?: string | null
+): boolean {
+  if (!startDateStr || !photoDateStr) return true;
+  const sTime = new Date(startDateStr).getTime();
+  if (isNaN(sTime)) return true;
+  const startTs = sTime - (2 * 86400000); // 48h buffer
+  const endVal = endDateStr || startDateStr;
+  const eTime = new Date(endVal).getTime();
+  const endTs = (!isNaN(eTime) ? eTime : sTime) + (2 * 86400000); // 48h buffer
+  const pTs = new Date(photoDateStr).getTime();
+  if (isNaN(pTs)) return true;
+  return pTs >= startTs && pTs <= endTs;
+}
+
+/**
  * Get the set of deleted entity IDs stored in localStorage for the user.
  * This guarantees tombstones persist across page refreshes and cloud merges.
  */
@@ -166,9 +186,21 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
       }))
     : [];
 
+  const tripStartDate = String(rawTrip.startDate || "");
+  const tripEndDate = String(rawTrip.endDate || rawTrip.startDate || "");
+
   const cleanPhotos: DiaryPhoto[] = Array.isArray(rawTrip.photos)
     ? rawTrip.photos
-        .filter((p: any) => p && p.deleted !== true && (!p.id || !deletedPhotos.has(String(p.id))))
+        .filter((p: any) => {
+          if (!p || p.deleted === true) return false;
+          if (p.id && deletedPhotos.has(String(p.id))) return false;
+          if (tripStartDate && p.date) {
+            if (!isPhotoDateInTripRange(String(p.date), tripStartDate, tripEndDate)) {
+              return false; // Drop photo outside trip date range
+            }
+          }
+          return true;
+        })
         .map((p: any, idx: number) => {
           const photoId = String(p?.id || `photo_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`);
           let photoUrl = String(p?.url || "");
@@ -316,15 +348,23 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     }
   }
 
+  const mergedStartDate = String(localTrip.startDate || cloudTrip.startDate || "");
+  const mergedEndDate = String(localTrip.endDate || cloudTrip.endDate || mergedStartDate || "");
+
   // 3. Merge photos: all local photos not deleted + any cloud photo not locally deleted
   const photoMap = new Map<string, DiaryPhoto>();
   for (const p of localTrip.photos || []) {
     if (p?.id && !deletedPhotos.has(p.id)) {
-      photoMap.set(p.id, p);
+      if (!mergedStartDate || isPhotoDateInTripRange(p.date, mergedStartDate, mergedEndDate)) {
+        photoMap.set(p.id, p);
+      }
     }
   }
   for (const p of cloudTrip.photos || []) {
     if (p?.id && !deletedPhotos.has(p.id)) {
+      if (mergedStartDate && !isPhotoDateInTripRange(p.date, mergedStartDate, mergedEndDate)) {
+        continue;
+      }
       if (!photoMap.has(p.id)) {
         photoMap.set(p.id, p);
       } else {
@@ -351,16 +391,19 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     if (s?.id && !stopMap.has(s.id)) stopMap.set(s.id, s);
   }
 
-  // 5. Merge route points
-  const localPoints = localTrip.routePoints || [];
-  const cloudPoints = cloudTrip.routePoints || [];
-  const mergedPoints = localPoints.length >= cloudPoints.length ? localPoints : cloudPoints;
-
-  // 6. Intelligent merge for trip metadata & Racconto (description)
+  // 5. Intelligent merge timestamps & metadata
   const localUpdated = localTrip.updatedAt ? new Date(localTrip.updatedAt).getTime() : 0;
   const cloudUpdated = cloudTrip.updatedAt ? new Date(cloudTrip.updatedAt).getTime() : 0;
   const isCloudNewer = !isNaN(cloudUpdated) && cloudUpdated > (isNaN(localUpdated) ? 0 : localUpdated);
   const isLocalNewer = !isNaN(localUpdated) && localUpdated > (isNaN(cloudUpdated) ? 0 : cloudUpdated);
+
+  const localPoints = localTrip.routePoints || [];
+  const cloudPoints = cloudTrip.routePoints || [];
+  const mergedPoints = isCloudNewer && cloudPoints.length > 0
+    ? cloudPoints
+    : (isLocalNewer && localPoints.length > 0 ? localPoints : (cloudPoints.length >= localPoints.length ? cloudPoints : localPoints));
+
+  // 6. Intelligent merge for trip metadata & Racconto (description)
 
   // Description / Racconto merging
   const lDesc = (localTrip.description || "").trim();
@@ -383,7 +426,18 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     }
   }
 
-  const bestTitle = isCloudNewer ? (cloudTrip.title || localTrip.title) : (localTrip.title || cloudTrip.title);
+  const lTitle = (localTrip.title || "").trim();
+  const cTitle = (cloudTrip.title || "").trim();
+  let bestTitle = lTitle || cTitle || "Viaggio Senza Titolo";
+  if (isCloudNewer && cTitle && cTitle !== "Nuovo Viaggio") {
+    bestTitle = cTitle;
+  } else if (isLocalNewer && lTitle && lTitle !== "Nuovo Viaggio") {
+    bestTitle = lTitle;
+  } else if ((!lTitle || lTitle === "Nuovo Viaggio") && cTitle && cTitle !== "Nuovo Viaggio") {
+    bestTitle = cTitle;
+  } else if ((!cTitle || cTitle === "Nuovo Viaggio") && lTitle && lTitle !== "Nuovo Viaggio") {
+    bestTitle = lTitle;
+  }
   
   // Trip status: A trip marked "Completato" must NEVER be reopened to "Attivo" or "In corso"
   // unless the opposing side was explicitly modified with a strictly newer timestamp.
@@ -393,10 +447,8 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
 
   if (isLocalCompleted || isCloudCompleted) {
     if (isLocalCompleted && !isCloudCompleted) {
-      // Local marked completed: keep completed unless cloud has a strictly newer timestamp where user actively reopened it
       bestStatus = (isCloudNewer && cloudTrip.status) ? cloudTrip.status : "Completato";
     } else if (isCloudCompleted && !isLocalCompleted) {
-      // Cloud marked completed: keep completed unless local has a strictly newer timestamp where user actively reopened it
       bestStatus = (isLocalNewer && localTrip.status) ? localTrip.status : "Completato";
     } else {
       bestStatus = "Completato";
@@ -408,13 +460,13 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
   const bestStartDate = isCloudNewer ? (cloudTrip.startDate || localTrip.startDate) : (localTrip.startDate || cloudTrip.startDate);
   const bestEndDate = isCloudNewer ? (cloudTrip.endDate || localTrip.endDate) : (localTrip.endDate || cloudTrip.endDate);
 
-  const bestStartOdo = (isCloudNewer && cloudTrip.startOdometer !== undefined)
+  const bestStartOdo = (isCloudNewer && cloudTrip.startOdometer !== undefined && cloudTrip.startOdometer !== null)
     ? cloudTrip.startOdometer
-    : (localTrip.startOdometer !== undefined ? localTrip.startOdometer : cloudTrip.startOdometer);
+    : (localTrip.startOdometer !== undefined && localTrip.startOdometer !== null ? localTrip.startOdometer : cloudTrip.startOdometer);
 
-  const bestEndOdo = (isCloudNewer && cloudTrip.endOdometer !== undefined)
+  const bestEndOdo = (isCloudNewer && cloudTrip.endOdometer !== undefined && cloudTrip.endOdometer !== null)
     ? cloudTrip.endOdometer
-    : (localTrip.endOdometer !== undefined ? localTrip.endOdometer : cloudTrip.endOdometer);
+    : (localTrip.endOdometer !== undefined && localTrip.endOdometer !== null ? localTrip.endOdometer : cloudTrip.endOdometer);
 
   const finalUpdatedAt = cloudUpdated > localUpdated
     ? cloudTrip.updatedAt
@@ -422,6 +474,7 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
 
   return {
     ...localTrip,
+    ...cloudTrip,
     title: bestTitle,
     description: cleanTravelStoryText(bestDescription),
     startDate: bestStartDate,
@@ -434,6 +487,7 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     photos: Array.from(photoMap.values()),
     stops: Array.from(stopMap.values()),
     routePoints: mergedPoints,
+    aiItinerary: cloudTrip.aiItinerary || localTrip.aiItinerary,
     updatedAt: finalUpdatedAt,
   };
 }

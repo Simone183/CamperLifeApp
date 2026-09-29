@@ -542,7 +542,7 @@ export default function TripVideoShareModal({
     } else {
       ctx.fillStyle = "#A7F3D0"; // Soft Mint
     }
-    ctx.fillText("CAMPER LIFE ADVENTURE 🗺️", w / 2, h * 0.06);
+    ctx.fillText("VIACAMPER ADVENTURE 🗺️", w / 2, h * 0.06);
 
     // Main Title
     ctx.font = `bold ${aspectRatio === "9_16" ? "54px" : "45px"} sans-serif`;
@@ -844,9 +844,9 @@ export default function TripVideoShareModal({
       ctx.fillText(catStr.trim() || "Nessuna spesa", hudX + hudW - 24, hudY + 80);
     } else {
       ctx.textAlign = "right";
-      ctx.font = "bold 27px monospace";
+      ctx.font = "bold 24px sans-serif";
       ctx.fillStyle = selectedTheme === "parchment" ? "#1F2937" : "#FFFFFF";
-      ctx.fillText("🚐 90 km/h", hudX + hudW - 24, hudY + 55);
+      ctx.fillText("🚐 ViaCamper", hudX + hudW - 24, hudY + 55);
     }
 
     // D. Progress percentage bar inside HUD
@@ -1193,7 +1193,7 @@ export default function TripVideoShareModal({
                 >
                   <div>
                     <p className="text-[10.5px] font-bold">Ripartizione delle Spese</p>
-                    <p className="text-[8.5px] text-slate-400 mt-0.5">Mostra i costi invece della velocità media</p>
+                    <p className="text-[8.5px] text-slate-400 mt-0.5">Mostra il riepilogo dei costi del viaggio nell'HUD</p>
                   </div>
                   <div className={`w-8 h-4.5 rounded-full relative transition-colors ${showExpenses ? 'bg-indigo-500' : 'bg-slate-200'}`}>
                     <div className={`absolute top-0.5 left-0.5 bg-white w-3.5 h-3.5 rounded-full transition-transform ${showExpenses ? 'translate-x-3.5' : ''}`} />

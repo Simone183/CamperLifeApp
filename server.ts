@@ -669,7 +669,7 @@ async function throttleGeminiCall(hasSearchGrounding = false): Promise<void> {
 async function generateContentWithRetry(params: any, maxRetries = 5) {
   const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
   const primaryModel = params?.model || "gemini-3.8-flash";
-  const defaultFallbacks = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash"];
+  const defaultFallbacks = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
   
   // Build a distinct sequence of models to try, starting with the requested model
   const modelsSequence: string[] = [primaryModel];
@@ -1301,7 +1301,7 @@ Testo da analizzare:
 "${content}"`;
 
     const response = await generateContentWithRetry({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1502,7 +1502,7 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
       console.log(`[Gemini AI] Generating itinerary from ${startLocation} for ${numDays} days...`);
 
       const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
+        model: "gemini-3.8-flash",
         contents: prompt,
         config: {
           systemInstruction,
@@ -1624,7 +1624,7 @@ Formatta la risposta in modo chiaro usando markdown. USA OBBLIGATORIAMENTE un ti
         let response;
         try {
           response = await generateContentWithRetry({
-            model: "gemini-3.5-flash",
+            model: "gemini-3.8-flash",
             contents: prompt,
             config: {
               tools: [{ googleSearch: {} }]
@@ -1634,7 +1634,7 @@ Formatta la risposta in modo chiaro usando markdown. USA OBBLIGATORIAMENTE un ti
           console.log(`[AI Events Info] Search grounding tool hit a limit/error. Falling back to standard Gemini...`, groundingErr.message);
           // Fall back to standard content generation if search tool is rate-limited
           response = await generateContentWithRetry({
-            model: "gemini-3.5-flash",
+            model: "gemini-3.8-flash",
             contents: `Consiglia i principali eventi annuali tradizionali, sagre storiche, mercatini e feste famose che si tengono ricorrentemente nella zona di: "${location}". 
 Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento. Aggiungi consigli utili per la sosta camper nelle vicinanze.`
           });
@@ -1711,7 +1711,7 @@ ATTENZIONE CRITICA: Non inventare o allucinare NOMI o INDIRIZZI che non esistono
 
         console.log(`[Gemini AI Search] Querying web search for real camper facilities ${geoDescription}...`);
         const searchResponse = await generateContentWithRetry({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.8-flash",
           contents: searchPrompt,
           config: {
             tools: [{ googleSearch: {} }]
@@ -1759,7 +1759,7 @@ Estrai e formatta i luoghi reali in formato JSON aderente a questo schema:
 }`;
 
         const parseResponse = await generateContentWithRetry({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.8-flash",
           contents: parsePrompt,
           config: {
             systemInstruction: parseSystemInstruction,
@@ -1922,7 +1922,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       console.log(`[Gemini AI] Generating custom checklist for: Destination=${destinationType}, Season=${season}, Crew=${crew}...`);
 
       const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
+        model: "gemini-3.8-flash",
         contents: prompt,
         config: {
           systemInstruction,
@@ -2543,7 +2543,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   });
 
   // Helper function to extract and format story text via Gemini OCR
-  async function processOcrImage(image: string, mimeType?: string): Promise<string> {
+  async function processOcrImage(image: string, mimeType?: string, mode: "literal" | "elaborate" = "elaborate"): Promise<string> {
     let cleanBase64 = image;
     let detectedMime = mimeType || "image/jpeg";
     if (typeof image === "string" && image.startsWith("data:")) {
@@ -2556,20 +2556,35 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       }
     }
 
-    console.log(`[Gemini AI] Extracting story/diary text OCR (mime: ${detectedMime}, len: ${cleanBase64.length})...`);
+    console.log(`[Gemini AI] Extracting story/diary text OCR (mime: ${detectedMime}, mode: ${mode}, len: ${cleanBase64.length})...`);
 
-    const systemInstruction =
-      "Sei l'assistente di bordo di ViaCamper specializzato nella trascrizione accurata e nella stesura di diari di viaggio per camperisti a partire da immagini di quaderni manoscritti, note, depliant o cartelli.\n" +
-      "REGOLE FONDAMENTALI DI FORMATTAZIONE:\n" +
-      "1. NON inserire MAI frasi introduttive, saluti, preamboli o firme (ad esempio 'Ecco la trascrizione...', 'Ecco il resoconto...', 'Ecco la trascrizione fedele...', ecc.). Inizia IMMEDIATAMENTE con il racconto o le note di viaggio.\n" +
-      "2. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**), nessun corsivo (*testo*), nessun punto elenco con asterischi (* punto). Scrivi tutto in testo piano naturale.\n" +
-      "3. NON usare MAI frecce simboliche (come ->, =>, ➔, →). Usa parole chiare o un semplice trattino (es. 'da Lucca a Pisa' o 'Lucca - Pisa').\n" +
-      "4. Se ci sono elenchi puntati, usa esclusivamente trattini semplici (- elemento).\n" +
-      "5. Organizza il testo in paragrafi leggibili, scorrevoli e spontanei in italiano, preservando fedelmente tutti i toponimi, città, aree sosta, impressioni, chilometri, tappe e date menzionate.";
+    let systemInstruction = "";
+    let promptText = "";
 
-    const promptText =
-      "Trascrivi ed estrai con la massima fedeltà tutto il testo presente in questa immagine (anche se manoscritto su fogli o quaderni). " +
-      "Restituisci il racconto del viaggio in italiano pulito, scorrevole e naturale, SENZA alcun asterisco (* o **), SENZA frecce (-> o ➔) e SENZA alcuna frase introduttiva. Inizia direttamente con il racconto del viaggio.";
+    if (mode === "literal") {
+      systemInstruction =
+        "Sei l'assistente OCR di ViaCamper. Il tuo unico compito è eseguire una TRASCRIZIONE LETTERALE E FEDELE PAROLA PER PAROLA di tutto il testo presente nell'immagine (fogli, quaderni, depliant, appunti).\n" +
+        "REGOLE RIGIDE:\n" +
+        "1. NON modificare, arricchire, parafrasare o correggere lo stile. Mantieni esattamente le frasi e le parole scritte dall'autore.\n" +
+        "2. NON inserire MAI frasi introduttive, saluti o preamboli (ad esempio 'Ecco la trascrizione...', 'Ecco il testo...'). Inizia direttamente con il testo scritto.\n" +
+        "3. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**) e nessun corsivo (*testo*).\n" +
+        "4. Preserva fedelmente tutti i nomi di luoghi, date, cifre e note scritte.";
+
+      promptText =
+        "Trascrivi fedelmente PAROLA PER PAROLA ed ESATTAMENTE tutto il testo leggibile in questa immagine, senza rielaborare, aggiungere o cambiare nulla. Restituisci esclusivamente il testo trascritto così com'è.";
+    } else {
+      systemInstruction =
+        "Sei l'assistente di bordo di ViaCamper specializzato nella trascrizione ed elaborazione narrativa di diari di viaggio per camperisti a partire da foto di fogli, quaderni o appunti.\n" +
+        "REGOLE FONDAMENTALI DI FORMATTAZIONE:\n" +
+        "1. Trasforma gli appunti scritti in un racconto di viaggio avvincente, fluido, emozionante e piacevole da leggere in italiano corretto.\n" +
+        "2. NON inserire MAI frasi introduttive, saluti, preamboli o firme (ad esempio 'Ecco il racconto...', 'Ecco il resoconto...'). Inizia IMMEDIATAMENTE con il racconto del viaggio.\n" +
+        "3. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**), nessun corsivo (*testo*), nessun punto elenco con asterischi.\n" +
+        "4. NON usare MAI frecce simboliche (come ->, =>, ➔, →). Usa parole chiare o un semplice trattino (es. 'da Lucca a Pisa' o 'Lucca - Pisa').\n" +
+        "5. Organizza il testo in paragrafi leggibili, scorrevoli e spontanei in italiano, preservando fedelmente tutti i toponimi, città, aree sosta, impressioni, chilometri, tappe e date menzionate.";
+
+      promptText =
+        "Leggi gli appunti nell'immagine ed elaborali trasformandoli in un racconto di viaggio in camper coinvolgente, elegante, piacevole e ben strutturato in paragrafi, mantenendo tutti i fatti e i luoghi reali citati.";
+    }
 
     const imagePart = {
       inlineData: {
@@ -2613,7 +2628,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               processingStartedAt: Date.now()
             }, { merge: true });
 
-            const extractedText = await processOcrImage(taskData.image, taskData.mimeType);
+            const extractedText = await processOcrImage(taskData.image, taskData.mimeType, taskData.mode || "elaborate");
             await firestoreDb.collection("ai_ocr_tasks").doc(docSnap.id).set({
               status: "completed",
               text: extractedText,
@@ -2643,12 +2658,12 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // AI OCR for extracting travel story notes, diary text, brochures, signs
   app.post("/api/extract-story-ocr", async (req, res) => {
     try {
-      const { image, mimeType } = req.body;
+      const { image, mimeType, mode } = req.body;
       if (!image) {
         return res.status(400).json({ error: "Nessuna immagine fornita per l'OCR." });
       }
 
-      const extractedText = await processOcrImage(image, mimeType);
+      const extractedText = await processOcrImage(image, mimeType, mode || "elaborate");
       res.json({ success: true, text: extractedText });
     } catch (err: any) {
       console.error("Error in extract-story-ocr endpoint:", err);
@@ -4812,28 +4827,21 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               }
             }
           });
-          // Merge movements: existing movements + incoming updates
+          // Merge movements: existing movements + incoming updates (never drop movements unless in deletedMovIds)
           const movMap = new Map<string, any>();
           for (const m of (exTrip.movements || [])) {
             if (m && m.id && !deletedMovIds.has(String(m.id))) {
               movMap.set(String(m.id), m);
             }
           }
-          if (Array.isArray(incTrip.movements)) {
-            const incMovIds = new Set((incTrip.movements || []).map((m: any) => String(m?.id || '')));
-            for (const existingId of Array.from(movMap.keys())) {
-              if (!incMovIds.has(existingId)) {
-                movMap.delete(existingId);
-              }
-            }
-            for (const m of incTrip.movements) {
-              if (m && m.id && !deletedMovIds.has(String(m.id))) {
-                const strId = String(m.id);
-                const existing = movMap.get(strId);
-                movMap.set(strId, existing ? { ...existing, ...m } : m);
-              }
+          for (const m of (incTrip.movements || [])) {
+            if (m && m.id && !deletedMovIds.has(String(m.id))) {
+              const strId = String(m.id);
+              const existing = movMap.get(strId);
+              movMap.set(strId, existing ? { ...existing, ...m } : m);
             }
           }
+
           // Merge photos: strictly respect tombstones and intentional deletions
           const phoMap = new Map<string, any>();
           for (const p of (exTrip.photos || [])) {
@@ -4860,6 +4868,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
               }
             }
           }
+
           // Merge stops
           const stopMap = new Map<string, any>();
           for (const s of (exTrip.stops || [])) {
@@ -4876,19 +4885,19 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             }
           }
 
-          const startOdometers = [exTrip.startOdometer, incTrip.startOdometer].filter(n => typeof n === 'number' && n > 0);
-          const endOdometers = [exTrip.endOdometer, incTrip.endOdometer].filter(n => typeof n === 'number' && n > 0);
-
-          // Merge description / racconto intelligently so mobile OCR text is never erased by empty web client
-          const incDesc = (incTrip.description || "").trim();
-          const exDesc = (exTrip.description || "").trim();
           const incTime = incTrip.updatedAt ? new Date(incTrip.updatedAt).getTime() : 0;
           const exTime = exTrip.updatedAt ? new Date(exTrip.updatedAt).getTime() : 0;
+          const isIncNewer = !isNaN(incTime) && incTime > (isNaN(exTime) ? 0 : exTime);
+          const isExNewer = !isNaN(exTime) && exTime > (isNaN(incTime) ? 0 : incTime);
+
+          // Merge description / racconto intelligently
+          const incDesc = (incTrip.description || "").trim();
+          const exDesc = (exTrip.description || "").trim();
           let bestDesc = exTrip.description || "";
 
-          if (!isNaN(incTime) && !isNaN(exTime) && incTime > exTime && incDesc) {
+          if (isIncNewer && incDesc) {
             bestDesc = incTrip.description;
-          } else if (!isNaN(exTime) && !isNaN(incTime) && exTime > incTime && exDesc) {
+          } else if (isExNewer && exDesc) {
             bestDesc = exTrip.description;
           } else if (!exDesc && incDesc) {
             bestDesc = incTrip.description;
@@ -4900,35 +4909,78 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             bestDesc = incTrip.description || "";
           }
 
+          // Title selection
+          const incTitle = (incTrip.title || "").trim();
+          const exTitle = (exTrip.title || "").trim();
+          let bestTitle = exTitle || incTitle || "Viaggio Senza Titolo";
+          if (isIncNewer && incTitle && incTitle !== "Nuovo Viaggio") {
+            bestTitle = incTitle;
+          } else if (isExNewer && exTitle && exTitle !== "Nuovo Viaggio") {
+            bestTitle = exTitle;
+          } else if ((!exTitle || exTitle === "Nuovo Viaggio") && incTitle && incTitle !== "Nuovo Viaggio") {
+            bestTitle = incTitle;
+          }
+
+          // Dates selection
+          const bestStartDate = isIncNewer
+            ? (incTrip.startDate || exTrip.startDate)
+            : (exTrip.startDate || incTrip.startDate);
+          const bestEndDate = isIncNewer
+            ? (incTrip.endDate || exTrip.endDate)
+            : (exTrip.endDate || incTrip.endDate);
+
+          // Odometers selection
+          const bestStartOdo = isIncNewer
+            ? (incTrip.startOdometer !== undefined && incTrip.startOdometer !== null ? incTrip.startOdometer : exTrip.startOdometer)
+            : (exTrip.startOdometer !== undefined && exTrip.startOdometer !== null ? exTrip.startOdometer : incTrip.startOdometer);
+
+          const bestEndOdo = isIncNewer
+            ? (incTrip.endOdometer !== undefined && incTrip.endOdometer !== null ? incTrip.endOdometer : exTrip.endOdometer)
+            : (exTrip.endOdometer !== undefined && exTrip.endOdometer !== null ? exTrip.endOdometer : incTrip.endOdometer);
+
+          // Route points
+          const exPoints = exTrip.routePoints || [];
+          const incPoints = incTrip.routePoints || [];
+          const bestPoints = isIncNewer && incPoints.length > 0
+            ? incPoints
+            : (isExNewer && exPoints.length > 0 ? exPoints : (incPoints.length >= exPoints.length ? incPoints : exPoints));
+
           // Preserve "Completato" status across syncs
           const isExCompleted = exTrip.status === "Completato" || exTrip.status === "COMPLETATO";
           const isIncCompleted = incTrip.status === "Completato" || incTrip.status === "COMPLETATO";
           let bestStatus = incTrip.status || exTrip.status || "Completato";
           if (isExCompleted || isIncCompleted) {
             if (isExCompleted && !isIncCompleted) {
-              bestStatus = (incTime > exTime && incTrip.status) ? incTrip.status : "Completato";
+              bestStatus = (isIncNewer && incTrip.status) ? incTrip.status : "Completato";
             } else if (isIncCompleted && !isExCompleted) {
-              bestStatus = "Completato";
+              bestStatus = (isExNewer && exTrip.status) ? exTrip.status : "Completato";
             } else {
               bestStatus = "Completato";
             }
+          } else {
+            bestStatus = isIncNewer ? (incTrip.status || exTrip.status) : (exTrip.status || incTrip.status);
           }
 
-          const finalUpdatedAt = (incTime > exTime)
+          const finalUpdatedAt = isIncNewer
             ? (incTrip.updatedAt || new Date().toISOString())
             : (exTrip.updatedAt || incTrip.updatedAt || new Date().toISOString());
 
           mergedTripsMap.set(incTrip.id, {
             ...exTrip,
             ...incTrip,
+            title: bestTitle,
+            startDate: bestStartDate,
+            endDate: bestEndDate,
+            startOdometer: bestStartOdo,
+            endOdometer: bestEndOdo,
             status: bestStatus,
             description: cleanTravelStoryText(bestDesc),
-            expenses: Array.from(expMap.values()),
-            movements: Array.from(movMap.values()),
+            expenses: Array.from(expMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+            movements: Array.from(movMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
             photos: Array.from(phoMap.values()),
             stops: Array.from(stopMap.values()),
-            startOdometer: incTrip.startOdometer !== undefined ? incTrip.startOdometer : exTrip.startOdometer,
-            endOdometer: incTrip.endOdometer !== undefined ? incTrip.endOdometer : exTrip.endOdometer,
+            routePoints: bestPoints,
+            aiItinerary: incTrip.aiItinerary || exTrip.aiItinerary,
             updatedAt: finalUpdatedAt,
           });
         } else {
@@ -5180,7 +5232,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       // Trigger automatic push notifications for new community message or SOS
       if (entry.tag === "SOS" || entry.tag === "S.O.S.") {
         sendPushNotificationToAll(
-          `🚨 S.O.S. Camper Life!`,
+          `🚨 S.O.S. ViaCamper!`,
           `${entry.user}: ${entry.text}`,
           { type: "sos_message", msgId }
         ).catch(err => console.error("[FCM Push] Error sending SOS notification:", err));

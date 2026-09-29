@@ -117,7 +117,7 @@ export function FamilyCrewModal({ isOpen, onClose, currentUser }: FamilyCrewModa
 
   const shareViaWhatsApp = () => {
     if (!currentCrew) return;
-    const text = `🚐 Ciao! Unisciti al nostro equipaggio camper "${currentCrew.name}" su CamperLife App per sincronizzare la carta carburante, la cambusa, le checklist e i diari di viaggio in tempo reale!\n\n🔑 Il codice invito è: *${currentCrew.code}*\n\nApri l'app e inseriscilo nella sezione Equipaggio Famiglia!`;
+    const text = `🚐 Ciao! Unisciti al nostro equipaggio camper "${currentCrew.name}" su ViaCamper App per sincronizzare la carta carburante, la cambusa, le checklist e i diari di viaggio in tempo reale!\n\n🔑 Il codice invito è: *${currentCrew.code}*\n\nApri l'app e inseriscilo nella sezione Equipaggio Famiglia!`;
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };

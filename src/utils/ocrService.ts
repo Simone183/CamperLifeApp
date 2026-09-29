@@ -14,6 +14,7 @@ export type OcrProgressCallback = (statusText: string) => void;
 export async function extractStoryFromImage(
   imageDataUrl: string,
   mimeType: string = "image/jpeg",
+  mode: "literal" | "elaborate" = "elaborate",
   onProgress?: OcrProgressCallback
 ): Promise<string> {
   if (!imageDataUrl) {
@@ -27,7 +28,7 @@ export async function extractStoryFromImage(
   try {
     optimizedImage = await compressImage(imageDataUrl, "medium");
   } catch (compErr) {
-    console.warn("[OCR Service] Compressione pre-OCR non riuscita, uso anteprima:", compErr);
+    console.warn("[OCR Service] Compressione pre-OCR non réussita, uso anteprima:", compErr);
   }
 
   // Detect if running in native mobile (Capacitor APK)
@@ -43,14 +44,14 @@ export async function extractStoryFromImage(
   // --- STRATEGY 1: Direct HTTP call (ideal when running on Web / Dev server) ---
   if (!isMobileNative) {
     try {
-      onProgress?.("Analisi con Intelligenza Artificiale...");
+      onProgress?.(mode === "literal" ? "Trascrizione letterale con IA in corso..." : "Elaborazione racconto con IA in corso...");
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const res = await fetch("/api/extract-story-ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: optimizedImage, mimeType }),
+        body: JSON.stringify({ image: optimizedImage, mimeType, mode }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -78,6 +79,7 @@ export async function extractStoryFromImage(
         taskId,
         image: optimizedImage,
         mimeType: mimeType || "image/jpeg",
+        mode: mode || "elaborate",
         status: "pending",
         createdAt: Date.now(),
       });

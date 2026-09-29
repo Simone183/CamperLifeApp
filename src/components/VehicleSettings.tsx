@@ -1666,7 +1666,7 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
               </div>
               <div className="min-w-0 flex-1">
                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#3E4A35] block truncate">
-                  CAMPER LIFE APP · CARTA D'IDENTITÀ VEICOLO
+                  VIACAMPER APP · CARTA D'IDENTITÀ VEICOLO
                 </span>
                 <h2 className="text-lg sm:text-xl font-black text-slate-800 truncate">
                   {localDims.modelName || 'Scheda Tecnico Informativa Camper'}

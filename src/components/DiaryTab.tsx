@@ -2,7 +2,7 @@ import React from "react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, formatDistance, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue, formatCurrency } from "../unit-helpers";
 import { Trip, DiaryExpense, DiaryPhoto, Place, DiaryMovement, TripMovement } from "../types";
-import { normalizeTrip, mergeTrips, recordDeletedId, unrecordDeletedId, getDeletedIds, isDeletedId, isSiciliaTrip, isSicilia29AugPhoto, SICILIA_PURGED_PHOTO_IDS } from "../utils/tripSyncHelper";
+import { normalizeTrip, mergeTrips, recordDeletedId, unrecordDeletedId, getDeletedIds, isDeletedId, isSiciliaTrip, isSicilia29AugPhoto, SICILIA_PURGED_PHOTO_IDS, isPhotoDateInTripRange } from "../utils/tripSyncHelper";
 import { compressImage } from "../utils/photoCompressor";
 import { savePhotoToIndexedDB, getAllPhotosFromIndexedDB, pruneIndexedDBCache, deletePhotoFromIndexedDB } from "../utils/photoStorage";
 import { resolveMediaUrl, resolveApiUrl } from "../utils/resolveMediaUrl";
@@ -56,6 +56,7 @@ import {
   FileText,
   Check,
   ArrowUpDown,
+  BarChart3,
 } from "lucide-react";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -392,8 +393,44 @@ export default function DiaryTab({
           trips: cleanDeletedTrips,
         };
 
+        // Pre-fetch latest cloud trips from BOTH Firestore AND Server API to merge before saving to avoid overwriting recent edits from another device (e.g. PC or Mobile)
+        let preFetchedCloudTrips: Trip[] = [];
+
+        // A. Direct Firestore read
+        try {
+          const fsDocRef = doc(db, "users", cleanEmail, "data", "trips");
+          const fsSnap = await getDoc(fsDocRef);
+          if (fsSnap.exists()) {
+            const fsData = fsSnap.data();
+            if (fsData && Array.isArray(fsData.trips)) {
+              const fsTrips = fsData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+              preFetchedCloudTrips = mergeTrips(preFetchedCloudTrips, fsTrips, cleanEmail);
+            }
+          }
+        } catch (fsErr: any) {
+          console.warn("[Cloud Sync] Firestore pre-fetch notice:", fsErr?.message);
+        }
+
+        // B. Server API read
+        try {
+          const fetchRes = await fetch(resolveApiUrl(`/api/user-trips/${encodeURIComponent(cleanEmail)}`), {
+            signal: AbortSignal.timeout(5000)
+          });
+          if (fetchRes.ok) {
+            const fetchJson = await fetchRes.json().catch(() => ({}));
+            if (fetchJson?.trips && Array.isArray(fetchJson.trips)) {
+              const apiTrips = fetchJson.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
+              preFetchedCloudTrips = mergeTrips(preFetchedCloudTrips, apiTrips, cleanEmail);
+            }
+          }
+        } catch (e) {}
+
+        const mergedBaseTrips = preFetchedCloudTrips.length > 0 
+          ? mergeTrips(tripsToSync, preFetchedCloudTrips, cleanEmail) 
+          : tripsToSync;
+
         // Sanitize trips object so base64 data URLs are stripped and replaced with lightweight /api/photos/photo_id
-        const cloudSafeTrips = tripsToSync.map((t) => ({
+        const cloudSafeTrips = mergedBaseTrips.map((t) => ({
           ...t,
           photos: (t.photos || []).map((p) => {
             if (p && typeof p.url === "string" && p.url.startsWith("data:image/")) {
@@ -853,6 +890,7 @@ export default function DiaryTab({
   const [ocrImagePreview, setOcrImagePreview] = React.useState<string | null>(null);
   const [ocrImageFile, setOcrImageFile] = React.useState<File | null>(null);
   const [ocrExtractedText, setOcrExtractedText] = React.useState("");
+  const [ocrMode, setOcrMode] = React.useState<'elaborate' | 'literal'>('elaborate');
   const [isProcessingOcr, setIsProcessingOcr] = React.useState(false);
   const [ocrProgressStatus, setOcrProgressStatus] = React.useState<string>("");
   const [ocrTargetField, setOcrTargetField] = React.useState<'new' | 'edit' | 'active'>('new');
@@ -1197,7 +1235,7 @@ export default function DiaryTab({
     scanLocalOrphanPhotos();
   }, [scanLocalOrphanPhotos]);
 
-  // Active trip photos strictly filtered from deletions and tombstones & sorted chronologically
+  // Active trip photos strictly filtered from deletions, tombstones & out-of-range dates
   const activeTripPhotos = React.useMemo(() => {
     if (!activeTrip || !Array.isArray(activeTrip.photos)) return [];
     const deletedPhotos = getDeletedIds('photos', emailKey);
@@ -1211,6 +1249,10 @@ export default function DiaryTab({
         deletePhotoFromIndexedDB(pId).catch(() => {});
         return false;
       }
+      // AUTOMATIC DATE FILTERING: Exclude photos whose date is outside this trip's timeframe
+      if (!isPhotoDateInTripRange(p.date, activeTrip.startDate, activeTrip.endDate)) {
+        return false;
+      }
       return true;
     });
 
@@ -1220,6 +1262,34 @@ export default function DiaryTab({
 
     return sortPhotosChronologically(filtered, photoSortOrder === 'date-asc');
   }, [activeTrip, emailKey, photoSortOrder]);
+
+  // Automatic background cleanup: Purge out-of-date photos from activeTrip.photos permanently
+  React.useEffect(() => {
+    if (!activeTrip || !selectedTripId || !activeTrip.startDate || !Array.isArray(activeTrip.photos)) return;
+
+    const invalidPhotos = activeTrip.photos.filter((p) => {
+      if (!p || p.deleted) return true;
+      return !isPhotoDateInTripRange(p.date, activeTrip.startDate, activeTrip.endDate);
+    });
+
+    if (invalidPhotos.length > 0) {
+      const validPhotos = activeTrip.photos.filter((p) => {
+        if (!p || p.deleted) return false;
+        return isPhotoDateInTripRange(p.date, activeTrip.startDate, activeTrip.endDate);
+      });
+
+      console.log(`[AutoPurge] Automatically removing ${invalidPhotos.length} out-of-date photos from trip "${activeTrip.title}"`);
+      const updated = trips.map((t) => (t.id === selectedTripId ? { ...t, photos: validPhotos } : t));
+      setTrips(updated);
+      if (emailKey) {
+        try {
+          localStorage.setItem(`camper_trips_${emailKey}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      syncWithCloud(updated, false);
+      window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
+    }
+  }, [activeTrip?.id, activeTrip?.startDate, activeTrip?.endDate, activeTrip?.photos, selectedTripId, emailKey]);
 
   // Gallery pagination: loads 24 photos at a time for 60fps mobile fluid rendering
   const [visiblePhotosCount, setVisiblePhotosCount] = React.useState<number>(24);
@@ -2952,15 +3022,18 @@ export default function DiaryTab({
         const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
         // Extract real capture date from EXIF / filename / lastModified!
         const extracted = await extractPhotoDate(file, activeTrip?.startDate, activeTrip?.endDate);
+        const photoDate = extracted.date || activeTrip?.startDate || new Date().toISOString().split("T")[0];
 
-        newPhotosToAdd.push({
-          id: photoId,
-          url: `/api/photos/${photoId}`,
-          description: cleanName && cleanName.length > 2 && !cleanName.match(/^(img|dsc|pxl|photo|screenshot|whatsapp)/i) ? cleanName : undefined,
-          date: extracted.date || activeTrip?.startDate || new Date().toISOString().split("T")[0],
-          time: extracted.time,
-          dateSource: extracted.source,
-        });
+        if (isPhotoDateInTripRange(photoDate, activeTrip?.startDate, activeTrip?.endDate)) {
+          newPhotosToAdd.push({
+            id: photoId,
+            url: `/api/photos/${photoId}`,
+            description: cleanName && cleanName.length > 2 && !cleanName.match(/^(img|dsc|pxl|photo|screenshot|whatsapp)/i) ? cleanName : undefined,
+            date: photoDate,
+            time: extracted.time,
+            dateSource: extracted.source,
+          });
+        }
       } catch (err) {
         console.warn("Error processing gallery photo:", err);
       }
@@ -3523,6 +3596,72 @@ export default function DiaryTab({
   };
 
   const odometerDiff = activeTrip ? getTripDistance(activeTrip) : 0;
+
+  // Global aggregate stats across all trips
+  const globalTripStats = React.useMemo(() => {
+    let totalKm = 0;
+    let totalSpent = 0;
+    let totalFuelEuro = 0;
+    let totalFuelLiters = 0;
+    let totalDays = 0;
+    let totalSoste = 0;
+    let totalPhotos = 0;
+
+    (trips || []).forEach((t) => {
+      // Km
+      totalKm += getTripDistance(t);
+
+      // Soste & Photos
+      totalSoste += (t.soste || []).length;
+      totalPhotos += (t.photos || []).length || (t.photosCount || 0);
+
+      // Days
+      if (t.startDate && t.endDate) {
+        const start = new Date(t.startDate).getTime();
+        const end = new Date(t.endDate).getTime();
+        if (!isNaN(start) && !isNaN(end) && end >= start) {
+          const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+          totalDays += diffDays;
+        } else {
+          totalDays += 1;
+        }
+      } else if (t.startDate) {
+        totalDays += 1;
+      }
+
+      // Expenses
+      if (t.includeExpenses !== false && Array.isArray(t.expenses)) {
+        t.expenses.forEach((e) => {
+          totalSpent += e.amount || 0;
+          if (e.category === "Carburante") {
+            totalFuelEuro += e.amount || 0;
+            if (typeof e.liters === "number" && !isNaN(e.liters) && e.liters > 0) {
+              totalFuelLiters += e.liters;
+            }
+          }
+        });
+      }
+    });
+
+    let avgLPer100Km: number | null = null;
+    let avgKmL: number | null = null;
+    if (totalKm > 0 && totalFuelLiters > 0) {
+      avgLPer100Km = (totalFuelLiters / totalKm) * 100;
+      avgKmL = totalKm / totalFuelLiters;
+    }
+
+    return {
+      totalKm,
+      totalSpent,
+      totalFuelEuro,
+      totalFuelLiters,
+      totalDays,
+      totalSoste,
+      totalPhotos,
+      avgLPer100Km,
+      avgKmL,
+    };
+  }, [trips, settings]);
 
   // Helper to parse dates in various formats (YYYY-MM-DD, DD/MM/YYYY, ISO, etc.)
   const parseDateToTimestamp = (dateStr?: string | number | null): number => {
@@ -4209,7 +4348,96 @@ export default function DiaryTab({
 
           {/* Trips selector wrapper */}
           {!showAddTrip && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-5 space-y-4">
+              {/* COMPACT OVERALL TRIP STATS BANNER */}
+              {trips.length > 0 && (
+                <div className="bg-stone-50/90 dark:bg-stone-850/60 border border-stone-200/80 dark:border-stone-700/60 rounded-2xl p-3 sm:p-3.5 space-y-2.5 shadow-2xs font-sans">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#3E4A35] dark:text-emerald-400 flex items-center gap-1.5">
+                      <BarChart3 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Riepilogo Generale Viaggi
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 bg-white dark:bg-stone-800 px-2 py-0.5 rounded-full border border-slate-200/60 dark:border-stone-700">
+                      {trips.length} {trips.length === 1 ? 'Viaggio' : 'Viaggi'} • {globalTripStats.totalDays} {globalTripStats.totalDays === 1 ? 'giorno' : 'giorni'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    {/* KM Totali */}
+                    <div className="bg-white dark:bg-stone-800 p-2 sm:p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-700 flex flex-col justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight block">
+                        🗺️ KM Totali
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-white font-mono truncate">
+                        {formatDistance(globalTripStats.totalKm, settings)}
+                      </span>
+                    </div>
+
+                    {/* Totale Spese */}
+                    <div className="bg-white dark:bg-stone-800 p-2 sm:p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-700 flex flex-col justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight block">
+                        💸 Totale Spese
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-[#A45C40] dark:text-amber-400 font-mono truncate">
+                        {globalTripStats.totalSpent.toFixed(2)} {getCurrencySymbol(settings)}
+                      </span>
+                    </div>
+
+                    {/* Totale Carburante */}
+                    <div className="bg-white dark:bg-stone-800 p-2 sm:p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-700 flex flex-col justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight block">
+                        ⛽ Carburante
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-emerald-700 dark:text-emerald-400 font-mono truncate">
+                        {globalTripStats.totalFuelEuro.toFixed(2)} {getCurrencySymbol(settings)}
+                      </span>
+                      {globalTripStats.totalFuelLiters > 0 && (
+                        <span className="text-[8.5px] font-semibold text-slate-500">
+                          {globalTripStats.totalFuelLiters.toFixed(0)} Litri
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Media Consumo */}
+                    <div className="bg-white dark:bg-stone-800 p-2 sm:p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-700 flex flex-col justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight block">
+                        🚐 Consumo Medio
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-blue-700 dark:text-blue-400 font-mono truncate">
+                        {globalTripStats.avgLPer100Km !== null
+                          ? `${globalTripStats.avgLPer100Km.toFixed(1)} L/100km`
+                          : "---"}
+                      </span>
+                      {globalTripStats.avgKmL !== null && (
+                        <span className="text-[8.5px] font-semibold text-slate-500">
+                          ({globalTripStats.avgKmL.toFixed(1)} km/L)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Soste Totali */}
+                    <div className="bg-white dark:bg-stone-800 p-2 sm:p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-700 flex flex-col justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight block">
+                        ⛺ Soste & Camping
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-white font-mono truncate">
+                        {globalTripStats.totalSoste} {globalTripStats.totalSoste === 1 ? 'struttura' : 'strutture'}
+                      </span>
+                    </div>
+
+                    {/* Foto & Ricordi */}
+                    <div className="bg-white dark:bg-stone-800 p-2 sm:p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-700 flex flex-col justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight block">
+                        📸 Foto & Ricordi
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-white font-mono truncate">
+                        {globalTripStats.totalPhotos} {globalTripStats.totalPhotos === 1 ? 'scatto' : 'scatti'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between items-center pb-1">
                 <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
                   <BookOpen className="w-4 h-4 text-[#3E4A35]" />I Tuoi Viaggi
@@ -8407,65 +8635,126 @@ export default function DiaryTab({
               )}
 
               {ocrImagePreview && !ocrExtractedText && (
-                <button
-                  type="button"
-                  disabled={isProcessingOcr}
-                  onClick={async () => {
-                    if (!ocrImagePreview) return;
-                    setIsProcessingOcr(true);
-                    setOcrProgressStatus("Preparazione immagine...");
-                    try {
-                      const text = await extractStoryFromImage(
-                        ocrImagePreview,
-                        ocrImageFile?.type || "image/jpeg",
-                        (status) => setOcrProgressStatus(status)
-                      );
-                      const cleanText = cleanTravelStoryText(text);
-                      if (cleanText && cleanText.trim()) {
-                        setOcrExtractedText(cleanText.trim());
+                <div className="space-y-3.5 pt-1">
+                  {/* Selector Mode OCR */}
+                  <div className="bg-stone-50 dark:bg-stone-800/80 p-3 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-2">
+                    <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 dark:text-stone-300">
+                      Modalità Elaborazione Racconto:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOcrMode('elaborate')}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2 ${
+                          ocrMode === 'elaborate'
+                            ? 'bg-amber-500/10 border-amber-600 text-amber-900 dark:text-amber-200 shadow-xs ring-1 ring-amber-500'
+                            : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-100'
+                        }`}
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-extrabold text-xs flex items-center gap-1">
+                            <span>🪄 Rielabora ed Arricchisci</span>
+                          </p>
+                          <p className="text-[10px] text-stone-500 dark:text-stone-400 leading-tight mt-0.5">
+                            Rende il racconto avvincente e scorrevole mantenendo fedeli tutti i dati e le tappe.
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOcrMode('literal')}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2 ${
+                          ocrMode === 'literal'
+                            ? 'bg-amber-500/10 border-amber-600 text-amber-900 dark:text-amber-200 shadow-xs ring-1 ring-amber-500'
+                            : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-100'
+                        }`}
+                      >
+                        <FileText className="w-4 h-4 text-slate-600 dark:text-slate-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-extrabold text-xs">📝 Trascrizione Letterale</p>
+                          <p className="text-[10px] text-stone-500 dark:text-stone-400 leading-tight mt-0.5">
+                            Trascrive parola per parola esattamente quello che è scritto sul foglio.
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isProcessingOcr}
+                    onClick={async () => {
+                      if (!ocrImagePreview) return;
+                      setIsProcessingOcr(true);
+                      setOcrProgressStatus("Preparazione immagine...");
+                      try {
+                        const text = await extractStoryFromImage(
+                          ocrImagePreview,
+                          ocrImageFile?.type || "image/jpeg",
+                          ocrMode,
+                          (status) => setOcrProgressStatus(status)
+                        );
+                        const cleanText = cleanTravelStoryText(text);
+                        if (cleanText && cleanText.trim()) {
+                          setOcrExtractedText(cleanText.trim());
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: { 
+                                message: ocrMode === 'elaborate' 
+                                  ? "✨ Racconto elaborato ed arricchito con successo!" 
+                                  : "📝 Testo trascritto con precisione letterale!" 
+                              },
+                            })
+                          );
+                        } else {
+                          throw new Error("Nessun testo rilevato. Riprova con una foto più ravvicinata o a fuoco.");
+                        }
+                      } catch (err: any) {
+                        console.error("[DiaryTab] OCR extraction failed:", err);
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
-                            detail: { message: "✨ Testo estratto con successo tramite OCR (senza asterischi né frasi superflue)!" },
+                            detail: {
+                              message: `❌ ${err.message || "Errore durante l'OCR"}`,
+                            },
                           })
                         );
-                      } else {
-                        throw new Error("Nessun testo rilevato. Riprova con una foto più ravvicinata o a fuoco.");
+                      } finally {
+                        setIsProcessingOcr(false);
+                        setOcrProgressStatus("");
                       }
-                    } catch (err: any) {
-                      console.error("[DiaryTab] OCR extraction failed:", err);
-                      window.dispatchEvent(
-                        new CustomEvent("show-toast", {
-                          detail: {
-                            message: `❌ ${err.message || "Errore durante l'OCR"}`,
-                          },
-                        })
-                      );
-                    } finally {
-                      setIsProcessingOcr(false);
-                      setOcrProgressStatus("");
-                    }
-                  }}
-                  className="w-full py-3 bg-gradient-to-r from-amber-600 via-amber-700 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60 active:scale-[0.98]"
-                >
-                  {isProcessingOcr ? (
-                    <div className="flex flex-col items-center justify-center gap-0.5 py-0.5">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        <span className="font-bold text-xs">Trascrizione in corso...</span>
+                    }}
+                    className="w-full py-3 bg-gradient-to-r from-amber-600 via-amber-700 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60 active:scale-[0.98]"
+                  >
+                    {isProcessingOcr ? (
+                      <div className="flex flex-col items-center justify-center gap-0.5 py-0.5">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span className="font-bold text-xs">
+                            {ocrMode === 'literal' ? "Trascrizione letterale in corso..." : "Elaborazione racconto in corso..."}
+                          </span>
+                        </div>
+                        {ocrProgressStatus && (
+                          <span className="text-[10px] text-amber-100/90 font-medium animate-pulse">
+                            {ocrProgressStatus}
+                          </span>
+                        )}
                       </div>
-                      {ocrProgressStatus && (
-                        <span className="text-[10px] text-amber-100/90 font-medium animate-pulse">
-                          {ocrProgressStatus}
+                    ) : (
+                      <>
+                        {ocrMode === 'elaborate' ? (
+                          <Sparkles className="w-4 h-4 text-amber-200" />
+                        ) : (
+                          <FileText className="w-4 h-4 text-amber-200" />
+                        )}
+                        <span>
+                          {ocrMode === 'elaborate' ? "Elabora Racconto con IA" : "Esegui Trascrizione Letterale"}
                         </span>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 text-amber-200" />
-                      <span>Esegui OCR e Trascrivi Racconto</span>
-                    </>
-                  )}
-                </button>
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
 
               {ocrExtractedText && (
