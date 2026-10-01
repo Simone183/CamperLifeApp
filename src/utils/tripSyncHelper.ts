@@ -174,17 +174,24 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
         })
     : [];
 
-  const cleanStops: TripStop[] = Array.isArray(rawTrip.stops)
-    ? rawTrip.stops.map((s: any, idx: number) => ({
-        id: String(s?.id || `stop_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`),
-        name: String(s?.name || "Sosta"),
-        lat: typeof s?.lat === "number" ? s.lat : 0,
-        lng: typeof s?.lng === "number" ? s.lng : 0,
-        expenses: typeof s?.expenses === "number" ? s.expenses : 0,
-        category: s?.category || "Sosta Libera",
-        notes: String(s?.notes || ""),
-      }))
-    : [];
+  const rawStops = (Array.isArray(rawTrip.stops) && rawTrip.stops.length > 0)
+    ? rawTrip.stops
+    : (Array.isArray(rawTrip.soste) ? rawTrip.soste : []);
+
+  const cleanStops: TripStop[] = rawStops.map((s: any, idx: number) => ({
+    id: String(s?.id || `stop_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`),
+    name: String(s?.name || s?.title || "Sosta"),
+    lat: typeof s?.lat === "number" ? s.lat : 0,
+    lng: typeof s?.lng === "number" ? s.lng : 0,
+    expenses: typeof s?.expenses === "number" ? s.expenses : (typeof s?.expenseEuro === "number" ? s.expenseEuro : 0),
+    category: s?.category || s?.type || "Sosta Libera",
+    notes: String(s?.notes || ""),
+    type: s?.type || "area_sosta",
+    address: String(s?.address || ""),
+    phone: String(s?.phone || ""),
+    date: String(s?.date || ""),
+    expenseEuro: typeof s?.expenseEuro === "number" ? s.expenseEuro : (typeof s?.expenses === "number" ? s.expenses : 0),
+  }));
 
   const tripStartDate = String(rawTrip.startDate || "");
   const tripEndDate = String(rawTrip.endDate || rawTrip.startDate || "");
@@ -264,6 +271,7 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
     expenses: cleanExpenses,
     movements: cleanMovements,
     stops: cleanStops,
+    soste: cleanStops,
     photos: cleanPhotos,
     routePoints: cleanRoutePoints,
     ...(rawTrip.updatedAt ? { updatedAt: String(rawTrip.updatedAt) } : {}),
@@ -384,10 +392,12 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
 
   // 4. Merge stops by ID
   const stopMap = new Map<string, TripStop>();
-  for (const s of localTrip.stops || []) {
+  const localStops = (localTrip.stops && localTrip.stops.length > 0) ? localTrip.stops : (localTrip.soste || []);
+  const cloudStops = (cloudTrip.stops && cloudTrip.stops.length > 0) ? cloudTrip.stops : (cloudTrip.soste || []);
+  for (const s of localStops) {
     if (s?.id) stopMap.set(s.id, s);
   }
-  for (const s of cloudTrip.stops || []) {
+  for (const s of cloudStops) {
     if (s?.id && !stopMap.has(s.id)) stopMap.set(s.id, s);
   }
 
@@ -472,6 +482,8 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     ? cloudTrip.updatedAt
     : (localTrip.updatedAt || cloudTrip.updatedAt || new Date().toISOString());
 
+  const mergedStops = Array.from(stopMap.values());
+
   return {
     ...localTrip,
     ...cloudTrip,
@@ -485,7 +497,8 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     expenses: Array.from(expenseMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     movements: Array.from(movementMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     photos: Array.from(photoMap.values()),
-    stops: Array.from(stopMap.values()),
+    stops: mergedStops,
+    soste: mergedStops,
     routePoints: mergedPoints,
     aiItinerary: cloudTrip.aiItinerary || localTrip.aiItinerary,
     updatedAt: finalUpdatedAt,

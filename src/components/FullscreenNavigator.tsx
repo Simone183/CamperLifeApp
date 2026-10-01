@@ -453,6 +453,17 @@ export default function FullscreenNavigator({
   const [isBrowserFullscreen, setIsBrowserFullscreen] = React.useState<boolean>(false);
   const [isMapFullscreenMode, setIsMapFullscreenMode] = React.useState<boolean>(true);
   const [isAndroidAutoMode, setIsAndroidAutoMode] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (mapRef.current) {
+      setTimeout(() => {
+        try {
+          mapRef.current?.resize();
+          mapRef.current?.triggerRepaint();
+        } catch (e) {}
+      }, 150);
+    }
+  }, [isAndroidAutoMode, isMinimized]);
   const [favoriteIdsSet, setFavoriteIdsSet] = React.useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('camper_favorites');
@@ -3371,7 +3382,10 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         ref={mapContainerRef} 
         className={isMinimized 
           ? "fixed inset-0 w-full h-full opacity-0 pointer-events-none -z-50" 
-          : "absolute inset-0 w-full h-full z-0"
+          : (isAndroidAutoMode 
+              ? "absolute top-0 bottom-0 right-0 left-72 sm:left-80 w-[calc(100%-18rem)] sm:w-[calc(100%-20rem)] h-full z-0 transition-all" 
+              : "absolute inset-0 w-full h-full z-0 transition-all"
+            )
         } 
       />
 
@@ -3425,48 +3439,212 @@ const newCenter = [targetCoords[1], targetCoords[0]];
         </div>
       ) : (
         <div className="absolute inset-0 pointer-events-none z-30">
-          {/* Top Active Directions HUD Overlay & Optional Preview Stats */}
-          <div className="absolute top-4 inset-x-0 mx-auto max-w-2xl z-40 px-4 pointer-events-none flex flex-col gap-2">
-            {/* Android Auto Mode Header / Standard Switch */}
-            <div className="flex items-center justify-between bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl px-3 py-2 shadow-2xl pointer-events-auto">
-              <button
-                type="button"
-                onClick={() => setIsAndroidAutoMode(!isAndroidAutoMode)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                  isAndroidAutoMode ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-                title="Attiva/Disattiva Interfaccia Android Auto semplificata"
-              >
-                <span>🚗 Android Auto</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/30">{isAndroidAutoMode ? 'ON' : 'OFF'}</span>
-              </button>
+          {/* Android Auto Left Side Control Dock Panel */}
+          {isAndroidAutoMode && !isMinimized && (
+            <div className="absolute top-0 bottom-0 left-0 w-72 sm:w-80 bg-[#070c17]/98 backdrop-blur-xl border-r border-slate-800/90 shadow-2xl z-40 flex flex-col justify-between p-3 gap-2.5 overflow-y-auto pointer-events-auto text-slate-100 font-sans">
+              {/* Top Bar: Android Auto Mode Toggle & Quick Controls */}
+              <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-2.5 flex items-center justify-between shadow-md">
+                <button
+                  type="button"
+                  onClick={() => setIsAndroidAutoMode(false)}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center gap-1.5 cursor-pointer transition-all"
+                  title="Disattiva Modalità Android Auto"
+                >
+                  <span>🚗 Android Auto</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-black/30 font-mono">ON</span>
+                </button>
 
-              {isAndroidAutoMode && (
-                <div className="flex items-center justify-center gap-1.5 flex-1 mx-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setVoiceEnabled(!voiceEnabled)}
+                    className={`p-2 rounded-xl border text-xs cursor-pointer transition-all ${
+                      voiceEnabled ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-400"
+                    }`}
+                    title={voiceEnabled ? "Voce Guida Attiva" : "Voce Guida Disattivata"}
+                  >
+                    {voiceEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAutoCenter(true);
+                      if (mapRef.current && userLocation) {
+                        mapRef.current.flyTo({ center: [userLocation[1], userLocation[0]], zoom: 16, pitch: 50 });
+                      }
+                    }}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 cursor-pointer transition-all"
+                    title="Ricentra su Mappa"
+                  >
+                    <Compass className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Action Buttons Grid */}
+              <div className="bg-[#0d1527] border border-slate-800/90 rounded-2xl p-2.5 shadow-md space-y-2 text-left">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  ⚡ Azioni Rapide Guida
+                </span>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setOpenModal('FUEL')}
-                    className="px-2.5 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
+                    className="p-2.5 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                   >
                     <span>⛽ Rifornimento</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setOpenModal('SOSTA')}
-                    className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
+                    className="p-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                   >
                     <span>🚚 Aree Sosta</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setOpenModal('MOVEMENT')}
-                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
+                    className="p-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                   >
                     <span>📍 Spostamento</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
+                    className={`p-2.5 font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 border ${
+                      isAudioPlaying
+                        ? "bg-indigo-600 text-white border-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.4)]"
+                        : "bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700"
+                    }`}
+                  >
+                    <Music className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>🎵 Musica</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                    className="p-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-extrabold text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-300" />
+                    <span>⚙️ Opzioni</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="p-2.5 bg-rose-900/60 hover:bg-rose-900 active:scale-95 text-rose-200 font-extrabold text-xs rounded-xl border border-rose-700/60 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <X className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Chiudi</span>
+                  </button>
                 </div>
-              )}
+              </div>
+
+              {/* Turn-by-Turn Navigation Status inside Left Dock */}
+              <div className="bg-[#0b101d] border border-slate-800 rounded-2xl p-3 shadow-md space-y-2 text-left">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <Navigation className="w-3 h-3 text-emerald-400" />
+                    {isPreview ? "Anteprima" : "In Navigazione"}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold">
+                    {etaTimeStr}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0">
+                    {currentStepObj?.icon || "🛣️"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-slate-100 font-black text-xs truncate">
+                      {dest.name}
+                    </h4>
+                    <p className="text-slate-300 font-semibold text-[11px] leading-snug line-clamp-2 mt-0.5">
+                      {currentStepObj?.desc || currentStepObj?.title || `Procedi verso ${dest.name}`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 p-2 rounded-xl text-xs font-mono font-bold">
+                  <span className="text-slate-400">Prossima Svolta:</span>
+                  <span className="text-emerald-400 font-black">{currentStepObj?.distance || "0 m"}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-center text-xs font-mono font-black pt-1">
+                  <div className="bg-slate-900 border border-slate-800 p-2 rounded-xl">
+                    <span className="text-[9px] font-extrabold text-slate-400 block uppercase font-sans">Km Residui</span>
+                    <span className="text-emerald-400">{remainingDistanceKm.toFixed(1)} km</span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 p-2 rounded-xl">
+                    <span className="text-[9px] font-extrabold text-slate-400 block uppercase font-sans">Velocità</span>
+                    <span className="text-slate-100">{currentDetectedSpeed ? `${currentDetectedSpeed} km/h` : `${speed} km/h`}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Embedded Search Box at Bottom of Left Panel */}
+              <div className="bg-[#0b101d] border border-slate-800 rounded-2xl p-2.5 shadow-md flex flex-col gap-2 text-left">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  🔍 Cerca Destinazione
+                </span>
+                <input
+                  type="text"
+                  placeholder="Cerca area sosta o città..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-medium"
+                />
+                {searchQuery.trim().length > 0 && (
+                  <div className="max-h-36 overflow-y-auto space-y-1 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+                    {places
+                      .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.address && p.address.toLowerCase().includes(searchQuery.toLowerCase())))
+                      .slice(0, 5)
+                      .map(place => (
+                        <div
+                          key={place.id}
+                          onClick={() => {
+                            setSelectedSostaModal(place);
+                            setSearchQuery('');
+                          }}
+                          className="p-2 hover:bg-slate-800 rounded-lg cursor-pointer flex items-center justify-between text-xs"
+                        >
+                          <div className="min-w-0 pr-1">
+                            <p className="font-bold text-white truncate">{place.name}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{place.address || 'Posizione GPS'}</p>
+                          </div>
+                          <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg shrink-0">Seleziona</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
             </div>
+          )}
+
+          {/* Top Active Directions HUD Overlay & Optional Preview Stats */}
+          <div className={`absolute top-4 inset-x-0 mx-auto max-w-2xl z-40 px-4 pointer-events-none flex flex-col gap-2 ${
+            isAndroidAutoMode ? "left-72 sm:left-80 right-0 max-w-xl" : ""
+          }`}>
+            {/* Android Auto Mode Header / Standard Switch */}
+            {!isAndroidAutoMode && (
+              <div className="flex items-center justify-between bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl px-3 py-2 shadow-2xl pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsAndroidAutoMode(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                  title="Attiva Interfaccia Android Auto con Dock Sinistro"
+                >
+                  <span>🚗 Android Auto</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/30">OFF</span>
+                </button>
+              </div>
+            )}
 
             {/* Primary Directions HUD Box */}
             <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xl flex items-center gap-3 sm:gap-4 pointer-events-auto">
@@ -4361,44 +4539,5 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     </div>
   )}
 
-  {/* Android Auto Bottom Search Bar */}
-  {isAndroidAutoMode && (
-    <div className="absolute bottom-4 inset-x-4 z-40 max-w-2xl mx-auto pointer-events-auto">
-      <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-2xl p-2.5 shadow-2xl flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="🔍 Cerca destinazione, area sosta o città..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-          />
-        </div>
-        {searchQuery.trim().length > 0 && (
-          <div className="max-h-48 overflow-y-auto space-y-1 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
-            {places
-              .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.address && p.address.toLowerCase().includes(searchQuery.toLowerCase())))
-              .slice(0, 5)
-              .map(place => (
-                <div
-                  key={place.id}
-                  onClick={() => {
-                    setSelectedSostaModal(place);
-                    setSearchQuery('');
-                  }}
-                  className="p-2 hover:bg-slate-800 rounded-lg cursor-pointer flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <p className="font-bold text-white">{place.name}</p>
-                    <p className="text-[10px] text-slate-400">{place.address || 'Posizione GPS'}</p>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg">Seleziona 🚀</span>
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )}
   </>);
 }

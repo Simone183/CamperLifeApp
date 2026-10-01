@@ -536,17 +536,24 @@ export interface TripStop {
   priceEuro?: number;
   expenses?: number;
   photosUrl?: string[];
+  type?: string;
+  address?: string;
+  phone?: string;
+  expenseEuro?: number;
 }
 
 export interface TripSosta {
   id: string;
-  name: string;
-  type: 'area_sosta' | 'campeggio' | 'agricampeggio' | 'parcheggio' | 'altro' | string;
+  name?: string;
+  type?: 'area_sosta' | 'campeggio' | 'agricampeggio' | 'parcheggio' | 'altro' | string;
   address?: string;
   phone?: string;
-  date: string;
-  expenseEuro: number;
+  date?: string;
+  expenseEuro?: number;
   notes?: string;
+  lat?: number;
+  lng?: number;
+  expenses?: number;
 }
 
 export interface Trip {

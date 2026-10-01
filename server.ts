@@ -4871,10 +4871,12 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
           // Merge stops
           const stopMap = new Map<string, any>();
-          for (const s of (exTrip.stops || [])) {
+          const exStops = (exTrip.stops && exTrip.stops.length > 0) ? exTrip.stops : (exTrip.soste || []);
+          const incStops = (incTrip.stops && incTrip.stops.length > 0) ? incTrip.stops : (incTrip.soste || []);
+          for (const s of exStops) {
             if (s && s.id) stopMap.set(s.id, s);
           }
-          for (const s of (incTrip.stops || [])) {
+          for (const s of incStops) {
             if (s && s.id) {
               if (stopMap.has(s.id)) {
                 const existing = stopMap.get(s.id);
@@ -4979,6 +4981,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             movements: Array.from(movMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
             photos: Array.from(phoMap.values()),
             stops: Array.from(stopMap.values()),
+            soste: Array.from(stopMap.values()),
             routePoints: bestPoints,
             aiItinerary: incTrip.aiItinerary || exTrip.aiItinerary,
             updatedAt: finalUpdatedAt,
@@ -7046,6 +7049,116 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     } catch (err: any) {
       console.error("[Promo Push Test] Error sending manual test:", err);
       res.status(500).json({ error: "Errore durante l'invio del push di test.", details: err.message });
+    }
+  });
+
+  // Moderator Custom Push Broadcast Endpoint
+  app.post("/api/admin/send-custom-push", async (req, res) => {
+    try {
+      const { title, body, imageUrl, category, sentBy } = req.body || {};
+      const cleanTitle = String(title || "").trim();
+      const cleanBody = String(body || "").trim();
+      if (!cleanTitle || !cleanBody) {
+        return res.status(400).json({ error: "Titolo e testo della notifica sono obbligatori." });
+      }
+
+      // Convert heavy base64 image if present to persistent file/URL
+      let finalImageUrl = imageUrl || "";
+      if (finalImageUrl.startsWith("data:image/")) {
+        try {
+          const BACKUP_DIR = path.join(process.cwd(), "user_backups");
+          const PHOTOS_DIR = path.join(BACKUP_DIR, "photos");
+          const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+          if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+          if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+          const match = finalImageUrl.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+          if (match) {
+            const base64Data = match[2];
+            const buffer = Buffer.from(base64Data, "base64");
+            const photoId = `push_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            const filename = `${photoId}.jpg`;
+            const persistentPath = path.join(PHOTOS_DIR, filename);
+            const uploadPath = path.join(UPLOADS_DIR, filename);
+
+            try {
+              const optBuffer = await sharp(buffer)
+                .resize({ width: 1200, height: 800, fit: "inside", withoutEnlargement: true })
+                .jpeg({ quality: 80 })
+                .toBuffer();
+              fs.writeFileSync(persistentPath, optBuffer);
+              fs.writeFileSync(uploadPath, optBuffer);
+            } catch (sErr) {
+              fs.writeFileSync(persistentPath, buffer);
+              fs.writeFileSync(uploadPath, buffer);
+            }
+            finalImageUrl = `/api/photos/${photoId}`;
+          }
+        } catch (imgErr) {
+          console.warn("[Custom Push] Warning processing push image:", imgErr);
+        }
+      }
+
+      const pushData: Record<string, string> = {
+        type: "custom_moderator_push",
+        category: category || "update",
+      };
+      if (finalImageUrl) {
+        pushData.imageUrl = finalImageUrl;
+      }
+
+      console.log(`[Moderator Custom Push] Transmitting custom push "${cleanTitle}"...`);
+      await sendPushNotificationToAll(cleanTitle, cleanBody, pushData);
+
+      // Record in Firestore push_broadcasts collection for history log
+      try {
+        await firestoreDb.collection("push_broadcasts").add({
+          title: cleanTitle,
+          body: cleanBody,
+          imageUrl: finalImageUrl || null,
+          category: category || "update",
+          sentBy: sentBy || "Moderatore ViaCamper",
+          sentAt: new Date().toISOString(),
+        });
+      } catch (logErr: any) {
+        console.warn("[Moderator Custom Push] Warning logging to Firestore:", logErr?.message || logErr);
+      }
+
+      res.json({
+        success: true,
+        message: `Notifica push "${cleanTitle}" inviata con successo a tutti i dispositivi!`,
+        sentAt: new Date().toISOString(),
+        imageUrl: finalImageUrl || null,
+      });
+    } catch (err: any) {
+      console.error("[Moderator Custom Push] Error sending push:", err);
+      res.status(500).json({ error: "Errore durante l'invio della notifica push.", details: err?.message || err });
+    }
+  });
+
+  // Fetch Push Broadcast History for Moderators
+  app.get("/api/admin/push-history", async (req, res) => {
+    try {
+      let history: any[] = [];
+      try {
+        const snapshot = await firestoreDb
+          .collection("push_broadcasts")
+          .orderBy("sentAt", "desc")
+          .limit(30)
+          .get();
+
+        history = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+      } catch (fErr: any) {
+        console.warn("[Push History] Firestore fetch notice:", fErr?.message);
+      }
+
+      res.json({ success: true, history });
+    } catch (err: any) {
+      console.error("[Push History] Error:", err);
+      res.status(500).json({ error: "Errore durante il recupero dello storico notifiche." });
     }
   });
 

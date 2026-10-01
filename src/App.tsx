@@ -7080,7 +7080,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.4.56",
+                                      appVersion: "2.4.57",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,
@@ -8050,7 +8050,7 @@ out center;`;
                     }`}
                   >
                     <Bell className="w-3.5 h-3.5 text-amber-300" />
-                    <span>🔔 Pianifica Notifiche</span>
+                    <span>📣 Notifiche & Annunci Push</span>
                   </button>
 
                   <button

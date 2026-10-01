@@ -287,8 +287,8 @@ export default function DiaryTab({
           .map((p) => `${p.id || p.url || ''}_${p.isStarred ? '1' : '0'}_${p.locationName || ''}_${p.date || ''}`)
           .sort()
           .join(",");
-        const stpStr = (t.stops || [])
-          .map((s) => `${s.id || ''}_${s.name || ''}`)
+        const stpStr = (t.stops || t.soste || [])
+          .map((s) => `${s.id || ''}_${s.name || (s as any).title || ''}`)
           .sort()
           .join(",");
         const descHash = t.description ? `${t.description.length}_${t.description.slice(0, 30).replace(/[:|\[\]]/g, '')}` : 'nodesc';
@@ -2036,13 +2036,16 @@ export default function DiaryTab({
 
     const newBudget = currentExpenses.reduce((acc, ex) => acc + (ex.amount || 0), 0);
 
+    const nowIso = new Date().toISOString();
     const updatedTrips = trips.map((t) => {
       if (t.id === selectedTripId) {
         return {
           ...t,
           soste: updatedSoste,
+          stops: updatedSoste,
           expenses: currentExpenses,
           budgetEuro: newBudget,
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -2086,13 +2089,16 @@ export default function DiaryTab({
     const currentExpenses = (activeTrip.expenses || []).filter((ex) => ex.id !== expenseId);
     const newBudget = currentExpenses.reduce((acc, ex) => acc + (ex.amount || 0), 0);
 
+    const nowIso = new Date().toISOString();
     const updatedTrips = trips.map((t) => {
       if (t.id === selectedTripId) {
         return {
           ...t,
           soste: updatedSoste,
+          stops: updatedSoste,
           expenses: currentExpenses,
           budgetEuro: newBudget,
+          updatedAt: nowIso,
         };
       }
       return t;
@@ -3632,12 +3638,33 @@ export default function DiaryTab({
       // Expenses
       if (t.includeExpenses !== false && Array.isArray(t.expenses)) {
         t.expenses.forEach((e) => {
-          totalSpent += e.amount || 0;
+          const expAmount = e.amount || 0;
+          totalSpent += expAmount;
           if (e.category === "Carburante") {
-            totalFuelEuro += e.amount || 0;
+            totalFuelEuro += expAmount;
+
+            let entryLiters = 0;
             if (typeof e.liters === "number" && !isNaN(e.liters) && e.liters > 0) {
-              totalFuelLiters += e.liters;
+              entryLiters = e.liters;
+            } else if (typeof e.pricePerLiter === "number" && !isNaN(e.pricePerLiter) && e.pricePerLiter > 0 && expAmount > 0) {
+              entryLiters = expAmount / e.pricePerLiter;
+            } else if (e.title) {
+              const litersMatch = e.title.match(/([0-9.,]+)\s*L(?:itri)?\b/i);
+              const priceMatch = e.title.match(/@\s*([0-9.,]+)\s*€/i);
+              if (litersMatch) {
+                entryLiters = parseFloat(litersMatch[1].replace(',', '.'));
+              } else if (priceMatch && expAmount > 0) {
+                const p = parseFloat(priceMatch[1].replace(',', '.'));
+                if (p > 0) entryLiters = expAmount / p;
+              }
             }
+
+            // Fallback estimation for fuel entries without recorded liters (standard diesel ~1.85 €/L)
+            if (entryLiters <= 0 && expAmount > 0) {
+              entryLiters = expAmount / 1.85;
+            }
+
+            totalFuelLiters += entryLiters;
           }
         });
       }
@@ -4404,13 +4431,13 @@ export default function DiaryTab({
                         🚐 Consumo Medio
                       </span>
                       <span className="text-xs sm:text-sm font-black text-blue-700 dark:text-blue-400 font-mono truncate">
-                        {globalTripStats.avgLPer100Km !== null
-                          ? `${globalTripStats.avgLPer100Km.toFixed(1)} L/100km`
+                        {globalTripStats.avgKmL !== null
+                          ? `${globalTripStats.avgKmL.toFixed(1)} km/L`
                           : "---"}
                       </span>
-                      {globalTripStats.avgKmL !== null && (
+                      {globalTripStats.avgLPer100Km !== null && (
                         <span className="text-[8.5px] font-semibold text-slate-500">
-                          ({globalTripStats.avgKmL.toFixed(1)} km/L)
+                          ({globalTripStats.avgLPer100Km.toFixed(1)} L/100km)
                         </span>
                       )}
                     </div>
