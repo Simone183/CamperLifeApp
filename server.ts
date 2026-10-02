@@ -669,7 +669,7 @@ async function throttleGeminiCall(hasSearchGrounding = false): Promise<void> {
 async function generateContentWithRetry(params: any, maxRetries = 5) {
   const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
   const primaryModel = params?.model || "gemini-3.8-flash";
-  const defaultFallbacks = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
+  const defaultFallbacks = ["gemini-3.8-flash", "gemini-flash-latest"];
   
   // Build a distinct sequence of models to try, starting with the requested model
   const modelsSequence: string[] = [primaryModel];
@@ -2563,27 +2563,29 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
     if (mode === "literal") {
       systemInstruction =
-        "Sei l'assistente OCR di ViaCamper. Il tuo unico compito è eseguire una TRASCRIZIONE LETTERALE E FEDELE PAROLA PER PAROLA di tutto il testo presente nell'immagine (fogli, quaderni, depliant, appunti).\n" +
+        "Sei l'assistente OCR di ViaCamper. Il tuo unico compito è eseguire una TRASCRIZIONE LETTERALE E FEDELE PAROLA PER PAROLA di tutto il testo presente nell'immagine (fogli, quaderni, depliant, appunti scritti a mano).\n" +
         "REGOLE RIGIDE:\n" +
-        "1. NON modificare, arricchire, parafrasare o correggere lo stile. Mantieni esattamente le frasi e le parole scritte dall'autore.\n" +
-        "2. NON inserire MAI frasi introduttive, saluti o preamboli (ad esempio 'Ecco la trascrizione...', 'Ecco il testo...'). Inizia direttamente con il testo scritto.\n" +
-        "3. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**) e nessun corsivo (*testo*).\n" +
-        "4. Preserva fedelmente tutti i nomi di luoghi, date, cifre e note scritte.";
+        "1. L'immagine potrebbe essere ruotata di 90 o 180 gradi (verticale o di traverso). Ruotala mentalmente per leggere ed estrarre fedelmente la scrittura a mano.\n" +
+        "2. NON modificare, arricchire, parafrasare o correggere lo stile. Mantieni esattamente le frasi e le parole scritte dall'autore.\n" +
+        "3. NON inserire MAI frasi introduttive, saluti o preamboli (ad esempio 'Ecco la trascrizione...', 'Ecco il testo...'). Inizia direttamente con il testo scritto.\n" +
+        "4. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**) e nessun corsivo (*testo*).\n" +
+        "5. Preserva fedelmente tutti i nomi di luoghi, date, cifre e note scritte.";
 
       promptText =
-        "Trascrivi fedelmente PAROLA PER PAROLA ed ESATTAMENTE tutto il testo leggibile in questa immagine, senza rielaborare, aggiungere o cambiare nulla. Restituisci esclusivamente il testo trascritto così com'è.";
+        "Trascrivi fedelmente PAROLA PER PAROLA ed ESATTAMENTE tutto il testo leggibile in questa immagine (anche se la foto è orientata di traverso o ruotata), senza rielaborare, aggiungere o cambiare nulla. Restituisci esclusivamente il testo trascritto così com'è.";
     } else {
       systemInstruction =
-        "Sei l'assistente di bordo di ViaCamper specializzato nella trascrizione ed elaborazione narrativa di diari di viaggio per camperisti a partire da foto di fogli, quaderni o appunti.\n" +
+        "Sei l'assistente di bordo di ViaCamper specializzato nella trascrizione ed elaborazione narrativa di diari di viaggio per camperisti a partire da foto di fogli, quaderni o appunti scritti a mano.\n" +
         "REGOLE FONDAMENTALI DI FORMATTAZIONE:\n" +
-        "1. Trasforma gli appunti scritti in un racconto di viaggio avvincente, fluido, emozionante e piacevole da leggere in italiano corretto.\n" +
-        "2. NON inserire MAI frasi introduttive, saluti, preamboli o firme (ad esempio 'Ecco il racconto...', 'Ecco il resoconto...'). Inizia IMMEDIATAMENTE con il racconto del viaggio.\n" +
-        "3. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**), nessun corsivo (*testo*), nessun punto elenco con asterischi.\n" +
-        "4. NON usare MAI frecce simboliche (come ->, =>, ➔, →). Usa parole chiare o un semplice trattino (es. 'da Lucca a Pisa' o 'Lucca - Pisa').\n" +
-        "5. Organizza il testo in paragrafi leggibili, scorrevoli e spontanei in italiano, preservando fedelmente tutti i toponimi, città, aree sosta, impressioni, chilometri, tappe e date menzionate.";
+        "1. L'immagine potrebbe essere ruotata di 90 o 180 gradi (verticale o di traverso). Ruotala mentalmente ed estrai con cura tutto il testo scritto a mano.\n" +
+        "2. Trasforma gli appunti scritti in un racconto di viaggio avvincente, fluido, emozionante e piacevole da leggere in italiano corretto.\n" +
+        "3. NON inserire MAI frasi introduttive, saluti, preamboli o firme (ad esempio 'Ecco il racconto...', 'Ecco il resoconto...'). Inizia IMMEDIATAMENTE con il racconto del viaggio.\n" +
+        "4. NON usare MAI asterischi nel testo: nessun grassetto con doppi asterischi (**testo**), nessun corsivo (*testo*), nessun punto elenco con asterischi.\n" +
+        "5. NON usare MAI frecce simboliche (come ->, =>, ➔, →). Usa parole chiare o un semplice trattino (es. 'da Lucca a Pisa' o 'Lucca - Pisa').\n" +
+        "6. Organizza il testo in paragrafi leggibili, scorrevoli e spontanei in italiano, preservando fedelmente tutti i toponimi, città, aree sosta, impressioni, chilometri, tappe e date menzionate.";
 
       promptText =
-        "Leggi gli appunti nell'immagine ed elaborali trasformandoli in un racconto di viaggio in camper coinvolgente, elegante, piacevole e ben strutturato in paragrafi, mantenendo tutti i fatti e i luoghi reali citati.";
+        "Leggi gli appunti scritti a mano nell'immagine (anche se la foto è orientata di traverso o ruotata) ed elaborali trasformandoli in un racconto di viaggio in camper coinvolgente, elegante, piacevole e ben strutturato in paragrafi, mantenendo tutti i fatti e i luoghi reali citati.";
     }
 
     const imagePart = {

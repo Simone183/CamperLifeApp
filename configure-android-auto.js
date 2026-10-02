@@ -575,25 +575,30 @@ public class MainMapScreen extends Screen {
     public Template onGetTemplate() {
         acquireLocation();
 
-        // Pulsanti rapidi compatti in alto per adattarsi a qualsiasi display auto (nessun overflow)
-        ActionStrip actionStrip = new ActionStrip.Builder()
-                .addAction(new Action.Builder()
-                        .setTitle("🔍 Cerca")
-                        .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
-                        .build())
-                .addAction(new Action.Builder()
-                        .setTitle("⛽ Spesa")
-                        .setOnClickListener(() -> getScreenManager().push(new AddFuelLogScreen(getCarContext())))
-                        .build())
-                .addAction(new Action.Builder()
-                        .setTitle("🚐 Soste")
-                        .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
-                        .build())
-                .build();
-
         ItemList.Builder listBuilder = new ItemList.Builder();
 
-        // 1. Voce rapida per salvare la posizione GPS attuale (browsable true per conformità PlaceListMapTemplate)
+        // 1. Pulsanti Azioni Rapide inseriti direttamente DENTRO IL PANNELLO DI SINISTRA
+        listBuilder.addItem(new Row.Builder()
+                .setTitle("🔍 Cerca Località o Sosta")
+                .setBrowsable(true)
+                .addText("Trova città, indirizzo o area camper")
+                .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
+                .build());
+
+        listBuilder.addItem(new Row.Builder()
+                .setTitle("⛽ Spesa & Rifornimento")
+                .setBrowsable(true)
+                .addText("Registra carburante o spesa nel diario")
+                .setOnClickListener(() -> getScreenManager().push(new AddFuelLogScreen(getCarContext())))
+                .build());
+
+        listBuilder.addItem(new Row.Builder()
+                .setTitle("🚐 Aree Sosta Vicine")
+                .setBrowsable(true)
+                .addText("Visualizza punti sosta attorno a te")
+                .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
+                .build());
+
         listBuilder.addItem(new Row.Builder()
                 .setTitle("📍 Salva Posizione GPS")
                 .setBrowsable(true)
@@ -604,7 +609,7 @@ public class MainMapScreen extends Screen {
         // 2. Tappe del viaggio attivo da mostrare come pin sulla mappa
         List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), lastLocation);
         if (!movements.isEmpty()) {
-            int maxItems = Math.min(movements.size(), 5);
+            int maxItems = Math.min(movements.size(), 4);
             for (int i = 0; i < maxItems; i++) {
                 AutoDataBridge.MovementItem m = movements.get(i);
                 Row.Builder row = new Row.Builder();
@@ -641,11 +646,12 @@ public class MainMapScreen extends Screen {
         PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
                 .setTitle("ViaCamper GPS")
                 .setHeaderAction(Action.APP_ICON)
-                .setActionStrip(actionStrip)
                 .setItemList(listBuilder.build());
 
         if (lastLocation != null) {
-            Place anchorPlace = new Place.Builder(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude())).build();
+            Place anchorPlace = new Place.Builder(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude()))
+                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.GREEN).build())
+                    .build();
             templateBuilder.setAnchor(anchorPlace);
             templateBuilder.setCurrentLocationEnabled(true);
         }

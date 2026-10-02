@@ -46,7 +46,7 @@ export async function extractStoryFromImage(
     try {
       onProgress?.(mode === "literal" ? "Trascrizione letterale con IA in corso..." : "Elaborazione racconto con IA in corso...");
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       const res = await fetch("/api/extract-story-ocr", {
         method: "POST",
@@ -93,8 +93,8 @@ export async function extractStoryFromImage(
           try {
             await deleteDoc(taskRef);
           } catch {}
-          reject(new Error("Timeout attesa risposta IA (15s)"));
-        }, 15000);
+          reject(new Error("Timeout attesa risposta IA (30s)"));
+        }, 30000);
 
         const unsubscribe = onSnapshot(taskRef, async (snap) => {
           if (!snap.exists()) return;
