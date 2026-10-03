@@ -130,31 +130,34 @@ jobs:
             curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.14.3/gradle/wrapper/gradle-wrapper.jar -o android/gradle/wrapper/gradle-wrapper.jar
           fi
 
-      - name: Build Android Bundle (AAB)
+      - name: Build Android Bundle (AAB) & APK
         run: |
           cd android
-          ./gradlew bundleRelease --stacktrace
+          ./gradlew assembleRelease bundleRelease --stacktrace
 
-      - name: Locate AAB file
+      - name: Locate AAB and APK files
         id: find_aab
         run: |
           AAB_PATH=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
           if [ -z "$AAB_PATH" ]; then
             echo "❌ File .aab non trovato!"
             exit 1
           fi
           echo "Found AAB at: $AAB_PATH"
+          echo "Found APK at: $APK_PATH"
           echo "aab_path=$AAB_PATH" >> $GITHUB_OUTPUT
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           
           # Estrai versione da android/app/build.gradle o package.json
           GRADLE_VER=$(grep -o "versionName [\"'][^\"']*[\"']" android/app/build.gradle 2>/dev/null | awk '{print $2}' | tr -d '"'\''')
           PKG_VER=$(node -p "require('./package.json').version" 2>/dev/null)
           VERSION="${GRADLE_VER:-$PKG_VER}"
-          if [ -z "$VERSION" ]; then VERSION="2.4.20"; fi
+          if [ -z "$VERSION" ]; then VERSION="2.4.59"; fi
           echo "Determined Android Version: $VERSION"
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Sign Android Bundle (AAB) with Keystore
+      - name: Sign Android Bundle (AAB) & APK with Keystore
         id: sign_aab
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -163,7 +166,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
-            echo "🔐 Firma dell'AAB in corso con il Keystore configurato nei Secrets..."
+            echo "🔐 Firma dell'AAB e APK in corso con il Keystore configurato..."
             echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
             KEY_PASS="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
@@ -172,28 +175,45 @@ jobs:
               -keypass "$KEY_PASS" \
               "${{ steps.find_aab.outputs.aab_path }}" \
               "$KEY_ALIAS"
+            
+            if [ -f "${{ steps.find_aab.outputs.apk_path }}" ]; then
+              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+                -keystore release.keystore \
+                -storepass "$KEYSTORE_PASSWORD" \
+                -keypass "$KEY_PASS" \
+                "${{ steps.find_aab.outputs.apk_path }}" \
+                "$KEY_ALIAS"
+            fi
             rm -f release.keystore
-            echo "✅ AAB firmato con successo!"
+            echo "✅ AAB e APK firmati con successo!"
           else
             echo "⚠️ Secret di firma non trovati. Assicurati che RELEASE_KEYSTORE_BASE64 sia presente."
           fi
 
-      - name: Prepare Named AAB Release File
+      - name: Prepare Named AAB and APK Release Files
         id: prep_release
         run: |
           AAB_ORIGIN="${{ steps.find_aab.outputs.aab_path }}"
+          APK_ORIGIN="${{ steps.find_aab.outputs.apk_path }}"
           VERSION="${{ steps.find_aab.outputs.app_version }}"
           NAMED_AAB="android/app/build/outputs/bundle/release/ViaCamper-v${VERSION}.aab"
+          NAMED_APK="android/app/build/outputs/apk/release/ViaCamper-v${VERSION}.apk"
           cp "$AAB_ORIGIN" "$NAMED_AAB"
+          if [ -f "$APK_ORIGIN" ]; then
+            cp "$APK_ORIGIN" "$NAMED_APK"
+          fi
           echo "named_aab=$NAMED_AAB" >> $GITHUB_OUTPUT
+          echo "named_apk=$NAMED_APK" >> $GITHUB_OUTPUT
 
-      - name: Upload AAB to GitHub Actions Artifacts
+      - name: Upload Artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: viacamper-v${{ steps.find_aab.outputs.app_version }}-bundle
-          path: ${{ steps.prep_release.outputs.named_aab }}
-          retention-days: 1
+          name: viacamper-v${{ steps.find_aab.outputs.app_version }}-release
+          path: |
+            ${{ steps.prep_release.outputs.named_aab }}
+            ${{ steps.prep_release.outputs.named_apk }}
+          retention-days: 7
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -204,9 +224,12 @@ jobs:
           body: |
             🚀 **Release ViaCamper v${{ steps.find_aab.outputs.app_version }}**
             
-            - File Android Bundle (`ViaCamper-v${{ steps.find_aab.outputs.app_version }}.aab`) pronto per il caricamento su Google Play Console.
-            - Compilazione automatica completata con successo da GitHub Actions.
-          files: ${{ steps.prep_release.outputs.named_aab }}
+            - **File APK Diretto (`ViaCamper-v${{ steps.find_aab.outputs.app_version }}.apk`)**: Pronto per l'installazione diretta su autoradio / smartphone.
+            - **File Android Bundle (`ViaCamper-v${{ steps.find_aab.outputs.app_version }}.aab`)**: Per la pubblicazione su Google Play Console.
+            - Supporto nativo Android Auto completo e geocodifica diretta integrata.
+          files: |
+            ${{ steps.prep_release.outputs.named_aab }}
+            ${{ steps.prep_release.outputs.named_apk }}
           draft: false
           prerelease: false
           make_latest: true
