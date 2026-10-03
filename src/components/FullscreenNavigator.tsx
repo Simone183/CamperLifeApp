@@ -188,11 +188,43 @@ export default function FullscreenNavigator({
       (err) => {
         console.warn("GPS speed watcher warning:", err);
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     );
+
+    const speedPollInterval = setInterval(() => {
+      if (typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (pos.coords.speed !== null && pos.coords.speed !== undefined && !isNaN(pos.coords.speed) && pos.coords.speed >= 0) {
+              const kmh = Math.round(pos.coords.speed * 3.6);
+              setCurrentDetectedSpeed(kmh);
+            } else if (lastPos) {
+              const now = pos.timestamp || Date.now();
+              const dtSeconds = (now - lastPos.timestamp) / 1000;
+              if (dtSeconds > 0.5) {
+                const distKm = calculateHaversineDistance(
+                  [lastPos.lat, lastPos.lng],
+                  [pos.coords.latitude, pos.coords.longitude]
+                );
+                const kmh = Math.round((distKm / dtSeconds) * 3600);
+                if (distKm * 1000 < 1.5) {
+                  setCurrentDetectedSpeed(0);
+                } else if (kmh < 220) {
+                  setCurrentDetectedSpeed(kmh);
+                }
+              }
+            }
+            lastPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: pos.timestamp || Date.now() };
+          },
+          (err) => {},
+          { enableHighAccuracy: true, timeout: 4000, maximumAge: 0 }
+        );
+      }
+    }, 1500);
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
+      clearInterval(speedPollInterval);
     };
   }, [isGPSEnabled]);
 

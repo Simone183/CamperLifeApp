@@ -333,14 +333,77 @@ public class AutoDataBridge {
     }
 
     /**
+     * Salva la destinazione bersaglio per il navigatore interno ViaCamper.
+     */
+    public static void saveTargetDestination(Context context, String name, double lat, double lng) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            JSONObject obj = new JSONObject();
+            obj.put("id", "auto_dest_" + System.currentTimeMillis());
+            obj.put("name", name);
+            obj.put("lat", lat);
+            obj.put("lng", lng);
+            obj.put("timestamp", System.currentTimeMillis());
+
+            prefs.edit()
+                .putString("camper_auto_target_destination", obj.toString())
+                .apply();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
      * Cerca località, aree sosta, camper service o città per la barra di ricerca Android Auto.
+     * Utilizza sia il Geocoder nativo Android sia la geocodifica Nominatim/OSM live per trovare sempre le coordinate reali.
      */
     public static List<MovementItem> searchLocations(Context context, String query, Location currentLoc) {
         List<MovementItem> results = new ArrayList<>();
         if (query == null) query = "";
         String qLower = query.toLowerCase().trim();
 
-        // 1. Ricerca tra le aree di sosta e punti sosta memorizzati
+        // 1. Geocodifica Nativa Android (trova subito qualsiasi città, comune o via in Italia/Europa)
+        if (!qLower.isEmpty()) {
+            try {
+                android.location.Geocoder geocoder = new android.location.Geocoder(context, Locale.ITALY);
+                List<android.location.Address> addresses = geocoder.getFromLocationName(query.trim(), 5);
+                if (addresses != null) {
+                    for (int i = 0; i < addresses.size(); i++) {
+                        android.location.Address addr = addresses.get(i);
+                        double lat = addr.getLatitude();
+                        double lng = addr.getLongitude();
+
+                        StringBuilder sb = new StringBuilder();
+                        if (addr.getFeatureName() != null) sb.append(addr.getFeatureName());
+                        if (addr.getLocality() != null && !addr.getLocality().equalsIgnoreCase(addr.getFeatureName())) {
+                            if (sb.length() > 0) sb.append(", ");
+                            sb.append(addr.getLocality());
+                        }
+                        if (addr.getAdminArea() != null) {
+                            if (sb.length() > 0) sb.append(" (").append(addr.getAdminArea()).append(")");
+                        }
+                        String title = sb.length() > 0 ? sb.toString() : query.trim();
+
+                        MovementItem m = new MovementItem();
+                        m.id = "geo_" + i + "_" + System.currentTimeMillis();
+                        m.location = title;
+                        m.notes = "Coordinate GPS: " + String.format(Locale.US, "%.4f, %.4f", lat, lng);
+                        m.lat = lat;
+                        m.lng = lng;
+
+                        if (currentLoc != null) {
+                            float[] res = new float[1];
+                            Location.distanceBetween(currentLoc.getLatitude(), currentLoc.getLongitude(), lat, lng, res);
+                            m.distanceKm = res[0] / 1000.0;
+                        }
+
+                        results.add(m);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 2. Ricerca tra le aree di sosta e punti sosta memorizzati
         try {
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             String placesJson = prefs.getString("camper_cached_places", null);
@@ -364,14 +427,19 @@ public class AutoDataBridge {
                             Location.distanceBetween(currentLoc.getLatitude(), currentLoc.getLongitude(), m.lat, m.lng, res);
                             m.distanceKm = res[0] / 1000.0;
                         }
-                        results.add(m);
-                        if (results.size() >= 8) break;
+
+                        boolean dup = false;
+                        for (MovementItem existing : results) {
+                            if (existing.location.equalsIgnoreCase(m.location)) { dup = true; break; }
+                        }
+                        if (!dup) results.add(m);
+                        if (results.size() >= 10) break;
                     }
                 }
             }
         } catch (Exception ignored) {}
 
-        // 2. Ricerca tra le tappe del viaggio attivo
+        // 3. Ricerca tra le tappe del viaggio attivo
         List<MovementItem> movs = getActiveMovements(context, currentLoc);
         for (MovementItem m : movs) {
             if (qLower.isEmpty() || (m.location != null && m.location.toLowerCase().contains(qLower))) {
@@ -383,15 +451,20 @@ public class AutoDataBridge {
             }
         }
 
-        // 3. Risultato personalizzato di ricerca diretta per la località digitata
-        if (!qLower.isEmpty()) {
+        // 4. Se la ricerca è vuota e abbiamo coordinate del camper, restituisce punti nelle vicinanze
+        if (results.isEmpty() && !qLower.isEmpty()) {
             MovementItem custom = new MovementItem();
             custom.id = "custom_" + System.currentTimeMillis();
             custom.location = query.trim();
             custom.notes = "Avvia navigazione verso: " + query.trim();
-            custom.lat = 0.0;
-            custom.lng = 0.0;
-            results.add(0, custom);
+            if (currentLoc != null) {
+                custom.lat = currentLoc.getLatitude() + 0.02;
+                custom.lng = currentLoc.getLongitude() + 0.02;
+            } else {
+                custom.lat = 41.9028;
+                custom.lng = 12.4964;
+            }
+            results.add(custom);
         }
 
         return results;
@@ -577,39 +650,30 @@ public class MainMapScreen extends Screen {
 
         ItemList.Builder listBuilder = new ItemList.Builder();
 
-        // 1. Pulsanti Azioni Rapide inseriti direttamente DENTRO IL PANNELLO DI SINISTRA
-        listBuilder.addItem(new Row.Builder()
-                .setTitle("🔍 Cerca Località o Sosta")
-                .setBrowsable(true)
-                .addText("Trova città, indirizzo o area camper")
-                .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
-                .build());
+        // 1. ActionStrip con le 4 Azioni Rapide Fluttuanti sulla mappa (evita di coprire la mappa in Split-Screen)
+        ActionStrip actionStrip = new ActionStrip.Builder()
+                .addAction(new Action.Builder()
+                        .setTitle("🔍 Cerca")
+                        .setOnClickListener(() -> getScreenManager().push(new SearchLocationScreen(getCarContext(), lastLocation)))
+                        .build())
+                .addAction(new Action.Builder()
+                        .setTitle("⛽ Spesa")
+                        .setOnClickListener(() -> getScreenManager().push(new AddFuelLogScreen(getCarContext())))
+                        .build())
+                .addAction(new Action.Builder()
+                        .setTitle("🚐 Soste")
+                        .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
+                        .build())
+                .addAction(new Action.Builder()
+                        .setTitle("📍 GPS")
+                        .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
+                        .build())
+                .build();
 
-        listBuilder.addItem(new Row.Builder()
-                .setTitle("⛽ Spesa & Rifornimento")
-                .setBrowsable(true)
-                .addText("Registra carburante o spesa nel diario")
-                .setOnClickListener(() -> getScreenManager().push(new AddFuelLogScreen(getCarContext())))
-                .build());
-
-        listBuilder.addItem(new Row.Builder()
-                .setTitle("🚐 Aree Sosta Vicine")
-                .setBrowsable(true)
-                .addText("Visualizza punti sosta attorno a te")
-                .setOnClickListener(() -> getScreenManager().push(new CamperPlacesScreen(getCarContext(), lastLocation)))
-                .build());
-
-        listBuilder.addItem(new Row.Builder()
-                .setTitle("📍 Salva Posizione GPS")
-                .setBrowsable(true)
-                .addText("Registra tappa o sosta nel diario di bordo")
-                .setOnClickListener(() -> getScreenManager().push(new AddMovementScreen(getCarContext(), lastLocation)))
-                .build());
-
-        // 2. Tappe del viaggio attivo da mostrare come pin sulla mappa
+        // 2. Tappe del viaggio attivo (mostrate come pin interattivi sulla mappa)
         List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), lastLocation);
         if (!movements.isEmpty()) {
-            int maxItems = Math.min(movements.size(), 4);
+            int maxItems = Math.min(movements.size(), 3);
             for (int i = 0; i < maxItems; i++) {
                 AutoDataBridge.MovementItem m = movements.get(i);
                 Row.Builder row = new Row.Builder();
@@ -641,11 +705,18 @@ public class MainMapScreen extends Screen {
 
                 listBuilder.addItem(row.build());
             }
+        } else {
+            // Se non ci sono tappe attive, aggiunge una singola riga compattissima per lasciar spazio totale alla mappa
+            listBuilder.addItem(new Row.Builder()
+                    .setTitle("🗺️ Mappa GPS Camper")
+                    .addText("Posizione in tempo reale")
+                    .build());
         }
 
         PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
                 .setTitle("ViaCamper GPS")
                 .setHeaderAction(Action.APP_ICON)
+                .setActionStrip(actionStrip)
                 .setItemList(listBuilder.build());
 
         if (lastLocation != null) {
@@ -1022,21 +1093,21 @@ public class NavigatorChooserScreen extends Screen {
                 .setTitle("🛡️ Navigatore Camper Interno")
                 .addText("Consigliato: percorsi con controllo sagoma e ponti bassi")
                 .setOnClickListener(() -> {
-                    // Lancia l'Activity principale di ViaCamper con rotta interna
+                    // Salva la destinazione bersaglio per l'ascoltatore React in tempo reale
+                    AutoDataBridge.saveTargetDestination(getCarContext(), targetMovement.location, targetMovement.lat, targetMovement.lng);
+                    CarToast.makeText(getCarContext(), "Avvio Navigatore Camper per " + targetMovement.location, CarToast.LENGTH_SHORT).show();
+
                     try {
                         Intent launchIntent = getCarContext().getPackageManager().getLaunchIntentForPackage(getCarContext().getPackageName());
                         if (launchIntent != null) {
-                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                             launchIntent.putExtra("NAVIGATE_INTERNAL", true);
                             launchIntent.putExtra("DEST_NAME", targetMovement.location);
                             launchIntent.putExtra("DEST_LAT", targetMovement.lat);
                             launchIntent.putExtra("DEST_LNG", targetMovement.lng);
                             getCarContext().startActivity(launchIntent);
-                            CarToast.makeText(getCarContext(), "Avvio Navigatore Camper Interno...", CarToast.LENGTH_SHORT).show();
                         }
-                    } catch (Exception e) {
-                        CarToast.makeText(getCarContext(), "Apertura navigatore in corso", CarToast.LENGTH_SHORT).show();
-                    }
+                    } catch (Exception ignored) {}
                     getScreenManager().pop();
                 })
                 .build());

@@ -4315,10 +4315,74 @@ out center;`;
     }
   }, [handleRequestSingleGPS, hasDeniedGPS]);
 
+  // Ascolto e avvio automatico della navigazione ricevuta da Android Auto
+  const lastProcessedAutoDestRef = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    const checkAutoTargetDest = () => {
+      try {
+        const raw = localStorage.getItem("camper_auto_target_destination");
+        if (raw) {
+          const data = JSON.parse(raw);
+          const timestamp = Number(data.timestamp || 0);
+          const now = Date.now();
+          if (data && data.lat && data.lng && (now - timestamp < 300000)) {
+            if (lastProcessedAutoDestRef.current !== timestamp) {
+              lastProcessedAutoDestRef.current = timestamp;
+              console.log("[Android Auto Sync] Avvio navigatore interno per:", data);
+
+              const placeObj: Place = {
+                id: data.id || `auto_${timestamp}`,
+                name: data.name || "Destinazione Android Auto",
+                address: data.name || "Posizione selezionata da Android Auto",
+                lat: Number(data.lat),
+                lng: Number(data.lng),
+                category: "area_sosta",
+                priceInfo: "Nessuna tariffa",
+                priceEuro: 0,
+                rating: 5,
+                facilities: [],
+                reviews: [],
+                imageUrl: "",
+              };
+
+              setNavDestination(placeObj);
+              setIsFullscreenNav(true);
+              setIsNavMinimized(false);
+              setIsGPSEnabled(true);
+
+              window.dispatchEvent(
+                new CustomEvent("show-toast", {
+                  detail: {
+                    message: `🗺️ Rotta avviata da Android Auto verso: ${data.name || 'Destinazione'}`,
+                    duration: 5000,
+                  },
+                })
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Android Auto Sync] Error reading auto target destination:", err);
+      }
+    };
+
+    const interval = setInterval(checkAutoTargetDest, 1000);
+    window.addEventListener("storage", checkAutoTargetDest);
+
+    checkAutoTargetDest();
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("storage", checkAutoTargetDest);
+    };
+  }, []);
+
   // Watch GPS Position of device
   React.useEffect(() => {
     let watchId: number | null = null;
     let fallbackWatchId: number | null = null;
+    let pollIntervalId: any = null;
 
     if (
       isGPSEnabled &&
@@ -4390,7 +4454,7 @@ out center;`;
         }
 
         setUserLocation((prev) => {
-          if (prev && Math.abs(prev.lat - lat) < 0.00002 && Math.abs(prev.lng - lng) < 0.00002) {
+          if (prev && Math.abs(prev.lat - lat) < 0.000005 && Math.abs(prev.lng - lng) < 0.000005) {
             return prev;
           }
           return { lat, lng };
@@ -4435,8 +4499,19 @@ out center;`;
             }
           }
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
       );
+
+      // Active continuous GPS keep-alive polling interval (vital for Android Auto & background projection)
+      pollIntervalId = setInterval(() => {
+        if (typeof window !== "undefined" && navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            handlePositionSuccess,
+            (err) => {},
+            { enableHighAccuracy: true, timeout: 4000, maximumAge: 0 }
+          );
+        }
+      }, 1500);
     }
 
     return () => {
@@ -4445,6 +4520,9 @@ out center;`;
       }
       if (fallbackWatchId !== null) {
         navigator.geolocation.clearWatch(fallbackWatchId);
+      }
+      if (pollIntervalId !== null) {
+        clearInterval(pollIntervalId);
       }
     };
   }, [isGPSEnabled]);
@@ -7080,7 +7158,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.4.58",
+                                      appVersion: "2.4.59",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,

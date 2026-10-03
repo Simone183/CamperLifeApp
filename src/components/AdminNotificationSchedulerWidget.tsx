@@ -347,7 +347,7 @@ export function AdminNotificationSchedulerWidget() {
                 maxLength={60}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="es. 🚀 Nuova versione 2.4.58 disponibile! Scopri le tappe AI"
+                placeholder="es. 🚀 Nuova versione 2.4.59 disponibile! Scopri le tappe AI"
                 className="w-full text-xs font-bold px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:border-[#3E4A35] outline-none"
               />
               {/* Quick Emojis Bar */}
