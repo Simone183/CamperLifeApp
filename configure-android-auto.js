@@ -595,7 +595,7 @@ public class ViaCamperCarSession extends Session {
 `;
   fs.writeFileSync(path.join(javaDir, 'ViaCamperCarSession.java'), sessionJava, 'utf-8');
 
-  // D. MainMapScreen.java (Schermata Iniziale MAPPA Fullscreen NATIVA con inseguimento GPS dinamico)
+  // D. MainMapScreen.java (Schermata Iniziale MAPPA Fullscreen NATIVA con rendering vettoriale e inseguimento GPS)
   const mainMapScreenJava = `package com.ViaCamper.myapp.auto;
 
 import android.content.Context;
@@ -608,14 +608,19 @@ import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
+import androidx.car.app.model.CarColor;
+import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.Place;
+import androidx.car.app.model.PlaceListMapTemplate;
+import androidx.car.app.model.PlaceMarker;
 import androidx.car.app.model.Template;
-import androidx.car.app.navigation.model.NavigationTemplate;
 
 /**
- * Schermata Iniziale Mappa Full-Screen per Android Auto:
- * - Mappa 100% Full-Screen senza schede/riquadri oscuranti a sinistra.
- * - Inseguimento GPS dinamico in tempo reale: la vista della mappa rimarrà SEMPRE centrata sul camper durante la guida.
- * - Pulsanti d'azione rapida fluttuanti in alto (Cerca, Spesa, Soste, GPS).
+ * Schermata Iniziale Mappa per Android Auto:
+ * - Renderizza la mappa nativa vettoriale con strade, rilievi e traffico (risolve lo schermo nero).
+ * - Nessuna scheda/riquadro scuro a sinistra (nessun ItemList impostato nella schermata iniziale).
+ * - Pulsanti d'azione rapida fluttuanti puliti in alto (Cerca, Spesa, Soste, GPS).
+ * - Inseguimento GPS dinamico in tempo reale: ricentra la posizione ad ogni metro.
  */
 public class MainMapScreen extends Screen implements LocationListener {
 
@@ -698,8 +703,18 @@ public class MainMapScreen extends Screen implements LocationListener {
                         .build())
                 .build();
 
-        NavigationTemplate.Builder templateBuilder = new NavigationTemplate.Builder()
-                .setActionStrip(actionStrip);
+        PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
+                .setTitle("ViaCamper GPS")
+                .setHeaderAction(Action.APP_ICON)
+                .setActionStrip(actionStrip)
+                .setCurrentLocationEnabled(true);
+
+        if (lastLocation != null) {
+            Place anchorPlace = new Place.Builder(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude()))
+                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.GREEN).build())
+                    .build();
+            templateBuilder.setAnchor(anchorPlace);
+        }
 
         return templateBuilder.build();
     }
