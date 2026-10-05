@@ -7158,7 +7158,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.4.67",
+                                      appVersion: "2.4.69",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,

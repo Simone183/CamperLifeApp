@@ -5019,18 +5019,14 @@ export default function DiaryTab({
                           </div>
                         </div>
                       </div>
-
-
-                  </div>
+                    </div>
                   )}
                 </div>
 
-                {/* TWO SECTIONS GRID: PHOTOS & EXPENSES */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                  {/* 1. EXPENSES & REFUELING LOG SECTION */}
-                  <div className="space-y-4">
-                    {/* Toggle Selector for Spese vs Rifornimenti vs Spostamenti */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 p-1 bg-stone-100 rounded-xl border border-stone-200/30 gap-1">
+                  {/* FULL WIDTH RESPONSIVE DIARY SUB-TABS SECTION */}
+                  <div className="w-full space-y-4 pt-2 font-sans">
+                  {/* Toggle Selector for Spese vs Rifornimenti vs Spostamenti vs Pianificazione vs Foto vs Soste */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 p-1 bg-stone-100 rounded-xl border border-stone-200/30 gap-1">
                       <button
                         type="button"
                         onClick={() => setExpenseSubMode("general")}
@@ -5908,11 +5904,11 @@ export default function DiaryTab({
                         })()}
 
                         {/* Photo logs display with Fast Thumbnails and Lazy Rendering */}
-                        <div className="grid grid-cols-2 gap-3 max-h-[450px] overflow-y-auto pr-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 max-h-[700px] overflow-y-auto pr-1">
                           {activeTripPhotos.length === 0 ? (
-                            <div className="col-span-2 text-xs text-slate-400 py-8 text-center bg-white border border-slate-100 rounded-lg">
-                              <ImageIcon className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-                              Nessuno scatto caricato. Scatta o simula la prima foto
+                            <div className="col-span-full text-xs text-slate-400 py-12 text-center bg-white border border-slate-100 rounded-xl">
+                              <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                              Nessuno scatto caricato. Scatta o carica la prima foto
                               della vacanza!
                             </div>
                           ) : (
@@ -5924,14 +5920,14 @@ export default function DiaryTab({
                               return (
                                 <div
                                   key={photo.id}
-                                  className={`rounded-xl overflow-hidden border relative group cursor-pointer transition-all ${
+                                  className={`rounded-xl overflow-hidden border relative group cursor-pointer transition-all flex flex-col justify-between ${
                                     photo.isStarred
                                       ? "bg-amber-50/40 dark:bg-amber-950/20 border-yellow-400 ring-2 ring-yellow-400/50 shadow-md"
                                       : isMissing
                                       ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/60 hover:border-amber-400"
                                       : isRecovered
                                       ? "bg-stone-50 rounded-xl border-amber-200/80 dark:border-amber-900/50 hover:border-amber-400"
-                                      : "bg-stone-50 rounded-xl border-slate-150 hover:border-slate-300"
+                                      : "bg-stone-50 rounded-xl border-slate-150 hover:border-slate-300 shadow-2xs hover:shadow-md"
                                   }`}
                                   onClick={() => {
                                     if (isMissing) {
@@ -5942,7 +5938,7 @@ export default function DiaryTab({
                                     }
                                   }}
                                 >
-                                  <div className="relative w-full h-24 overflow-hidden bg-stone-100 dark:bg-stone-800">
+                                  <div className="relative w-full h-36 sm:h-40 md:h-44 lg:h-48 overflow-hidden bg-stone-100 dark:bg-stone-800">
                                     {isMissing ? (
                                       <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center bg-amber-50/80 dark:bg-amber-950/40 hover:bg-amber-100/80 transition-colors">
                                         <div className="w-7 h-7 rounded-full bg-amber-200/80 dark:bg-amber-800/60 flex items-center justify-center mb-1 text-amber-800 dark:text-amber-200">
@@ -6181,77 +6177,94 @@ export default function DiaryTab({
                         {/* General Expense Form */}
                         <form
                           onSubmit={handleAddExpense}
-                          className="p-3 bg-stone-50 rounded-xl border border-stone-100 space-y-2"
+                          className="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 space-y-3"
                         >
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              type="text"
-                              required
-                              placeholder="Voce di spesa (es. Spesa Coop, Traghetto, Souvenir)"
-                              value={expenseTitle}
-                              onChange={(e) => setExpenseTitle(e.target.value)}
-                              className="col-span-2 w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-[#A45C40] text-slate-800 font-bold"
-                            />
-                            <input
-                              type="number"
-                              step="0.01"
-                              required
-                              placeholder={`Importo ${getCurrencySymbol(settings)}`}
-                              value={expenseAmount}
-                              onChange={(e) => setExpenseAmount(e.target.value)}
-                              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-[#A45C40] text-slate-800 font-bold font-mono"
-                            />
-                             <select
-                              value={expenseCategory}
-                              onChange={(e) =>
-                                setExpenseCategory(
-                                  e.target.value as DiaryExpense["category"],
-                                )
-                              }
-                              className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 outline-none bg-white text-slate-800 font-bold"
-                            >
-                              <option value="Autostrada">🛣️ Autostrada</option>
-                              <option value="Cibo">🛒 Alimentari/Spesa</option>
-                              <option value="Sosta">
-                                ⛺ Area Sosta / Camping / Parcheggio
-                              </option>
-                              <option value="Carburante">⛽ Carburante / Rifornimento</option>
-                              <option value="Altro">🏷️ Altro / Extra</option>
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                              Data
-                            </label>
-                            <input
-                              type="date"
-                              value={expenseDate}
-                              onChange={(e) => setExpenseDate(e.target.value)}
-                              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none bg-white font-bold"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="submit"
-                              className="flex-1 py-1.5 bg-[#A45C40]/90 hover:bg-[#A45C40] text-white rounded-lg text-[11px] font-black uppercase tracking-wider cursor-pointer"
-                            >
-                              {editingExpenseId ? "Aggiorna Spesa" : "Aggiungi Spesa"}
-                            </button>
-                            {editingExpenseId && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingExpenseId(null);
-                                  setExpenseTitle("");
-                                  setExpenseAmount("");
-                                  setExpenseDate("");
-                                  setExpenseCategory("Autostrada");
-                                }}
-                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[11px] font-black uppercase tracking-wider cursor-pointer"
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="sm:col-span-2">
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                Descrizione Spesa *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="Voce di spesa (es. Spesa Coop, Traghetto, Souvenir)"
+                                value={expenseTitle}
+                                onChange={(e) => setExpenseTitle(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none focus:border-[#A45C40] text-slate-800 font-bold bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                Importo ({getCurrencySymbol(settings)}) *
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                required
+                                placeholder={`Importo ${getCurrencySymbol(settings)}`}
+                                value={expenseAmount}
+                                onChange={(e) => setExpenseAmount(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none focus:border-[#A45C40] text-slate-800 font-bold font-mono bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                Categoria
+                              </label>
+                              <select
+                                value={expenseCategory}
+                                onChange={(e) =>
+                                  setExpenseCategory(
+                                    e.target.value as DiaryExpense["category"],
+                                  )
+                                }
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white text-slate-800 font-bold"
                               >
-                                Annulla
+                                <option value="Autostrada">🛣️ Autostrada</option>
+                                <option value="Cibo">🛒 Alimentari/Spesa</option>
+                                <option value="Sosta">
+                                  ⛺ Area Sosta / Camping / Parcheggio
+                                </option>
+                                <option value="Carburante">⛽ Carburante / Rifornimento</option>
+                                <option value="Altro">🏷️ Altro / Extra</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                Data
+                              </label>
+                              <input
+                                type="date"
+                                value={expenseDate}
+                                onChange={(e) => setExpenseDate(e.target.value)}
+                                className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 outline-none bg-white font-bold"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="submit"
+                                className="flex-1 py-2 bg-[#A45C40]/90 hover:bg-[#A45C40] text-white rounded-lg text-xs font-black uppercase tracking-wider cursor-pointer"
+                              >
+                                {editingExpenseId ? "Aggiorna Spesa" : "Aggiungi Spesa"}
                               </button>
-                            )}
+                              {editingExpenseId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingExpenseId(null);
+                                    setExpenseTitle("");
+                                    setExpenseAmount("");
+                                    setExpenseDate("");
+                                    setExpenseCategory("Autostrada");
+                                  }}
+                                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-black uppercase tracking-wider cursor-pointer"
+                                >
+                                  Annulla
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </form>
 
@@ -7260,12 +7273,6 @@ export default function DiaryTab({
                         </div>
                       </div>
                     )}
-                  </div>
-
-                  {/* 2. PHOTOS SECTION WITH PRESENTS & DESC */}
-                  {/* PHOTOS MOVED TO FOTO E RICORDI TAB */}
-                </div>
-
 
                 {expenseSubMode === "photo" && (
                 <div className="mt-6 p-4 bg-[#F5F2ED]/40 dark:bg-stone-850/50 rounded-xl border border-[#3E4A35]/10 dark:border-stone-700/50 animate-fade-in">
@@ -7305,7 +7312,8 @@ export default function DiaryTab({
                 </div>
               )}
               </div>
-            ) : (
+            </div>
+          ) : (
               <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center text-slate-400 space-y-2">
                 <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-sm font-bold">Nessun viaggio selezionato</p>

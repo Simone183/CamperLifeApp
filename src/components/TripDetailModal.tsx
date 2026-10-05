@@ -17,7 +17,7 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
   onDeleteTrip,
   onShareTrip
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'STOPS' | 'SOSTE' | 'EXPENSES'>('STOPS');
+  const [activeSubTab, setActiveSubTab] = useState<'STOPS' | 'SOSTE' | 'EXPENSES' | 'PHOTOS'>('STOPS');
   
   // Add Stop State
   const [showAddStop, setShowAddStop] = useState(false);
@@ -128,15 +128,16 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
 
   const totalSosteExpense = (trip.soste || []).reduce((acc, s) => acc + (s.expenseEuro || 0), 0);
   const totalTripExpense = (trip.expenses || []).reduce((acc, e) => acc + (e.amountEuro || 0), 0);
+  const tripPhotos = trip.photos || [];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto font-sans">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 my-auto flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto font-sans">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl lg:max-w-5xl xl:max-w-6xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 my-auto flex flex-col max-h-[92vh] transition-all">
         
         {/* Header with cover image */}
-        <div className="relative h-44 sm:h-52 rounded-t-2xl overflow-hidden bg-slate-900 shrink-0">
+        <div className="relative h-44 sm:h-56 md:h-64 rounded-t-2xl overflow-hidden bg-slate-900 shrink-0">
           <img
-            src={trip.coverPhoto || 'https://images.unsplash.com/photo-1548625361-185b1a382c49?auto=format&fit=crop&w=800&q=80'}
+            src={trip.coverPhoto || (tripPhotos[0]?.url) || 'https://images.unsplash.com/photo-1548625361-185b1a382c49?auto=format&fit=crop&w=800&q=80'}
             alt={trip.title}
             className="w-full h-full object-cover opacity-85"
           />
@@ -150,14 +151,14 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
               
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-full bg-black/50 hover:bg-black/80 text-white transition-colors"
+                className="p-1.5 rounded-full bg-black/50 hover:bg-black/80 text-white transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-white font-serif">{trip.title}</h2>
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white font-serif">{trip.title}</h2>
               <p className="text-xs text-amber-200 flex items-center gap-2 mt-1">
                 <Calendar className="w-3.5 h-3.5" />
                 <span>{trip.startDate} {trip.endDate ? `— ${trip.endDate}` : ''}</span>
@@ -167,16 +168,21 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
         </div>
 
         {/* Modal Stats Subheader */}
-        <div className="bg-stone-100 dark:bg-slate-800 px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 shrink-0">
-          <div className="flex items-center gap-4">
-            <span>📷 {trip.photosCount || (trip.photos || []).length} Foto</span>
+        <div className="bg-stone-100 dark:bg-slate-800 px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 shrink-0 flex-wrap gap-2">
+          <div className="flex items-center gap-4 flex-wrap">
+            <button 
+              onClick={() => setActiveSubTab('PHOTOS')}
+              className="hover:text-emerald-700 cursor-pointer font-bold transition-colors"
+            >
+              📷 {trip.photosCount || tripPhotos.length} Foto
+            </button>
             <span>💶 {totalTripExpense}€ Spese Totali</span>
-            <span>🛣️ {trip.kmTotal || 0} km</span>
+            <span>Est. 🛣️ {trip.kmTotal || 0} km</span>
           </div>
 
           <button
             onClick={() => onShareTrip(trip)}
-            className="px-3 py-1 rounded-lg bg-amber-200 text-amber-950 dark:bg-amber-900 dark:text-amber-200 text-xs font-bold flex items-center gap-1 hover:bg-amber-300"
+            className="px-3 py-1.5 rounded-lg bg-amber-200 text-amber-950 dark:bg-amber-900 dark:text-amber-200 text-xs font-bold flex items-center gap-1 hover:bg-amber-300 cursor-pointer transition-all"
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>Condividi 🚀</span>
@@ -184,10 +190,10 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
         </div>
 
         {/* Sub-tabs Navigation */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 bg-stone-50 dark:bg-slate-900 px-5 pt-2 gap-2 shrink-0 text-xs font-bold">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 bg-stone-50 dark:bg-slate-900 px-5 pt-2 gap-2 shrink-0 text-xs font-bold overflow-x-auto">
           <button
             onClick={() => setActiveSubTab('STOPS')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'STOPS'
                 ? 'border-emerald-700 text-emerald-800 dark:text-emerald-400 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -199,7 +205,7 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
           
           <button
             onClick={() => setActiveSubTab('SOSTE')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'SOSTE'
                 ? 'border-emerald-700 text-emerald-800 dark:text-emerald-400 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -211,14 +217,25 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
 
           <button
             onClick={() => setActiveSubTab('EXPENSES')}
-            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'EXPENSES'
                 ? 'border-emerald-700 text-emerald-800 dark:text-emerald-400 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <Euro className="w-3.5 h-3.5" />
-            <span>Spese Sincronizzate ({trip.expenses?.length || 0})</span>
+            <span>Spese ({trip.expenses?.length || 0})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('PHOTOS')}
+            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeSubTab === 'PHOTOS'
+                ? 'border-emerald-700 text-emerald-800 dark:text-emerald-400 font-black'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>📷 Foto e Ricordi ({tripPhotos.length})</span>
           </button>
         </div>
 
@@ -495,6 +512,53 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
                   ))
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB 4: FOTO E RICORDI */}
+          {activeSubTab === 'PHOTOS' && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <span>📷 GALLERIA FOTO E RICORDI DI VIAGGIO ({tripPhotos.length})</span>
+              </h3>
+
+              {tripPhotos.length === 0 ? (
+                <p className="text-xs text-slate-400 italic text-center py-8 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                  Nessuna foto salvata in questo diario di viaggio.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {tripPhotos.map((photo) => (
+                    <div key={photo.id} className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xs group flex flex-col">
+                      <div className="relative aspect-4/3 w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
+                        <img
+                          src={photo.url}
+                          alt={photo.description || 'Foto viaggio'}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        {photo.isStarred && (
+                          <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-yellow-400 text-slate-950 text-[10px] font-black shadow-xs">
+                            ⭐ Mappa
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-2 space-y-0.5 text-left flex-1 flex flex-col justify-between">
+                        <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug">
+                          {photo.description || 'Senza descrizione'}
+                        </p>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-700/50">
+                          <span>{photo.date || '—'}</span>
+                          {photo.locationName && (
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-400 truncate max-w-[90px]">
+                              📍 {photo.locationName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
