@@ -703,10 +703,16 @@ public class MainMapScreen extends Screen implements LocationListener {
                         .build())
                 .build();
 
+        // ItemList ultra-compatto a riga singola senza sottotesto (riduce l'ingombro del pannello del 60%)
+        ItemList.Builder listBuilder = new ItemList.Builder();
+        listBuilder.addItem(new Row.Builder()
+                .setTitle("📍 Mappa GPS")
+                .build());
+
         PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
-                .setTitle("ViaCamper GPS")
                 .setHeaderAction(Action.APP_ICON)
                 .setActionStrip(actionStrip)
+                .setItemList(listBuilder.build())
                 .setCurrentLocationEnabled(true);
 
         if (lastLocation != null) {
