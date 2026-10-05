@@ -610,9 +610,11 @@ import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
 import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.ItemList;
 import androidx.car.app.model.Place;
 import androidx.car.app.model.PlaceListMapTemplate;
 import androidx.car.app.model.PlaceMarker;
+import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
 
 /**
