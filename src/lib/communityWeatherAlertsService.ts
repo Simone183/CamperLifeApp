@@ -1,6 +1,6 @@
 import { doc, collection, onSnapshot, setDoc, updateDoc, increment, arrayUnion, query, where } from 'firebase/firestore';
 import { db } from './firebase';
-import { CommunityWeatherAlert, WeatherAlertType, WeatherAlertSeverity } from '../types/weatherAlerts';
+import { CommunityWeatherAlert, WeatherAlertType, WeatherAlertSeverity } from '../types';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
 
 const STORAGE_KEY = 'camper_community_weather_alerts';

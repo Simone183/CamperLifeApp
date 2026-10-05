@@ -23,7 +23,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { getWeatherData, getMeteoAlarmAlerts } from '../lib/weatherService';
-import { MeteoAlarmWarning } from '../types/weatherAlerts';
+import { MeteoAlarmWarning } from '../types';
 import { communityWeatherAlertsService } from '../lib/communityWeatherAlertsService';
 
 interface WeatherWidgetProps {

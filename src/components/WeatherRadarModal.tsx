@@ -4,7 +4,7 @@ import {
   Wind, MapPin, RefreshCw, PlusCircle, CheckCircle2, 
   ThumbsUp, Shield, HelpCircle, Radio, Clock, ShieldCheck
 } from 'lucide-react';
-import { CommunityWeatherAlert, MeteoAlarmWarning } from '../types/weatherAlerts';
+import { CommunityWeatherAlert, MeteoAlarmWarning } from '../types';
 import { communityWeatherAlertsService, calculateDistanceKm } from '../lib/communityWeatherAlertsService';
 import { getMeteoAlarmAlerts } from '../lib/weatherService';
 

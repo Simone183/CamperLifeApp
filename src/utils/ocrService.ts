@@ -133,3 +133,92 @@ export async function extractStoryFromImage(
     "Impossibile collegarsi all'intelligenza artificiale Gemini per la decodifica del foglio. Assicurati che la connessione Internet sia attiva e riprova."
   );
 }
+
+export interface OcrPageInput {
+  dataUrl: string;
+  mimeType?: string;
+}
+
+/**
+ * Multi-page OCR extraction service for multi-page documents, notes, and diary sheets.
+ */
+export async function extractStoryFromMultipleImages(
+  pages: OcrPageInput[],
+  mode: "literal" | "elaborate" = "elaborate",
+  onProgress?: (statusText: string, currentPage: number, totalPages: number) => void
+): Promise<string> {
+  if (!pages || pages.length === 0) {
+    throw new Error("Nessuna immagine fornita per la scansione OCR.");
+  }
+
+  if (pages.length === 1) {
+    return extractStoryFromImage(
+      pages[0].dataUrl,
+      pages[0].mimeType || "image/jpeg",
+      mode,
+      (status) => onProgress?.(status, 1, 1)
+    );
+  }
+
+  // --- STRATEGY 1: Direct Server API Call with multi-image payload ---
+  try {
+    onProgress?.(
+      `Elaborazione di ${pages.length} pagine con IA Gemini...`,
+      1,
+      pages.length
+    );
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+    const apiUrl = resolveApiUrl("/api/extract-story-ocr");
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        images: pages.map((p) => p.dataUrl),
+        mimeType: pages[0]?.mimeType || "image/jpeg",
+        mode,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.text && data.text.trim()) {
+        console.log("[OCR Service] Multi-page Direct API succeeded!");
+        return cleanTravelStoryText(data.text);
+      }
+    }
+  } catch (err: any) {
+    console.warn("[OCR Service] Multi-page direct API call failed, falling back to page-by-page processing:", err?.message);
+  }
+
+  // --- FALLBACK: Sequential page-by-page extraction ---
+  const results: string[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    const pageNum = i + 1;
+    onProgress?.(`Scansione Pagina ${pageNum} di ${pages.length}...`, pageNum, pages.length);
+
+    const pageText = await extractStoryFromImage(
+      pages[i].dataUrl,
+      pages[i].mimeType || "image/jpeg",
+      mode,
+      (status) => onProgress?.(`[Pagina ${pageNum}/${pages.length}] ${status}`, pageNum, pages.length)
+    );
+
+    if (pageText && pageText.trim()) {
+      results.push(pageText.trim());
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error("Nessun testo rilevato nelle pagine caricate.");
+  }
+
+  if (mode === "literal") {
+    return results.map((res, idx) => `--- Pagina ${idx + 1} ---\n${res}`).join("\n\n");
+  }
+
+  return cleanTravelStoryText(results.join("\n\n"));
+}

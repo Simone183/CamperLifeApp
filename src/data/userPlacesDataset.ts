@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Place, PlaceCategory } from "../types";
-import { resolvePlaceServiceSubtype, getPlaceBadgeText } from "../utils/placeCategoryHelper";
+import { Place, PlaceCategory } from "../types.ts";
+import { resolvePlaceServiceSubtype, getPlaceBadgeText } from "../utils/placeCategoryHelper.ts";
 import userPlacesData from '../../user_places.json';
 
 export const USER_RAW_PLACES = [

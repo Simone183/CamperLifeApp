@@ -3,7 +3,7 @@ import {
   AlertTriangle, ShieldAlert, X, ChevronRight, 
   MapPin, Check, Volume2, ShieldCheck, Clock, ThumbsUp
 } from 'lucide-react';
-import { CommunityWeatherAlert, MeteoAlarmWarning } from '../types/weatherAlerts';
+import { CommunityWeatherAlert, MeteoAlarmWarning } from '../types';
 import { communityWeatherAlertsService } from '../lib/communityWeatherAlertsService';
 import { getMeteoAlarmAlerts } from '../lib/weatherService';
 import { playAlertSound } from '../utils/soundHelper';

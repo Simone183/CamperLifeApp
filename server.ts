@@ -2660,13 +2660,38 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
   // AI OCR for extracting travel story notes, diary text, brochures, signs
   app.post("/api/extract-story-ocr", async (req, res) => {
     try {
-      const { image, mimeType, mode } = req.body;
-      if (!image) {
+      const { image, images, mimeType, mode } = req.body;
+      const inputImages: string[] = Array.isArray(images) && images.length > 0 
+        ? images 
+        : (image ? [image] : []);
+
+      if (inputImages.length === 0) {
         return res.status(400).json({ error: "Nessuna immagine fornita per l'OCR." });
       }
 
-      const extractedText = await processOcrImage(image, mimeType, mode || "elaborate");
-      res.json({ success: true, text: extractedText });
+      if (inputImages.length === 1) {
+        const extractedText = await processOcrImage(inputImages[0], mimeType, mode || "elaborate");
+        return res.json({ success: true, text: extractedText });
+      }
+
+      // Process multiple pages
+      const pageTexts: string[] = [];
+      for (let i = 0; i < inputImages.length; i++) {
+        const pageText = await processOcrImage(inputImages[i], mimeType, mode || "elaborate");
+        if (pageText && pageText.trim()) {
+          pageTexts.push(pageText.trim());
+        }
+      }
+
+      if (pageTexts.length === 0) {
+        return res.status(400).json({ error: "Nessun testo leggibile trovato nelle pagine caricate." });
+      }
+
+      const combinedText = (mode === "literal")
+        ? pageTexts.map((txt, idx) => `--- Pagina ${idx + 1} ---\n${txt}`).join("\n\n")
+        : cleanTravelStoryText(pageTexts.join("\n\n"));
+
+      res.json({ success: true, text: combinedText });
     } catch (err: any) {
       console.error("Error in extract-story-ocr endpoint:", err);
       const friendlyMsg = getFriendlyGeminiError(err);

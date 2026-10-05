@@ -13,7 +13,7 @@ import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
 import { generateTripPDF, exportAIItineraryToPDF } from "../utils/pdfGenerator";
 import { formatDateDDMMAA } from "./FuelCardTab";
 import { extractPhotoDate, sortPhotosChronologically, formatPhotoDateBadge } from "../utils/photoDateExtractor";
-import { extractStoryFromImage } from "../utils/ocrService";
+import { extractStoryFromImage, extractStoryFromMultipleImages } from "../utils/ocrService";
 import { cleanTravelStoryText } from "../utils/cleanStoryText";
 import {
   BookOpen,
@@ -885,10 +885,9 @@ export default function DiaryTab({
   const [newStartOdo, setNewStartOdo] = React.useState("");
   const [newEndOdo, setNewEndOdo] = React.useState("");
 
-  // OCR Reader modal states
+  // OCR Reader modal states (multi-page)
   const [showOcrModal, setShowOcrModal] = React.useState(false);
-  const [ocrImagePreview, setOcrImagePreview] = React.useState<string | null>(null);
-  const [ocrImageFile, setOcrImageFile] = React.useState<File | null>(null);
+  const [ocrPages, setOcrPages] = React.useState<Array<{ id: string; preview: string; file?: File }>>([]);
   const [ocrExtractedText, setOcrExtractedText] = React.useState("");
   const [ocrMode, setOcrMode] = React.useState<'elaborate' | 'literal'>('elaborate');
   const [isProcessingOcr, setIsProcessingOcr] = React.useState(false);
@@ -4342,8 +4341,7 @@ export default function DiaryTab({
                       type="button"
                       onClick={() => {
                         setOcrTargetField('new');
-                        setOcrImagePreview(null);
-                        setOcrImageFile(null);
+                        setOcrPages([]);
                         setOcrExtractedText("");
                         setShowOcrModal(true);
                       }}
@@ -4796,8 +4794,7 @@ export default function DiaryTab({
                               type="button"
                               onClick={() => {
                                 setOcrTargetField('edit');
-                                setOcrImagePreview(null);
-                                setOcrImageFile(null);
+                                setOcrPages([]);
                                 setOcrExtractedText("");
                                 setShowOcrModal(true);
                               }}
@@ -7286,8 +7283,7 @@ export default function DiaryTab({
                         type="button"
                         onClick={() => {
                           setOcrTargetField('active');
-                          setOcrImagePreview(null);
-                          setOcrImageFile(null);
+                          setOcrPages([]);
                           setOcrExtractedText("");
                           setShowOcrModal(true);
                         }}
@@ -8514,91 +8510,152 @@ export default function DiaryTab({
         </div>
       )}
 
-      {/* OCR SCANNER MODAL */}
+      {/* OCR SCANNER MODAL - MULTIPAGINA */}
       {showOcrModal && (
         <div
           className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
           onClick={() => setShowOcrModal(false)}
         >
           <div
-            className="bg-white dark:bg-stone-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 font-sans animate-scale-up"
+            className="bg-white dark:bg-stone-900 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 font-sans animate-scale-up max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-3">
-              <h3 className="text-sm font-black text-stone-800 dark:text-stone-100 flex items-center gap-2">
-                <Camera className="w-4 h-4 text-amber-500" />
-                Lettore OCR per Racconto Viaggio
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-stone-800 dark:text-stone-100">
+                    Lettore OCR per Racconto Viaggio
+                  </h3>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400 font-bold">
+                    📄 Supporto Scansione Multipagina
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowOcrModal(false)}
-                className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+                className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <p className="text-xs text-stone-600 dark:text-stone-300">
-              Scatta una foto o carica un&apos;immagine di note, appunti, volantini o pagine di diario. L&apos;intelligenza artificiale estrarrà e formatterà il testo per il tuo racconto.
+              Scatta o carica una o più pagine di note, appunti a mano, volantini o diari cartacei. L&apos;intelligenza artificiale estrarrà e concatenerà tutto il testo per il tuo racconto.
             </p>
 
+            {/* SEZIONE GESTIONE PAGINE */}
             <div className="space-y-3">
-              {ocrImagePreview ? (
-                <div className="space-y-2">
-                  <div className="relative rounded-xl overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center border border-stone-200 dark:border-stone-700">
-                    <img src={ocrImagePreview} alt="OCR Preview" className="max-h-full max-w-full object-contain" />
+              {ocrPages.length > 0 ? (
+                <div className="space-y-3 bg-stone-50 dark:bg-stone-850 p-3.5 rounded-2xl border border-stone-200 dark:border-stone-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-amber-600" />
+                      <span>{ocrPages.length} {ocrPages.length === 1 ? 'Pagina Caricata' : 'Pagine Caricate'}</span>
+                    </span>
                     <button
                       type="button"
                       onClick={() => {
-                        setOcrImagePreview(null);
-                        setOcrImageFile(null);
+                        setOcrPages([]);
                         setOcrExtractedText("");
                       }}
-                      className="absolute top-2 right-2 p-1.5 bg-black/70 text-white rounded-full hover:bg-red-600 transition-colors cursor-pointer"
-                      title="Rimuovi immagine"
+                      className="text-[11px] font-bold text-red-600 hover:text-red-700 dark:text-red-400 hover:underline cursor-pointer flex items-center gap-1"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" /> Svuota tutte
                     </button>
                   </div>
-                  {/* Pulsanti rapidi per riscatto o cambio foto */}
-                  <div className="flex items-center justify-center gap-2">
-                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-bold cursor-pointer transition-all active:scale-95">
-                      <Camera className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Riscatta da Fotocamera</span>
+
+                  {/* GALLERIA MINIATURE PAGINE */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
+                    {ocrPages.map((page, idx) => (
+                      <div
+                        key={page.id}
+                        className="relative group rounded-xl overflow-hidden bg-black/90 aspect-4/3 border border-stone-300 dark:border-stone-700 shadow-xs flex items-center justify-center"
+                      >
+                        <img
+                          src={page.preview}
+                          alt={`Pagina ${idx + 1}`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                        <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-black/80 text-white text-[10px] font-extrabold rounded-md backdrop-blur-xs border border-white/20">
+                          Pagina {idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOcrPages((prev) => prev.filter((p) => p.id !== page.id));
+                            setOcrExtractedText("");
+                          }}
+                          className="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 shadow-md cursor-pointer transition-transform group-hover:scale-105"
+                          title="Elimina questa pagina"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* PULSANTI RAPIDI PER AGGIUNGERE ULTERIORI PAGINE */}
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                    <label className="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-black cursor-pointer transition-all active:scale-98 border border-amber-300 dark:border-amber-800">
+                      <Camera className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>+ Scatta altra Pagina</span>
                       <input
                         type="file"
                         accept="image/*"
                         capture="environment"
                         className="hidden"
                         onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            const file = e.target.files[0];
-                            setOcrImageFile(file);
-                            setOcrExtractedText("");
-                            const reader = new FileReader();
-                            reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
-                            reader.readAsDataURL(file);
+                          if (e.target.files && e.target.files.length > 0) {
+                            const fileArray = Array.from(e.target.files);
+                            fileArray.forEach((f) => {
+                              const r = new FileReader();
+                              r.onload = (ev) => {
+                                const res = ev.target?.result as string;
+                                if (res) {
+                                  setOcrPages((prev) => [
+                                    ...prev,
+                                    { id: `page_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, preview: res, file: f },
+                                  ]);
+                                  setOcrExtractedText("");
+                                }
+                              };
+                              r.readAsDataURL(f);
+                            });
                           }
                           e.target.value = "";
                         }}
                       />
                     </label>
 
-                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-bold cursor-pointer transition-all active:scale-95">
-                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Cambia da Album</span>
+                    <label className="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-900 dark:text-indigo-200 rounded-xl text-xs font-black cursor-pointer transition-all active:scale-98 border border-indigo-300 dark:border-indigo-800">
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>+ Aggiungi da Album</span>
                       <input
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            const file = e.target.files[0];
-                            setOcrImageFile(file);
-                            setOcrExtractedText("");
-                            const reader = new FileReader();
-                            reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
-                            reader.readAsDataURL(file);
+                          if (e.target.files && e.target.files.length > 0) {
+                            const fileArray = Array.from(e.target.files);
+                            fileArray.forEach((f) => {
+                              const r = new FileReader();
+                              r.onload = (ev) => {
+                                const res = ev.target?.result as string;
+                                if (res) {
+                                  setOcrPages((prev) => [
+                                    ...prev,
+                                    { id: `page_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, preview: res, file: f },
+                                  ]);
+                                  setOcrExtractedText("");
+                                }
+                              };
+                              r.readAsDataURL(f);
+                            });
                           }
                           e.target.value = "";
                         }}
@@ -8607,6 +8664,7 @@ export default function DiaryTab({
                   </div>
                 </div>
               ) : (
+                /* INIZIALE SELEZIONE SE NESSUNA PAGINA E' CARICATA */
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   {/* Pulsante 1: Fotocamera */}
                   <label className="border-2 border-dashed border-amber-300 dark:border-amber-700 hover:border-amber-500 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-950/40 rounded-2xl p-5 flex flex-col items-center justify-center cursor-pointer transition-all group text-center shadow-xs active:scale-[0.98]">
@@ -8617,7 +8675,7 @@ export default function DiaryTab({
                       Apri Fotocamera
                     </span>
                     <span className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 leading-tight">
-                      Scatta una foto direttamente
+                      Scatta la prima pagina del documento
                     </span>
                     <input
                       type="file"
@@ -8625,42 +8683,61 @@ export default function DiaryTab({
                       capture="environment"
                       className="hidden"
                       onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          const file = e.target.files[0];
-                          setOcrImageFile(file);
-                          setOcrExtractedText("");
-                          const reader = new FileReader();
-                          reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
-                          reader.readAsDataURL(file);
+                        if (e.target.files && e.target.files.length > 0) {
+                          const fileArray = Array.from(e.target.files);
+                          fileArray.forEach((f) => {
+                            const r = new FileReader();
+                            r.onload = (ev) => {
+                              const res = ev.target?.result as string;
+                              if (res) {
+                                setOcrPages((prev) => [
+                                  ...prev,
+                                  { id: `page_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, preview: res, file: f },
+                                ]);
+                                setOcrExtractedText("");
+                              }
+                            };
+                            r.readAsDataURL(f);
+                          });
                         }
                         e.target.value = "";
                       }}
                     />
                   </label>
 
-                  {/* Pulsante 2: Album Foto */}
+                  {/* Pulsante 2: Album Foto (Selezione multipla abilitata) */}
                   <label className="border-2 border-dashed border-indigo-300 dark:border-indigo-700 hover:border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/20 hover:bg-indigo-100/60 dark:hover:bg-indigo-950/40 rounded-2xl p-5 flex flex-col items-center justify-center cursor-pointer transition-all group text-center shadow-xs active:scale-[0.98]">
                     <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform mb-2 shadow-2xs">
                       <ImageIcon className="w-6 h-6" />
                     </div>
                     <span className="text-xs font-black text-stone-800 dark:text-stone-100">
-                      Album Foto
+                      Album Foto (Più pagine)
                     </span>
                     <span className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 leading-tight">
-                      Scegli dalla galleria immagini
+                      Seleziona anche più foto insieme
                     </span>
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          const file = e.target.files[0];
-                          setOcrImageFile(file);
-                          setOcrExtractedText("");
-                          const reader = new FileReader();
-                          reader.onload = (ev) => setOcrImagePreview(ev.target?.result as string);
-                          reader.readAsDataURL(file);
+                        if (e.target.files && e.target.files.length > 0) {
+                          const fileArray = Array.from(e.target.files);
+                          fileArray.forEach((f) => {
+                            const r = new FileReader();
+                            r.onload = (ev) => {
+                              const res = ev.target?.result as string;
+                              if (res) {
+                                setOcrPages((prev) => [
+                                  ...prev,
+                                  { id: `page_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, preview: res, file: f },
+                                ]);
+                                setOcrExtractedText("");
+                              }
+                            };
+                            r.readAsDataURL(f);
+                          });
                         }
                         e.target.value = "";
                       }}
@@ -8669,7 +8746,8 @@ export default function DiaryTab({
                 </div>
               )}
 
-              {ocrImagePreview && !ocrExtractedText && (
+              {/* OPZIONI OCR E PULSANTE ELABORA */}
+              {ocrPages.length > 0 && !ocrExtractedText && (
                 <div className="space-y-3.5 pt-1">
                   {/* Selector Mode OCR */}
                   <div className="bg-stone-50 dark:bg-stone-800/80 p-3 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-2">
@@ -8692,7 +8770,7 @@ export default function DiaryTab({
                             <span>🪄 Rielabora ed Arricchisci</span>
                           </p>
                           <p className="text-[10px] text-stone-500 dark:text-stone-400 leading-tight mt-0.5">
-                            Rende il racconto avvincente e scorrevole mantenendo fedeli tutti i dati e le tappe.
+                            Sintetizza e unisce tutte le pagine in un unico racconto scorrevole.
                           </p>
                         </div>
                       </button>
@@ -8710,7 +8788,7 @@ export default function DiaryTab({
                         <div>
                           <p className="font-extrabold text-xs">📝 Trascrizione Letterale</p>
                           <p className="text-[10px] text-stone-500 dark:text-stone-400 leading-tight mt-0.5">
-                            Trascrive parola per parola esattamente quello che è scritto sul foglio.
+                            Trascrive parola per parola il contenuto di ogni singola pagina.
                           </p>
                         </div>
                       </button>
@@ -8719,15 +8797,14 @@ export default function DiaryTab({
 
                   <button
                     type="button"
-                    disabled={isProcessingOcr}
+                    disabled={isProcessingOcr || ocrPages.length === 0}
                     onClick={async () => {
-                      if (!ocrImagePreview) return;
+                      if (ocrPages.length === 0) return;
                       setIsProcessingOcr(true);
-                      setOcrProgressStatus("Preparazione immagine...");
+                      setOcrProgressStatus(`Avvio scansione di ${ocrPages.length} pagine...`);
                       try {
-                        const text = await extractStoryFromImage(
-                          ocrImagePreview,
-                          ocrImageFile?.type || "image/jpeg",
+                        const text = await extractStoryFromMultipleImages(
+                          ocrPages.map((p) => ({ dataUrl: p.preview, mimeType: p.file?.type || "image/jpeg" })),
                           ocrMode,
                           (status) => setOcrProgressStatus(status)
                         );
@@ -8738,16 +8815,16 @@ export default function DiaryTab({
                             new CustomEvent("show-toast", {
                               detail: { 
                                 message: ocrMode === 'elaborate' 
-                                  ? "✨ Racconto elaborato ed arricchito con successo!" 
-                                  : "📝 Testo trascritto con precisione letterale!" 
+                                  ? `✨ Racconto elaborato con successo da ${ocrPages.length} ${ocrPages.length === 1 ? 'pagina' : 'pagine'}!` 
+                                  : `📝 Testo di ${ocrPages.length} ${ocrPages.length === 1 ? 'pagina' : 'pagine'} trascritto con precisione letterale!` 
                               },
                             })
                           );
                         } else {
-                          throw new Error("Nessun testo rilevato. Riprova con una foto più ravvicinata o a fuoco.");
+                          throw new Error("Nessun testo rilevato. Riprova con foto più ravvicinate o a fuoco.");
                         }
                       } catch (err: any) {
-                        console.error("[DiaryTab] OCR extraction failed:", err);
+                        console.error("[DiaryTab] Multi-page OCR extraction failed:", err);
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
                             detail: {
@@ -8767,7 +8844,7 @@ export default function DiaryTab({
                         <div className="flex items-center gap-2">
                           <Loader2 className="w-4 h-4 animate-spin text-white" />
                           <span className="font-bold text-xs">
-                            {ocrMode === 'literal' ? "Trascrizione letterale in corso..." : "Elaborazione racconto in corso..."}
+                            {ocrMode === 'literal' ? "Trascrizione letterale multipagina in corso..." : "Elaborazione racconto multipagina in corso..."}
                           </span>
                         </div>
                         {ocrProgressStatus && (
@@ -8784,7 +8861,9 @@ export default function DiaryTab({
                           <FileText className="w-4 h-4 text-amber-200" />
                         )}
                         <span>
-                          {ocrMode === 'elaborate' ? "Elabora Racconto con IA" : "Esegui Trascrizione Letterale"}
+                          {ocrMode === 'elaborate'
+                            ? `Elabora ${ocrPages.length} ${ocrPages.length === 1 ? 'Pagina' : 'Pagine'} con IA`
+                            : `Esegui Trascrizione di ${ocrPages.length} ${ocrPages.length === 1 ? 'Pagina' : 'Pagine'}`}
                         </span>
                       </>
                     )}
@@ -8792,18 +8871,19 @@ export default function DiaryTab({
                 </div>
               )}
 
+              {/* RISULTATO ESTRATTO */}
               {ocrExtractedText && (
                 <div className="space-y-2 pt-1 animate-fade-in">
                   <div className="flex items-center justify-between">
                     <label className="block text-[11px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                      <span>✨ Testo Trascritto (Modificabile)</span>
+                      <span>✨ Testo Estratto Multipagina (Modificabile)</span>
                     </label>
                     <span className="text-[10px] text-stone-500 font-medium">
                       {ocrExtractedText.length} caratteri • {ocrExtractedText.split(/\s+/).filter(Boolean).length} parole
                     </span>
                   </div>
                   <textarea
-                    rows={6}
+                    rows={7}
                     value={ocrExtractedText}
                     onChange={(e) => setOcrExtractedText(e.target.value)}
                     placeholder="Il testo riconosciuto apparirà qui..."
@@ -8837,7 +8917,7 @@ export default function DiaryTab({
                           window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips: updated } }));
                         }
                         setShowOcrModal(false);
-                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✅ Testo OCR inserito nel racconto e sincronizzato!" } }));
+                        window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "✅ Testo OCR multipagina inserito nel racconto e sincronizzato!" } }));
                       }}
                       className="flex-1 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] active:scale-95 text-white rounded-xl text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5 transition-all"
                     >
@@ -8857,12 +8937,13 @@ export default function DiaryTab({
                       <button
                         type="button"
                         onClick={() => {
+                          setOcrPages([]);
                           setOcrExtractedText("");
                         }}
-                        className="px-3 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 rounded-xl text-xs font-bold hover:bg-stone-200 active:scale-95 cursor-pointer transition-all"
-                        title="Riprova con un'altra foto"
+                        className="px-3 py-2.5 bg-amber-100 dark:bg-amber-950/60 hover:bg-amber-200 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-bold hover:bg-amber-200 active:scale-95 cursor-pointer transition-all"
+                        title="Svuota e scansiona di nuovo"
                       >
-                        Riscansiona
+                        Nuova Scansione
                       </button>
                     </div>
                   </div>

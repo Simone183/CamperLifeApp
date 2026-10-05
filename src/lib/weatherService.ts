@@ -1,5 +1,5 @@
 // Shared service to manage weather requests and MeteoAlarm / Severe Weather alerts
-import { MeteoAlarmWarning } from '../types/weatherAlerts';
+import { MeteoAlarmWarning } from '../types';
 
 const CACHE_TTL = 1800 * 1000; // 30 minutes cache for forecasts
 const weatherCache: Record<string, { data: { current: any; daily?: any[]; hourly?: any }; timestamp: number }> = {};

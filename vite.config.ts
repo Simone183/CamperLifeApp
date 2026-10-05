@@ -21,23 +21,8 @@ export default defineConfig(() => {
     build: {
       outDir: 'dist',
       sourcemap: false,
-      minify: 'esbuild',
-      chunkSizeWarningLimit: 2000,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('leaflet') || id.includes('maplibre-gl')) {
-                return 'map-libs';
-              }
-              if (id.includes('hls.js') || id.includes('jspdf') || id.includes('html2canvas')) {
-                return 'heavy-libs';
-              }
-              return 'vendor';
-            }
-          }
-        }
-      }
+      minify: 'esbuild' as const,
+      chunkSizeWarningLimit: 3000
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

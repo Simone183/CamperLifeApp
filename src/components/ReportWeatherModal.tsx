@@ -4,7 +4,7 @@ import {
   Droplets, Snowflake, MapPin, Send, CheckCircle2, ShieldAlert
 } from 'lucide-react';
 import { communityWeatherAlertsService } from '../lib/communityWeatherAlertsService';
-import { WeatherAlertType, WeatherAlertSeverity } from '../types/weatherAlerts';
+import { WeatherAlertType, WeatherAlertSeverity } from '../types';
 
 interface ReportWeatherModalProps {
   userLocation: { lat: number; lng: number } | null;
