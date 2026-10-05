@@ -218,6 +218,7 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         if: steps.find_aab.outcome == 'success'
+        continue-on-error: true
         with:
           tag_name: v${{ steps.find_aab.outputs.app_version }}
           name: ViaCamper v${{ steps.find_aab.outputs.app_version }}
@@ -233,5 +234,6 @@ jobs:
           draft: false
           prerelease: false
           make_latest: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
