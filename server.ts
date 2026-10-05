@@ -703,16 +703,18 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
 
       if (isTransientError) {
         console.warn(`[Gemini AI] Transient error on attempt ${attempt} with model ${modelsSequence[currentModelIdx]}: ${errMsg.slice(0, 140)}`);
+        
+        // Pause slightly longer before switching models to allow service recovery
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
 
         // If another model is available in the sequence, switch to it immediately
         if (currentModelIdx < modelsSequence.length - 1) {
           currentModelIdx++;
-          console.warn(`[Gemini AI] Switching immediately to fallback model: ${modelsSequence[currentModelIdx]}`);
-          await new Promise((r) => setTimeout(r, 600));
+          console.warn(`[Gemini AI] Switching to fallback model: ${modelsSequence[currentModelIdx]}`);
           continue;
         } else if (attempt < maxRetries) {
           // Wrapped around or reached end; pause with backoff and retry from start of sequence
-          const backoffMs = Math.min(1500 * attempt, 4000);
+          const backoffMs = Math.min(2500 * attempt, 10000); // More aggressive backoff
           console.warn(`[Gemini AI] Reached end of model sequence. Retrying in ${backoffMs}ms...`);
           currentModelIdx = 0;
           await new Promise((r) => setTimeout(r, backoffMs));
