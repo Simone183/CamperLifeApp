@@ -362,12 +362,18 @@ public class AutoDataBridge {
         if (query == null) query = "";
         String qLower = query.toLowerCase().trim();
 
+        // Disattiva il blocco StrictMode per permettere la geocodifica di rete in tempo reale su Android Auto
+        try {
+            android.os.StrictMode.ThreadPolicy policy = new android.os.StrictMode.ThreadPolicy.Builder().permitAll().build();
+            android.os.StrictMode.setThreadPolicy(policy);
+        } catch (Exception ignored) {}
+
         // 1. Geocodifica Nativa Android (trova subito qualsiasi città, comune o via in Italia/Europa)
         if (!qLower.isEmpty()) {
             try {
                 android.location.Geocoder geocoder = new android.location.Geocoder(context, Locale.ITALY);
-                List<android.location.Address> addresses = geocoder.getFromLocationName(query.trim(), 5);
-                if (addresses != null) {
+                List<android.location.Address> addresses = geocoder.getFromLocationName(query.trim(), 8);
+                if (addresses != null && !addresses.isEmpty()) {
                     for (int i = 0; i < addresses.size(); i++) {
                         android.location.Address addr = addresses.get(i);
                         double lat = addr.getLatitude();
@@ -589,68 +595,90 @@ public class ViaCamperCarSession extends Session {
 `;
   fs.writeFileSync(path.join(javaDir, 'ViaCamperCarSession.java'), sessionJava, 'utf-8');
 
-  // D. MainMapScreen.java (Schermata Iniziale MAPPA NATIVA con Pin e Pulsanti Compatti)
+  // D. MainMapScreen.java (Schermata Iniziale MAPPA Fullscreen NATIVA con inseguimento GPS dinamico)
   const mainMapScreenJava = `package com.ViaCamper.myapp.auto;
 
 import android.content.Context;
 import android.location.Location;
+import android.location.LocationListener;
 import android.location.LocationManager;
-import android.text.SpannableString;
-import android.text.Spanned;
+import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
-import androidx.car.app.model.CarColor;
-import androidx.car.app.model.CarLocation;
-import androidx.car.app.model.Distance;
-import androidx.car.app.model.DistanceSpan;
-import androidx.car.app.model.ItemList;
-import androidx.car.app.model.Metadata;
-import androidx.car.app.model.Place;
-import androidx.car.app.model.PlaceListMapTemplate;
-import androidx.car.app.model.PlaceMarker;
-import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
-import java.util.List;
-import java.util.Locale;
+import androidx.car.app.navigation.model.NavigationTemplate;
 
 /**
- * Schermata Iniziale Mappa per Android Auto:
- * - Mappa nativa renderizzata con le strade, rilievi e posizione GPS dell'auto (evita schermo nero)
- * - Pulsanti rapidi compatti in alto per adattarsi a tutti gli schermi (nessun overflow a destra)
- * - Visualizzazione delle tappe e punto sosta come pin interattivi su mappa
+ * Schermata Iniziale Mappa Full-Screen per Android Auto:
+ * - Mappa 100% Full-Screen senza schede/riquadri oscuranti a sinistra.
+ * - Inseguimento GPS dinamico in tempo reale: la vista della mappa rimarrà SEMPRE centrata sul camper durante la guida.
+ * - Pulsanti d'azione rapida fluttuanti in alto (Cerca, Spesa, Soste, GPS).
  */
-public class MainMapScreen extends Screen {
+public class MainMapScreen extends Screen implements LocationListener {
 
     private Location lastLocation = null;
+    private LocationManager locationManager = null;
+    private boolean isListening = false;
 
     public MainMapScreen(@NonNull CarContext carContext) {
         super(carContext);
-        acquireLocation();
+        startGPSUpdates();
     }
 
-    private void acquireLocation() {
+    private synchronized void startGPSUpdates() {
+        if (isListening) return;
         try {
-            LocationManager lm = (LocationManager) getCarContext().getSystemService(Context.LOCATION_SERVICE);
-            if (lm != null) {
-                lastLocation = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            locationManager = (LocationManager) getCarContext().getSystemService(Context.LOCATION_SERVICE);
+            if (locationManager != null) {
+                lastLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                 if (lastLocation == null) {
-                    lastLocation = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                    lastLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
                 }
+
+                // Registra aggiornamenti GPS continui: callback ad ogni spostamento dell'auto (1 sec / 1 metro)
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1.0f, this);
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 2.0f, this);
+                isListening = true;
             }
         } catch (SecurityException ignored) {}
     }
 
+    private synchronized void stopGPSUpdates() {
+        if (locationManager != null && isListening) {
+            try {
+                locationManager.removeUpdates(this);
+            } catch (Exception ignored) {}
+            isListening = false;
+        }
+    }
+
+    @Override
+    public void onLocationChanged(@NonNull Location location) {
+        if (location != null) {
+            lastLocation = location;
+            // Notifica ad Android Auto che la posizione del veicolo è cambiata, forzando il ricentraggio della mappa
+            invalidate();
+        }
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {}
+
+    @Override
+    public void onProviderEnabled(@NonNull String provider) {}
+
+    @Override
+    public void onProviderDisabled(@NonNull String provider) {}
+
     @NonNull
     @Override
     public Template onGetTemplate() {
-        acquireLocation();
+        startGPSUpdates();
 
-        ItemList.Builder listBuilder = new ItemList.Builder();
-
-        // 1. ActionStrip con le 4 Azioni Rapide Fluttuanti sulla mappa (evita di coprire la mappa in Split-Screen)
+        // ActionStrip con i 4 pulsanti fluttuanti in alto sulla mappa
         ActionStrip actionStrip = new ActionStrip.Builder()
                 .addAction(new Action.Builder()
                         .setTitle("🔍 Cerca")
@@ -670,62 +698,8 @@ public class MainMapScreen extends Screen {
                         .build())
                 .build();
 
-        // 2. Tappe del viaggio attivo (mostrate come pin interattivi sulla mappa)
-        List<AutoDataBridge.MovementItem> movements = AutoDataBridge.getActiveMovements(getCarContext(), lastLocation);
-        if (!movements.isEmpty()) {
-            int maxItems = Math.min(movements.size(), 3);
-            for (int i = 0; i < maxItems; i++) {
-                AutoDataBridge.MovementItem m = movements.get(i);
-                Row.Builder row = new Row.Builder();
-                row.setTitle("🗺️ " + m.location);
-                row.setBrowsable(true);
-
-                double dKm = m.distanceKm > 0 ? m.distanceKm : 1.0;
-                Distance distance = Distance.create(dKm, Distance.UNIT_KILOMETERS);
-                String distLabel = String.format(Locale.getDefault(), "%.1f km", dKm);
-                SpannableString distSpan = new SpannableString(distLabel);
-                distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-                row.addText(distSpan);
-
-                if (m.lat != 0.0 && m.lng != 0.0) {
-                    row.setMetadata(
-                        new Metadata.Builder()
-                            .setPlace(
-                                new Place.Builder(CarLocation.create(m.lat, m.lng))
-                                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.BLUE).build())
-                                    .build()
-                            )
-                            .build()
-                    );
-                }
-
-                row.setOnClickListener(() -> {
-                    getScreenManager().push(new NavigatorChooserScreen(getCarContext(), m));
-                });
-
-                listBuilder.addItem(row.build());
-            }
-        } else {
-            // Se non ci sono tappe attive, aggiunge una singola riga compattissima per lasciar spazio totale alla mappa
-            listBuilder.addItem(new Row.Builder()
-                    .setTitle("🗺️ Mappa GPS Camper")
-                    .addText("Posizione in tempo reale")
-                    .build());
-        }
-
-        PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
-                .setTitle("ViaCamper GPS")
-                .setHeaderAction(Action.APP_ICON)
-                .setActionStrip(actionStrip)
-                .setItemList(listBuilder.build());
-
-        if (lastLocation != null) {
-            Place anchorPlace = new Place.Builder(CarLocation.create(lastLocation.getLatitude(), lastLocation.getLongitude()))
-                    .setMarker(new PlaceMarker.Builder().setColor(CarColor.GREEN).build())
-                    .build();
-            templateBuilder.setAnchor(anchorPlace);
-            templateBuilder.setCurrentLocationEnabled(true);
-        }
+        NavigationTemplate.Builder templateBuilder = new NavigationTemplate.Builder()
+                .setActionStrip(actionStrip);
 
         return templateBuilder.build();
     }
@@ -1095,20 +1069,24 @@ public class NavigatorChooserScreen extends Screen {
                 .setOnClickListener(() -> {
                     // Salva la destinazione bersaglio per l'ascoltatore React in tempo reale
                     AutoDataBridge.saveTargetDestination(getCarContext(), targetMovement.location, targetMovement.lat, targetMovement.lng);
-                    CarToast.makeText(getCarContext(), "Avvio Navigatore Camper per " + targetMovement.location, CarToast.LENGTH_SHORT).show();
+                    CarToast.makeText(getCarContext(), "Avvio Navigatore Camper per " + targetMovement.location, CarToast.LENGTH_LONG).show();
 
                     try {
                         Intent launchIntent = getCarContext().getPackageManager().getLaunchIntentForPackage(getCarContext().getPackageName());
                         if (launchIntent != null) {
-                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
                             launchIntent.putExtra("NAVIGATE_INTERNAL", true);
                             launchIntent.putExtra("DEST_NAME", targetMovement.location);
                             launchIntent.putExtra("DEST_LAT", targetMovement.lat);
                             launchIntent.putExtra("DEST_LNG", targetMovement.lng);
-                            getCarContext().startActivity(launchIntent);
+                            try {
+                                getCarContext().startCarApp(launchIntent);
+                            } catch (Exception ignored) {
+                                getCarContext().startActivity(launchIntent);
+                            }
                         }
                     } catch (Exception ignored) {}
-                    getScreenManager().pop();
+                    getScreenManager().popToRoot();
                 })
                 .build());
 
@@ -1117,7 +1095,7 @@ public class NavigatorChooserScreen extends Screen {
                 .setTitle("🗺️ Google Maps")
                 .addText("Traffico in tempo reale e percorsi alternativi")
                 .setOnClickListener(() -> {
-                    startNavigationIntent("google.navigation:q=" + getTargetDestination());
+                    startNavigationIntent(getGoogleMapsUri());
                 })
                 .build());
 
@@ -1126,7 +1104,7 @@ public class NavigatorChooserScreen extends Screen {
                 .setTitle("🚙 Waze")
                 .addText("Segnalazione autovelox, pericoli e community")
                 .setOnClickListener(() -> {
-                    startNavigationIntent("waze://?q=" + Uri.encode(targetMovement.location));
+                    startNavigationIntent(getWazeUri());
                 })
                 .build());
 
@@ -1135,7 +1113,7 @@ public class NavigatorChooserScreen extends Screen {
                 .setTitle("🧭 Altro Navigatore (Sygic, TomTom...)")
                 .addText("Seleziona tra le altre app di navigazione installate")
                 .setOnClickListener(() -> {
-                    startNavigationIntent("geo:0,0?q=" + Uri.encode(targetMovement.location));
+                    startNavigationIntent(getGenericGeoUri());
                 })
                 .build());
 
@@ -1146,29 +1124,46 @@ public class NavigatorChooserScreen extends Screen {
                 .build();
     }
 
-    private String getTargetDestination() {
+    private String getGoogleMapsUri() {
         if (targetMovement.lat != 0.0 && targetMovement.lng != 0.0) {
-            return targetMovement.lat + "," + targetMovement.lng;
+            return "google.navigation:q=" + targetMovement.lat + "," + targetMovement.lng + "&mode=d";
         }
-        return Uri.encode(targetMovement.location);
+        return "google.navigation:q=" + Uri.encode(targetMovement.location) + "&mode=d";
+    }
+
+    private String getWazeUri() {
+        if (targetMovement.lat != 0.0 && targetMovement.lng != 0.0) {
+            return "waze://?ll=" + targetMovement.lat + "," + targetMovement.lng + "&navigate=yes";
+        }
+        return "waze://?q=" + Uri.encode(targetMovement.location) + "&navigate=yes";
+    }
+
+    private String getGenericGeoUri() {
+        if (targetMovement.lat != 0.0 && targetMovement.lng != 0.0) {
+            return "geo:" + targetMovement.lat + "," + targetMovement.lng + "?q=" + targetMovement.lat + "," + targetMovement.lng + "(" + Uri.encode(targetMovement.location) + ")";
+        }
+        return "geo:0,0?q=" + Uri.encode(targetMovement.location);
     }
 
     private void startNavigationIntent(String uriString) {
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uriString));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getCarContext().startCarApp(intent);
-            CarToast.makeText(getCarContext(), "Navigazione verso " + targetMovement.location, CarToast.LENGTH_SHORT).show();
-            getScreenManager().pop();
+            try {
+                getCarContext().startCarApp(intent);
+            } catch (Exception ex) {
+                getCarContext().startActivity(intent);
+            }
+            CarToast.makeText(getCarContext(), "Avvio navigazione verso " + targetMovement.location, CarToast.LENGTH_SHORT).show();
+            getScreenManager().popToRoot();
         } catch (Exception e) {
-            // Fallback con intent generico geo
             try {
                 Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(targetMovement.location)));
                 fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getCarContext().startCarApp(fallback);
-                getScreenManager().pop();
+                getScreenManager().popToRoot();
             } catch (Exception ex) {
-                CarToast.makeText(getCarContext(), "Nessuna app di navigazione compatibile trovata", CarToast.LENGTH_LONG).show();
+                CarToast.makeText(getCarContext(), "Nessuna app di navigazione installata trovata", CarToast.LENGTH_LONG).show();
             }
         }
     }
