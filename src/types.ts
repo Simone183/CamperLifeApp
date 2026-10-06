@@ -364,6 +364,7 @@ export interface Deadline {
   notes?: string;
   price?: number;
   km?: number;
+  kmThreshold?: number; // Km a cui inviare avviso
 }
 
 export interface ChecklistItem {

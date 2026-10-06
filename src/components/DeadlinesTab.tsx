@@ -41,6 +41,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
   const [notes, setNotes] = React.useState('');
   const [price, setPrice] = React.useState('');
   const [km, setKm] = React.useState('');
+  const [kmThreshold, setKmThreshold] = React.useState('');
 
   const toggleDone = (id: string) => {
     setDeadlines(deadlines.map(d => d.id === id ? { ...d, done: !d.done } : d));
@@ -75,6 +76,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
       notes: notes.trim() || undefined,
       price: price ? parseFloat(price) : undefined,
       km: km ? parseFloat(km) : undefined,
+      kmThreshold: kmThreshold ? parseFloat(kmThreshold) : undefined,
     };
 
     setDeadlines([...deadlines, newItem]);
@@ -83,6 +85,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
     setNotes('');
     setPrice('');
     setKm('');
+    setKmThreshold('');
     setShowAddForm(false);
   };
 
@@ -293,6 +296,16 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
                   placeholder="Es: 45000"
                   value={km}
                   onChange={(e) => setKm(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 outline-none focus:border-[#3E4A35] rounded-xl bg-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Avvisami a (Km)</label>
+                <input
+                  type="number"
+                  placeholder="Es: 5000"
+                  value={kmThreshold}
+                  onChange={(e) => setKmThreshold(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 outline-none focus:border-[#3E4A35] rounded-xl bg-white text-sm"
                 />
               </div>

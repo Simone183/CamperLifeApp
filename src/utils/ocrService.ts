@@ -168,7 +168,7 @@ export async function extractStoryFromMultipleImages(
       pages.length
     );
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
 
     const apiUrl = resolveApiUrl("/api/extract-story-ocr");
     const res = await fetch(apiUrl, {

@@ -669,7 +669,8 @@ async function throttleGeminiCall(hasSearchGrounding = false): Promise<void> {
 async function generateContentWithRetry(params: any, maxRetries = 5) {
   const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
   const primaryModel = params?.model || "gemini-3.8-flash";
-  const defaultFallbacks = ["gemini-3.8-flash", "gemini-flash-latest"];
+  // Expanded sequence of fallback models
+  const defaultFallbacks = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
   
   // Build a distinct sequence of models to try, starting with the requested model
   const modelsSequence: string[] = [primaryModel];
@@ -690,20 +691,26 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
       return await ai.models.generateContent(params);
     } catch (err: any) {
       const errMsg = err.message || "";
+      const isQuotaError = err.status === 429 || errMsg.includes("RESOURCE_EXHAUSTED");
       const isTransientError =
         err.status === 503 ||
-        err.status === 429 ||
         err.status === 500 ||
         errMsg.includes("503") ||
-        errMsg.includes("429") ||
         errMsg.includes("high demand") ||
         errMsg.includes("UNAVAILABLE") ||
-        errMsg.includes("Quota") ||
-        errMsg.includes("RESOURCE_EXHAUSTED");
+        isQuotaError;
 
       if (isTransientError) {
         console.warn(`[Gemini AI] Transient error on attempt ${attempt} with model ${modelsSequence[currentModelIdx]}: ${errMsg.slice(0, 140)}`);
         
+        // If quota error, switch model immediately
+        if (isQuotaError) {
+             currentModelIdx = (currentModelIdx + 1) % modelsSequence.length;
+             console.warn(`[Gemini AI] Quota exhausted. Switching to: ${modelsSequence[currentModelIdx]}`);
+             await new Promise((r) => setTimeout(r, 1000));
+             continue;
+        }
+
         // Pause slightly longer before switching models to allow service recovery
         await new Promise((r) => setTimeout(r, 1000 * attempt));
 
@@ -2607,7 +2614,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       config: {
         systemInstruction,
       },
-    });
+    }, 10);
 
     const rawResult = response && response.text ? response.text.trim() : "";
     return cleanTravelStoryText(rawResult);
@@ -2676,22 +2683,33 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
         return res.json({ success: true, text: extractedText });
       }
 
-      // Process multiple pages
-      const pageTexts: string[] = [];
-      for (let i = 0; i < inputImages.length; i++) {
-        const pageText = await processOcrImage(inputImages[i], mimeType, mode || "elaborate");
-        if (pageText && pageText.trim()) {
-          pageTexts.push(pageText.trim());
-        }
-      }
+      // Process multiple pages by batching images into one request
+      const imageParts = inputImages.map(imgData => {
+        // Assume base64 format (removing prefix if necessary, though server expects clean base64)
+        const base64Data = imgData.includes(',') ? imgData.split(',')[1] : imgData;
+        return {
+          inlineData: {
+            mimeType: mimeType || "image/jpeg",
+            data: base64Data,
+          },
+        };
+      });
 
-      if (pageTexts.length === 0) {
-        return res.status(400).json({ error: "Nessun testo leggibile trovato nelle pagine caricate." });
-      }
+      const promptText = (mode === "elaborate")
+        ? "Leggi questi appunti scritti a mano in queste diverse immagini (che formano un unico racconto) ed elaborali trasformandoli in un racconto di viaggio in camper coinvolgente, elegante, piacevole e ben strutturato in paragrafi, mantenendo tutti i fatti e i luoghi reali citati. Non inserire preamboli."
+        : "Trascrivi fedelmente tutto il testo leggibile in queste immagini, una pagina dopo l'altra. Non aggiungere nulla.";
 
-      const combinedText = (mode === "literal")
-        ? pageTexts.map((txt, idx) => `--- Pagina ${idx + 1} ---\n${txt}`).join("\n\n")
-        : cleanTravelStoryText(pageTexts.join("\n\n"));
+      const response = await generateContentWithRetry({
+        model: "gemini-3.8-flash",
+        contents: { parts: [...imageParts, { text: promptText }] },
+      }, 10);
+
+      const rawResult = response && response.text ? response.text.trim() : "";
+      const combinedText = cleanTravelStoryText(rawResult);
+
+      if (!combinedText) {
+        return res.status(400).json({ error: "Nessun testo leggibile trovato nelle immagini caricate." });
+      }
 
       res.json({ success: true, text: combinedText });
     } catch (err: any) {

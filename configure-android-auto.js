@@ -603,6 +603,8 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.text.SpannableString;
+import android.text.Spanned;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.Screen;
@@ -610,6 +612,8 @@ import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
 import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.Distance;
+import androidx.car.app.model.DistanceSpan;
 import androidx.car.app.model.ItemList;
 import androidx.car.app.model.Place;
 import androidx.car.app.model.PlaceListMapTemplate;
@@ -705,11 +709,21 @@ public class MainMapScreen extends Screen implements LocationListener {
                         .build())
                 .build();
 
-        // ItemList ultra-compatto a riga singola senza sottotesto (riduce l'ingombro del pannello del 60%)
+        // ItemList compatto con listener interattivo e DistanceSpan per soddisfare i requisiti di Android Auto
         ItemList.Builder listBuilder = new ItemList.Builder();
-        listBuilder.addItem(new Row.Builder()
-                .setTitle("📍 Mappa GPS")
-                .build());
+        Row.Builder mapRow = new Row.Builder()
+                .setTitle("📍 Posizione Attuale GPS")
+                .addText("Tocca per ricentrare la mappa sul camper")
+                .setOnClickListener(() -> {
+                    invalidate();
+                });
+
+        Distance distance = Distance.create(0.0, Distance.UNIT_KILOMETERS);
+        SpannableString distSpan = new SpannableString("0.0 km");
+        distSpan.setSpan(DistanceSpan.create(distance), 0, distSpan.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+        mapRow.addText(distSpan);
+
+        listBuilder.addItem(mapRow.build());
 
         PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
                 .setHeaderAction(Action.APP_ICON)

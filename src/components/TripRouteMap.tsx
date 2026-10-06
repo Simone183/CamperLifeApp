@@ -3,7 +3,7 @@ import L from "leaflet";
 import "../utils/leafletPatch";
 import { Trip } from "../types";
 import { CartoonCamperAvatar } from "./CartoonCamperAvatar";
-import { resolveApiUrl } from "../utils/resolveMediaUrl";
+import { resolveApiUrl, resolveMediaUrl } from "../utils/resolveMediaUrl";
 import {
   Play,
   Pause,
@@ -901,7 +901,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
             <div class="relative group cursor-pointer">
               <!-- Tiny Polaroid container -->
               <div class="w-13 h-14 bg-white p-0.5 pb-2 rounded shadow-lg border border-slate-200 transform hover:scale-125 hover:-rotate-3 transition-all duration-305">
-                <img src="${ph.url}" class="w-10 h-7 mx-auto mt-0.5 object-cover rounded-xs" />
+                <img src="${resolveMediaUrl(ph.url)}" class="w-10 h-7 mx-auto mt-0.5 object-cover rounded-xs" />
                 <div class="w-full flex items-center justify-center mt-0.5">
                   <span class="text-[5px] font-bold text-slate-500 font-sans truncate max-w-full block text-center">${ph.locationName}</span>
                 </div>
@@ -919,7 +919,7 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
           .bindPopup(`
             <div class="p-1 font-sans w-48 text-left">
               <div class="w-full h-28 overflow-hidden rounded-lg bg-stone-100 border border-slate-100">
-                <img src="${ph.url}" class="w-full h-full object-cover" />
+                <img src="${resolveMediaUrl(ph.url)}" class="w-full h-full object-cover" />
               </div>
               <p class="text-[11px] font-bold text-slate-850 mt-1.5 leading-tight">${ph.description}</p>
               <div class="flex items-center gap-1 mt-1 text-[9px] text-blue-850 font-black uppercase font-mono">
