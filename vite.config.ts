@@ -19,7 +19,7 @@ export default defineConfig(() => {
       entries: ['index.html'],
     },
     build: {
-      outDir: 'dist',
+      outDir: 'build',
       sourcemap: false,
       minify: 'esbuild' as const,
       chunkSizeWarningLimit: 3000
