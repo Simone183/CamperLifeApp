@@ -893,7 +893,7 @@ export const INITIAL_DEADLINES: Deadline[] = [
   },
   {
     id: 'd4',
-    title: 'Sostituzione Filtri e Tagliando Motore Fiat Ducato',
+    title: 'Sostituzione Filtri e Tagliando',
     category: 'Manutenzione',
     dueDate: '2026-05-10', // Past deadline! Show orange/red alert!
     done: true,
@@ -912,7 +912,7 @@ export const INITIAL_DEADLINES: Deadline[] = [
   {
     id: 'd6',
     title: 'Sostituzione Scadenza Tubo Gas Gomma Gialla',
-    category: 'Bombole Gas',
+    category: 'Tubo gas',
     dueDate: '2026-06-30', // Very soon!
     done: false,
     notes: 'Tubo flessibile arancione/giallo scade dopo 5 anni. Fondamentale per la sicurezza a bordo.',

@@ -45,7 +45,7 @@ import MapTab from "./components/MapTab";
 import { MovementLog } from "./components/MovementLog";
 import NavTab from "./components/NavTab";
 import ChecklistTab from "./components/ChecklistTab";
-import DeadlinesTab from "./components/DeadlinesTab";
+import DeadlinesTab, { sanitizeDeadlines } from "./components/DeadlinesTab";
 import CommunityTab from "./components/CommunityTab";
 import VehicleSettings from "./components/VehicleSettings";
 import DiaryTab from "./components/DiaryTab";
@@ -481,17 +481,47 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
-    const emailToRegister =
-      currentUser?.email ||
-      localStorage.getItem("camper_user_email");
-    if (emailToRegister) {
-      registerPushNotifications(emailToRegister).catch((err) => {
-        console.warn("[Push] Error during push notification registration:", err);
-      });
-      scheduleLocalPromoNotifications().catch((err) => {
+    const initNotifications = async () => {
+      const emailToRegister =
+        currentUser?.email ||
+        localStorage.getItem("camper_user_email") ||
+        "sambucci.simone@gmail.com";
+
+      try {
+        // 1. Schedule / Reschedule Local Promo Notifications (auto-detects app updates)
+        await scheduleLocalPromoNotifications(false);
+      } catch (err) {
         console.warn("[LocalPush] Error scheduling local notifications:", err);
-      });
+      }
+
+      try {
+        // 2. Register FCM Remote Push Token and create high-importance channels
+        await registerPushNotifications(emailToRegister);
+      } catch (err) {
+        console.warn("[Push] Error during push notification registration:", err);
+      }
+    };
+
+    initNotifications();
+
+    // Listen for App Resume/Foreground (e.g. after Play Store update or OS reboot)
+    let appStateSub: { remove: () => void } | null = null;
+    if (Capacitor.isNativePlatform()) {
+      CapacitorApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          console.log('[Push] App resumed to active foreground. Re-verifying notification channels & local schedules...');
+          initNotifications();
+        }
+      }).then(sub => {
+        appStateSub = sub;
+      }).catch(() => {});
     }
+
+    return () => {
+      if (appStateSub && typeof appStateSub.remove === 'function') {
+        appStateSub.remove();
+      }
+    };
   }, [currentUser?.email]);
 
   const [checklistItems, setChecklistItems] = React.useState<ChecklistItem[]>(() => {
@@ -515,8 +545,10 @@ export default function App() {
       const key = cleanEmail ? `camper_deadlines_${cleanEmail}` : "camper_deadlines_guest";
       const saved = localStorage.getItem(key);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        const parsed: Deadline[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return sanitizeDeadlines(parsed);
+        }
       }
     } catch (e) {
       console.error("Error reading camper_deadlines:", e);
@@ -549,7 +581,12 @@ export default function App() {
         setChecklistItems(savedChecklist ? JSON.parse(savedChecklist) : DEFAULT_CHECKLIST);
         
         const savedDeadlines = localStorage.getItem(`camper_deadlines_${cleanEmail}`);
-        setDeadlines(savedDeadlines ? JSON.parse(savedDeadlines) : INITIAL_DEADLINES);
+        if (savedDeadlines) {
+          const parsedDeadlines: Deadline[] = JSON.parse(savedDeadlines);
+          setDeadlines(sanitizeDeadlines(parsedDeadlines));
+        } else {
+          setDeadlines(INITIAL_DEADLINES);
+        }
 
         const savedFavs = localStorage.getItem(`camper_favorites_${cleanEmail}`);
         setFavoriteIds(savedFavs ? JSON.parse(savedFavs) : []);
@@ -5901,7 +5938,7 @@ out center;`;
                                 </div>
                                 <div className="min-w-0">
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
-                                    <span>Scadenziere di Bordo</span>
+                                    <span>Scadenziere manutenzioni</span>
                                     {urgentDeadlinesCount > 0 && (
                                       <span className="bg-[#E56B38] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
                                         {urgentDeadlinesCount}
@@ -5909,8 +5946,7 @@ out center;`;
                                     )}
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Tagliando, bombole gas, bollo, assicurazione
-                                    e scadenze impianti.
+                                    Tagliando, assicurazione, e tutto quello che ha scadenza.
                                   </p>
                                 </div>
                               </div>
@@ -5943,11 +5979,10 @@ out center;`;
                                 </div>
                                 <div className="min-w-0">
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Registro Manutenzione Cellula
+                                    Registro lavori fatti
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Traccia lavaggi, ispezioni infiltrazioni,
-                                    bombole e sigillature.
+                                    Traccia lavaggi, riparazioni e lavori vari che non andrebbero ripetuti.
                                   </p>
                                 </div>
                               </div>

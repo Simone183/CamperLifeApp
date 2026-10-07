@@ -30,7 +30,7 @@ export interface MaintenanceLog {
   id: string;
   title: string;
   date: string;
-  category: 'infiltrazioni' | 'gas' | 'acqua' | 'elettrico' | 'motore' | 'generica';
+  category: 'Estetica' | 'Installazioni' | 'Riparazioni' | 'Pulizie' | 'Generica';
   description: string;
   cost?: number;
   completed: boolean;
@@ -38,72 +38,102 @@ export interface MaintenanceLog {
 }
 
 const DEFAULT_LOGS: MaintenanceLog[] = [
-  { id: 'm1', title: 'Test di Umidità / Infiltrazioni Parentale', date: '2026-04-10', category: 'infiltrazioni', description: 'Controllo con igrometro su angoli dinette, mansarda e doccia. Valori rilevati uniformi tra 10% e 14%. Tutto conforme.', cost: 0, completed: true },
-  { id: 'm2', title: 'Trattamento Igienizzante Serbatoio Grige', date: '2026-05-18', category: 'acqua', description: 'Pulizia chimica con enzimi antiodore per eliminare depositi grassi e saponi accumulati.', cost: 15, completed: true },
-  { id: 'm3', title: 'Sostituzione Filtro Regolatore Gas Truma MonoControl', date: '2026-06-01', category: 'gas', description: 'Controllo pressione e montaggio nuovo filtro protettivo per olii pesanti del GPL.', cost: 38, completed: true },
-  { id: 'm4', title: 'Sanificazione Serbatoio Acqua Chiara con Ioni D\'argento', date: '2026-06-15', category: 'acqua', description: 'Pulizia completa con agente a base di cloro e inserimento della rete agli ioni d\'argento per conservazione a lungo termine.', cost: 24, completed: true },
-  { id: 'm5', title: 'Verifica Sigillature Tetto & Oblo', date: '2026-07-15', category: 'infiltrazioni', description: 'Ispezione esterna del sigillante siliconico perimetrale e rimessa a nuovo dei punti usurati con Terostat.', cost: 0, completed: false },
-  { id: 'm6', title: 'Controllo Tensione e capacità della piastra solare', date: '2026-08-01', category: 'elettrico', description: 'Rimozione polvere dai pannelli solari anteriori e misurazione dell\'amperaggio di ricarica in uscita dal regolatore MPPT.', cost: 0, completed: false }
+  { id: 'm1', title: 'Lavaggio esterno completo', date: '2026-09-01', category: 'Generica', description: 'Lavaggio profondo della carrozzeria esterna.', cost: 30, completed: true },
+  { id: 'm2', title: 'Lucidatura carrozzeria', date: '2026-09-05', category: 'Estetica', description: 'Trattamento protettivo con cera lucidante.', cost: 50, completed: true },
+  { id: 'm3', title: 'Grafitaggio sottoscocca', date: '2026-09-10', category: 'Riparazioni', description: 'Applicazione protettivo grafitato per sottoscocca.', cost: 70, completed: true },
+  { id: 'm4', title: 'Sostituzione luci interne', date: '2026-09-20', category: 'Installazioni', description: 'Conversione illuminazione cellula a basso consumo.', cost: 40, completed: true }
 ];
 
-// Interactive mock hygrometer sectors for cell leakage checks
-interface SectorLeakage {
-  id: string;
-  name: string;
-  value: number; // humidity percentage (e.g. 5% - 40%)
-  lastChecked: string;
+export function sanitizeMaintenanceLogs(logsList: MaintenanceLog[]): MaintenanceLog[] {
+  if (!Array.isArray(logsList) || logsList.length === 0) return DEFAULT_LOGS;
+  const legacyKeywords = [
+    'Test di Umidità',
+    'Trattamento Igienizzante',
+    'Sostituzione Filtro Regolatore Gas',
+    'Sanificazione Serbatoio',
+    'Verifica Sigillature',
+    'Controllo Tensione',
+    'Infiltrazioni Parentale',
+    'Serbatoio Grigie',
+    'Truma MonoControl',
+    'Acqua Chiara',
+    'Tetto & Oblo',
+    'pannello solare',
+    "Ioni D'argento",
+    'acido citrico',
+    'Revisione',
+    'Assicurazione',
+    'Bollo',
+    'Tagliando'
+  ];
+  const cleaned = logsList.filter(item => {
+    if (!item || !item.title) return false;
+    const t = item.title.toLowerCase();
+    return !legacyKeywords.some(kw => t.includes(kw.toLowerCase()));
+  });
+  if (cleaned.length === 0) {
+    return DEFAULT_LOGS;
+  }
+  return cleaned;
 }
 
 export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () => void } = {}) {
   const settings = useAppSettings();
   const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
-  // Logs state
-  const [logs, setLogs] = React.useState<MaintenanceLog[]>(DEFAULT_LOGS);
   const [loadedFromFirestore, setLoadedFromFirestore] = React.useState(false);
+
+  // Logs state
+  const [logs, setLogs] = React.useState<MaintenanceLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('camper_maintenance_logs');
+      if (saved) {
+        return sanitizeMaintenanceLogs(JSON.parse(saved));
+      }
+    } catch (e) {}
+    return DEFAULT_LOGS;
+  });
 
   // Used to prevent circular updates between local state and cloud/context
   const isSyncingRef = React.useRef(false);
 
   // Sync from family crew if updated
   React.useEffect(() => {
-    if (currentCrew && isModuleSynced('maintenance') && Array.isArray(currentCrew.sharedData?.maintenance)) {
-      const incoming = currentCrew.sharedData.maintenance;
-      if (JSON.stringify(incoming) !== JSON.stringify(logs)) {
-        isSyncingRef.current = true;
-        setLogs(incoming);
-      }
+    if (currentCrew && (currentCrew.syncModules?.maintenance !== false) && Array.isArray(currentCrew.sharedData?.maintenance)) {
+      const incoming = sanitizeMaintenanceLogs(currentCrew.sharedData.maintenance);
+      setLogs(prev => {
+          if (JSON.stringify(incoming) !== JSON.stringify(prev)) {
+            isSyncingRef.current = true;
+            return incoming;
+          }
+          return prev;
+      });
     }
-  }, [currentCrew?.sharedData?.maintenance, isModuleSynced]);
-
-  // Leakage sector testing state
-  const [sectors, setSectors] = React.useState<SectorLeakage[]>([
-    { id: 's1', name: 'Angolo Anteriore Sinistro (Mansarda / Cupolino)', value: 12, lastChecked: '2026-06-19' },
-    { id: 's2', name: 'Fiancata Centrale Dinette (Finestra)', value: 11, lastChecked: '2026-06-19' },
-    { id: 's3', name: 'Rivestimento Interno Bagno & Doccia', value: 15, lastChecked: '2026-06-19' },
-    { id: 's4', name: 'Angolo Posteriore Destro (Garage / Sotto-letto)', value: 13, lastChecked: '2026-06-19' },
-  ]);
+  }, [currentCrew?.sharedData?.maintenance, currentCrew?.syncModules]);
 
   // Form states for adding log
   const [newTitle, setNewTitle] = React.useState('');
   const [newDate, setNewDate] = React.useState(new Date().toISOString().split('T')[0]);
-  const [newCat, setNewCat] = React.useState<MaintenanceLog['category']>('infiltrazioni');
+  const [newCat, setNewCat] = React.useState<MaintenanceLog['category']>('Generica');
   const [newDesc, setNewDesc] = React.useState('');
   const [newCost, setNewCost] = React.useState<number>(0);
   const [newKm, setNewKm] = React.useState<number>(0);
 
   // Sync logs with Firestore
   React.useEffect(() => {
-    // Note: Assuming maintenance log should be synced per user
-    // For this example, using a global user_data/maintenance_logs
     const docRef = doc(db, "user_data", "maintenance_logs");
     
-    const unsubscribe = onSnapshot(docRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        if (data.logs && JSON.stringify(data.logs) !== JSON.stringify(logs)) {
-          isSyncingRef.current = true;
-          setLogs(data.logs);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.logs) {
+          const sanitized = sanitizeMaintenanceLogs(data.logs);
+          setLogs(sanitized);
+          try {
+            localStorage.setItem('camper_maintenance_logs', JSON.stringify(sanitized));
+          } catch (e) {}
         }
+      } else {
+        setDoc(docRef, { logs: DEFAULT_LOGS }, { merge: true }).catch(() => {});
       }
       setLoadedFromFirestore(true);
     }, (error) => {
@@ -113,46 +143,35 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
     return unsubscribe;
   }, []);
 
-  const saveLogsToFirestore = (newLogs: MaintenanceLog[]) => {
-    // Break circular update: if this call is initiated by a sync, don't write back to cloud
-    if (isSyncingRef.current) {
-        isSyncingRef.current = false;
-        return;
-    }
-
-    const docRef = doc(db, "user_data", "maintenance_logs");
-    // Sanitize the object to remove any 'undefined' properties which are unsupported by Firestore
-    const cleanedLogs = JSON.parse(JSON.stringify(newLogs));
-    setDoc(docRef, { logs: cleanedLogs }, { merge: true });
-
-    // Also sync to Family Crew
-    if (currentCrew && isModuleSynced('maintenance')) {
-      syncCrewSection('maintenance', cleanedLogs).catch(() => {});
-    }
-  };
-
   React.useEffect(() => {
-    if (!loadedFromFirestore) return; // Prevent overwriting cloud data on initial load
-    saveLogsToFirestore(logs);
+    if (!loadedFromFirestore) return;
+    const docRef = doc(db, "user_data", "maintenance_logs");
+    setDoc(docRef, { logs }, { merge: true }).catch(() => {});
+    try {
+      localStorage.setItem('camper_maintenance_logs', JSON.stringify(logs));
+    } catch (e) {}
   }, [logs, loadedFromFirestore]);
 
-  // Adjust interactive Sector humidity simulation to show real-time feedback
-  const handleSectorHumiditySimulate = (id: string, val: number) => {
-    setSectors(prev => prev.map(sec => {
-      if (sec.id === id) {
-        return { ...sec, value: val, lastChecked: new Date().toISOString().split('T')[0] };
-      }
-      return sec;
-    }));
+
+  // Sync to Family Crew
+  const syncToFamilyCrew = (newLogs: MaintenanceLog[]) => {
+    if (currentCrew && isModuleSynced('maintenance')) {
+      syncCrewSection('maintenance', newLogs).catch(() => {});
+    }
   };
 
+
   const handleToggleLogCompleted = (id: string) => {
-    setLogs(prev => prev.map(log => {
-      if (log.id === id) {
-        return { ...log, completed: !log.completed };
-      }
-      return log;
-    }));
+    setLogs(prev => {
+      const nextLogs = prev.map(log => {
+        if (log.id === id) {
+          return { ...log, completed: !log.completed };
+        }
+        return log;
+      });
+      syncToFamilyCrew(nextLogs);
+      return nextLogs;
+    });
   };
 
   const handleUpdateLogDate = (id: string, newDate: string) => {
@@ -204,7 +223,11 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
       completed: false
     };
 
-    setLogs(prev => [newLog, ...prev]);
+    setLogs(prev => {
+        const nextLogs = [newLog, ...prev];
+        syncToFamilyCrew(nextLogs);
+        return nextLogs;
+    });
     setNewTitle('');
     setNewDesc('');
     setNewCost(0);
@@ -215,10 +238,16 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   };
 
   const handleResetToDefault = () => {
-    if (confirm('Sei sicuro di voler ripristinare la cronologia manutenzioni standard?')) {
+    if (confirm('Sei sicuro di voler ripristinare la cronologia manutenzioni standard? Attenzione: sovrascriverà i dati salvati.')) {
+      try {
+        localStorage.removeItem('camper_maintenance_logs');
+      } catch (e) {}
       setLogs(DEFAULT_LOGS);
+      if (currentCrew && isModuleSynced('maintenance')) {
+        syncCrewSection('maintenance', DEFAULT_LOGS).catch(() => {});
+      }
       window.dispatchEvent(new CustomEvent('show-toast', {
-        detail: { message: '🔄 Cronologia manutenzione ripristinata ai valori standard.' }
+        detail: { message: '🔄 Cronologia manutenzione ripristinata ai valori standard!' }
       }));
     }
   };
@@ -227,32 +256,6 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const totalCompletedCount = logs.filter(l => l.completed).length;
   const totalPendingCount = logs.filter(l => !l.completed).length;
   const totalInvestment = logs.reduce((sum, current) => sum + (current.cost || 0), 0);
-
-  // Sector Leakage diagnostic risk mapping
-  // Healthy: < 15% humidity
-  // Watchout: 15% - 20%
-  // Danger of Wood rot (Infiltrazione attiva): > 20%
-  const getSectorRiskStatus = (val: number) => {
-    if (val > 20) {
-      return {
-        label: 'PERICOLO INFILTRAZIONE 🚨',
-        color: 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-900',
-        desc: 'Umidità critica! Alto rischio di marcire delle traverse in legno strutturali del camper. Ispezionare subito le sigillature esterne o la mansarda.'
-      };
-    }
-    if (val >= 16) {
-      return {
-        label: 'ATTENZIONE / SOSPETTO ⚠️',
-        color: 'text-amber-850 dark:text-amber-300 bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-900',
-        desc: 'Umidità moderatamente elevata. Potrebbe trattarsi di condensa o di un microtrafilamento iniziale. Tenere sotto controllo.'
-      };
-    }
-    return {
-      label: 'CONFORME / ASCIUTTO ✓',
-      color: 'text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950 border-emerald-100 dark:border-emerald-900',
-      desc: 'Struttura perfettamente sana. Legno asciutto e nessuna infiltrazione rilevata.'
-    };
-  };
 
   return (
     <div className="space-y-6 font-sans">
@@ -267,14 +270,14 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
           <div className="space-y-1">
             <span className="text-[10px] uppercase font-black tracking-widest bg-amber-500/20 text-yellow-300 border border-yellow-500/30 px-2.5 py-1 rounded-full inline-block">
-              Integrità Strutturale & Sigillature
+              Registrazione lavori fatti e spese sostenute
             </span>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
               <Wrench className="w-6 h-6 text-yellow-300" />
-              Registro Manutenzione Cellula & Antisgocciolo
+              Registro lavori fatti
             </h2>
             <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
-              Previeni le infiltrazioni (il nemico numero uno del camperista!) e controlla gli impianti domestici di rinfresco, riscaldamento e idraulici con tabelle di controllo e l’igrometro digitale virtuale.
+              Previeni le infiltrazioni (il nemico numero uno del camperista!) e controlla gli impianti domestici di rinfresco, riscaldamento e idraulici con tabelle di controllo e l’igrometro digitale virtuale, registra i lavori effettuati su tutto il mezzo e la spesa sostenuta.
             </p>
           </div>
 
@@ -323,7 +326,7 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
             
             <div className="border-b border-stone-100 dark:border-slate-700 pb-3 flex justify-between items-center">
               <div>
-                <h3 className="font-black text-slate-800 dark:text-slate-100 text-sm uppercase tracking-wider">Cronologia Manutentiva ed Impiantistica</h3>
+                <h3 className="font-black text-slate-800 dark:text-slate-100 text-sm uppercase tracking-wider">Cronologia Registro lavori fatti ed Impiantistica</h3>
                 <p className="text-[11px] text-slate-400 font-medium">Batti spunta sulle attività completate per tenere aggiornato l'algoritmo di sicurezza</p>
               </div>
             </div>
@@ -334,18 +337,18 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
                 let badgeColor = 'bg-stone-50 text-slate-600 border-stone-100';
                 let iconEl = <Wrench className="w-3.5 h-3.5 text-slate-600" />;
 
-                if (log.category === 'infiltrazioni') {
-                  badgeColor = 'bg-red-50 text-red-700 border-red-150';
-                  iconEl = <Droplet className="w-3.5 h-3.5 text-red-500" />;
-                } else if (log.category === 'gas') {
-                  badgeColor = 'bg-orange-50 text-orange-700 border-orange-150';
-                  iconEl = <Flame className="w-3.5 h-3.5 text-orange-500" />;
-                } else if (log.category === 'acqua') {
+                if (log.category === 'Estetica') {
+                  badgeColor = 'bg-pink-50 text-pink-700 border-pink-150';
+                  iconEl = <Droplet className="w-3.5 h-3.5 text-pink-500" />;
+                } else if (log.category === 'Installazioni') {
                   badgeColor = 'bg-blue-50 text-blue-700 border-blue-150';
-                  iconEl = <Droplet className="w-3.5 h-3.5 text-blue-500" />;
-                } else if (log.category === 'elettrico') {
-                  badgeColor = 'bg-yellow-50 text-yellow-800 border-yellow-200';
-                  iconEl = <Zap className="w-3.5 h-3.5 text-yellow-600" />;
+                  iconEl = <Zap className="w-3.5 h-3.5 text-blue-500" />;
+                } else if (log.category === 'Riparazioni') {
+                  badgeColor = 'bg-orange-50 text-orange-700 border-orange-150';
+                  iconEl = <Hammer className="w-3.5 h-3.5 text-orange-500" />;
+                } else if (log.category === 'Pulizie') {
+                  badgeColor = 'bg-cyan-50 text-cyan-800 border-cyan-200';
+                  iconEl = <Droplet className="w-3.5 h-3.5 text-cyan-600" />;
                 }
 
                 return (
@@ -442,52 +445,7 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         {/* RIGHT COLUMN (5/12) - Humidity Control & Add New entry form */}
         <div className="lg:col-span-5 space-y-6">
           
-          {/* Section A: Hygrometer Simulation Control */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm space-y-4">
-            
-            <div className="flex items-start gap-1.5">
-              <Droplet className="w-5 h-5 text-blue-500 shrink-0" />
-              <div>
-                <h3 className="font-black text-slate-800 dark:text-slate-100 text-sm uppercase tracking-wider">Igrometro di Cella Integrato</h3>
-                <p className="text-[11px] text-slate-400 dark:text-slate-400 font-medium leading-relaxed">Seleziona e simula i livelli di umidità negli angoli sensibili del camper per valutare infiltrazioni attive.</p>
-              </div>
-            </div>
 
-            {/* Simulated sectors list */}
-            <div className="space-y-4">
-              {sectors.map(sec => {
-                const diag = getSectorRiskStatus(sec.value);
-                return (
-                  <div key={sec.id} className="p-3 bg-stone-50 dark:bg-slate-900 border border-stone-200/50 dark:border-slate-700 rounded-xl space-y-2">
-                    <div className="flex justify-between items-baseline">
-                      <span className="text-xs font-black text-slate-700 dark:text-slate-100 block pr-2 truncate">{sec.name}</span>
-                      <span className="text-xs font-mono font-black text-slate-900 dark:text-slate-200 shrink-0">{sec.value}% RF</span>
-                    </div>
-
-                    {/* Simple Slider to change simulated value on the fly */}
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="range"
-                        min="5"
-                        max="35"
-                        step="1"
-                        value={sec.value}
-                        onChange={(e) => handleSectorHumiditySimulate(sec.id, parseInt(e.target.value))}
-                        className="w-full accent-[#3E4A35] h-1 bg-slate-200 rounded-lg cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Diagnostic read out */}
-                    <div className={`p-2.5 rounded-lg border text-[10px] leading-relaxed transition-all ${diag.color}`}>
-                      <span className="font-black uppercase tracking-wider block mb-0.5">{diag.label}</span>
-                      <span className="opacity-95 font-medium block">{diag.desc}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-          </div>
 
           {/* Section B: Add Log Entry Form */}
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
@@ -529,11 +487,11 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
                     onChange={(e) => setNewCat(e.target.value as any)}
                     className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35] cursor-pointer"
                   >
-                    <option value="infiltrazioni">Antisgocciolo / Sigillature</option>
-                    <option value="gas">GPL & Riscaldamento</option>
-                    <option value="acqua">Impianto Idrico & Pompe</option>
-                    <option value="elettrico">Batterie, 12V & Solare</option>
-                    <option value="generica">Generico Manutenzione</option>
+                    <option value="Estetica">Estetica</option>
+                    <option value="Installazioni">Installazioni</option>
+                    <option value="Riparazioni">Riparazioni</option>
+                    <option value="Pulizie">Pulizie</option>
+                    <option value="Generica">Generica</option>
                   </select>
                 </div>
               </div>

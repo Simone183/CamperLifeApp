@@ -8,10 +8,29 @@ import { useAppSettings } from '../useAppSettings';
 import { getCurrencySymbol, getDistanceUnit } from '../unit-helpers';
 import { Deadline } from '../types';
 import { Calendar, CheckCircle2, AlertTriangle, Clock, Plus, Trash2, ShieldCheck, DollarSign } from 'lucide-react';
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
+
 
 interface DeadlinesTabProps {
   deadlines?: Deadline[];
   setDeadlines?: React.Dispatch<React.SetStateAction<Deadline[]>>;
+}
+
+import { INITIAL_DEADLINES } from '../data/mockData';
+
+// ... (rest of imports)
+
+export function sanitizeDeadlines(items: Deadline[]): Deadline[] {
+  if (!Array.isArray(items) || items.length === 0) return INITIAL_DEADLINES;
+  return items.map(item => {
+    if (!item) return item;
+    let title = item.title || "";
+    if (title.toLowerCase().includes("fiat ducato")) {
+      title = "Sostituzione Filtri e Tagliando";
+    }
+    return { ...item, title };
+  });
 }
 
 export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: propSetDeadlines }: DeadlinesTabProps = {}) {
@@ -21,18 +40,48 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
       const saved = localStorage.getItem("camper_deadlines");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeDeadlines(parsed);
       }
     } catch (e) {
       console.error("Error reading camper_deadlines:", e);
     }
-    return [];
+    return INITIAL_DEADLINES;
   });
 
-  const deadlines = propDeadlines !== undefined ? propDeadlines : localDeadlines;
+  const deadlines = sanitizeDeadlines(propDeadlines !== undefined ? propDeadlines : localDeadlines);
   const setDeadlines = propSetDeadlines !== undefined ? propSetDeadlines : setLocalDeadlines;
   const [filter, setFilter] = React.useState<'all' | 'pending' | 'urgent' | 'completed'>('all');
   const [showAddForm, setShowAddForm] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [loadedFromFirestore, setLoadedFromFirestore] = React.useState(false);
+
+  // Firestore sync
+  React.useEffect(() => {
+    const docRef = doc(db, "user_data", "deadlines");
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.deadlines) {
+          const sanitized = sanitizeDeadlines(data.deadlines);
+          setDeadlines(sanitized);
+          if (JSON.stringify(sanitized) !== JSON.stringify(data.deadlines)) {
+            setDoc(docRef, { deadlines: sanitized }, { merge: true }).catch(() => {});
+          }
+        }
+      }
+      setLoadedFromFirestore(true);
+    });
+    return unsubscribe;
+  }, [setDeadlines]);
+
+  React.useEffect(() => {
+    if (!loadedFromFirestore) return;
+    const docRef = doc(db, "user_data", "deadlines");
+    setDoc(docRef, { deadlines }, { merge: true });
+    try {
+      localStorage.setItem("camper_deadlines", JSON.stringify(deadlines));
+    } catch (e) {}
+  }, [deadlines, loadedFromFirestore]);
 
   // New item form state
   const [title, setTitle] = React.useState('');
@@ -63,23 +112,49 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
     setDeadlines(deadlines.filter(d => d.id !== id));
   };
 
+  const handleEdit = (item: Deadline) => {
+    setEditingId(item.id);
+    setTitle(item.title);
+    setCategory(item.category);
+    setDueDate(item.dueDate);
+    setNotes(item.notes || '');
+    setPrice(item.price?.toString() || '');
+    setKm(item.km?.toString() || '');
+    setKmThreshold(item.kmThreshold?.toString() || '');
+    setShowAddForm(true);
+  };
+
   const handleAddDeadline = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !dueDate) return;
 
-    const newItem: Deadline = {
-      id: `d_${Date.now()}`,
-      title: title.trim(),
-      category,
-      dueDate,
-      done: false,
-      notes: notes.trim() || undefined,
-      price: price ? parseFloat(price) : undefined,
-      km: km ? parseFloat(km) : undefined,
-      kmThreshold: kmThreshold ? parseFloat(kmThreshold) : undefined,
-    };
-
-    setDeadlines([...deadlines, newItem]);
+    if (editingId) {
+      setDeadlines(deadlines.map(d => d.id === editingId ? {
+        ...d,
+        title: title.trim(),
+        category,
+        dueDate,
+        notes: notes.trim() || undefined,
+        price: price ? parseFloat(price) : undefined,
+        km: km ? parseFloat(km) : undefined,
+        kmThreshold: kmThreshold ? parseFloat(kmThreshold) : undefined,
+      } : d));
+      setEditingId(null);
+    } else {
+      const newItem: Deadline = {
+        id: `d_${Date.now()}`,
+        title: title.trim(),
+        category,
+        dueDate,
+        done: false,
+        notes: notes.trim() || undefined,
+        price: price ? parseFloat(price) : undefined,
+        km: km ? parseFloat(km) : undefined,
+        kmThreshold: kmThreshold ? parseFloat(kmThreshold) : undefined,
+      };
+      setDeadlines([...deadlines, newItem]);
+    }
+    
     setTitle('');
     setDueDate('');
     setNotes('');
@@ -88,6 +163,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
     setKmThreshold('');
     setShowAddForm(false);
   };
+
 
   // Helper to calculate days remaining
   const getDaysRemaining = (dateStr: string) => {
@@ -119,7 +195,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
       case 'Revisione': return 'bg-[#A45C40]/15 text-[#A45C40] hover:bg-[#A45C40]/25';
       case 'Assicurazione': return 'bg-[#5A6B4E]/15 text-[#3E4A35] hover:bg-[#5A6B4E]/25';
       case 'Bollo': return 'bg-[#F2EFE9] dark:bg-slate-700 text-[#2D2926] dark:text-slate-100 border border-[#2D2926]/10 dark:border-slate-600 hover:bg-[#F2EFE9]/90 dark:hover:bg-slate-600';
-      case 'Bombole Gas': return 'bg-[#A45C40]/20 text-[#A45C40] hover:bg-[#A45C40]/30';
+      case 'Tubo gas': return 'bg-[#A45C40]/20 text-[#A45C40] hover:bg-[#A45C40]/30';
       default: return 'bg-[#3E4A35]/15 text-[#3E4A35] hover:bg-[#3E4A35]/25';
     }
   };
@@ -218,12 +294,36 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
           </div>
 
           <button
+            onClick={() => {
+              if (confirm('Sei sicuro di voler ripristinare le scadenze standard? Attenzione: questa azione sovrascriverà le modifiche locali e sul Cloud.')) {
+                try {
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.includes('camper_deadlines')) {
+                      localStorage.removeItem(k);
+                    }
+                  }
+                } catch (e) {}
+                const docRef = doc(db, "user_data", "deadlines");
+                setDoc(docRef, { deadlines: INITIAL_DEADLINES }, { merge: false }).catch(() => {});
+                setDeadlines(INITIAL_DEADLINES);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                  detail: { message: '🔄 Scadenze ripristinate con successo ai valori standard!' }
+                }));
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
+          >
+            Ripristina Default
+          </button>
+          <button
             onClick={() => setShowAddForm(!showAddForm)}
             className="flex items-center gap-2 px-4 py-2 bg-[#3E4A35] dark:bg-emerald-700 hover:bg-[#5A6B4E] dark:hover:bg-emerald-600 active:bg-[#3E4A35] text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Nuova Scadenza
           </button>
+
         </div>
 
         {/* Add Form Container */}
@@ -256,7 +356,15 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
                   <option value="Revisione">Revisione</option>
                   <option value="Assicurazione">Assicurazione</option>
                   <option value="Bollo">Bollo</option>
-                  <option value="Bombole Gas">Bombole Gas</option>
+                  <option value="Tubo gas">Tubo gas</option>
+                  <option value="Controllo infiltrazioni e sigillature">Controllo infiltrazioni e sigillature</option>
+                  <option value="Sostituzione Filtri e Tagliando">Sostituzione Filtri e Tagliando</option>
+                  <option value="Sostituzione Pneumatici">Sostituzione Pneumatici</option>
+                  <option value="Kit frizione">Kit frizione</option>
+                  <option value="Kit distribuzione completa">Kit distribuzione completa</option>
+                  <option value="Pulizia riscaldamento cellula">Pulizia riscaldamento cellula</option>
+                  <option value="Pulizia bruciatore frigo">Pulizia bruciatore frigo</option>
+                  <option value="Controllo guarnizioni oblo e finestre">Controllo guarnizioni oblo e finestre</option>
                 </select>
               </div>
               <div>
@@ -436,12 +544,20 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
                         />
                       </div>
                       <button
+                        onClick={() => handleEdit(item)}
+                        className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
+                        title="Modifica"
+                      >
+                        <Clock className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => removeDeadline(item.id)}
-                        className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                        className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
                         title="Elimina"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+
                     </div>
                   </div>
                 </div>

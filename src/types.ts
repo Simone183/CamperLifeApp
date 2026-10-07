@@ -358,7 +358,7 @@ export interface OSMObstacle {
 export interface Deadline {
   id: string;
   title: string;
-  category: 'Manutenzione' | 'Revisione' | 'Assicurazione' | 'Bollo' | 'Bombole Gas';
+  category: 'Manutenzione' | 'Revisione' | 'Assicurazione' | 'Bollo' | 'Tubo gas' | 'Controllo infiltrazioni e sigillature' | 'Sostituzione Filtri e Tagliando' | 'Sostituzione Pneumatici' | 'Kit frizione' | 'Kit distribuzione completa' | 'Pulizia riscaldamento cellula' | 'Pulizia bruciatore frigo' | 'Controllo guarnizioni oblo e finestre';
   dueDate: string;
   done: boolean;
   notes?: string;

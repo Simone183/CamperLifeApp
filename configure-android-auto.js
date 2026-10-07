@@ -716,7 +716,8 @@ public class MainMapScreen extends Screen implements LocationListener {
                 .addText("Tocca per ricentrare la mappa sul camper")
                 .setOnClickListener(() -> {
                     invalidate();
-                });
+                })
+                .setBrowsable(true);
 
         Distance distance = Distance.create(0.0, Distance.UNIT_KILOMETERS);
         SpannableString distSpan = new SpannableString("0.0 km");

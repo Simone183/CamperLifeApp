@@ -17,7 +17,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { Deadline } from '../types';
-import { MaintenanceLog } from './MaintenanceLogTab';
+import { MaintenanceLog, sanitizeMaintenanceLogs } from './MaintenanceLogTab';
 
 interface WorkLogTabProps {
   deadlines: Deadline[];
@@ -37,12 +37,10 @@ interface UnifiedWorkItem {
 }
 
 const DEFAULT_MAINTENANCE_LOGS: MaintenanceLog[] = [
-  { id: 'm1', title: 'Test di Umidità / Infiltrazioni Parentale', date: '2026-04-10', category: 'infiltrazioni', description: 'Controllo con igrometro su angoli dinette, mansarda e doccia. Valori rilevati uniformi tra 10% e 14%. Tutto conforme.', cost: 0, completed: true },
-  { id: 'm2', title: 'Trattamento Igienizzante Serbatoio Grige', date: '2026-05-18', category: 'acqua', description: 'Pulizia chimica con enzimi antiodore per eliminare depositi grassi e saponi accumulati.', cost: 15, completed: true },
-  { id: 'm3', title: 'Sostituzione Filtro Regolatore Gas Truma MonoControl', date: '2026-06-01', category: 'gas', description: 'Controllo pressione e montaggio nuovo filtro protettivo per olii pesanti del GPL.', cost: 38, completed: true },
-  { id: 'm4', title: 'Sanificazione Serbatoio Acqua Chiara con Ioni D\'argento', date: '2026-06-15', category: 'acqua', description: 'Pulizia completa con agente a base di cloro e inserimento della rete agli ioni d\'argento per conservazione a lungo termine.', cost: 24, completed: true },
-  { id: 'm5', title: 'Verifica Sigillature Tetto & Oblo', date: '2026-07-15', category: 'infiltrazioni', description: 'Ispezione esterna del sigillante siliconico perimetrale e rimessa a nuovo dei punti usurati con Terostat.', cost: 0, completed: false },
-  { id: 'm6', title: 'Controllo Tensione e capacità della piastra solare', date: '2026-08-01', category: 'elettrico', description: 'Rimozione polvere dai pannelli solari anteriori e misurazione dell\'amperaggio di ricarica in uscita dal regolatore MPPT.', cost: 0, completed: false }
+  { id: 'm1', title: 'Lavaggio esterno completo', date: '2026-09-01', category: 'Generica', description: 'Lavaggio profondo della carrozzeria esterna.', cost: 30, completed: true },
+  { id: 'm2', title: 'Lucidatura carrozzeria', date: '2026-09-05', category: 'Estetica', description: 'Trattamento protettivo con cera lucidante.', cost: 50, completed: true },
+  { id: 'm3', title: 'Grafitaggio sottoscocca', date: '2026-09-10', category: 'Riparazioni', description: 'Applicazione protettivo grafitato per sottoscocca.', cost: 70, completed: true },
+  { id: 'm4', title: 'Sostituzione luci interne', date: '2026-09-20', category: 'Installazioni', description: 'Conversione illuminazione cellula a basso consumo.', cost: 40, completed: true }
 ];
 
 export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
@@ -51,15 +49,18 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
   const [maintenanceLogs, setMaintenanceLogs] = React.useState<MaintenanceLog[]>(() => {
     const saved = localStorage.getItem('camper_maintenance_logs');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { return DEFAULT_MAINTENANCE_LOGS; }
+      try {
+        return sanitizeMaintenanceLogs(JSON.parse(saved));
+      } catch (e) {}
     }
     return DEFAULT_MAINTENANCE_LOGS;
   });
 
   // State to refresh local storage when changed
   const saveMaintenanceLogs = (logsList: MaintenanceLog[]) => {
-    setMaintenanceLogs(logsList);
-    localStorage.setItem('camper_maintenance_logs', JSON.stringify(logsList));
+    const clean = sanitizeMaintenanceLogs(logsList);
+    setMaintenanceLogs(clean);
+    localStorage.setItem('camper_maintenance_logs', JSON.stringify(clean));
     // Trigger storage event so other tabs sync up
     window.dispatchEvent(new Event('storage'));
   };
@@ -79,7 +80,7 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
   const [newKm, setNewKm] = React.useState('');
   const [newNotes, setNewNotes] = React.useState('');
   const [newDeadlineCategory, setNewDeadlineCategory] = React.useState<Deadline['category']>('Manutenzione');
-  const [newMaintCategory, setNewMaintCategory] = React.useState<MaintenanceLog['category']>('generica');
+  const [newMaintCategory, setNewMaintCategory] = React.useState<MaintenanceLog['category']>('Generica');
 
   // Unified items
   const mappedDeadlines: UnifiedWorkItem[] = deadlines.map(d => ({
@@ -318,7 +319,7 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
                   className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 outline-none focus:border-[#3E4A35] rounded-xl bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-300"
                 >
                   <option value="deadlines">Scadenziario di Bordo (Revisioni, Bollo, Gas, ecc.)</option>
-                  <option value="maintenance">Registro Manutenzione Cellula (Idrico, Infiltrazioni, ecc.)</option>
+                  <option value="maintenance">Registro lavori fatti (Idrico, Infiltrazioni, ecc.)</option>
                 </select>
               </div>
 
@@ -358,7 +359,15 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
                       <option value="Revisione">Revisione</option>
                       <option value="Assicurazione">Assicurazione</option>
                       <option value="Bollo">Bollo</option>
-                      <option value="Bombole Gas">Bombole Gas</option>
+                      <option value="Tubo gas">Tubo gas</option>
+                      <option value="Controllo infiltrazioni e sigillature">Controllo infiltrazioni e sigillature</option>
+                      <option value="Sostituzione Filtri e Tagliando">Sostituzione Filtri e Tagliando</option>
+                      <option value="Sostituzione Pneumatici">Sostituzione Pneumatici</option>
+                      <option value="Kit frizione">Kit frizione</option>
+                      <option value="Kit distribuzione completa">Kit distribuzione completa</option>
+                      <option value="Pulizia riscaldamento cellula">Pulizia riscaldamento cellula</option>
+                      <option value="Pulizia bruciatore frigo">Pulizia bruciatore frigo</option>
+                      <option value="Controllo guarnizioni oblo e finestre">Controllo guarnizioni oblo e finestre</option>
                     </select>
                   </>
                 ) : (
@@ -369,11 +378,11 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
                       onChange={(e) => setNewMaintCategory(e.target.value as any)}
                       className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 outline-none focus:border-[#3E4A35] rounded-xl bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-300"
                     >
-                      <option value="infiltrazioni">Antisgocciolo / Sigillature</option>
-                      <option value="gas">GPL & Riscaldamento</option>
-                      <option value="acqua">Impianto Idrico & Pompe</option>
-                      <option value="elettrico">Batterie, 12V & Solare</option>
-                      <option value="generica">Generico Manutenzione</option>
+                      <option value="Estetica">Estetica</option>
+                      <option value="Installazioni">Installazioni</option>
+                      <option value="Riparazioni">Riparazioni</option>
+                      <option value="Pulizie">Pulizie</option>
+                      <option value="Generica">Generica</option>
                     </select>
                   </>
                 )}

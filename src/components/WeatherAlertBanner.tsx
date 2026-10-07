@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   AlertTriangle, ShieldAlert, X, ChevronRight, 
   MapPin, Check, Volume2, ShieldCheck, Clock, ThumbsUp
@@ -7,6 +7,7 @@ import { CommunityWeatherAlert, MeteoAlarmWarning } from '../types';
 import { communityWeatherAlertsService } from '../lib/communityWeatherAlertsService';
 import { getMeteoAlarmAlerts } from '../lib/weatherService';
 import { playAlertSound } from '../utils/soundHelper';
+import { sendWeatherAlertPushNotification } from '../utils/localNotifications';
 
 interface WeatherAlertBannerProps {
   userLocation: { lat: number; lng: number } | null;
@@ -23,8 +24,22 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
 }) => {
   const [communityAlerts, setCommunityAlerts] = useState<CommunityWeatherAlert[]>([]);
   const [meteoAlarmWarnings, setMeteoAlarmWarnings] = useState<MeteoAlarmWarning[]>([]);
-  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  
+  // Persist dismissed alert IDs in sessionStorage & localStorage so dismissing lasts and doesn't re-open
+  const [dismissedIds, setDismissedIds] = useState<string[]>(() => {
+    try {
+      const savedSession = sessionStorage.getItem('camper_dismissed_weather_alerts');
+      const savedLocal = localStorage.getItem('camper_dismissed_weather_alerts');
+      const parsedSession = savedSession ? JSON.parse(savedSession) : [];
+      const parsedLocal = savedLocal ? JSON.parse(savedLocal) : [];
+      return Array.from(new Set([...(Array.isArray(parsedSession) ? parsedSession : []), ...(Array.isArray(parsedLocal) ? parsedLocal : [])]));
+    } catch (e) {
+      return [];
+    }
+  });
+  
   const [confirmedIds, setConfirmedIds] = useState<string[]>([]);
+  const pushedAlertIdsRef = useRef<Set<string>>(new Set());
 
   // Subscribe to community alerts
   useEffect(() => {
@@ -34,14 +49,18 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
     return unsub;
   }, []);
 
+  // Rounded GPS coordinates to avoid re-fetching on minor GPS jitter
+  const roundedLat = userLocation ? Math.round(userLocation.lat * 100) / 100 : null;
+  const roundedLng = userLocation ? Math.round(userLocation.lng * 100) / 100 : null;
+
   // Fetch MeteoAlarm official warnings periodically for user coordinates
   useEffect(() => {
-    if (!userLocation) return;
+    if (roundedLat === null || roundedLng === null) return;
     let active = true;
 
     const checkMeteoAlarm = async () => {
       try {
-        const warnings = await getMeteoAlarmAlerts(userLocation.lat, userLocation.lng);
+        const warnings = await getMeteoAlarmAlerts(roundedLat, roundedLng);
         if (active) setMeteoAlarmWarnings(warnings);
       } catch (e) {}
     };
@@ -52,13 +71,27 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
       active = false;
       clearInterval(interval);
     };
-  }, [userLocation?.lat, userLocation?.lng]);
+  }, [roundedLat, roundedLng]);
 
   // Filter alerts within 30 km
   const nearbyAlerts = useMemo(() => {
     if (!userLocation) return [];
     return communityWeatherAlertsService.getNearbyAlerts(userLocation.lat, userLocation.lng, 30);
   }, [userLocation, communityAlerts]);
+
+  // Dismiss all active alerts when user clicks X to prevent re-opening other warnings from same batch
+  const handleDismissAllActive = (currentId?: string) => {
+    const idsToDismiss = new Set<string>(dismissedIds);
+    if (currentId) idsToDismiss.add(currentId);
+    nearbyAlerts.forEach(a => idsToDismiss.add(a.id));
+    meteoAlarmWarnings.forEach(w => idsToDismiss.add(w.id));
+    const updated = Array.from(idsToDismiss);
+    setDismissedIds(updated);
+    try {
+      sessionStorage.setItem('camper_dismissed_weather_alerts', JSON.stringify(updated));
+      localStorage.setItem('camper_dismissed_weather_alerts', JSON.stringify(updated));
+    } catch (e) {}
+  };
 
   // Find most critical active alert not dismissed
   const activeAlert = useMemo(() => {
@@ -71,14 +104,34 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
     return null;
   }, [nearbyAlerts, meteoAlarmWarnings, dismissedIds]);
 
-  // Play sound when a new severe alert appears
+  // Send Android / Web push notification & play sound when a new severe alert appears
   useEffect(() => {
-    if (activeAlert && activeAlert.type === 'community') {
+    if (!activeAlert) return;
+
+    const isCommunity = activeAlert.type === 'community';
+    const commData = isCommunity ? (activeAlert.data as CommunityWeatherAlert) : null;
+    const meteoData = !isCommunity ? (activeAlert.data as MeteoAlarmWarning) : null;
+    const alertId = isCommunity ? commData?.id : meteoData?.id;
+
+    if (alertId && !pushedAlertIdsRef.current.has(alertId) && !dismissedIds.includes(alertId)) {
+      pushedAlertIdsRef.current.add(alertId);
+
+      const title = isCommunity 
+        ? (commData?.title || 'Segnalazione Allerta Meteo') 
+        : (meteoData?.headline || 'Allerta MeteoALARM');
+      const body = isCommunity 
+        ? (commData?.description || 'Allerta segnalata nelle tue vicinanze entro 30 km.') 
+        : (meteoData?.description || 'Presta attenzione ai pericoli meteo nella tua zona.');
+
+      // Send Android native & Web push notification
+      sendWeatherAlertPushNotification(title, body, alertId).catch(() => {});
+
+      // Play alert sound
       try {
         playAlertSound();
       } catch (e) {}
     }
-  }, [activeAlert?.data?.id]);
+  }, [activeAlert, dismissedIds]);
 
   if (!activeAlert) return null;
 
@@ -100,8 +153,11 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
   const isWind = commData?.type === 'wind' || meteoData?.event?.toLowerCase().includes('vento');
 
   return (
-    <div className="fixed top-14 left-0 right-0 z-40 px-3 sm:px-4 pointer-events-none animate-slide-down">
-      <div className="max-w-3xl mx-auto pointer-events-auto bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 shadow-2xl border-2 border-white/40 backdrop-blur-md">
+    <div 
+      className="fixed top-12 sm:top-14 left-0 right-0 px-3 sm:px-4 pointer-events-none animate-slide-down"
+      style={{ zIndex: 9999999 }}
+    >
+      <div className="max-w-3xl mx-auto pointer-events-auto bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 shadow-2xl border-2 border-white/60 backdrop-blur-md">
         <div className="flex items-start justify-between gap-3">
           {/* Icon */}
           <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white/20 border border-white/40 flex items-center justify-center shrink-0 text-2xl shadow-md">
@@ -188,10 +244,10 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
             type="button"
             onClick={() => {
               const id = isCommunity ? commData?.id : meteoData?.id;
-              if (id) setDismissedIds(prev => [...prev, id]);
+              handleDismissAllActive(id);
             }}
             className="p-1.5 rounded-full text-white/80 hover:text-white hover:bg-white/20 transition-colors cursor-pointer shrink-0"
-            title="Ignora avviso per ora"
+            title="Chiudi avviso meteo"
           >
             <X className="w-4 h-4" />
           </button>

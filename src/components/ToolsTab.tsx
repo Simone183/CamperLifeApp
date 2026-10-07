@@ -3,8 +3,38 @@ import { VehicleSpecs, FuelLog } from '../types';
 import {
   Truck, CheckSquare, Fuel, Flame, Battery, Shield, AlertCircle, Plus,
   Calculator, ChevronRight, Compass, Wrench, Settings, MapPin, Download,
-  Radio, Wifi, Smartphone, LogOut, HelpCircle, FileText, Lock, X
+  Radio, Wifi, Smartphone, LogOut, HelpCircle, FileText, Lock, X, Droplet
 } from 'lucide-react';
+
+// Interface and helper for hygrometer
+interface SectorLeakage {
+  id: string;
+  name: string;
+  value: number; // humidity percentage (e.g. 5% - 40%)
+  lastChecked: string;
+}
+
+const getSectorRiskStatus = (val: number) => {
+  if (val > 20) {
+    return {
+      label: 'PERICOLO INFILTRAZIONE 🚨',
+      color: 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-900',
+      desc: 'Umidità critica! Alto rischio di marcire delle traverse in legno strutturali del camper. Ispezionare subito le sigillature esterne o la mansarda.'
+    };
+  }
+  if (val >= 16) {
+    return {
+      label: 'ATTENZIONE / SOSPETTO ⚠️',
+      color: 'text-amber-850 dark:text-amber-300 bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-900',
+      desc: 'Umidità moderatamente elevata. Potrebbe trattarsi di condensa o di un microtrafilamento iniziale. Tenere sotto controllo.'
+    };
+  }
+  return {
+    label: 'CONFORME / ASCIUTTO ✓',
+    color: 'text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950 border-emerald-100 dark:border-emerald-900',
+    desc: 'Struttura perfettamente sana. Legno asciutto e nessuna infiltrazione rilevata.'
+  };
+};
 
 interface ToolsTabProps {
   vehicle: VehicleSpecs;
@@ -21,6 +51,23 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [openModal, setOpenModal] = useState<string | null>(null);
+
+  // Hygrometer state
+  const [sectors, setSectors] = useState<SectorLeakage[]>([
+    { id: 's1', name: 'Angolo Anteriore Sinistro (Mansarda / Cupolino)', value: 12, lastChecked: '2026-06-19' },
+    { id: 's2', name: 'Fiancata Centrale Dinette (Finestra)', value: 11, lastChecked: '2026-06-19' },
+    { id: 's3', name: 'Rivestimento Interno Bagno & Doccia', value: 15, lastChecked: '2026-06-19' },
+    { id: 's4', name: 'Angolo Posteriore Destro (Garage / Sotto-letto)', value: 13, lastChecked: '2026-06-19' },
+  ]);
+
+  const handleSectorHumiditySimulate = (id: string, val: number) => {
+    setSectors(prev => prev.map(sec => {
+      if (sec.id === id) {
+        return { ...sec, value: val, lastChecked: new Date().toISOString().split('T')[0] };
+      }
+      return sec;
+    }));
+  };
 
   // Pre-trip Checklist state
   const [checklist, setChecklist] = useState([
@@ -205,8 +252,8 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
                     <span>📅</span>
                   </div>
                   <div>
-                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Scadenziere di Bordo</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Tagliando, bombole gas, bollo, assicurazione e scadenze impianti.</p>
+                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Scadenziere manutenzioni</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Tagliando, assicurazione, e tutto quello che ha scadenza.</p>
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-400" />
@@ -221,12 +268,52 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
                     <Wrench className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Registro Manutenzione Cellula</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Traccia lavaggi, ispezioni infiltrazioni, bombole e sigillature.</p>
+                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Registro lavori fatti</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Traccia lavaggi, riparazioni e lavori vari che non andrebbero ripetuti.</p>
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-400" />
               </div>
+              
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-300/80 dark:border-slate-800 shadow-xs space-y-4">
+                <div className="flex items-start gap-1.5">
+                  <Droplet className="w-5 h-5 text-blue-500 shrink-0" />
+                  <div>
+                    <h3 className="font-black text-slate-900 dark:text-white text-sm uppercase tracking-wider">Igrometro di cellula integrato</h3>
+                    <p className="text-[11px] text-slate-500 font-medium leading-relaxed">Seleziona e simula i livelli di umidità negli angoli sensibili del camper per valutare infiltrazioni attive.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {sectors.map(sec => {
+                    const diag = getSectorRiskStatus(sec.value);
+                    return (
+                      <div key={sec.id} className="p-3 bg-stone-50 dark:bg-slate-950 border border-stone-200/50 dark:border-slate-800 rounded-xl space-y-2">
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-100 block pr-2 truncate">{sec.name}</span>
+                          <span className="text-xs font-mono font-black text-slate-900 dark:text-slate-200 shrink-0">{sec.value}% RF</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="5"
+                            max="35"
+                            step="1"
+                            value={sec.value}
+                            onChange={(e) => handleSectorHumiditySimulate(sec.id, parseInt(e.target.value))}
+                            className="w-full accent-[#3E4A35] h-1 bg-slate-200 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                        <div className={`p-2.5 rounded-lg border text-[10px] leading-relaxed transition-all ${diag.color}`}>
+                          <span className="font-black uppercase tracking-wider block mb-0.5">{diag.label}</span>
+                          <span className="opacity-95 font-medium block">{diag.desc}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
           </div>
         )}

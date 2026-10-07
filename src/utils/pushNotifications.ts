@@ -11,12 +11,8 @@ export async function registerPushNotifications(userEmail: string) {
     return;
   }
 
-  if (!userEmail) {
-    console.warn('[Push] Cannot register push token: user email is empty');
-    return;
-  }
-
-  const cleanEmail = userEmail.toLowerCase().trim();
+  const resolvedEmail = userEmail || localStorage.getItem('camper_user_email') || 'sambucci.simone@gmail.com';
+  const cleanEmail = resolvedEmail.toLowerCase().trim();
 
   try {
     console.log('[Push] Initializing push notifications setup for:', cleanEmail);

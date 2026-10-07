@@ -97,10 +97,11 @@ export const getMeteoAlarmAlerts = async (lat: number, lng: number): Promise<Met
     }
 
     // 1. ALLERTA GRANDINE (Severe Hail Warning)
+    const dateStr = new Date().toISOString().split('T')[0];
     if (hasHailCodeNext12h || currentCode === 96 || currentCode === 99) {
       const isExtreme = currentCode === 99;
       warnings.push({
-        id: `hail-${Date.now()}`,
+        id: `meteoalarm-hail-${dateStr}`,
         event: 'Rischio Grandine & Temporale Violento',
         headline: isExtreme ? 'Allerta Rossa: Rischio Grandinata Violenta' : 'Allerta Arancione: Possibile Grandine',
         description: 'Presenza di celle temporalesche intense con elevata probabilità di grandine e colpi di vento.',
@@ -121,7 +122,7 @@ export const getMeteoAlarmAlerts = async (lat: number, lng: number): Promise<Met
     if (maxGustNext12h >= 55) {
       const isRed = maxGustNext12h >= 80;
       warnings.push({
-        id: `wind-${Date.now()}`,
+        id: `meteoalarm-wind-${dateStr}`,
         event: 'Raffiche di Vento Forte',
         headline: isRed 
           ? `Allerta Rossa: Raffiche estreme fino a ${Math.round(maxGustNext12h)} km/h` 
@@ -143,7 +144,7 @@ export const getMeteoAlarmAlerts = async (lat: number, lng: number): Promise<Met
     // 3. ALLERTA TEMPORALI & NUBIFRAGI (Heavy Rain / Storms)
     if (hasStormCodeNext12h && !hasHailCodeNext12h) {
       warnings.push({
-        id: `storm-${Date.now()}`,
+        id: `meteoalarm-storm-${dateStr}`,
         event: 'Forti Temporali & Rovesci Intensi',
         headline: 'Allerta Gialla/Arancione: Temporali con Forti Piogge',
         description: 'Precipitazioni a carattere di rovescio o temporale con possibili allagamenti locali.',

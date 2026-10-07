@@ -2,10 +2,13 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PROMO_MESSAGES } from '../data/promoMessages';
 
+const CURRENT_APP_VERSION = '2.4.72';
+
 /**
  * Schedule local notifications to arrive every 2 days on native mobile devices.
- * If force is true or if less than 10 pending notifications remain, it cancels
- * old pending notifications and schedules 50 fresh notifications (one every 48 hours).
+ * Automatically detects Play Store app updates and forces fresh rescheduling.
+ * If force is true, app version changed, or less than 25 pending notifications remain,
+ * it cancels old pending notifications and schedules 50 fresh notifications.
  */
 export async function scheduleLocalPromoNotifications(force = false) {
   if (!Capacitor.isNativePlatform()) {
@@ -32,7 +35,7 @@ export async function scheduleLocalPromoNotifications(force = false) {
           id: 'promo_channel',
           name: 'Consigli & Notifiche ViaCamper',
           description: 'Suggerimenti, avvisi e curiosità sull\'app ViaCamper',
-          importance: 4, // IMPORTANCE_HIGH (sound + heads-up banner)
+          importance: 5, // IMPORTANCE_MAX (sound + heads-up banner)
           visibility: 1, // VISIBILITY_PUBLIC (lock screen)
           sound: 'default',
           vibration: true,
@@ -44,12 +47,19 @@ export async function scheduleLocalPromoNotifications(force = false) {
       }
     }
 
-    // 3. Check existing pending notifications
+    // 3. Check existing pending notifications & app update state
     const pending = await LocalNotifications.getPending();
     const existingCount = pending.notifications ? pending.notifications.length : 0;
+    const lastVersion = localStorage.getItem('camper_last_scheduled_app_version');
 
-    // If not forcing, and we already have 10 or more pending notifications queued, skip
-    if (!force && existingCount >= 10) {
+    let shouldForce = force;
+    if (lastVersion !== CURRENT_APP_VERSION) {
+      console.log(`[LocalPush] Play Store app update detected (${lastVersion || 'none'} -> ${CURRENT_APP_VERSION}). Forcing fresh reschedule!`);
+      shouldForce = true;
+    }
+
+    // If not forcing, and we already have 25 or more pending notifications queued, skip
+    if (!shouldForce && existingCount >= 25) {
       console.log(`[LocalPush] ${existingCount} notifications already queued. Skipping schedule.`);
       return { success: true, count: existingCount, action: 'skipped_existing' };
     }
@@ -87,6 +97,9 @@ export async function scheduleLocalPromoNotifications(force = false) {
     });
 
     await LocalNotifications.schedule({ notifications });
+    try {
+      localStorage.setItem('camper_last_scheduled_app_version', CURRENT_APP_VERSION);
+    } catch (e) {}
     console.log('[LocalPush] Scheduled 50 local promo notifications successfully!');
     return { success: true, count: notifications.length, action: 'scheduled_50' };
 
@@ -162,5 +175,93 @@ export async function getScheduledNotificationsCount(): Promise<number> {
     return pending.notifications ? pending.notifications.length : 0;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * Send an immediate Android push notification for severe weather alerts (MeteoAlarm / Community)
+ */
+export async function sendWeatherAlertPushNotification(title: string, body: string, alertId: string): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) {
+    console.log('[WeatherPush] Triggering Web Notification on web/PWA platform...');
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification(`⚠️ ${title}`, {
+            body: body,
+            icon: '/pwa-192x192.png',
+            tag: alertId
+          });
+          return true;
+        } else if (Notification.permission !== 'denied') {
+          const perm = await Notification.requestPermission();
+          if (perm === 'granted') {
+            new Notification(`⚠️ ${title}`, {
+              body: body,
+              icon: '/pwa-192x192.png',
+              tag: alertId
+            });
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[WeatherPush] Web notification warning:', e);
+    }
+    return false;
+  }
+
+  try {
+    let permStatus = await LocalNotifications.checkPermissions();
+    if (permStatus.display === 'prompt' || permStatus.display === 'prompt-with-rationale') {
+      permStatus = await LocalNotifications.requestPermissions();
+    }
+
+    if (permStatus.display !== 'granted') {
+      console.warn('[WeatherPush] Local notification permission not granted:', permStatus.display);
+      return false;
+    }
+
+    // Android High Importance Channel with Sound & Vibration
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        await LocalNotifications.createChannel({
+          id: 'weather_alert_channel',
+          name: 'Allerte Meteo ViaCamper ⚡',
+          description: 'Allarmi meteorologici immediati per la sicurezza del camper',
+          importance: 5, // MAX importance (sound + heads-up banner)
+          visibility: 1, // VISIBILITY_PUBLIC
+          sound: 'default',
+          vibration: true,
+          lights: true,
+          lightColor: '#EF4444'
+        });
+      } catch (chErr) {
+        console.warn('[WeatherPush] Channel creation notice:', chErr);
+      }
+    }
+
+    // Create 32-bit positive integer ID from alertId string hash
+    const numericId = (Math.abs(alertId.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 100000) + 5000;
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: numericId,
+          title: `⚠️ ${title}`,
+          body: body,
+          schedule: { at: new Date(Date.now() + 200) },
+          sound: 'default',
+          channelId: 'weather_alert_channel',
+          extra: { type: 'weather_alert', alertId }
+        }
+      ]
+    });
+
+    console.log('[WeatherPush] Android weather alert push notification sent successfully for ID:', alertId);
+    return true;
+  } catch (err: any) {
+    console.error('[WeatherPush] Error triggering weather alert push notification:', err);
+    return false;
   }
 }
