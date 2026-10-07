@@ -454,7 +454,7 @@ export function ChallengesTab({
               <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm">
                 <Trophy className="w-3.5 h-3.5" /> Gamification &amp; Concorsi
               </span>
-              <RollyOnboardingGuide sectionKey="community" className="!bg-white/10 !text-white !border-white/20 hover:!bg-white/20" />
+              <RollyOnboardingGuide sectionKey="challenges" className="!bg-white/10 !text-white !border-white/20 hover:!bg-white/20" />
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
               Sfide, Concorsi &amp; Badge Camperisti 🏆

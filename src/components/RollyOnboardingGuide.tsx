@@ -347,13 +347,8 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
     features: [
       {
         icon: '🛠️',
-        title: 'Storico Interventi',
-        description: 'Annota tagliandi cellula, sostituzione filtri, sanificazione serbatoi e sigillature.'
-      },
-      {
-        icon: '💧',
-        title: 'Test Infiltrazioni',
-        description: 'Registra la data dei controlli igrometrici periodici per preservare la garanzia del produttore.'
+        title: 'Registro Interventi',
+        description: 'Annota le riparazioni, le installazioni e la manutenzione ordinaria effettuata sulla tua cellula.'
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Una pulizia periodica delle guarnizioni delle finestre con spray al silicone previene l\'invecchiamento e le infiltrazioni d\'acqua!'
@@ -426,6 +421,11 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
         icon: '🛠️',
         title: 'Diagnostica & Risoluzione Guasti',
         description: 'Guida passo-passo per risolvere problemi a gas, pompa acqua, riscaldatore e frigo trivalente.'
+      },
+      {
+        icon: '💧',
+        title: 'Monitoraggio Umidità & Infiltrazioni',
+        description: 'Verifica costantemente l\'igrometro di cellula integrato e monitora i livelli di umidità per prevenire infiltrazioni.'
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Prima di accendere il frigo a gas in sosta libera, assicurati con la livella digitale che il camper sia perfettamente in bolla per far circolare l\'ammoniaca!'

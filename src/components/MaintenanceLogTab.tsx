@@ -308,9 +308,8 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
             <span className="block text-[8px] text-stone-350 font-bold uppercase tracking-widest text-center">Spesa Totale</span>
             <span className="text-xl font-mono font-black text-rose-300 leading-tight block text-center mt-2">{getCurrencySymbol(settings)}{totalInvestment}</span>
           </div>
-          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-100 rounded-xl p-3 flex items-center justify-center gap-2">
-            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-            <span className="text-[10px] font-bold leading-tight">Umidità Media Cellula: <b className="text-white block text-xs">12.5% (Ottimo)</b></span>
+          <div className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center justify-center">
+            <span className="text-xs font-bold text-white">Pronto a partire!</span>
           </div>
         </div>
 
@@ -544,13 +543,6 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
 
           {/* Section C: Educational camper protection rules */}
           <div className="bg-stone-50 dark:bg-slate-800 rounded-2xl border border-stone-200 dark:border-slate-700 p-4 space-y-2 text-[10.5px] leading-relaxed text-stone-600 dark:text-slate-400 font-medium">
-            <span className="text-[9px] uppercase tracking-wider font-black text-[#A45C40] dark:text-orange-400 block flex items-center gap-1">
-              <ShieldAlert className="w-3.5 h-3.5 text-[#A45C40] shrink-0" />
-              Senza infiltrazioni = Valore camper preservato:
-            </span>
-            <p>
-              Le infiltrazioni d’acqua svalutano il valore di un camper del <b>-70% in breve tempo</b>. Esegui il test igrometrico fai-da-te <b>due volte all'anno</b> (soprattutto dopo la stagione delle piogge autunnali e invernali).
-            </p>
             <p className="text-stone-500 font-semibold leading-relaxed">
               Consiglio per gli impianti: lascia aperti i rubinetti del camper (a pompa e termostati spenti!) durante le gelate invernali per evitare che le tubature in plastica scoppino a causa del ghiaccio!
             </p>
