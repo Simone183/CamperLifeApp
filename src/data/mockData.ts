@@ -868,37 +868,49 @@ export const INITIAL_DEADLINES: Deadline[] = [
     id: 'd1',
     title: 'Revisione Ministeriale Obbligatoria (M.C.T.C.)',
     category: 'Revisione',
-    dueDate: '2026-10-15', // a few months in future
+    dueDate: '2026-10-15',
     done: false,
     notes: 'Da effettuare presso centro autorizzato. Obbligatoria ogni 2 anni per camper entro 3.5t.',
-    price: 80
+    price: 80,
+    recurringType: 'time',
+    repeatMonths: 24
   },
   {
     id: 'd2',
     title: 'Rinnovo Assicurazione RCA + Assistenza Stradale Camper',
     category: 'Assicurazione',
-    dueDate: '2026-07-31', // very close!
+    dueDate: '2026-07-31',
     done: false,
     notes: 'Ricontrollare se l\'assistenza copre il traino stradale per mezzi sopra i 6.5 metri e pesanti!',
-    price: 380
+    price: 380,
+    recurringType: 'time',
+    repeatMonths: 12
   },
   {
     id: 'd3',
     title: 'Controllo Infiltrazioni e Sigillature Pareti',
     category: 'Manutenzione',
-    dueDate: '2026-09-01', // Standard update
+    dueDate: '2026-09-01',
     done: false,
     notes: 'Annuale, fondamentale per mantenere la garanzia e prevenire infiltrazioni.',
-    price: 120
+    price: 120,
+    recurringType: 'time',
+    repeatMonths: 12
   },
   {
     id: 'd4',
     title: 'Sostituzione Filtri e Tagliando',
-    category: 'Manutenzione',
-    dueDate: '2026-05-10', // Past deadline! Show orange/red alert!
+    category: 'Sostituzione Filtri e Tagliando',
+    dueDate: '2026-05-10',
     done: true,
-    notes: 'Cambio olio Selenia, filtro aria, filtro gasolio effettuato a 48,500 km.',
-    price: 250
+    notes: 'Cambio olio Selenia, filtro aria, filtro gasolio effettuato a 48.500 km.',
+    price: 250,
+    km: 48500,
+    recurringType: 'both',
+    repeatMonths: 12,
+    repeatKm: 15000,
+    lastCompletedDate: '2025-05-10',
+    lastCompletedKm: 48500
   },
   {
     id: 'd5',
@@ -907,15 +919,19 @@ export const INITIAL_DEADLINES: Deadline[] = [
     dueDate: '2026-08-31',
     done: false,
     notes: 'Tassa regionale camper.',
-    price: 45
+    price: 45,
+    recurringType: 'time',
+    repeatMonths: 12
   },
   {
     id: 'd6',
     title: 'Sostituzione Scadenza Tubo Gas Gomma Gialla',
     category: 'Tubo gas',
-    dueDate: '2026-06-30', // Very soon!
+    dueDate: '2026-06-30',
     done: false,
     notes: 'Tubo flessibile arancione/giallo scade dopo 5 anni. Fondamentale per la sicurezza a bordo.',
-    price: 15
+    price: 15,
+    recurringType: 'time',
+    repeatMonths: 60
   }
 ];

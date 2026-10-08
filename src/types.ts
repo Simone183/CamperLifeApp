@@ -365,6 +365,13 @@ export interface Deadline {
   price?: number;
   km?: number;
   kmThreshold?: number; // Km a cui inviare avviso
+
+  // Recurrence & Auto-Renewal
+  recurringType?: 'none' | 'time' | 'km' | 'both';
+  repeatMonths?: number; // Es. 12 per Bollo/Assicurazione, 24 per Revisione
+  repeatKm?: number; // Es. 15000 per Tagliando
+  lastCompletedDate?: string; // Data YYYY-MM-DD dell'ultimo lavoro eseguito
+  lastCompletedKm?: number; // Odometer km dell'ultimo lavoro eseguito
 }
 
 export interface ChecklistItem {

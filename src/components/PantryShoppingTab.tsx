@@ -17,7 +17,11 @@ import {
   TrendingDown,
   Sparkles,
   Search,
-  Check
+  Check,
+  Calendar,
+  AlertTriangle,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -31,34 +35,51 @@ interface PantryItem {
   unit: string;
   category: 'freschi' | 'secche' | 'scatolame' | 'spezie' | 'bevande';
   daysToExpiry?: number;
+  expiryDate?: string; // YYYY-MM-DD
   isLow: boolean;
 }
 
-interface Recipe {
-  id: string;
-  title: string;
-  durationMin: number;
-  difficulty: 'Facile' | 'Media';
-  gasUsage: 'Basso' | 'Medio'; // Key camper constraint
-  waterUsage: 'Minimo' | 'Poco' | 'Normale'; // Key camper constraint
-  potsNeeded: number; // Fewer pots means easier washing
-  ingredientsNeeded: { name: string; qtyStr: string; pantryMatchId?: string }[];
-  instructions: string[];
+export function getDaysUntilExpiry(expiryDateStr?: string): number | null {
+  if (!expiryDateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = new Date(expiryDateStr);
+  if (isNaN(expiry.getTime())) return null;
+  expiry.setHours(0, 0, 0, 0);
+  const diffTime = expiry.getTime() - today.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
+
+const todayIso = new Date().toISOString().split('T')[0];
+const in3DaysIso = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+const in30DaysIso = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+const yesterdayIso = new Date(Date.now() - 1 * 86400000).toISOString().split('T')[0];
 
 const DEFAULT_PANTRY: PantryItem[] = [
   { id: 'p1', name: 'Pasta Corta (Penne/Fusilli)', quantity: 1000, unit: 'g', category: 'secche', isLow: false },
   { id: 'p2', name: 'Passata di Pomodoro in brik', quantity: 2, unit: 'pacco', category: 'scatolame', isLow: false },
   { id: 'p3', name: 'Olio Extra Vergine d\'Oliva', quantity: 750, unit: 'ml', category: 'spezie', isLow: false },
   { id: 'p4', name: 'Coccole di Tonno all\'olio d\'oliva', quantity: 3, unit: 'lattina', category: 'scatolame', isLow: false },
-  { id: 'p5', name: 'Parmigiano Reggiano Grattugiato', quantity: 150, unit: 'g', category: 'freschi', isLow: true },
+  { id: 'p5', name: 'Parmigiano Reggiano Grattugiato', quantity: 150, unit: 'g', category: 'freschi', expiryDate: in3DaysIso, isLow: true },
   { id: 'p6', name: 'Uova Fresche', quantity: 0, unit: 'pz', category: 'freschi', isLow: true },
   { id: 'p7', name: 'Caffè in Polvere per Moka', quantity: 250, unit: 'g', category: 'secche', isLow: false },
-  { id: 'p8', name: 'Latte a lunga conservazione (UHT)', quantity: 1, unit: 'litro', category: 'bevande', isLow: false },
-  { id: 'p9', name: 'Pane in cassetta (Bauletto)', quantity: 1, unit: 'confezione', category: 'freschi', isLow: false },
+  { id: 'p8', name: 'Latte a lunga conservazione (UHT)', quantity: 1, unit: 'litro', category: 'bevande', expiryDate: in30DaysIso, isLow: false },
+  { id: 'p9', name: 'Pane in cassetta (Bauletto)', quantity: 1, unit: 'confezione', category: 'freschi', expiryDate: yesterdayIso, isLow: false },
   { id: 'p10', name: 'Sale, Pepe & Spezie Miste', quantity: 1, unit: 'set', category: 'spezie', isLow: false },
   { id: 'p11', name: 'Fagioli Canellini in scatola', quantity: 2, unit: 'lattina', category: 'scatolame', isLow: false },
 ];
+
+interface Recipe {
+  id: string;
+  title: string;
+  durationMin: number;
+  difficulty: 'Facile' | 'Media';
+  gasUsage: 'Basso' | 'Medio';
+  waterUsage: 'Minimo' | 'Poco' | 'Normale';
+  potsNeeded: number;
+  ingredientsNeeded: { name: string; qtyStr: string; pantryMatchId?: string }[];
+  instructions: string[];
+}
 
 const CAMPER_RECIPES: Recipe[] = [
   {
@@ -194,11 +215,32 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   }, [currentCrew?.sharedData?.pantry, isModuleSynced]);
 
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [filterExpiringOnly, setFilterExpiringOnly] = React.useState(false);
   const [pantryName, setPantryName] = React.useState('');
   const [pantryQty, setPantryQty] = React.useState(1);
   const [pantryUnit, setPantryUnit] = React.useState('pz');
   const [pantryCat, setPantryCat] = React.useState<PantryItem['category']>('freschi');
+  const [pantryExpiry, setPantryExpiry] = React.useState('');
   const [showAddPantry, setShowAddPantry] = React.useState(false);
+
+  // Compute items expiring within 7 days or already expired
+  const expiringItems = React.useMemo(() => {
+    return pantry.filter(item => {
+      const days = getDaysUntilExpiry(item.expiryDate);
+      return days !== null && days <= 7;
+    });
+  }, [pantry]);
+
+  // Show a warning toast on initial load if items are expiring
+  const hasWarnedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!hasWarnedRef.current && expiringItems.length > 0) {
+      hasWarnedRef.current = true;
+      window.dispatchEvent(new CustomEvent('show-toast', {
+        detail: { message: `⚠️ Allerta Cambusa: ci sono ${expiringItems.length} prodotti in scadenza o già scaduti!` }
+      }));
+    }
+  }, [expiringItems]);
 
   const [shopName, setShopName] = React.useState('');
   const [shopQtyStr, setShopQtyStr] = React.useState('1');
@@ -282,6 +324,21 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
     }));
   };
 
+  const handleUpdatePantryExpiry = (id: string, newExpiry: string) => {
+    setPantry(prev => prev.map(item => {
+      if (item.id === id) {
+        const updated = { ...item };
+        if (newExpiry) {
+          updated.expiryDate = newExpiry;
+        } else {
+          delete updated.expiryDate;
+        }
+        return updated;
+      }
+      return item;
+    }));
+  };
+
   const handleDeletePantryItem = (id: string) => {
     setPantry(prev => prev.filter(item => item.id !== id));
     window.dispatchEvent(new CustomEvent('show-toast', {
@@ -301,10 +358,14 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
       category: pantryCat,
       isLow: pantryQty <= (pantryUnit === 'g' ? 150 : 1)
     };
+    if (pantryExpiry) {
+      newItem.expiryDate = pantryExpiry;
+    }
 
     setPantry(prev => [...prev, newItem]);
     setPantryName('');
     setPantryQty(1);
+    setPantryExpiry('');
     setShowAddPantry(false);
     window.dispatchEvent(new CustomEvent('show-toast', {
       detail: { message: `🥫 Aggiunto in cambusa: ${newItem.name}` }
@@ -553,10 +614,41 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
             {/* Left Box: Pantry Inventory (8/12) */}
             <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
               
+              {/* Expiring items warning banner */}
+              {expiringItems.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-950/80 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-amber-500 text-white rounded-xl shrink-0">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-amber-900 dark:text-amber-200">
+                        ⚠️ Allerta Scadenze ({expiringItems.length} alimenti in scadenza o già scaduti)
+                      </h4>
+                      <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                        Controlla i prodotti evidenziati in giallo o rosso per consumarli subito o rimuoverli.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilterExpiringOnly(!filterExpiringOnly)}
+                    className={`px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all shrink-0 cursor-pointer ${
+                      filterExpiringOnly 
+                        ? 'bg-amber-700 text-white shadow-xs' 
+                        : 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 hover:bg-amber-300'
+                    }`}
+                  >
+                    {filterExpiringOnly ? '✓ Mostra Tutti i Viveri' : '🔎 Filtra Solo in Scadenza'}
+                  </button>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100">
                 <div>
                   <h3 className="font-black text-slate-800 text-sm uppercase tracking-wider">Inventario Viveri & Scatolame</h3>
-                  <p className="text-[11px] text-slate-400 font-medium">Incrementa quando fai rifornimento, premi sul tag per alert di spesa immediato</p>
+                  <p className="text-[11px] text-slate-400 font-medium">Incrementa quando fai rifornimento, imposta la data di scadenza per avvisi automatici</p>
                 </div>
 
                 {/* Sub-search filter */}
@@ -606,74 +698,124 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
                       </div>
 
                       <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {catItems.map(item => (
-                          <div key={item.id} className="py-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                            
-                            {/* Product Name */}
-                            <div className="min-w-0 pr-2">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-extrabold text-[#2D2926] dark:text-slate-100 text-xs leading-snug truncate">
-                                  {item.name}
-                                </h4>
-                                {item.isLow && (
-                                  <span className="px-1.5 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded text-[8px] font-black uppercase animate-pulse">
-                                    In Esaurimento! 🚨
-                                  </span>
-                                )}
-                                {item.quantity === 0 && (
-                                  <span className="px-1.5 py-0.5 bg-stone-100 dark:bg-stone-700 text-slate-500 dark:text-slate-400 rounded text-[8px] font-black uppercase">
-                                    Finito ✖
-                                  </span>
-                                )}
-                              </div>
+                        {catItems.map(item => {
+                          const days = getDaysUntilExpiry(item.expiryDate);
+
+                          return (
+                            <div key={item.id} className="py-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                               
-                              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 flex items-center gap-2">
-                                <span>Giacenza attuale: <b>{item.quantity} {item.unit}</b></span>
-                                <span>•</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleLow(item.id)}
-                                  className={`text-[9px] font-bold underline cursor-pointer hover:text-[#A45C40] dark:hover:text-orange-400`}
-                                >
-                                  {item.isLow ? 'Segnala come OK' : 'Forza Alert Spesa'}
-                                </button>
-                              </p>
-                            </div>
+                              {/* Product Name & Badges */}
+                              <div className="min-w-0 pr-2 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="font-extrabold text-[#2D2926] dark:text-slate-100 text-xs leading-snug">
+                                    {item.name}
+                                  </h4>
 
-                            {/* Quantity Controls */}
-                            <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end shrink-0 border-t border-dashed border-stone-150 dark:border-slate-700 pt-2 sm:pt-0 sm:border-0">
-                              <div className="flex items-center gap-1.5">
+                                  {/* Expiration status badge */}
+                                  {days !== null && (
+                                    <>
+                                      {days <= 0 ? (
+                                        <span className="px-1.5 py-0.5 bg-rose-600 text-white rounded text-[8px] font-black uppercase flex items-center gap-1 shrink-0 animate-pulse">
+                                          <AlertCircle className="w-2.5 h-2.5" />
+                                          {days === 0 ? 'SCADE OGGI! 🚨' : `SCADUTO (${Math.abs(days)}g fa) 🚨`}
+                                        </span>
+                                      ) : days <= 7 ? (
+                                        <span className="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[8px] font-black uppercase flex items-center gap-1 shrink-0">
+                                          <Clock className="w-2.5 h-2.5" />
+                                          In Scadenza ({days}g rimasti) ⏰
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[8px] font-bold shrink-0">
+                                          Scade tra {days}g
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {item.isLow && (
+                                    <span className="px-1.5 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded text-[8px] font-black uppercase animate-pulse">
+                                      In Esaurimento! 🚨
+                                    </span>
+                                  )}
+                                  {item.quantity === 0 && (
+                                    <span className="px-1.5 py-0.5 bg-stone-100 dark:bg-stone-700 text-slate-500 dark:text-slate-400 rounded text-[8px] font-black uppercase">
+                                      Finito ✖
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                <div className="text-[10px] text-slate-400 dark:text-slate-500 flex flex-wrap items-center gap-2">
+                                  <span>Giacenza attuale: <b>{item.quantity} {item.unit}</b></span>
+                                  <span>•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleLow(item.id)}
+                                    className={`text-[9px] font-bold underline cursor-pointer hover:text-[#A45C40] dark:hover:text-orange-400`}
+                                  >
+                                    {item.isLow ? 'Segnala come OK' : 'Forza Alert Spesa'}
+                                  </button>
+
+                                  <span>•</span>
+
+                                  {/* Expiration date picker */}
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span className="text-[9.5px]">Scadenza:</span>
+                                    <input
+                                      type="date"
+                                      value={item.expiryDate || ''}
+                                      onChange={(e) => handleUpdatePantryExpiry(item.id, e.target.value)}
+                                      className="text-[10px] text-slate-700 dark:text-slate-300 font-mono font-bold bg-stone-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none focus:border-[#3E4A35]"
+                                    />
+                                    {item.expiryDate && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdatePantryExpiry(item.id, '')}
+                                        className="text-slate-400 hover:text-red-500 text-xs font-bold px-0.5"
+                                        title="Rimuovi data scadenza"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Quantity Controls */}
+                              <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end shrink-0 border-t border-dashed border-stone-150 dark:border-slate-700 pt-2 sm:pt-0 sm:border-0">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePantryQtyChange(item.id, item.unit === 'g' ? -100 : -1)}
+                                    className="w-6 h-6 rounded-lg bg-stone-100 dark:bg-slate-700 hover:bg-stone-200 dark:hover:bg-slate-600 flex items-center justify-center text-stone-600 dark:text-slate-300 border border-stone-200/50 dark:border-slate-600 cursor-pointer font-black select-none text-xs"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="w-16 text-center font-black text-xs text-[#2D2926] dark:text-slate-100 font-mono">
+                                    {item.quantity} {item.unit}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePantryQtyChange(item.id, item.unit === 'g' ? 100 : 1)}
+                                    className="w-6 h-6 rounded-lg bg-stone-100 dark:bg-slate-700 hover:bg-stone-200 dark:hover:bg-slate-600 flex items-center justify-center text-stone-600 dark:text-slate-300 border border-stone-200/50 dark:border-slate-600 cursor-pointer font-black select-none text-xs"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+
                                 <button
                                   type="button"
-                                  onClick={() => handlePantryQtyChange(item.id, item.unit === 'g' ? -100 : -1)}
-                                  className="w-6 h-6 rounded-lg bg-stone-100 dark:bg-slate-700 hover:bg-stone-200 dark:hover:bg-slate-600 flex items-center justify-center text-stone-600 dark:text-slate-300 border border-stone-200/50 dark:border-slate-600 cursor-pointer font-black select-none text-xs"
+                                  onClick={() => handleDeletePantryItem(item.id)}
+                                  className="p-1.5 rounded bg-red-50 dark:bg-red-900 text-red-650 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 hover:text-red-800 transition-all cursor-pointer shadow-2xs"
+                                  title="Rimuovi Ingrediente"
                                 >
-                                  -
-                                </button>
-                                <span className="w-16 text-center font-black text-xs text-[#2D2926] dark:text-slate-100 font-mono">
-                                  {item.quantity} {item.unit}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handlePantryQtyChange(item.id, item.unit === 'g' ? 100 : 1)}
-                                  className="w-6 h-6 rounded-lg bg-stone-100 dark:bg-slate-700 hover:bg-stone-200 dark:hover:bg-slate-600 flex items-center justify-center text-stone-600 dark:text-slate-300 border border-stone-200/50 dark:border-slate-600 cursor-pointer font-black select-none text-xs"
-                                >
-                                  +
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={() => handleDeletePantryItem(item.id)}
-                                className="p-1.5 rounded bg-red-50 dark:bg-red-900 text-red-650 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 hover:text-red-800 transition-all cursor-pointer shadow-2xs"
-                                title="Rimuovi Ingrediente"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
                             </div>
-
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -702,6 +844,19 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
                       placeholder="Es. Riso Arborio, Nutella, Birre..."
                       value={pantryName}
                       onChange={(e) => setPantryName(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase font-black text-slate-500 flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-[#3E4A35]" />
+                      Data di Scadenza (Opzionale)
+                    </label>
+                    <input
+                      type="date"
+                      value={pantryExpiry}
+                      onChange={(e) => setPantryExpiry(e.target.value)}
                       className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35]"
                     />
                   </div>

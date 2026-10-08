@@ -99,8 +99,195 @@ const TROUBLESHOOTING_GUIDES: TroubleshootingIssue[] = [
   }
 ];
 
+export interface SectorLeakage {
+  id: string;
+  name: string;
+  value: number; // humidity percentage (e.g. 5% - 40%)
+  lastChecked: string;
+}
+
+export const DEFAULT_HYGROMETER_SECTORS: SectorLeakage[] = [
+  { id: 's1', name: 'Angolo Anteriore Sinistro (Mansarda / Cupolino)', value: 12, lastChecked: new Date().toISOString().split('T')[0] },
+  { id: 's2', name: 'Fiancata Centrale Dinette (Finestra & Parete)', value: 11, lastChecked: new Date().toISOString().split('T')[0] },
+  { id: 's3', name: 'Rivestimento Interno Bagno & Piatto Doccia', value: 14, lastChecked: new Date().toISOString().split('T')[0] },
+  { id: 's4', name: 'Angolo Posteriore Destro (Garage / Sotto-letto)', value: 13, lastChecked: new Date().toISOString().split('T')[0] },
+  { id: 's5', name: 'Tetto & Sigillature Oblò / Areatori', value: 10, lastChecked: new Date().toISOString().split('T')[0] },
+];
+
+export const getSectorRiskStatus = (val: number) => {
+  if (val > 20) {
+    return {
+      label: 'PERICOLO INFILTRAZIONE 🚨',
+      color: 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-900',
+      badge: 'bg-red-600 text-white',
+      desc: 'Umidità critica! Alto rischio di marcire delle traverse in legno strutturali del camper. Ispezionare subito le sigillature esterne o la mansarda.'
+    };
+  }
+  if (val >= 16) {
+    return {
+      label: 'ATTENZIONE / SOSPETTO ⚠️',
+      color: 'text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-900',
+      badge: 'bg-amber-500 text-white',
+      desc: 'Umidità moderatamente elevata. Potrebbe trattarsi di condensa o di un microtrafilamento iniziale. Tenere sotto controllo.'
+    };
+  }
+  return {
+    label: 'CONFORME / ASCIUTTO ✓',
+    color: 'text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950 border-emerald-200 dark:border-emerald-900',
+    badge: 'bg-emerald-600 text-white',
+    desc: 'Struttura perfettamente sana. Legno asciutto e nessuna infiltrazione rilevata.'
+  };
+};
+
+export function IgrometroSection({ onRecordInMaintenance }: { onRecordInMaintenance?: (title: string, notes: string) => void }) {
+  const [sectors, setSectors] = React.useState<SectorLeakage[]>(() => {
+    try {
+      const saved = localStorage.getItem('camper_igrometro_sectors');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_HYGROMETER_SECTORS;
+  });
+
+  const handleHumidityChange = (id: string, val: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    const updated = sectors.map(sec => sec.id === id ? { ...sec, value: val, lastChecked: today } : sec);
+    setSectors(updated);
+    try {
+      localStorage.setItem('camper_igrometro_sectors', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const handleReset = () => {
+    setSectors(DEFAULT_HYGROMETER_SECTORS);
+    try {
+      localStorage.setItem('camper_igrometro_sectors', JSON.stringify(DEFAULT_HYGROMETER_SECTORS));
+    } catch (e) {}
+  };
+
+  const maxHumidity = Math.max(...sectors.map(s => s.value));
+  const maxRisk = getSectorRiskStatus(maxHumidity);
+
+  const handleSaveToMaintenanceLog = () => {
+    const dateStr = new Date().toLocaleDateString('it-IT');
+    const summaryNotes = sectors.map(s => `${s.name}: ${s.value}% RF`).join('; ');
+    const logTitle = `Controllo Igrometrico & Test Infiltrazioni (${dateStr})`;
+
+    try {
+      const savedLogs = localStorage.getItem('camper_maintenance_logs');
+      let logs = savedLogs ? JSON.parse(savedLogs) : [];
+      const newLog = {
+        id: `mt_igro_${Date.now()}`,
+        title: logTitle,
+        date: new Date().toISOString().split('T')[0],
+        category: 'Generica',
+        description: `Valori rilevati: ${summaryNotes}. Esito complessivo: ${maxRisk.label}`,
+        cost: 0,
+        completed: true
+      };
+      logs = [newLog, ...logs];
+      localStorage.setItem('camper_maintenance_logs', JSON.stringify(logs));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    if (onRecordInMaintenance) {
+      onRecordInMaintenance(logTitle, summaryNotes);
+    }
+
+    window.dispatchEvent(new CustomEvent('show-toast', {
+      detail: { message: '✅ Controllo igrometrico registrato nello storico manutenzioni!' }
+    }));
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 shrink-0">
+            <Droplets className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-black text-slate-900 dark:text-white text-base uppercase tracking-wider">
+              Igrometro di Cellula & Test Infiltrazioni
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Simula e registra i livelli di umidità relativa (% RF) nei 5 settori chiave della scocca per prevenire il marcire delle strutture in legno.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleReset}
+          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-xl transition-colors shrink-0 cursor-pointer"
+        >
+          Ripristina Valori Nominali
+        </button>
+      </div>
+
+      <div className={`p-4 rounded-2xl border ${maxRisk.color} flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3`}>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${maxRisk.badge}`}>
+              {maxRisk.label}
+            </span>
+            <span className="text-xs font-mono font-bold">Umidità Max: {maxHumidity}% RF</span>
+          </div>
+          <p className="text-xs font-medium leading-relaxed opacity-90">{maxRisk.desc}</p>
+        </div>
+
+        <button
+          onClick={handleSaveToMaintenanceLog}
+          className="px-4 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-bold text-xs rounded-xl shadow-xs transition-all shrink-0 cursor-pointer w-full sm:w-auto text-center"
+        >
+          💾 Annota nei Lavori Fatti
+        </button>
+      </div>
+
+      <div className="space-y-3.5">
+        {sectors.map(sec => {
+          const diag = getSectorRiskStatus(sec.value);
+          return (
+            <div key={sec.id} className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2.5">
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-xs font-black text-slate-800 dark:text-slate-100">{sec.name}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] text-slate-400 font-mono">Verificato: {sec.lastChecked}</span>
+                  <span className={`px-2 py-0.5 rounded-lg text-xs font-mono font-black ${diag.color}`}>
+                    {sec.value}% RF
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold text-slate-400">5%</span>
+                <input
+                  type="range"
+                  min="5"
+                  max="35"
+                  step="1"
+                  value={sec.value}
+                  onChange={(e) => handleHumidityChange(sec.id, parseInt(e.target.value))}
+                  className="w-full accent-[#3E4A35] h-2 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer"
+                />
+                <span className="text-[10px] font-bold text-slate-400">35%</span>
+              </div>
+
+              <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${diag.color}`}>
+                <span className="font-bold uppercase tracking-wider block mb-0.5">{diag.label}</span>
+                <span className="opacity-90 font-medium block">{diag.desc}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function SostaLiberaToolsTab() {
-  const [activeToolSection, setActiveToolSection] = React.useState<'solar' | 'battery' | 'diagnostics' | 'tyres'>('solar');
+  const [activeToolSection, setActiveToolSection] = React.useState<'solar' | 'battery' | 'diagnostics' | 'tyres' | 'hygrometer'>('solar');
 
   // 1. SOLAR PANEL ALIGNMENT UTILITY STATES
   const [panelSetup, setPanelSetup] = React.useState<'flat' | 'tilted15' | 'tilted30'>('flat');
@@ -355,13 +542,13 @@ export function SostaLiberaToolsTab() {
       </div>
 
       {/* Internal Navigation Grid */}
-      <div className="grid grid-cols-4 gap-1 sm:gap-2 p-1 bg-slate-100 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 sm:gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
         <button
           onClick={() => setActiveToolSection('solar')}
           className={`py-2 px-1 text-center rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 min-h-[44px] ${
             activeToolSection === 'solar'
               ? 'bg-[#3E4A35] text-white shadow-md scale-102'
-              : 'text-slate-650 hover:text-slate-900 hover:bg-slate-50'
+              : 'text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
           }`}
         >
           <Sun className="w-3.5 h-3.5" />
@@ -372,7 +559,7 @@ export function SostaLiberaToolsTab() {
           className={`py-2 px-1 text-center rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 min-h-[44px] ${
             activeToolSection === 'battery'
               ? 'bg-[#3E4A35] text-white shadow-md scale-102'
-              : 'text-slate-650 hover:text-slate-900 hover:bg-slate-50'
+              : 'text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
           }`}
         >
           <Battery className="w-3.5 h-3.5" />
@@ -383,18 +570,29 @@ export function SostaLiberaToolsTab() {
           className={`py-2 px-1 text-center rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 min-h-[44px] ${
             activeToolSection === 'tyres'
               ? 'bg-[#3E4A35] text-white shadow-md scale-102'
-              : 'text-slate-650 hover:text-slate-900 hover:bg-slate-50'
+              : 'text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
           }`}
         >
           <Gauge className="w-3.5 h-3.5" />
           <span className="leading-tight">Pesi & Gomme</span>
         </button>
         <button
+          onClick={() => setActiveToolSection('hygrometer')}
+          className={`py-2 px-1 text-center rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 min-h-[44px] ${
+            activeToolSection === 'hygrometer'
+              ? 'bg-[#3E4A35] text-white shadow-md scale-102'
+              : 'text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Droplets className="w-3.5 h-3.5 text-teal-500" />
+          <span className="leading-tight">Igrometro Cellula</span>
+        </button>
+        <button
           onClick={() => setActiveToolSection('diagnostics')}
           className={`py-2 px-1 text-center rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 min-h-[44px] ${
             activeToolSection === 'diagnostics'
               ? 'bg-[#3E4A35] text-white shadow-md scale-102'
-              : 'text-slate-650 hover:text-slate-900 hover:bg-slate-50'
+              : 'text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
           }`}
         >
           <Wrench className="w-3.5 h-3.5" />
@@ -813,6 +1011,13 @@ export function SostaLiberaToolsTab() {
               {tyreAdvice.alert}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* SECTION HYGROMETER: CELLULA & INFILTRAZIONI */}
+      {activeToolSection === 'hygrometer' && (
+        <div className="animate-fade-in">
+          <IgrometroSection />
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from './firebase';
+import { sanitizeForFirestore } from '../utils/firestoreHelper';
 
 export function useFirestoreSync<T>(collectionPath: string, docId: string, defaultValue: T) {
   const [data, setData] = useState<T>(defaultValue);
@@ -18,8 +19,7 @@ export function useFirestoreSync<T>(collectionPath: string, docId: string, defau
 
   const saveData = (newData: T) => {
     const docRef = doc(db, collectionPath, docId);
-    // Sanitize the object to remove any 'undefined' properties which are unsupported by Firestore
-    const cleanedData = JSON.parse(JSON.stringify(newData));
+    const cleanedData = sanitizeForFirestore(newData);
     setDoc(docRef, cleanedData, { merge: true });
   };
 

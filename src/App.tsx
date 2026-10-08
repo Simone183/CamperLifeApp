@@ -4284,6 +4284,7 @@ out center;`;
   } | null>(null);
   const [userAccuracy, setUserAccuracy] = React.useState<number | null>(null);
   const [isGPSEnabled, setIsGPSEnabled] = React.useState<boolean>(true);
+  const [isGPSConnected, setIsGPSConnected] = React.useState<boolean>(false);
   const [hasDeniedGPS, setHasDeniedGPS] = React.useState<boolean>(false);
   const [isManualCamperLocation, setIsManualCamperLocation] = React.useState<boolean>(false);
   const [manualCamperPlaceId, setManualCamperPlaceId] = React.useState<string | null>(null);
@@ -4306,6 +4307,7 @@ out center;`;
       navigator.geolocation.getCurrentPosition(
         (position) => {
           resolvedFast = true;
+          setIsGPSConnected(true);
           setUserLocation({
             lat: position.coords.latitude,
             lng: position.coords.longitude,
@@ -4461,6 +4463,7 @@ out center;`;
       // Fast immediate fix
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          setIsGPSConnected(true);
           setUserLocation(prev => prev || {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
@@ -4472,6 +4475,7 @@ out center;`;
       );
       
       const handlePositionSuccess = (position: GeolocationPosition) => {
+        setIsGPSConnected(true);
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         const accuracy = position.coords.accuracy;
@@ -4489,6 +4493,10 @@ out center;`;
             })
           );
         }
+
+        try {
+          localStorage.setItem('last_known_gps_location', JSON.stringify({ lat, lng, timestamp: Date.now() }));
+        } catch (e) {}
 
         setUserLocation((prev) => {
           if (prev && Math.abs(prev.lat - lat) < 0.000005 && Math.abs(prev.lng - lng) < 0.000005) {
@@ -4929,12 +4937,13 @@ out center;`;
   // Safe checks for deadlines and checklists for header alerts count
   const pendingDeadlines = deadlines.filter((d) => !d.done);
   const urgentDeadlinesCount = pendingDeadlines.filter((d) => {
-    const today = new Date("2026-06-15");
-    const due = new Date(d.dueDate);
-    const diff = Math.ceil(
-      (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    return diff <= 30;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [y, m, day] = (d.dueDate || '').split('-').map(Number);
+    const due = new Date(y, (m || 1) - 1, day || 1);
+    due.setHours(0, 0, 0, 0);
+    const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return diff <= 15;
   }).length;
 
   const incompleteChecklistCount = checklistItems.filter(
@@ -5213,6 +5222,7 @@ out center;`;
       <WeatherAlertBanner
         userLocation={userLocation}
         currentUser={currentUser}
+        isGPSConnected={isGPSConnected}
         onOpenRadarModal={() => setShowWeatherRadarModal(true)}
         onShowOnMap={() => {
           setReturnTabAfterMap({

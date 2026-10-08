@@ -176,7 +176,7 @@ export const TripDetailModal: React.FC<TripDetailModalProps> = ({
             >
               📷 {trip.photosCount || tripPhotos.length} Foto
             </button>
-            <span>💶 {totalTripExpense}€ Spese Totali</span>
+            <span>💶 {totalTripExpense.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}€ Spese Totali</span>
             <span>Est. 🛣️ {trip.kmTotal || 0} km</span>
           </div>
 

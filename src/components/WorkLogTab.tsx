@@ -14,10 +14,12 @@ import {
   Search, 
   SlidersHorizontal,
   Info,
-  TrendingUp
+  TrendingUp,
+  RefreshCw
 } from 'lucide-react';
 import { Deadline } from '../types';
 import { MaintenanceLog, sanitizeMaintenanceLogs } from './MaintenanceLogTab';
+import { calculateNextDeadline, saveCompletedToMaintenanceHistory, getVehicleCurrentOdometer } from './DeadlinesTab';
 
 interface WorkLogTabProps {
   deadlines: Deadline[];
@@ -81,6 +83,8 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
   const [newNotes, setNewNotes] = React.useState('');
   const [newDeadlineCategory, setNewDeadlineCategory] = React.useState<Deadline['category']>('Manutenzione');
   const [newMaintCategory, setNewMaintCategory] = React.useState<MaintenanceLog['category']>('Generica');
+  const [newRepeatMonths, setNewRepeatMonths] = React.useState('');
+  const [newRepeatKm, setNewRepeatKm] = React.useState('');
 
   // Unified items
   const mappedDeadlines: UnifiedWorkItem[] = deadlines.map(d => ({
@@ -114,20 +118,76 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
     if (source === 'deadlines') {
       onChange(deadlines.map(d => {
         if (d.id === id) {
-          if (field === 'date') return { ...d, dueDate: value };
-          if (field === 'cost') return { ...d, price: value };
-          if (field === 'km') return { ...d, km: value };
-          if (field === 'done') return { ...d, done: value };
+          const item = { ...d };
+          if (field === 'date') item.dueDate = value;
+          if (field === 'cost') {
+            if (value !== undefined && value !== null && value !== '' && !isNaN(value)) {
+              item.price = Number(value);
+            } else {
+              delete item.price;
+            }
+          }
+          if (field === 'km') {
+            if (value !== undefined && value !== null && value !== '' && !isNaN(value)) {
+              item.km = Number(value);
+            } else {
+              delete item.km;
+            }
+          }
+          if (field === 'done') {
+            const isRecurring = item.recurringType === 'time' || item.recurringType === 'km' || item.recurringType === 'both' || (item.repeatMonths && item.repeatMonths > 0) || (item.repeatKm && item.repeatKm > 0);
+            if (value === true && isRecurring) {
+              const todayStr = new Date().toISOString().split('T')[0];
+              const currentOdo = getVehicleCurrentOdometer() || item.km || 0;
+              const { nextDueDate, nextKm } = calculateNextDeadline(item, todayStr, currentOdo);
+
+              saveCompletedToMaintenanceHistory({
+                title: item.title,
+                date: todayStr,
+                cost: item.price,
+                km: currentOdo > 0 ? currentOdo : item.km,
+                notes: item.notes,
+                category: item.category
+              });
+
+              item.dueDate = nextDueDate;
+              item.km = nextKm;
+              item.done = false; // Remains active for next recurrence cycle
+              item.lastCompletedDate = todayStr;
+              item.lastCompletedKm = currentOdo > 0 ? currentOdo : item.km;
+
+              window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: { message: `🔄 Lavoro completato e registrato! Prossima scadenza programmata per il ${nextDueDate}.` }
+              }));
+            } else {
+              item.done = value;
+            }
+          }
+          return item;
         }
         return d;
       }));
     } else {
       const updated = maintenanceLogs.map(m => {
         if (m.id === id) {
-          if (field === 'date') return { ...m, date: value };
-          if (field === 'cost') return { ...m, cost: value };
-          if (field === 'km') return { ...m, km: value };
-          if (field === 'done') return { ...m, completed: value };
+          const item = { ...m };
+          if (field === 'date') item.date = value;
+          if (field === 'cost') {
+            if (value !== undefined && value !== null && value !== '' && !isNaN(value)) {
+              item.cost = Number(value);
+            } else {
+              delete item.cost;
+            }
+          }
+          if (field === 'km') {
+            if (value !== undefined && value !== null && value !== '' && !isNaN(value)) {
+              item.km = Number(value);
+            } else {
+              delete item.km;
+            }
+          }
+          if (field === 'done') item.completed = value;
+          return item;
         }
         return m;
       });
@@ -153,21 +213,36 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
     e.preventDefault();
     if (!newTitle.trim() || !newDate) return;
 
-    const parsedCost = newCost ? parseFloat(newCost) : undefined;
-    const parsedKm = newKm ? parseInt(newKm) : undefined;
+    const parsedCost = (newCost && !isNaN(parseFloat(newCost))) ? parseFloat(newCost) : undefined;
+    const parsedKm = (newKm && !isNaN(parseInt(newKm))) ? parseInt(newKm) : undefined;
 
     if (newSource === 'deadlines') {
+      const parsedRepeatMonths = newRepeatMonths && !isNaN(parseInt(newRepeatMonths)) ? parseInt(newRepeatMonths) : undefined;
+      const parsedRepeatKm = newRepeatKm && !isNaN(parseInt(newRepeatKm)) ? parseInt(newRepeatKm) : undefined;
+
       const newItem: Deadline = {
         id: `d_${Date.now()}`,
         title: newTitle.trim(),
         category: newDeadlineCategory,
         dueDate: newDate,
-        done: true, // Registrato come già completato di default quando si annota uno storico lavori
-        notes: newNotes.trim() || undefined,
-        price: parsedCost,
-        km: parsedKm
+        done: true,
       };
+      if (newNotes.trim()) newItem.notes = newNotes.trim();
+      if (parsedCost !== undefined) newItem.price = parsedCost;
+      if (parsedKm !== undefined) newItem.km = parsedKm;
+      if (parsedRepeatMonths) newItem.repeatMonths = parsedRepeatMonths;
+      if (parsedRepeatKm) newItem.repeatKm = parsedRepeatKm;
+      if (parsedRepeatMonths && parsedRepeatKm) {
+        newItem.recurringType = 'both';
+      } else if (parsedRepeatMonths) {
+        newItem.recurringType = 'time';
+      } else if (parsedRepeatKm) {
+        newItem.recurringType = 'km';
+      }
+
       onChange([...deadlines, newItem]);
+      setNewRepeatMonths('');
+      setNewRepeatKm('');
     } else {
       const newItem: MaintenanceLog = {
         id: `mt_n_${Date.now()}`,
@@ -175,10 +250,11 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
         date: newDate,
         category: newMaintCategory,
         description: newNotes.trim(),
-        cost: parsedCost,
-        km: parsedKm,
-        completed: true // Di default completato se inserito come storico lavori
+        completed: true
       };
+      if (parsedCost !== undefined) newItem.cost = parsedCost;
+      if (parsedKm !== undefined) newItem.km = parsedKm;
+
       saveMaintenanceLogs([newItem, ...maintenanceLogs]);
     }
 
@@ -420,6 +496,44 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
                   className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 outline-none focus:border-[#3E4A35] rounded-xl bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-300"
                 />
               </div>
+
+              {newSource === 'deadlines' && (
+                <div className="md:col-span-3 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-2">
+                  <label className="block text-xs font-black uppercase text-[#3E4A35] dark:text-emerald-400 flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Rinnovo Automatico Personalizzato per questa Scadenza
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                        Intervallo Mesi (inserisci valore manuale es. 4, 8, 18):
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Es: 4 (per 4 mesi), 12, 24..."
+                        value={newRepeatMonths}
+                        onChange={(e) => setNewRepeatMonths(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-mono font-bold border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#3E4A35] bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                        Intervallo Km (inserisci valore manuale es. 12000, 7500):
+                      </label>
+                      <input
+                        type="number"
+                        min="100"
+                        step="100"
+                        placeholder="Es: 12000 (per 12.000 Km), 7500..."
+                        value={newRepeatKm}
+                        onChange={(e) => setNewRepeatKm(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-mono font-bold border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#3E4A35] bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 justify-end pt-2">

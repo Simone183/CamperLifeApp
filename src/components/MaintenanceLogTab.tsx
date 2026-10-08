@@ -25,6 +25,8 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useFamilyCrew } from '../context/FamilyCrewContext';
 import { FamilyCrewTabBanner } from './FamilyCrewModal';
+import { sanitizeForFirestore } from '../utils/firestoreHelper';
+import { IgrometroSection } from './SostaLiberaToolsTab';
 
 export interface MaintenanceLog {
   id: string;
@@ -70,7 +72,17 @@ export function sanitizeMaintenanceLogs(logsList: MaintenanceLog[]): Maintenance
     if (!item || !item.title) return false;
     const t = item.title.toLowerCase();
     return !legacyKeywords.some(kw => t.includes(kw.toLowerCase()));
+  }).map(item => {
+    const logItem: any = { ...item };
+    if (logItem.cost === undefined || logItem.cost === null || isNaN(logItem.cost)) {
+      delete logItem.cost;
+    }
+    if (logItem.km === undefined || logItem.km === null || isNaN(logItem.km)) {
+      delete logItem.km;
+    }
+    return logItem as MaintenanceLog;
   });
+
   if (cleaned.length === 0) {
     return DEFAULT_LOGS;
   }
@@ -81,6 +93,7 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const settings = useAppSettings();
   const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
   const [loadedFromFirestore, setLoadedFromFirestore] = React.useState(false);
+  const [showIgrometro, setShowIgrometro] = React.useState(false);
 
   // Logs state
   const [logs, setLogs] = React.useState<MaintenanceLog[]>(() => {
@@ -133,7 +146,8 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
           } catch (e) {}
         }
       } else {
-        setDoc(docRef, { logs: DEFAULT_LOGS }, { merge: true }).catch(() => {});
+        const payload = sanitizeForFirestore({ logs: DEFAULT_LOGS });
+        setDoc(docRef, payload, { merge: true }).catch(() => {});
       }
       setLoadedFromFirestore(true);
     }, (error) => {
@@ -146,7 +160,10 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   React.useEffect(() => {
     if (!loadedFromFirestore) return;
     const docRef = doc(db, "user_data", "maintenance_logs");
-    setDoc(docRef, { logs }, { merge: true }).catch(() => {});
+    const payload = sanitizeForFirestore({ logs });
+    setDoc(docRef, payload, { merge: true }).catch(err => {
+      console.error("Error saving maintenance logs to Firestore:", err);
+    });
     try {
       localStorage.setItem('camper_maintenance_logs', JSON.stringify(logs));
     } catch (e) {}
@@ -186,7 +203,13 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const handleUpdateLogCost = (id: string, newCost: number | undefined) => {
     setLogs(prev => prev.map(log => {
       if (log.id === id) {
-        return { ...log, cost: newCost };
+        const item = { ...log };
+        if (newCost !== undefined && !isNaN(newCost)) {
+          item.cost = newCost;
+        } else {
+          delete item.cost;
+        }
+        return item;
       }
       return log;
     }));
@@ -195,7 +218,13 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const handleUpdateLogKm = (id: string, newKm: number | undefined) => {
     setLogs(prev => prev.map(log => {
       if (log.id === id) {
-        return { ...log, km: newKm };
+        const item = { ...log };
+        if (newKm !== undefined && !isNaN(newKm)) {
+          item.km = newKm;
+        } else {
+          delete item.km;
+        }
+        return item;
       }
       return log;
     }));
@@ -281,14 +310,24 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
             </p>
           </div>
 
-          <button
-            onClick={handleResetToDefault}
-            className="px-3.5 py-2 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider shrink-0"
-            title="Ripristina dati iniziali"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Ripristina Log</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowIgrometro(!showIgrometro)}
+              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+            >
+              <Droplet className="w-3.5 h-3.5" />
+              <span>{showIgrometro ? 'Nascondi Igrometro' : 'Igrometro Cellula'}</span>
+            </button>
+
+            <button
+              onClick={handleResetToDefault}
+              className="px-3.5 py-2 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
+              title="Ripristina dati iniziali"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Ripristina Log</span>
+            </button>
+          </div>
         </div>
 
         {/* Global Stats bar */}
@@ -306,7 +345,7 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
           </div>
           <div className="bg-white/5 rounded-xl p-3 border border-white/5">
             <span className="block text-[8px] text-stone-350 font-bold uppercase tracking-widest text-center">Spesa Totale</span>
-            <span className="text-xl font-mono font-black text-rose-300 leading-tight block text-center mt-2">{getCurrencySymbol(settings)}{totalInvestment}</span>
+            <span className="text-xl font-mono font-black text-rose-300 leading-tight block text-center mt-2">{getCurrencySymbol(settings)}{totalInvestment.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center justify-center">
             <span className="text-xs font-bold text-white">Pronto a partire!</span>
@@ -314,6 +353,12 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         </div>
 
       </div>
+
+      {showIgrometro && (
+        <div className="animate-fade-in">
+          <IgrometroSection />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         

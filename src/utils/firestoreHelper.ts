@@ -6,18 +6,25 @@ export function sanitizeForFirestore<T = any>(obj: T): T {
   if (obj === null || obj === undefined) {
     return null as any;
   }
+  if (typeof obj === "number") {
+    if (isNaN(obj) || !isFinite(obj)) return undefined as any;
+    return obj;
+  }
   if (typeof obj !== "object") {
     return obj;
   }
   if (Array.isArray(obj)) {
     return obj
-      .filter((item) => item !== undefined)
-      .map((item) => sanitizeForFirestore(item)) as any;
+      .map((item) => sanitizeForFirestore(item))
+      .filter((item) => item !== undefined) as any;
   }
   const clean: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj as Record<string, any>)) {
     if (value !== undefined) {
-      clean[key] = sanitizeForFirestore(value);
+      const sanitized = sanitizeForFirestore(value);
+      if (sanitized !== undefined) {
+        clean[key] = sanitized;
+      }
     }
   }
   return clean as T;

@@ -14,13 +14,15 @@ interface WeatherAlertBannerProps {
   currentUser?: { nickname?: string; email?: string } | null;
   onOpenRadarModal?: () => void;
   onShowOnMap?: (lat: number, lng: number) => void;
+  isGPSConnected?: boolean;
 }
 
 export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
   userLocation,
   currentUser,
   onOpenRadarModal,
-  onShowOnMap
+  onShowOnMap,
+  isGPSConnected = false
 }) => {
   const [communityAlerts, setCommunityAlerts] = useState<CommunityWeatherAlert[]>([]);
   const [meteoAlarmWarnings, setMeteoAlarmWarnings] = useState<MeteoAlarmWarning[]>([]);
@@ -53,9 +55,9 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
   const roundedLat = userLocation ? Math.round(userLocation.lat * 100) / 100 : null;
   const roundedLng = userLocation ? Math.round(userLocation.lng * 100) / 100 : null;
 
-  // Fetch MeteoAlarm official warnings periodically for user coordinates
+  // Fetch MeteoAlarm official warnings periodically ONLY after GPS connects
   useEffect(() => {
-    if (roundedLat === null || roundedLng === null) return;
+    if (!isGPSConnected || roundedLat === null || roundedLng === null) return;
     let active = true;
 
     const checkMeteoAlarm = async () => {
@@ -71,13 +73,13 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
       active = false;
       clearInterval(interval);
     };
-  }, [roundedLat, roundedLng]);
+  }, [isGPSConnected, roundedLat, roundedLng]);
 
-  // Filter alerts within 30 km
+  // Filter alerts within 30 km ONLY after GPS connects
   const nearbyAlerts = useMemo(() => {
-    if (!userLocation) return [];
+    if (!isGPSConnected || !userLocation) return [];
     return communityWeatherAlertsService.getNearbyAlerts(userLocation.lat, userLocation.lng, 30);
-  }, [userLocation, communityAlerts]);
+  }, [isGPSConnected, userLocation, communityAlerts]);
 
   // Dismiss all active alerts when user clicks X to prevent re-opening other warnings from same batch
   const handleDismissAllActive = (currentId?: string) => {
@@ -95,6 +97,8 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
 
   // Find most critical active alert not dismissed
   const activeAlert = useMemo(() => {
+    if (!isGPSConnected) return null;
+
     const activeComm = nearbyAlerts.find(a => !dismissedIds.includes(a.id));
     if (activeComm) return { type: 'community' as const, data: activeComm };
 
@@ -102,11 +106,11 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
     if (activeMeteo) return { type: 'meteoalarm' as const, data: activeMeteo };
 
     return null;
-  }, [nearbyAlerts, meteoAlarmWarnings, dismissedIds]);
+  }, [isGPSConnected, nearbyAlerts, meteoAlarmWarnings, dismissedIds]);
 
   // Send Android / Web push notification & play sound when a new severe alert appears
   useEffect(() => {
-    if (!activeAlert) return;
+    if (!isGPSConnected || !activeAlert) return;
 
     const isCommunity = activeAlert.type === 'community';
     const commData = isCommunity ? (activeAlert.data as CommunityWeatherAlert) : null;
@@ -131,7 +135,7 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
         playAlertSound();
       } catch (e) {}
     }
-  }, [activeAlert, dismissedIds]);
+  }, [isGPSConnected, activeAlert, dismissedIds]);
 
   if (!activeAlert) return null;
 
