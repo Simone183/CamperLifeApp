@@ -43,10 +43,12 @@ import {
   Radio,
   Gauge,
   Locate,
-  Sun
+  Sun,
+  Loader2
 } from 'lucide-react';
 import CamperMediaPlayer from './CamperMediaPlayer';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLockHelper';
+import { fetchOsrmRoute, getCachedOsrmRoute } from '../utils/routing';
 
 interface FullscreenNavigatorProps {
   dest: Place;
@@ -134,9 +136,16 @@ export default function FullscreenNavigator({
   React.useEffect(() => {
     requestScreenWakeLock();
 
-    // Re-acquire wake lock on click/touch anywhere on screen if released by system
     const handleUserInteraction = () => {
       requestScreenWakeLock();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+          window.speechSynthesis.getVoices();
+        } catch (_) {}
+      }
     };
 
     window.addEventListener('click', handleUserInteraction);
@@ -1194,17 +1203,22 @@ out center;`;
     };
   }, []);
 
-  const [osrmRoute, setOsrmRoute] = React.useState<[number, number][]>([]);
-  // Freeze and maintain a stable initial start coordinate to prevent API lookup and map redraw loops on mobile GPS jitter
   const [initialStart, setInitialStart] = React.useState<[number, number]>(() => {
     return userLocation ? [userLocation.lat, userLocation.lng] : [44.5422, 10.7024];
+  });
+  const startLoc = initialStart;
+  const endLoc: [number, number] = [dest.lat, dest.lng];
+
+  const [osrmRoute, setOsrmRoute] = React.useState<[number, number][]>(() => {
+    const cached = getCachedOsrmRoute(startLoc, endLoc);
+    if (cached && cached.routes && cached.routes[0]?.geometry?.coordinates) {
+      return cached.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+    }
+    return [];
   });
   const lastRecalcPos = React.useRef<[number, number] | null>(null);
   const isRecalculatedRef = React.useRef<boolean>(false);
   const onRouteCountRef = React.useRef<number>(0);
-
-  const startLoc = initialStart;
-  const endLoc: [number, number] = [dest.lat, dest.lng];
 
   // Fallback preset coordinates in case OSRM is offline or during cold loading
   const fallbackRouteCoordinates = React.useMemo(() => {
@@ -1213,31 +1227,16 @@ out center;`;
     const lat2 = endLoc[0];
     const lng2 = endLoc[1];
 
-    // Main road intersections to simulate real physical city street routes (Google Maps style turns)
-    const keyNodes: [number, number][] = [
-      [lat1, lng1],
-      [lat1 + (lat2 - lat1) * 0.2, lng1 + (lng2 - lng1) * 0.05],
-      [lat1 + (lat2 - lat1) * 0.35, lng1 + (lng2 - lng1) * 0.1],
-      [lat1 + (lat2 - lat1) * 0.4, lng1 + (lng2 - lng1) * 0.5],
-      [lat1 + (lat2 - lat1) * 0.75, lng1 + (lng2 - lng1) * 0.55],
-      [lat1 + (lat2 - lat1) * 0.8, lng2],
-      [lat2, lng2]
-    ];
-
-    // Intrapolate between key road intersections to create many minor coordinates for smooth progression
+    // Smooth clean straight line direct to target (NO artificial zig-zag offsets)
     const interpolated: [number, number][] = [];
-    for (let i = 0; i < keyNodes.length - 1; i++) {
-      const from = keyNodes[i];
-      const to = keyNodes[i+1];
-      const subSteps = 4; // 4 segments per leg
-      for (let j = 0; j < subSteps; j++) {
-        const factor = j / subSteps;
-        const lat = from[0] + (to[0] - from[0]) * factor;
-        const lng = from[1] + (to[1] - from[1]) * factor;
-        interpolated.push([lat, lng]);
-      }
+    const steps = 10;
+    for (let i = 0; i <= steps; i++) {
+      const factor = i / steps;
+      interpolated.push([
+        lat1 + (lat2 - lat1) * factor,
+        lng1 + (lng2 - lng1) * factor
+      ]);
     }
-    interpolated.push([lat2, lng2]);
     return interpolated;
   }, [startLoc[0], startLoc[1], endLoc[0], endLoc[1]]);
 
@@ -1380,17 +1379,22 @@ out center;`;
         processSpeechQueue();
       }
 
-      // 3. Periodic engine keep-alive pulse during long silent driving periods (>12s of silence)
-      // Dispatches a micro silent pulse so mobile Chrome/Safari Web Speech IPC background worker never goes idle
+      // 3. Periodic engine keep-alive pulse (Web Audio API) so Android media channel stays active without SpeechSynthesis hangs
       if (!isSpeakingRef.current && timeSinceSpeech > 12000 && speechQueueRef.current.length === 0) {
         try {
-          synth.cancel();
           synth.resume();
-          const silentMsg = new SpeechSynthesisUtterance(" ");
-          silentMsg.volume = 0.01;
-          silentMsg.lang = 'it-IT';
-          (window as any)._silentKeepAlive = silentMsg;
-          synth.speak(silentMsg);
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            const ctx = new AudioCtx();
+            if (ctx.state === 'suspended') ctx.resume();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            gain.gain.value = 0.0001;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(0);
+            osc.stop(ctx.currentTime + 0.01);
+          }
           lastSpeechTimeRef.current = now;
         } catch (_) {}
       }
@@ -1685,31 +1689,16 @@ out center;`;
       setRouteError(null);
       setOsmObstacles([]);
       try {
-        let url = `/api/osrm?start=${startLoc[1]},${startLoc[0]}&end=${endLoc[1]},${endLoc[0]}`;
-        const activeHeading = (useCompass && deviceHeading !== null) 
-          ? deviceHeading 
-          : (vehicleHeadingRef.current !== null ? vehicleHeadingRef.current : bearing);
-        if (typeof activeHeading === 'number' && activeHeading >= 0) {
-          url += `&heading=${Math.round(activeHeading)}`;
-        }
+        const activeHeading = (!isPreview && vehicleHeadingRef.current !== null)
+          ? vehicleHeadingRef.current
+          : undefined;
 
-        const res = await fetch(url, { signal });
-        let data: any = null;
-        if (res.ok) {
-          try {
-            data = await res.json();
-          } catch (jsonErr) {
-            console.warn("Error parsing OSRM JSON:", jsonErr);
-          }
-        }
-        
+        const { coordinates: osrmCoords, data } = await fetchOsrmRoute(startLoc, endLoc, activeHeading, signal);
+
         if (!active) return;
-        
-        if (data && data.code === 'Ok' && data.routes && data.routes[0]) {
-          const route = data.routes[0];
-          const osrmCoords: [number, number][] = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
-          
-          // INSTANTLY render the standard route and directions to satisfy immediate user visual request
+
+        if (osrmCoords && osrmCoords.length > 0) {
+          const route = data?.routes?.[0];
           setOsrmRoute(osrmCoords);
           lastRecalcPos.current = [startLoc[0], startLoc[1]];
           onRouteCountRef.current = 10;
@@ -2166,8 +2155,8 @@ out center;`;
       const lastTime = lastGpsUpdateRef.current?.time || 0;
       const timeSinceLastFix = now - lastTime;
 
-      // If no fresh GPS fix received for > 3.5 seconds (tunnel or lost signal)
-      if (timeSinceLastFix > 3500) {
+      // If no fresh GPS fix received for > 12 seconds (tunnel or lost signal)
+      if (timeSinceLastFix > 12000) {
         if (!isTunnelDeadReckoning) {
           setIsTunnelDeadReckoning(true);
           wasInTunnelRef.current = true;
@@ -2509,9 +2498,8 @@ out center;`;
     speed
   ]);
 
-  // Helper to add OSRM route line layer in MapLibre GL
   const addRouteLayer = (mapInstance: maplibregl.Map, coords: [number, number][]) => {
-    if (!mapInstance.isStyleLoaded()) return;
+    if (!mapInstance || !mapInstance.getStyle()) return;
 
     const geojson: any = {
       type: 'Feature',
@@ -2730,10 +2718,11 @@ out center;`;
       }
     };
 
-    if (map.isStyleLoaded()) {
+    if (map.isStyleLoaded() || map.getStyle()) {
       updateRoute();
     } else {
       map.once('load', updateRoute);
+      map.once('styledata', updateRoute);
     }
 
     return () => {
@@ -3507,6 +3496,14 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 <span className="font-mono bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-md text-[11px] font-black border border-amber-400/40 shrink-0 ml-2">
                   Crociera 90 km/h
                 </span>
+              </div>
+            )}
+
+            {/* Active Route Calculation Loading Badge */}
+            {(loadingRoute || osrmRoute.length === 0) && (
+              <div className="bg-blue-600/90 text-white font-medium px-4 py-2 rounded-xl shadow-2xl border border-blue-400/50 animate-pulse text-xs flex items-center justify-center gap-2 pointer-events-auto">
+                <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
+                <span className="font-bold text-white">Calcolo del percorso stradale esatto in corso...</span>
               </div>
             )}
 

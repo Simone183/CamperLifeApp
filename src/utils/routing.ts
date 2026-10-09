@@ -130,3 +130,50 @@ out body;>;out skel qt;`;
     return [];
   }
 };
+
+const osrmClientCache = new Map<string, any>();
+
+export const getCachedOsrmRoute = (start: [number, number], end: [number, number], heading?: number | null): any | null => {
+  const cacheKey = `${start[0].toFixed(4)},${start[1].toFixed(4)}->${end[0].toFixed(4)},${end[1].toFixed(4)}_${heading ?? ''}`;
+  return osrmClientCache.get(cacheKey) || null;
+};
+
+export const fetchOsrmRoute = async (
+  start: [number, number],
+  end: [number, number],
+  heading?: number | null,
+  signal?: AbortSignal
+): Promise<{ coordinates: [number, number][]; data: any }> => {
+  const cacheKey = `${start[0].toFixed(4)},${start[1].toFixed(4)}->${end[0].toFixed(4)},${end[1].toFixed(4)}_${heading ?? ''}`;
+  if (osrmClientCache.has(cacheKey)) {
+    const cached = osrmClientCache.get(cacheKey);
+    const coords: [number, number][] = cached.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+    return { coordinates: coords, data: cached };
+  }
+
+  let url = `/api/osrm?start=${start[1]},${start[0]}&end=${end[1]},${end[0]}`;
+  if (typeof heading === 'number' && heading >= 0) {
+    url += `&heading=${Math.round(heading)}`;
+  }
+
+  try {
+    const res = await fetch(url, { signal });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.code === 'Ok' && data.routes && data.routes[0]?.geometry?.coordinates) {
+        osrmClientCache.set(cacheKey, data);
+        const coords: [number, number][] = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+        return { coordinates: coords, data };
+      }
+    }
+  } catch (err: any) {
+    if (signal?.aborted) throw err;
+  }
+
+  // If heading was provided and failed or produced no route, retry WITHOUT heading
+  if (heading !== null && heading !== undefined) {
+    return fetchOsrmRoute(start, end, undefined, signal);
+  }
+
+  throw new Error("Invalid route response");
+};

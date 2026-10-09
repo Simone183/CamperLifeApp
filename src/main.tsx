@@ -251,17 +251,17 @@ try {
                     ? `&bearings=${Math.round((Number(heading) % 360 + 360) % 360)},45;`
                     : "";
 
-                  const servers = [
-                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+                  const primaryUrls = [
                     `https://router.project-osrm.org/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
-                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true`,
+                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
                     `https://router.project-osrm.org/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true`,
+                    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pair}?overview=full&geometries=geojson&steps=true&continue_straight=true`,
                   ];
 
-                  for (const sUrl of servers) {
+                  const fetchSingleServer = async (sUrl: string): Promise<Response> => {
+                    const controller = new AbortController();
+                    const tId = setTimeout(() => controller.abort(), 3000);
                     try {
-                      const controller = new AbortController();
-                      const tId = setTimeout(() => controller.abort(), 4500);
                       const sRes = await originalFetch.call(window, sUrl, {
                         headers: { "User-Agent": "ViaCamperApp/2.0" },
                         signal: controller.signal,
@@ -277,7 +277,14 @@ try {
                         }
                       }
                     } catch (_) {}
-                  }
+                    clearTimeout(tId);
+                    throw new Error("OSRM server fetch failed");
+                  };
+
+                  try {
+                    const fastResponse = await Promise.any(primaryUrls.map(url => fetchSingleServer(url)));
+                    return fastResponse;
+                  } catch (_) {}
 
                   // Fallback BRouter convertito a formato OSRM
                   if (start && end) {

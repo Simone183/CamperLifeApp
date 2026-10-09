@@ -82,6 +82,7 @@ import {
   normalizeReview,
   getRating10Descriptor,
 } from "../utils/placeMergeUtils";
+import { fetchOsrmRoute, getCachedOsrmRoute } from "../utils/routing";
 import {
   APIProvider,
   Map,
@@ -385,72 +386,54 @@ function SmartRouteDisplay({
   }, [map, userLocation, selectedPlace]);
 
   const isBridgeObstacleExceeded = parseDimToNumber(vehicleDimensions.height) > 3.12;
-  const midLat = (startPt[0] + endPt[0]) / 2;
-  const midLng = (startPt[1] + endPt[1]) / 2;
 
-  // Build standard direct routing points
-  const directPath: { lat: number; lng: number }[] = [];
-  const segments = 24;
-  for (let i = 0; i <= segments; i++) {
-    const ratio = i / segments;
-    const lat = startPt[0] + (endPt[0] - startPt[0]) * ratio;
-    const lng = startPt[1] + (endPt[1] - startPt[1]) * ratio;
-    const bend = Math.sin(ratio * Math.PI) * 0.0055;
-    directPath.push({ lat: lat + bend, lng: lng - bend });
-  }
-
-  // Midpoint height limitation bridge coordinates (placed on the 12th segment)
-  const midCoord = directPath[12];
-
-  // Build detoured safe path around the middle segments (ratio 0.33 to 0.67)
-  const detourPath: { lat: number; lng: number }[] = [];
-  for (let i = 0; i <= segments; i++) {
-    const ratio = i / segments;
-    let lat = startPt[0] + (endPt[0] - startPt[0]) * ratio;
-    let lng = startPt[1] + (endPt[1] - startPt[1]) * ratio;
-
-    if (isBridgeObstacleExceeded && ratio >= 0.33 && ratio <= 0.67) {
-      const detourOffset = 0.0125;
-      const bypassRatio = (ratio - 0.33) / 0.34;
-      lat += Math.sin(bypassRatio * Math.PI) * detourOffset;
-      lng += Math.cos(bypassRatio * Math.PI) * detourOffset * 0.75;
-    } else {
-      const bend = Math.sin(ratio * Math.PI) * 0.0055;
-      lat += bend;
-      lng -= bend;
+  const [realPath, setRealPath] = React.useState<{ lat: number; lng: number }[]>(() => {
+    const cached = getCachedOsrmRoute(startPt, endPt);
+    if (cached && cached.routes && cached.routes[0]?.geometry?.coordinates) {
+      return cached.routes[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
     }
-    detourPath.push({ lat, lng });
-  }
+    return [];
+  });
+
+  React.useEffect(() => {
+    let active = true;
+    fetchOsrmRoute(startPt, endPt)
+      .then(({ coordinates }) => {
+        if (active && coordinates && coordinates.length > 0) {
+          setRealPath(coordinates.map(c => ({ lat: c[0], lng: c[1] })));
+        }
+      })
+      .catch((err) => {
+        console.warn("Error fetching OSRM route for SmartRouteDisplay:", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [startPt[0], startPt[1], endPt[0], endPt[1]]);
+
+  const displayPath = realPath.length > 0 ? realPath : [
+    { lat: startPt[0], lng: startPt[1] },
+    { lat: endPt[0], lng: endPt[1] }
+  ];
+
+  const midIndex = Math.floor(displayPath.length / 2);
+  const midCoord = displayPath[midIndex] || { lat: (startPt[0] + endPt[0]) / 2, lng: (startPt[1] + endPt[1]) / 2 };
 
   // Weather alert check (simplified mock)
-  const isBadWeather =
-    (selectedPlace?.name || "").toLowerCase().includes("montagna") ||
-    Math.random() > 0.7; // Mock weather check
+  const isBadWeather = (selectedPlace?.name || "").toLowerCase().includes("montagna");
 
   return (
     <>
       {isBadWeather && (
         <div className="absolute top-4 left-4 z-50 bg-red-600 text-white p-2 rounded-lg text-xs font-bold shadow-lg animate-pulse">
-          ⚠️ Meteo avverso: percorso consigliato modificato!
+          ⚠️ Meteo avverso: guida con cautela!
         </div>
       )}
-      {isBridgeObstacleExceeded && avoidObstaclesMode ? (
-        <>
-          <MapPolyline
-            path={directPath}
-            color="#dc2626"
-            weight={3.5}
-            dashed={true}
-          />
-          <MapPolyline path={detourPath} color="#059669" weight={6.5} />
-        </>
-      ) : (
-        <MapPolyline
-          path={directPath}
-          color={isBridgeObstacleExceeded ? "#e11d48" : "#0284c7"}
-          weight={6}
-        />
-      )}
+      <MapPolyline
+        path={displayPath}
+        color={isBridgeObstacleExceeded ? "#e11d48" : "#0284c7"}
+        weight={6}
+      />
 
       {/* Start indicator Pin */}
       {/* Hidden Gems Overlay */}
@@ -2343,106 +2326,83 @@ export default function MapTab({
       return;
     }
 
+    let active = true;
     const startPt: [number, number] = userLocation
       ? [userLocation.lat, userLocation.lng]
       : [selectedPlace.lat - 0.046, selectedPlace.lng + 0.053];
     const endPt: [number, number] = [selectedPlace.lat, selectedPlace.lng];
 
-    // Build standard direct routing points
-    const direct: [number, number][] = [];
-    const segments = 24;
-    for (let i = 0; i <= segments; i++) {
-      const ratio = i / segments;
-      const lat = startPt[0] + (endPt[0] - startPt[0]) * ratio;
-      const lng = startPt[1] + (endPt[1] - startPt[1]) * ratio;
-      const bend = Math.sin(ratio * Math.PI) * 0.0055;
-      direct.push([lat + bend, lng - bend]);
-    }
-
-    // Midpoint height limitation bridge coordinates (placed on the 12th segment)
-    const midCoord = direct[12];
-
-    // Height limit check
     const isBridgeObstacleExceeded = parseDimToNumber(vehicleDimensions.height) > 3.12;
 
-    const obstacle: OSMObstacle = {
-      id: 888123,
-      lat: midCoord[0],
-      lng: midCoord[1],
-      type: "height",
-      value: 3.12,
-      name: "Sottopasso SP8 Vecchia Ferrovia",
-      roadName: "Sottopasso Ferrovia SP8",
-      isViolation: isBridgeObstacleExceeded,
+    fetchOsrmRoute(startPt, endPt)
+      .then(({ coordinates, data }) => {
+        if (!active) return;
+        setActiveRouteCoords(coordinates);
+
+        let pathDistance = 0;
+        if (data && data.routes && data.routes[0] && typeof data.routes[0].distance === 'number') {
+          pathDistance = data.routes[0].distance / 1000;
+        } else {
+          for (let i = 1; i < coordinates.length; i++) {
+            pathDistance += getDistanceKm(
+              coordinates[i - 1][0],
+              coordinates[i - 1][1],
+              coordinates[i][0],
+              coordinates[i][1]
+            );
+          }
+        }
+
+        const style = settings?.drivingStyle || "relax";
+        let baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 65 : 82;
+        let co2Multiplier = 0.24;
+
+        if (style === "relax") {
+          baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 60 : 72;
+          co2Multiplier = 0.21;
+        } else if (style === "eco") {
+          baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 65 : 80;
+          co2Multiplier = 0.18;
+        } else if (style === "veloce") {
+          baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 80 : 95;
+          co2Multiplier = 0.28;
+        }
+
+        let eta = Math.round((pathDistance / baseSpeed) * 60 + 2);
+        if (data && data.routes && data.routes[0] && typeof data.routes[0].duration === 'number') {
+          eta = Math.max(1, Math.round(data.routes[0].duration / 60));
+        }
+
+        const co2 = parseFloat((pathDistance * co2Multiplier).toFixed(1));
+
+        setSelectedRouteStats({
+          distanceKm: pathDistance,
+          etaMinutes: eta,
+          averageSlope: 4,
+          co2Kg: co2,
+          ecoRisk: false,
+          heightViolationObstacle: null,
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.warn("Error calculating OSRM route stats:", err);
+        const fallbackPath: [number, number][] = [startPt, endPt];
+        setActiveRouteCoords(fallbackPath);
+        const dist = getDistanceKm(startPt[0], startPt[1], endPt[0], endPt[1]);
+        setSelectedRouteStats({
+          distanceKm: dist,
+          etaMinutes: Math.max(1, Math.round((dist / 70) * 60)),
+          averageSlope: 4,
+          co2Kg: parseFloat((dist * 0.22).toFixed(1)),
+          ecoRisk: false,
+          heightViolationObstacle: null,
+        });
+      });
+
+    return () => {
+      active = false;
     };
-
-    const routeObstacles = isBridgeObstacleExceeded ? [obstacle] : [];
-    setDetectedObstaclesOnRoute(routeObstacles);
-
-    // Build detoured safe path around the middle segments (ratio 0.33 to 0.67)
-    const detour: [number, number][] = [];
-    for (let i = 0; i <= segments; i++) {
-      const ratio = i / segments;
-      let lat = startPt[0] + (endPt[0] - startPt[0]) * ratio;
-      let lng = startPt[1] + (endPt[1] - startPt[1]) * ratio;
-
-      if (isBridgeObstacleExceeded && ratio >= 0.33 && ratio <= 0.67) {
-        // Bend strongly to avoid SP8 bridge
-        const detourOffset = 0.0125; // approx 1.3km bypass bend
-        const bypassRatio = (ratio - 0.33) / 0.34;
-        lat += Math.sin(bypassRatio * Math.PI) * detourOffset;
-        lng += Math.cos(bypassRatio * Math.PI) * detourOffset * 0.75;
-      } else {
-        const bend = Math.sin(ratio * Math.PI) * 0.0055;
-        lat += bend;
-        lng -= bend;
-      }
-      detour.push([lat, lng]);
-    }
-
-    const finalPath =
-      isBridgeObstacleExceeded && avoidObstaclesMode ? detour : direct;
-    setActiveRouteCoords(finalPath);
-
-    // Calculate dynamic total distance
-    let pathDistance = 0;
-    for (let i = 1; i < finalPath.length; i++) {
-      pathDistance += getDistanceKm(
-        finalPath[i - 1][0],
-        finalPath[i - 1][1],
-        finalPath[i][0],
-        finalPath[i][1],
-      );
-    }
-
-    // Heavy camper safety speeds and driving style optimization
-    const style = settings?.drivingStyle || "relax";
-    let baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 65 : 82;
-    let co2Multiplier = 0.24;
-
-    if (style === "relax") {
-      baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 60 : 72;
-      co2Multiplier = 0.21;
-    } else if (style === "eco") {
-      baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 65 : 80;
-      co2Multiplier = 0.18;
-    } else if (style === "veloce") {
-      baseSpeed = parseDimToNumber(vehicleDimensions.weight) > 3.5 ? 80 : 95;
-      co2Multiplier = 0.28;
-    }
-
-    const safetySpeedKmH = baseSpeed;
-    const eta = Math.round((pathDistance / safetySpeedKmH) * 60 + 2);
-    const co2 = parseFloat((pathDistance * co2Multiplier).toFixed(1)); // camper diesel emission multiplier
-
-    setSelectedRouteStats({
-      distanceKm: pathDistance,
-      etaMinutes: eta,
-      averageSlope: isBridgeObstacleExceeded && !avoidObstaclesMode ? 11 : 4, // standard vs bypass alpine grades
-      co2Kg: co2,
-      ecoRisk: true,
-      heightViolationObstacle: isBridgeObstacleExceeded ? obstacle : null,
-    });
   }, [
     showSmartRoute,
     selectedPlace,
@@ -5859,9 +5819,6 @@ out center;`;
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-[10px] font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded-md">
                         Rolly AI 🚐
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-normal">
-                        ⇄ scorri
                       </span>
                     </div>
                     <p className="text-[11.5px] text-slate-700 dark:text-slate-200 font-bold leading-snug">

@@ -564,6 +564,71 @@ async function sendPushNotificationToAll(
   }
 }
 
+function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function sendPushNotificationToNearby(
+  alertLat: number,
+  alertLng: number,
+  radiusKm: number = 100,
+  title: string,
+  body: string,
+  data?: Record<string, string>
+) {
+  try {
+    latestPromoPushInMemory = {
+      title,
+      body,
+      data: data || {},
+      sentAt: new Date().toISOString()
+    };
+
+    try {
+      await firestoreDb.collection("system_metadata").doc("last_promo_push").set({
+        title,
+        body,
+        data: data || {},
+        sentAt: new Date().toISOString()
+      });
+    } catch (e) {}
+
+    const tokensRef = firestoreDb.collection("push_tokens");
+    const snapshot = await tokensRef.get();
+    
+    const targetEmails: string[] = [];
+
+    snapshot.docs.forEach(doc => {
+      const docData = doc.data();
+      if (typeof docData.lat === 'number' && typeof docData.lng === 'number') {
+        const dist = haversineDistanceKm(alertLat, alertLng, docData.lat, docData.lng);
+        if (dist <= radiusKm) {
+          targetEmails.push(doc.id);
+        }
+      } else {
+        // Fallback: send to devices without recorded position so no one misses critical weather safety alerts
+        targetEmails.push(doc.id);
+      }
+    });
+
+    console.log(`[FCM Geo-Push] Alert location (${alertLat}, ${alertLng}), radius ${radiusKm}km -> Selected ${targetEmails.length}/${snapshot.docs.length} target devices.`);
+
+    if (targetEmails.length > 0) {
+      await sendPushNotification(targetEmails, title, body, data);
+    }
+  } catch (err) {
+    console.error("[FCM Geo-Push] Error in sendPushNotificationToNearby, falling back to all:", err);
+    await sendPushNotificationToAll(title, body, data);
+  }
+}
+
 let lastCheckedPromoFirestoreTime = 0;
 
 async function checkAndSendPromotionalPush() {
@@ -620,6 +685,91 @@ async function checkAndSendPromotionalPush() {
     } else {
       console.error("[Promo Push] Error in checkAndSendPromotionalPush:", err);
     }
+  }
+}
+
+const WEATHER_ALERTS_FILE = path.join(process.cwd(), "data", "community_weather_alerts.json");
+
+function getCachedWeatherAlerts(): any[] {
+  try {
+    if (fs.existsSync(WEATHER_ALERTS_FILE)) {
+      const raw = fs.readFileSync(WEATHER_ALERTS_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const now = Date.now();
+        return parsed.filter(a => new Date(a.expiresAt || 0).getTime() > now);
+      }
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveCachedWeatherAlerts(alerts: any[]) {
+  try {
+    const dataDir = path.dirname(WEATHER_ALERTS_FILE);
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(WEATHER_ALERTS_FILE, JSON.stringify(alerts, null, 2), "utf-8");
+  } catch (e) {}
+}
+
+let lastCheckedWeatherAlertTime = 0;
+
+async function checkAndSendWeatherAlertsPush() {
+  const now = Date.now();
+  // Don't run weather background push check more than once every 30 minutes
+  if (now - lastCheckedWeatherAlertTime < 30 * 60 * 1000) {
+    return;
+  }
+  lastCheckedWeatherAlertTime = now;
+
+  try {
+    console.log("[Weather Push Scheduler] Checking recent weather alerts for background FCM dispatch...");
+    let recentAlerts: any[] = [];
+
+    try {
+      const snapshot = await firestoreDb.collection("community_weather_alerts").get();
+      snapshot.forEach((doc: any) => {
+        const data = doc.data();
+        const expiresAt = new Date(data.expiresAt || 0).getTime();
+        const createdAt = new Date(data.createdAt || Date.now()).getTime();
+        if (expiresAt > now && (now - createdAt) < 2 * 60 * 60 * 1000) {
+          recentAlerts.push({ id: doc.id, ...data });
+        }
+      });
+    } catch (fsErr) {
+      const cachedAlerts = getCachedWeatherAlerts();
+      recentAlerts = cachedAlerts.filter(a => {
+        const createdAt = new Date(a.createdAt || Date.now()).getTime();
+        return (now - createdAt) < 2 * 60 * 60 * 1000; // created within last 2 hours
+      });
+    }
+
+    if (recentAlerts.length > 0) {
+      console.log(`[Weather Push Scheduler] Found ${recentAlerts.length} active weather alert(s). Sending background push...`);
+      for (const alert of recentAlerts.slice(0, 2)) {
+        const typeLabels: Record<string, string> = {
+          hail: "⚠️ Allerta Grandine!",
+          storm: "🌩️ Allerta Temporale Violento!",
+          wind: "💨 Allerta Raffiche di Vento!",
+          flood: "🌊 Allerta Pericolo Allagamento!",
+          snow: "❄️ Allerta Neve / Ghiaccio!",
+          meteoalarm: "🚨 Allerta Meteo Severa!"
+        };
+        const title = typeLabels[alert.type] || `⚠️ Allerta Meteo: ${alert.title || 'In Zona'}`;
+        const loc = alert.locationName ? `A ${alert.locationName}` : 'Nella tua area';
+        const body = `${loc}: ${alert.description || 'Presta attenzione durante la guida e la sosta in camper.'}`;
+
+        await sendPushNotificationToNearby(alert.lat, alert.lng, 100, title, body, {
+          type: "weather_alert",
+          alertId: String(alert.id),
+          severity: String(alert.severity || "warning"),
+          lat: String(alert.lat),
+          lng: String(alert.lng)
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error("[Weather Push Scheduler] Error in checkAndSendWeatherAlertsPush:", err);
   }
 }
 
@@ -3439,29 +3589,7 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
-  const WEATHER_ALERTS_FILE = path.join(process.cwd(), "data", "community_weather_alerts.json");
 
-  const getCachedWeatherAlerts = (): any[] => {
-    try {
-      if (fs.existsSync(WEATHER_ALERTS_FILE)) {
-        const raw = fs.readFileSync(WEATHER_ALERTS_FILE, "utf-8");
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const now = Date.now();
-          return parsed.filter(a => new Date(a.expiresAt || 0).getTime() > now);
-        }
-      }
-    } catch (e) {}
-    return [];
-  };
-
-  const saveCachedWeatherAlerts = (alerts: any[]) => {
-    try {
-      const dataDir = path.dirname(WEATHER_ALERTS_FILE);
-      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-      fs.writeFileSync(WEATHER_ALERTS_FILE, JSON.stringify(alerts, null, 2), "utf-8");
-    } catch (e) {}
-  };
 
   app.get("/api/weather-alerts", async (req, res) => {
     try {
@@ -3503,6 +3631,32 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       const updated = [alert, ...current.filter(a => a.id !== alert.id)];
       saveCachedWeatherAlerts(updated);
 
+      // 3. Send targeted FCM Push Notification to devices in affected weather zone (100km radius)
+      try {
+        const typeLabels: Record<string, string> = {
+          hail: "⚠️ Allerta Grandine",
+          storm: "🌩️ Allerta Temporale Violento",
+          wind: "💨 Allerta Raffiche di Vento",
+          flood: "🌊 Allerta Pericolo Allagamento",
+          snow: "❄️ Allerta Neve / Ghiaccio",
+          meteoalarm: "🚨 Allerta Meteo Severa"
+        };
+        const title = typeLabels[alert.type] || `⚠️ Allerta Meteo: ${alert.title || 'Segnalazione'}`;
+        const locName = alert.locationName ? `Presso ${alert.locationName}` : 'Nella tua area';
+        const body = `${locName} - ${alert.description || 'Segnalazione di pericolo meteo inserita da un camperista.'}`;
+
+        console.log(`[WeatherAlerts] Sending targeted FCM push notification for alert ${alert.id} (${title}) near lat:${alert.lat}, lng:${alert.lng}`);
+        sendPushNotificationToNearby(alert.lat, alert.lng, 100, title, body, {
+          type: "weather_alert",
+          alertId: String(alert.id),
+          severity: String(alert.severity || "warning"),
+          lat: String(alert.lat),
+          lng: String(alert.lng)
+        }).catch(e => console.warn("[WeatherAlerts] Push dispatch warning:", e));
+      } catch (pushErr) {
+        console.warn("[WeatherAlerts] Push dispatch error:", pushErr);
+      }
+
       res.json({ success: true, alert });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Errore salvataggio allerta" });
@@ -3538,24 +3692,64 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
   app.post("/api/user/push-token", async (req, res) => {
     try {
-      const { email, token, platform } = req.body;
+      const { email, token, platform, lat, lng } = req.body;
       if (!email || !token) {
         return res.status(400).json({ error: "Email e token sono richiesti." });
       }
 
-      const tokensRef = firestoreDb.collection("push_tokens");
-      await tokensRef.doc(email.toLowerCase().trim()).set({
-        email: email.toLowerCase().trim(),
+      const cleanEmail = email.toLowerCase().trim();
+      const payload: any = {
+        email: cleanEmail,
         token: token,
         platform: platform || "unknown",
         updatedAt: new Date().toISOString()
-      });
+      };
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        payload.lat = lat;
+        payload.lng = lng;
+      }
 
-      console.log(`[FCM Push] Token registered in Firestore for ${email}: ${token}`);
+      const tokensRef = firestoreDb.collection("push_tokens");
+      await tokensRef.doc(cleanEmail).set(payload, { merge: true });
+
+      console.log(`[FCM Push] Token and location registered in Firestore for ${cleanEmail}: ${token} (lat:${lat}, lng:${lng})`);
       res.json({ success: true, message: "Token push registrato con successo." });
     } catch (err: any) {
       console.error("Error storing push token:", err);
       res.status(500).json({ error: err.message || "Unknown error inside server" });
+    }
+  });
+
+  app.post("/api/user/location", async (req, res) => {
+    try {
+      const { email, token, lat, lng, platform } = req.body;
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        return res.status(400).json({ error: "Coordinate non valide." });
+      }
+
+      const cleanEmail = (email || "anonymous").toLowerCase().trim();
+      if (cleanEmail !== "anonymous") {
+        const tokensRef = firestoreDb.collection("push_tokens");
+        const docPayload: any = {
+          email: cleanEmail,
+          lat,
+          lng,
+          updatedAt: new Date().toISOString()
+        };
+        if (token) docPayload.token = token;
+        if (platform) docPayload.platform = platform;
+
+        await tokensRef.doc(cleanEmail).set(docPayload, { merge: true });
+
+        await firestoreDb.collection("users").doc(cleanEmail).set({
+          lastLocation: { lat, lng, updatedAt: new Date().toISOString() }
+        }, { merge: true });
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error storing user location:", err);
+      res.status(500).json({ error: err.message || "Errore salvataggio posizione" });
     }
   });
 
@@ -4144,6 +4338,33 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     } catch (err: any) {
       console.error("Error deleting fuel log:", err);
       res.status(500).json({ error: err.message || "Unknown error deleting fuel log" });
+    }
+  });
+
+  app.put("/api/fuel-logs/:email/:logId", async (req, res) => {
+    try {
+      const email = (req.params.email || "").toLowerCase().trim();
+      const { logId } = req.params;
+      const updatedLog = req.body;
+
+      // 1. Immediately update in cache
+      const current = getCachedFuelLogs(email);
+      const updatedList = current.map(l => l.id === logId ? { ...updatedLog, id: logId } : l);
+      saveCachedFuelLogs(email, updatedList);
+
+      // 2. Try Firestore update in background
+      (async () => {
+        try {
+          await firestoreDb.collection(`users/${email}/fuelLogs`).doc(logId).set(updatedLog, { merge: true });
+        } catch (fsErr: any) {
+          console.warn("[Fuel Logs] Firestore update warning:", fsErr);
+        }
+      })().catch(() => {});
+
+      res.json({ success: true, updatedLog: { ...updatedLog, id: logId } });
+    } catch (err: any) {
+      console.error("Error updating fuel log:", err);
+      res.status(500).json({ error: err.message || "Unknown error updating fuel log" });
     }
   });
 
@@ -6005,28 +6226,29 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           : "";
 
         const servers = [
-          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`,
-          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`,
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`
         ];
         
-        for (const url of servers) {
-          try {
-            const resObj = await fetch(url, {
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-              },
-              signal: AbortSignal.timeout(5000) // Generous 5s timeout
-            });
-            if (resObj.ok) {
-              const resData = await resObj.json();
-              if (resData.code === "Ok") {
-                return resData;
-              }
+        const fetchOneServer = async (url: string) => {
+          const resObj = await fetch(url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            signal: AbortSignal.timeout(3000)
+          });
+          if (resObj.ok) {
+            const resData = await resObj.json();
+            if (resData && resData.code === "Ok" && resData.routes && resData.routes.length > 0) {
+              return resData;
             }
-          } catch (err) {
-            console.log(`[OSRM Proxy] Server response was busy for ${url}, trying next...`);
           }
-        }
+          throw new Error("Invalid OSRM response from server");
+        };
+
+        try {
+          return await Promise.any(servers.map(url => fetchOneServer(url)));
+        } catch (_) {}
 
         // If bearings constraint was used and failed or produced no route, retry without bearings
         if (bearingsParam !== "") {
@@ -6037,25 +6259,25 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
         throw new Error("All OSRM routing servers were busy");
       };
 
-      // Pre-snap coordinates in parallel always!
-      console.log(`[OSRM Proxy] Snapping coordinates in parallel (heading: ${heading || 'none'}): ${start} and ${end}`);
-      const [snappedStart, snappedEnd] = await Promise.all([
-        snapToRoad(start as string, heading as string),
-        snapToRoad(end as string)
-      ]);
-      console.log(`[OSRM Proxy] Snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
-
       let data: any;
       try {
-        console.log(`[OSRM Proxy] Routing with snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
-        data = await getRoute(snappedStart, snappedEnd, heading as string);
-      } catch (err) {
-        console.log("[OSRM Proxy] Routing with snapped coordinates was unsuccessful. Retrying with original coordinates...");
+        // Step 1: Attempt direct OSRM route immediately (fastest path, ~100ms, OSRM automatically snaps internally)
+        console.log(`[OSRM Proxy] Routing directly (heading: ${heading || 'none'}): ${start} -> ${end}`);
+        data = await getRoute(start as string, end as string, heading as string);
+      } catch (directErr) {
+        console.log("[OSRM Proxy] Direct routing failed, trying snapped coordinates...");
         try {
-          data = await getRoute(start as string, end as string, heading as string);
-        } catch (retryErr) {
-          console.log("[OSRM Proxy] All OSRM routing servers were busy. Fetching BRouter backup...");
+          // Step 2: Fallback to snapping coordinates if direct routing fails
+          const [snappedStart, snappedEnd] = await Promise.all([
+            snapToRoad(start as string, heading as string),
+            snapToRoad(end as string)
+          ]);
+          console.log(`[OSRM Proxy] Snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
+          data = await getRoute(snappedStart, snappedEnd, heading as string);
+        } catch (snappedErr) {
+          console.log("[OSRM Proxy] OSRM routing failed. Retrying with BRouter backup...");
           try {
+            // Step 3: High-fidelity BRouter fallback
             const brouterData = await fetchBRouter(start as string, end as string, avoidHighways as string, avoidTolls as string);
             data = convertBRouterToOSRM(brouterData);
             console.log("[OSRM Proxy] Successfully fell back to backend BRouter and converted to OSRM format.");
@@ -7261,18 +7483,20 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     console.log(`Server running on port ${PORT}`);
     cleanupFakePlaces().catch(console.error);
 
-    // Start background scheduler for promotional push notifications
-    console.log("[Promo Push] Initializing automatic promotional push scheduler...");
+    // Start background schedulers for promo & weather alerts push notifications
+    console.log("[Push Schedulers] Initializing promo & weather alerts push schedulers...");
     // 15 seconds delay after boot
     setTimeout(() => {
-      console.log("[Promo Push] Running initial boot-time promo push check...");
+      console.log("[Push Schedulers] Running initial boot-time push checks...");
       checkAndSendPromotionalPush().catch(console.error);
+      checkAndSendWeatherAlertsPush().catch(console.error);
     }, 15000);
 
     // Repeat every 1 hour (3600000 ms)
     setInterval(() => {
-      console.log("[Promo Push] Running periodic hourly promo push check...");
+      console.log("[Push Schedulers] Running periodic hourly push checks...");
       checkAndSendPromotionalPush().catch(console.error);
+      checkAndSendWeatherAlertsPush().catch(console.error);
     }, 3600000);
   });
 }

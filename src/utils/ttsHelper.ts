@@ -3,6 +3,15 @@ export type TtsGender = 'auto' | 'female' | 'male';
 const FEMALE_VOICE_REGEX = /alice|elsa|federica|sonia|monica|silvia|isabella|paola|giulia|chiara|female|femminile|woman|siri|zira|samantha/i;
 const MALE_VOICE_REGEX = /cosimo|luca|diego|paolo|marco|matteo|giorgio|mario|roberto|stefano|male|maschile|man|guy|david|george/i;
 
+if (typeof window !== "undefined" && 'speechSynthesis' in window) {
+  try {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => {
+      try { window.speechSynthesis.getVoices(); } catch (_) {}
+    };
+  } catch (_) {}
+}
+
 export function applyTtsVoiceAndPitch(
   msg: SpeechSynthesisUtterance,
   genderSetting: TtsGender = 'auto'
@@ -11,7 +20,11 @@ export function applyTtsVoiceAndPitch(
 
   msg.lang = 'it-IT';
   
-  const voices = window.speechSynthesis.getVoices();
+  let voices: SpeechSynthesisVoice[] = [];
+  try {
+    voices = window.speechSynthesis.getVoices() || [];
+  } catch (_) {}
+
   const italianVoices = voices.filter(
     v => v.lang && (v.lang.startsWith('it') || v.lang.includes('IT') || v.lang.includes('it'))
   );
@@ -23,28 +36,34 @@ export function applyTtsVoiceAndPitch(
     selectedVoice = italianVoices.find(v => FEMALE_VOICE_REGEX.test(v.name)) || null;
     if (selectedVoice) {
       targetPitch = 1.02;
+    } else if (italianVoices.length > 0) {
+      selectedVoice = italianVoices[0];
+      targetPitch = 1.18;
     } else {
-      // Fallback if no explicitly female voice name found: use first Italian voice with higher pitch
-      selectedVoice = italianVoices[0] || null;
       targetPitch = 1.18;
     }
   } else if (genderSetting === 'male') {
     selectedVoice = italianVoices.find(v => MALE_VOICE_REGEX.test(v.name)) || null;
     if (selectedVoice) {
       targetPitch = 0.98;
+    } else if (italianVoices.length > 0) {
+      selectedVoice = italianVoices[0];
+      targetPitch = 0.78;
     } else {
-      // Fallback if no explicitly male voice name found: use first Italian voice with lower pitch
-      selectedVoice = italianVoices[0] || null;
       targetPitch = 0.78;
     }
   } else {
     // Auto
-    selectedVoice = italianVoices[0] || null;
+    if (italianVoices.length > 0) {
+      selectedVoice = italianVoices[0];
+    }
     targetPitch = 1.0;
   }
 
   if (selectedVoice) {
-    msg.voice = selectedVoice;
+    try {
+      msg.voice = selectedVoice;
+    } catch (_) {}
   }
   msg.pitch = targetPitch;
 }

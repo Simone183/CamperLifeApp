@@ -31,35 +31,45 @@ export async function registerPushNotifications(userEmail: string) {
         if (!tokenValue) return;
         console.log('[Push] FCM Token generated successfully:', tokenValue);
 
+        let lastGps: { lat: number; lng: number } | null = null;
+        try {
+          const storedGps = localStorage.getItem('last_known_gps_location');
+          if (storedGps) lastGps = JSON.parse(storedGps);
+        } catch (e) {}
+
         // A. Direct Firestore save (Guaranteed delivery even if server API is slow)
         try {
           const pushTokenDocRef = doc(db, 'push_tokens', cleanEmail);
-          await setDoc(pushTokenDocRef, {
+          const pushDocPayload: any = {
             email: cleanEmail,
             token: tokenValue,
             platform: Capacitor.getPlatform(),
             updatedAt: new Date().toISOString()
-          }, { merge: true });
+          };
+          if (lastGps && typeof lastGps.lat === 'number' && typeof lastGps.lng === 'number') {
+            pushDocPayload.lat = lastGps.lat;
+            pushDocPayload.lng = lastGps.lng;
+          }
+          await setDoc(pushTokenDocRef, pushDocPayload, { merge: true });
 
           const userDocRef = doc(db, 'users', cleanEmail);
-          await setDoc(userDocRef, {
+          const userDocPayload: any = {
             pushToken: tokenValue,
             pushPlatform: Capacitor.getPlatform(),
             lastTokenUpdate: new Date().toISOString()
-          }, { merge: true });
+          };
+          if (lastGps && typeof lastGps.lat === 'number' && typeof lastGps.lng === 'number') {
+            userDocPayload.lastLocation = { lat: lastGps.lat, lng: lastGps.lng, updatedAt: new Date().toISOString() };
+          }
+          await setDoc(userDocRef, userDocPayload, { merge: true });
 
           // Also ensure admin push token is saved if this is the superadmin user
           if (cleanEmail === 'sambucci.simone@gmail.com' || cleanEmail === 'viacamperapp@gmail.com') {
             const adminDocRef = doc(db, 'push_tokens', 'sambucci.simone@gmail.com');
-            await setDoc(adminDocRef, {
-              email: 'sambucci.simone@gmail.com',
-              token: tokenValue,
-              platform: Capacitor.getPlatform(),
-              updatedAt: new Date().toISOString()
-            }, { merge: true });
+            await setDoc(adminDocRef, pushDocPayload, { merge: true });
           }
 
-          console.log('[Push] Token successfully saved directly in Firestore push_tokens & users collections.');
+          console.log('[Push] Token and location successfully saved directly in Firestore push_tokens & users collections.');
         } catch (fsErr) {
           console.warn('[Push] Direct Firestore token save notice:', fsErr);
         }
@@ -67,20 +77,18 @@ export async function registerPushNotifications(userEmail: string) {
         // B. Backend API save via resolveMediaUrl
         try {
           const targetUrl = resolveMediaUrl('/api/user/push-token');
-          const response = await fetch(targetUrl, {
+          await fetch(targetUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               email: cleanEmail,
               token: tokenValue,
-              platform: Capacitor.getPlatform()
+              platform: Capacitor.getPlatform(),
+              lat: lastGps?.lat,
+              lng: lastGps?.lng
             })
           });
-          if (response.ok) {
-            console.log('[Push] Token successfully registered with backend server.');
-          } else {
-            console.warn('[Push] Backend response for token:', response.status, response.statusText);
-          }
+          console.log('[Push] Token successfully registered with backend server.');
         } catch (err) {
           console.warn('[Push] Backend fetch for token failed (Firestore direct save active):', err);
         }
@@ -119,6 +127,8 @@ export async function registerPushNotifications(userEmail: string) {
             window.dispatchEvent(new CustomEvent('navigate-admin-places'));
           } else if (data.type === 'community' || data.type === 'new_message') {
             window.dispatchEvent(new CustomEvent('navigate-community'));
+          } else if (data.type === 'weather_alert') {
+            window.dispatchEvent(new CustomEvent('open-weather-modal'));
           }
         }
       });
@@ -185,5 +195,43 @@ export async function registerPushNotifications(userEmail: string) {
 
   } catch (err) {
     console.error('[Push] Critical error in push notification registration flow:', err);
+  }
+}
+
+export async function updateUserLocationOnServer(lat: number, lng: number, userEmail?: string) {
+  try {
+    const email = userEmail || localStorage.getItem('camper_user_email') || localStorage.getItem('user_email') || 'sambucci.simone@gmail.com';
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Direct Firestore update for location
+    try {
+      const pushTokenDocRef = doc(db, 'push_tokens', cleanEmail);
+      await setDoc(pushTokenDocRef, {
+        email: cleanEmail,
+        lat,
+        lng,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      const userDocRef = doc(db, 'users', cleanEmail);
+      await setDoc(userDocRef, {
+        lastLocation: { lat, lng, updatedAt: new Date().toISOString() }
+      }, { merge: true });
+    } catch (e) {}
+
+    // Backend API update
+    const targetUrl = resolveMediaUrl('/api/user/location');
+    await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        lat,
+        lng,
+        platform: Capacitor.getPlatform()
+      })
+    });
+  } catch (err) {
+    // Silent catch
   }
 }

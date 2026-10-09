@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { getCurrencySymbol, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue } from '../unit-helpers';
-import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle, MapPin } from 'lucide-react';
+import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle, MapPin, Pencil } from 'lucide-react';
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
@@ -161,7 +161,8 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
   const [error, setError] = React.useState<string | null>(null);
   const [deletingLogId, setDeletingLogId] = React.useState<string | null>(null);
 
-  const [showAddForm, setShowAddForm] = React.useState(false);
+  const [logAction, setLogAction] = React.useState<'add' | 'edit' | null>(null);
+  const [editingLog, setEditingLog] = React.useState<FuelLog | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Form states
@@ -516,7 +517,7 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
       setOdometer('');
       setFuelCompany('Eni');
       setIsFullTank(false);
-      setShowAddForm(false);
+      setLogAction(null);
 
       window.dispatchEvent(
         new CustomEvent('show-toast', {
@@ -534,6 +535,68 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
   const handleDelete = (logId: string) => {
     if (!emailLower) return;
     setDeletingLogId(logId);
+  };
+
+  const handleEdit = (log: FuelLog) => {
+    setEditingLog(log);
+    setLogAction('edit');
+    setDate(log.date);
+    setTotalCost((log.totalCost || 0).toString());
+    setLiters((log.liters || 0).toString());
+    setPricePerLiter((log.pricePerLiter || 0).toString());
+    setOdometer((log.odometer || '').toString());
+    setFuelCompany(log.fuelCompany);
+    setIsFullTank(log.isFullTank || false);
+    setSelectedTripId(log.tripId || 'auto');
+  };
+
+  const handleEditLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailLower || !editingLog) return;
+    
+    setIsSubmitting(true);
+
+    const updatedLog: FuelLog = {
+      ...editingLog,
+      date,
+      totalCost: Number(totalCost.replace(',', '.')),
+      liters: Number(liters.replace(',', '.')),
+      pricePerLiter: Number(pricePerLiter.replace(',', '.')),
+      odometer: Number(odometer),
+      fuelCompany: fuelCompany.trim() || 'Eni',
+      isFullTank,
+      tripId: selectedTripId === 'auto' ? undefined : selectedTripId,
+      // tripTitle would ideally be re-fetched or kept as is
+    };
+
+    try {
+      // 1. API PUT
+      await fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}/${encodeURIComponent(editingLog.id)}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedLog)
+      });
+
+      // 2. Local State Update
+      const updatedLogs = sortFuelLogsDesc(logs.map(l => l.id === editingLog.id ? updatedLog : l));
+      setLogs(updatedLogs);
+      localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(updatedLogs));
+
+      // 3. Reset
+      setLogAction(null);
+      setEditingLog(null);
+      
+      window.dispatchEvent(
+        new CustomEvent('show-toast', {
+          detail: { message: "✏️ Rifornimento aggiornato!" }
+        })
+      );
+    } catch (err) {
+      console.error("Error updating log:", err);
+      alert("Errore durante l'aggiornamento.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const confirmDelete = async () => {
@@ -635,9 +698,9 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
             </p>
           </div>
         </div>
-        {!showAddForm && (
+        {!logAction && (
           <button
-            onClick={() => setShowAddForm(true)}
+            onClick={() => setLogAction('add')}
             className="w-10 h-10 rounded-xl bg-[#3E4A35] hover:bg-[#5A6B4E] text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer shrink-0"
             title="Aggiungi Rifornimento"
           >
@@ -688,7 +751,7 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
       )}
 
       {/* ADD LOG FORM */}
-      {showAddForm && (
+      {logAction && (
         <div className="bg-slate-50 border border-slate-300 rounded-2xl p-4 sm:p-5 shadow-inner">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -696,14 +759,14 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
               Nuovo Rifornimento
             </h3>
             <button
-              onClick={() => setShowAddForm(false)}
+              onClick={() => { setLogAction(null); setEditingLog(null); }}
               className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
           </div>
           
-          <form onSubmit={handleAddLog} className="space-y-4">
+          <form onSubmit={logAction === 'add' ? handleAddLog : handleEditLog} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Data</label>
@@ -890,7 +953,7 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
       )}
 
       {/* LOGS LIST */}
-      {logs.length > 0 && !showAddForm && (
+      {logs.length > 0 && !logAction && (
         <div className="space-y-2.5">
           {logs.map((log) => {
             const companyLower = (log.fuelCompany || '').toLowerCase();
@@ -946,6 +1009,14 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
                   </div>
                   <button
                     type="button"
+                    onClick={() => handleEdit(log)}
+                    className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                    title="Modifica rifornimento"
+                  >
+                    <Pencil className="w-4 h-4 pointer-events-none" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleDelete(log.id)}
                     className="p-2 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                     title="Elimina rifornimento"
@@ -959,7 +1030,7 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
         </div>
       )}
 
-      {!loading && !error && logs.length === 0 && !showAddForm && (
+      {!loading && !error && logs.length === 0 && !logAction && (
         <div className="bg-slate-50 border border-slate-200 border-dashed rounded-2xl p-8 text-center">
           <Fuel className="w-8 h-8 text-slate-300 mx-auto mb-3" />
           <p className="text-sm font-bold text-slate-500">Nessun rifornimento registrato.</p>

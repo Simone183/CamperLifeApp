@@ -85,7 +85,7 @@ import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { getStats, enablePersistentStorage } from "./utils/offlineMapCache";
-import { registerPushNotifications } from "./utils/pushNotifications";
+import { registerPushNotifications, updateUserLocationOnServer } from "./utils/pushNotifications";
 import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
@@ -1374,15 +1374,21 @@ export default function App() {
       setSettingsSubTab("community");
     };
 
+    const handleOpenWeather = () => {
+      setShowWeatherRadarModal(true);
+    };
+
     window.addEventListener("navigate-admin-users", handleNavAdminUsers);
     window.addEventListener("navigate-admin-places", handleNavAdminPlaces);
     window.addEventListener("navigate-community", handleNavCommunity);
+    window.addEventListener("open-weather-modal", handleOpenWeather);
 
     return () => {
       window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("navigate-admin-users", handleNavAdminUsers);
       window.removeEventListener("navigate-admin-places", handleNavAdminPlaces);
       window.removeEventListener("navigate-community", handleNavCommunity);
+      window.removeEventListener("open-weather-modal", handleOpenWeather);
     };
   }, []);
 
@@ -4496,6 +4502,12 @@ out center;`;
 
         try {
           localStorage.setItem('last_known_gps_location', JSON.stringify({ lat, lng, timestamp: Date.now() }));
+          const lastSync = (window as any)._lastGpsSyncTime || 0;
+          if (now - lastSync > 180000) { // Sync every 3 minutes
+            (window as any)._lastGpsSyncTime = now;
+            const emailForSync = currentUser?.email || localStorage.getItem("camper_user_email") || undefined;
+            updateUserLocationOnServer(lat, lng, emailForSync);
+          }
         } catch (e) {}
 
         setUserLocation((prev) => {
