@@ -149,15 +149,22 @@ export function speakSampleTts(
       msg.lang = 'it-IT';
       applyTtsVoiceAndPitch(msg, genderSetting);
 
-      (window as any)._sampleUtterance = msg;
+      (window as any)._ttsAnchors = (window as any)._ttsAnchors || [];
+      (window as any)._ttsAnchors.push(msg);
+      if ((window as any)._ttsAnchors.length > 10) {
+        (window as any)._ttsAnchors.shift();
+      }
 
       let finished = false;
       const cleanup = () => {
         if (finished) return;
         finished = true;
-        (window as any)._sampleUtterance = null;
         setSpeakingState(false);
         onEnd?.();
+      };
+
+      msg.onstart = () => {
+        setSpeakingState(true);
       };
 
       msg.onend = cleanup;
@@ -173,7 +180,7 @@ export function speakSampleTts(
           cleanup();
           playFallbackAudio();
         }
-      }, 5000);
+      }, 4000);
 
       synth.speak(msg);
       return;

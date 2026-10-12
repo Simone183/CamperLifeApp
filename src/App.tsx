@@ -65,7 +65,7 @@ import { CamperSecurityTab } from "./components/CamperSecurityTab";
 import { PantryShoppingTab } from "./components/PantryShoppingTab";
 import { MaintenanceLogTab } from "./components/MaintenanceLogTab";
 import { playAlertSound, playTapSound } from "./utils/soundHelper";
-import { applyTtsVoiceAndPitch } from "./utils/ttsHelper";
+import { applyTtsVoiceAndPitch, speakSampleTts } from "./utils/ttsHelper";
 import WorkLogTab from "./components/WorkLogTab";
 import SharedTripsTab from "./components/SharedTripsTab";
 import { TripShareModal } from "./components/TripShareModal";
@@ -2356,10 +2356,7 @@ export default function App() {
              lastSpokenText = cleanText;
              lastSpokenTime = now;
 
-             window.speechSynthesis.cancel();
-             const utterance = new SpeechSynthesisUtterance(cleanText);
-             applyTtsVoiceAndPitch(utterance, settings.ttsGender || 'auto');
-             window.speechSynthesis.speak(utterance);
+             speakSampleTts(settings.ttsGender || 'auto', cleanText);
            }
         }
       }

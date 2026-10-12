@@ -1275,15 +1275,45 @@ out center;`;
   const speechTimeoutRef = React.useRef<any>(null);
   const lastSpeechTimeRef = React.useRef<number>(0);
 
+  const activeFallbackAudioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  const playFallbackAudio = React.useCallback((text: string, onEnded: () => void) => {
+    try {
+      if (activeFallbackAudioRef.current) {
+        try { activeFallbackAudioRef.current.pause(); } catch (_) {}
+        activeFallbackAudioRef.current = null;
+      }
+      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=${encodeURIComponent(text)}`;
+      const audio = new Audio(audioUrl);
+      activeFallbackAudioRef.current = audio;
+
+      let called = false;
+      const safeDone = () => {
+        if (called) return;
+        called = true;
+        activeFallbackAudioRef.current = null;
+        onEnded();
+      };
+
+      audio.onended = safeDone;
+      audio.onerror = safeDone;
+      audio.play().catch(() => safeDone());
+    } catch (_) {
+      onEnded();
+    }
+  }, []);
+
   const processSpeechQueue = React.useCallback(() => {
-    if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
+    if (typeof window === "undefined") return;
     
     // Resume speechSynthesis if browser paused or suspended audio context
-    try {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-    } catch (_) {}
+    if ('speechSynthesis' in window) {
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      } catch (_) {}
+    }
 
     if (isSpeakingRef.current) return;
     if (speechQueueRef.current.length === 0) return;
@@ -1303,66 +1333,101 @@ out center;`;
       return;
     }
 
-    const msg = new SpeechSynthesisUtterance(nextItem.text);
-    msg.rate = 1.0;
-    applyTtsVoiceAndPitch(msg, settings?.ttsGender || 'auto');
-
-    // Retain strong reference to prevent V8 garbage collection mid-speech
-    activeUtteranceRef.current = msg;
-    (window as any)._activeUtterance = msg;
     isSpeakingRef.current = true;
     lastSpeechTimeRef.current = Date.now();
 
-    if (speechTimeoutRef.current) {
-      clearTimeout(speechTimeoutRef.current);
+    let finished = false;
+    let startDetected = false;
+    let startWatchdogTimer: any = null;
+
+    const finishSpeech = () => {
+      if (finished) return;
+      finished = true;
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+      if (startWatchdogTimer) clearTimeout(startWatchdogTimer);
+      isSpeakingRef.current = false;
+      activeUtteranceRef.current = null;
+      (window as any)._activeUtterance = null;
+      setTimeout(() => processSpeechQueue(), 100);
+    };
+
+    const triggerAudioFallback = () => {
+      if (finished) return;
+      finished = true;
+      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+      if (startWatchdogTimer) clearTimeout(startWatchdogTimer);
+      try {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      } catch (_) {}
+      playFallbackAudio(nextItem.text, () => {
+        isSpeakingRef.current = false;
+        activeUtteranceRef.current = null;
+        (window as any)._activeUtterance = null;
+        setTimeout(() => processSpeechQueue(), 100);
+      });
+    };
+
+    if (!('speechSynthesis' in window)) {
+      triggerAudioFallback();
+      return;
     }
 
-    // Safety watchdog timer: force reset if onend/onerror fails to fire within expected duration
-    const maxSpeechDuration = Math.min(10000, Math.max(4000, nextItem.text.length * 150));
-    speechTimeoutRef.current = setTimeout(() => {
-      console.warn("[TTS Watchdog] Utterance timeout reached. Forcibly releasing lock.");
-      isSpeakingRef.current = false;
-      activeUtteranceRef.current = null;
-      (window as any)._activeUtterance = null;
-      try { window.speechSynthesis.cancel(); } catch (_) {}
-      setTimeout(() => processSpeechQueue(), 100);
-    }, maxSpeechDuration);
-
-    msg.onstart = () => {
-      isSpeakingRef.current = true;
-      lastSpeechTimeRef.current = Date.now();
-    };
-
-    msg.onend = () => {
-      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-      isSpeakingRef.current = false;
-      activeUtteranceRef.current = null;
-      (window as any)._activeUtterance = null;
-      setTimeout(() => processSpeechQueue(), 100);
-    };
-
-    msg.onerror = (e) => {
-      console.warn("SpeechSynthesis utterance error:", e);
-      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-      isSpeakingRef.current = false;
-      activeUtteranceRef.current = null;
-      (window as any)._activeUtterance = null;
-      setTimeout(() => processSpeechQueue(), 100);
-    };
-
     try {
-      // Unfreeze browser TTS engine right before speaking
+      const msg = new SpeechSynthesisUtterance(nextItem.text);
+      msg.rate = 1.0;
+      msg.lang = 'it-IT';
+      applyTtsVoiceAndPitch(msg, settings?.ttsGender || 'auto');
+
+      // Retain strong reference to prevent V8 garbage collection mid-speech on Android WebView
+      activeUtteranceRef.current = msg;
+      (window as any)._activeUtterance = msg;
+      (window as any)._ttsAnchors = (window as any)._ttsAnchors || [];
+      (window as any)._ttsAnchors.push(msg);
+      if ((window as any)._ttsAnchors.length > 10) {
+        (window as any)._ttsAnchors.shift();
+      }
+
+      if (speechTimeoutRef.current) {
+        clearTimeout(speechTimeoutRef.current);
+      }
+
+      const maxSpeechDuration = Math.min(12000, Math.max(4000, nextItem.text.length * 160));
+      speechTimeoutRef.current = setTimeout(() => {
+        console.warn("[TTS Watchdog] Utterance timeout reached. Forcibly releasing lock.");
+        finishSpeech();
+      }, maxSpeechDuration);
+
+      msg.onstart = () => {
+        startDetected = true;
+        if (startWatchdogTimer) clearTimeout(startWatchdogTimer);
+        isSpeakingRef.current = true;
+        lastSpeechTimeRef.current = Date.now();
+      };
+
+      msg.onend = () => {
+        finishSpeech();
+      };
+
+      msg.onerror = (e) => {
+        console.warn("SpeechSynthesis utterance error, triggering fallback audio:", e);
+        triggerAudioFallback();
+      };
+
+      // Watchdog: If speech start is not detected within 1.5 seconds on Android WebView, switch to fallback audio
+      startWatchdogTimer = setTimeout(() => {
+        if (!startDetected && !finished) {
+          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 1.5s, switching to audio fallback.");
+          triggerAudioFallback();
+        }
+      }, 1500);
+
       window.speechSynthesis.resume();
       window.speechSynthesis.speak(msg);
     } catch (e) {
-      console.warn("SpeechSynthesis speak error:", e);
-      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-      isSpeakingRef.current = false;
-      activeUtteranceRef.current = null;
-      (window as any)._activeUtterance = null;
-      setTimeout(() => processSpeechQueue(), 100);
+      console.warn("SpeechSynthesis speak exception, triggering fallback audio:", e);
+      triggerAudioFallback();
     }
-  }, []);
+  }, [playFallbackAudio, settings?.ttsGender]);
 
   // Continuous watchdog & keep-alive monitor to prevent browser TTS engine freeze / standby drop during long driving sessions
   React.useEffect(() => {
@@ -2169,8 +2234,8 @@ out center;`;
       const lastTime = lastGpsUpdateRef.current?.time || 0;
       const timeSinceLastFix = now - lastTime;
 
-      // If no fresh GPS fix received for > 12 seconds (tunnel or lost signal)
-      if (timeSinceLastFix > 12000) {
+      // If no fresh GPS fix received for > 30 seconds (tunnel or lost signal)
+      if (timeSinceLastFix > 30000) {
         if (!isTunnelDeadReckoning) {
           setIsTunnelDeadReckoning(true);
           wasInTunnelRef.current = true;
@@ -2389,7 +2454,7 @@ out center;`;
         : cleanDesc;
       
       lastSpokenStepRef.current = activeStepIndex;
-      speakInstruction(`Avvio navigazione verso ${dest.name}. ${stepText}`, 'info');
+      speakInstruction(`Avvio navigazione verso ${dest.name}. ${stepText}`, 'immediate');
       return;
     }
 
@@ -3610,21 +3675,9 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               <button
                 type="button"
                 onClick={() => {
-                  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-                    try {
-                      window.speechSynthesis.cancel();
-                      window.speechSynthesis.resume();
-                      const warmUp = new SpeechSynthesisUtterance("Navigazione pronta");
-                      warmUp.lang = "it-IT";
-                      warmUp.volume = 0.8;
-                      applyTtsVoiceAndPitch(warmUp, settings?.ttsGender || "auto");
-                      window.speechSynthesis.speak(warmUp);
-                    } catch (e) {
-                      console.warn("[TTS] Failed to warm up speech synthesis on user interaction:", e);
-                    }
-                  }
                   setIsPreview(false);
                   setIsDriving(true);
+                  speakInstruction("Navigazione pronta", "immediate");
                 }}
                 className="w-full max-w-md px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3 cursor-pointer shadow-lg active:scale-95 text-lg border border-emerald-400/20"
               >
