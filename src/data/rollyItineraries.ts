@@ -990,7 +990,7 @@ export const ROLLY_52_WEEKLY_CATALOG = [
 
 export function buildItineraryFromCatalogItem(item: any, isCurrentWeek: boolean): CommunityItinerary {
   return {
-    id: `rolly_weekly_special_w${item.week}`,
+    id: `rolly_weekly_special_w${item.week}_${item.title.substring(0, 15).replace(/\s+/g, '-').toLowerCase()}_${Math.random().toString(36).substr(2, 4)}`,
     title: isCurrentWeek 
       ? `🌟 Itinerario Rolly della Settimana #${item.week}: ${item.title}`
       : `Itinerario Rolly Settimana #${item.week}: ${item.title}`,

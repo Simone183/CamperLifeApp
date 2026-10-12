@@ -16,7 +16,7 @@ import { cleanTravelStoryText } from "./src/utils/cleanStoryText.ts";
 
 // Use dynamic Firebase Project configuration from our provisioned workspace
 let firebaseConfig = {
-  apiKey: "AIzaSyBrLUDywyD1lgs6WyS1fd6dvegBjExJxTM",
+  apiKey: process.env.GOOGLE_MAPS_PLATFORM_KEY || "",
   authDomain: "calm-light-fg02f.firebaseapp.com",
   projectId: "calm-light-fg02f",
   appId: "1:17441453721:web:b0f4028724ea2bb276aa08"
@@ -39,13 +39,63 @@ try {
   console.error("Error reading firebase config on server:", e);
 }
 
-// ... (lines 36-38)
-const app = admin.getApps().length === 0 ? admin.initializeApp({
+// Initialize Firebase Admin App
+const adminApp = admin.getApps().length === 0 ? admin.initializeApp({
   projectId: firebaseConfig.projectId
 }) : admin.getApp();
 
+// Initialize Express App
+const app = express();
+
+// Proxy for Google Maps API
+app.get("/api/maps/geocode", async (req, res) => {
+  const address = req.query.address as string;
+  if (!address) {
+    return res.status(400).send("Missing address parameter");
+  }
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${firebaseConfig.apiKey}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).send("Error proxying geocoding request");
+  }
+});
+
+
+// Proxy for Google Maps Nearby Search API
+app.get("/api/maps/nearby", async (req, res) => {
+  const { lat, lng, type } = req.query;
+  if (!lat || !lng || !type) {
+    return res.status(400).send("Missing parameters: lat, lng, type");
+  }
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=5000&type=${type}&key=${firebaseConfig.apiKey}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).send("Error proxying nearby search request");
+  }
+});
+
+// Proxy for OpenStreetMap Overpass API
+app.post("/api/maps/overpass", express.text({ type: '*/*' }), async (req, res) => {
+  try {
+    const response = await fetch(`https://overpass-api.de/api/interpreter`, {
+      method: 'POST',
+      body: req.body,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).send("Error proxying Overpass request");
+  }
+});
+
 const bucketName = (firebaseConfig as any).storageBucket || `${firebaseConfig.projectId}.appspot.com`;
-const bucket = getStorage(app).bucket(bucketName);
+const bucket = getStorage(adminApp).bucket(bucketName);
+
 
 const defaultIcons: Record<string, string> = {
   'Area di sosta': 'default_icons/area_sosta.svg',
@@ -433,7 +483,7 @@ async function sendPushNotification(
     };
 
     try {
-      const messaging = getMessaging(app);
+      const messaging = getMessaging(adminApp);
       const response = await messaging.sendEachForMulticast(message);
       if (response.successCount > 0) {
         console.log(`[FCM Push] Multicast delivery success: ${response.successCount} received`);
@@ -6226,8 +6276,10 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
           : "";
 
         const servers = [
-          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`,
-          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true&radiuses=100;100${bearingsParam}`
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+          `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true`,
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true`
         ];
         
         const fetchOneServer = async (url: string) => {
@@ -6235,7 +6287,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
             headers: {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
-            signal: AbortSignal.timeout(3000)
+            signal: AbortSignal.timeout(12000)
           });
           if (resObj.ok) {
             const resData = await resObj.json();
@@ -6695,14 +6747,23 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
   // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
   async function sendAdminNotificationEmail(subject: string, htmlContent: string) {
-    const adminTargets = Array.from(
+    const rawFrom = (process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev").trim();
+    const isSandbox = rawFrom.toLowerCase().includes("resend.dev");
+    const allowedOwnerEmail = (process.env.RESEND_ALLOWED_RECIPIENT || process.env.ADMIN_EMAIL || "viacamperapp@gmail.com").trim().toLowerCase();
+
+    let adminTargets = Array.from(
       new Set([
         "viacamperapp@gmail.com",
         "sambucci.simone@gmail.com",
         ...(process.env.ADMIN_EMAIL ? [process.env.ADMIN_EMAIL.toLowerCase().trim()] : [])
       ])
     );
-    console.log(`[Email Service] Preparing notification for: "${subject}"`);
+
+    if (isSandbox) {
+      adminTargets = adminTargets.filter(t => t === allowedOwnerEmail);
+    }
+    
+    console.log(`[Email Service] Preparing notification for: "${subject}" to ${adminTargets.join(', ')}`);
     
     if (!process.env.RESEND_API_KEY) {
       console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email per: "${subject}".`);

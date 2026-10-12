@@ -15,6 +15,13 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
   const [isSearching, setIsSearching] = useState(false);
   const [aiEventsResponse, setAiEventsResponse] = useState<string>('');
   
+  // Auto-trigger search if location is known on mount
+  React.useEffect(() => {
+    if (userLocation) {
+      executeSearch(`5 feste o sagre nel raggio di 150km da coordinate ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`);
+    }
+  }, [userLocation]);
+  
   // Debounce & Client Cache refs to prevent rapid successive requests
   const debounceTimerRef = useRef<any>(null);
   const clientCacheRef = useRef<Record<string, string>>({});

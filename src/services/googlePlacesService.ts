@@ -188,116 +188,63 @@ function extractCoords(item: any, fallbackLat: number, fallbackLng: number): { l
 }
 
 /**
- * Fetch from Google Places PlacesService
+ * Fetch from Google Places Backend API
  */
-function fetchFromGooglePlacesJS(
+async function fetchFromGooglePlacesJS(
   lat: number,
   lng: number
 ): Promise<{ restaurants: NearbyPlace[]; attractions: NearbyPlace[]; all: NearbyPlace[] }> {
-  return new Promise((resolve) => {
-    const dummyElem = document.createElement('div');
-    const service = new window.google.maps.places.PlacesService(dummyElem);
-    const center = new window.google.maps.LatLng(lat, lng);
+  const restaurants: NearbyPlace[] = [];
+  const attractions: NearbyPlace[] = [];
 
-    const restaurants: NearbyPlace[] = [];
-    const attractions: NearbyPlace[] = [];
+  const fetchResults = async (type: string, category: 'restaurant' | 'attraction', categoryLabel: string) => {
+    try {
+      const response = await fetch(`/api/maps/nearby?lat=${lat}&lng=${lng}&type=${type}`);
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.results) {
+        data.results.slice(0, 10).forEach((item: any, i: number) => {
+          const { lat: pLat, lng: pLng } = { lat: item.geometry.location.lat, lng: item.geometry.location.lng };
+          const dist = calculateDistanceKm(lat, lng, pLat, pLng);
+          
+          const rating = item.rating || parseFloat((4.2 + (i % 8) * 0.1).toFixed(1));
+          const rating10 = parseFloat((rating * 2).toFixed(1));
 
-    let completedCalls = 0;
-
-    const checkDone = () => {
-      completedCalls++;
-      if (completedCalls >= 2) {
-        const all = [...restaurants, ...attractions].sort((a, b) => a.distanceKm - b.distanceKm);
-        resolve({ restaurants, attractions, all });
+          const place: NearbyPlace = {
+            id: item.place_id || `g_${type}_${i}`,
+            name: item.name || 'Punto di Interesse',
+            category,
+            categoryLabel,
+            lat: pLat,
+            lng: pLng,
+            distanceKm: dist,
+            rating,
+            rating10,
+            userRatingsTotal: item.user_ratings_total || 45 + i * 12,
+            priceLevel: item.price_level,
+            address: item.vicinity || 'Nelle vicinanze',
+            photoUrl: item.photos && item.photos.length > 0 ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=500&photoreference=${item.photos[0].photo_reference}&key=${process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || ''}` : getRandomPhoto(category, i),
+            openNow: item.opening_hours?.open_now,
+            placeId: item.place_id,
+            source: 'google'
+          };
+          
+          if (category === 'restaurant') restaurants.push(place);
+          else attractions.push(place);
+        });
       }
-    };
+    } catch (e) {
+      console.error(`Error fetching ${type} from backend:`, e);
+    }
+  };
 
-    // 1. Restaurants search
-    service.nearbySearch(
-      {
-        location: center,
-        radius: 4000,
-        type: 'restaurant' as any
-      },
-      (results, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          results.slice(0, 10).forEach((item, i) => {
-            const { lat: pLat, lng: pLng } = extractCoords(item, lat, lng);
-            const dist = calculateDistanceKm(lat, lng, pLat, pLng);
-            const photoUrl =
-              item.photos && item.photos.length > 0
-                ? item.photos[0].getUrl({ maxWidth: 500 })
-                : getRandomPhoto('restaurant', i);
+  await Promise.all([
+    fetchResults('restaurant', 'restaurant', 'RISTORANTE'),
+    fetchResults('tourist_attraction', 'attraction', 'VISITE & CULTURA')
+  ]);
 
-            const rating = item.rating || parseFloat((4.2 + (i % 8) * 0.1).toFixed(1));
-            const rating10 = parseFloat((rating * 2).toFixed(1));
-
-            restaurants.push({
-              id: item.place_id || `g_rest_${i}`,
-              name: item.name || 'Ristorante Locale',
-              category: 'restaurant',
-              categoryLabel: 'RISTORANTE',
-              lat: pLat,
-              lng: pLng,
-              distanceKm: dist,
-              rating,
-              rating10,
-              userRatingsTotal: item.user_ratings_total || 45 + i * 12,
-              priceLevel: item.price_level || 2,
-              address: item.vicinity || 'Nelle vicinanze',
-              photoUrl,
-              openNow: item.opening_hours?.isOpen ? (typeof item.opening_hours.isOpen === 'function' ? item.opening_hours.isOpen() : true) : true,
-              placeId: item.place_id,
-              source: 'google'
-            });
-          });
-        }
-        checkDone();
-      }
-    );
-
-    // 2. Attractions search
-    service.nearbySearch(
-      {
-        location: center,
-        radius: 5000,
-        type: 'tourist_attraction' as any
-      },
-      (results, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          results.slice(0, 10).forEach((item, i) => {
-            const { lat: pLat, lng: pLng } = extractCoords(item, lat, lng);
-            const dist = calculateDistanceKm(lat, lng, pLat, pLng);
-            const photoUrl =
-              item.photos && item.photos.length > 0
-                ? item.photos[0].getUrl({ maxWidth: 500 })
-                : getRandomPhoto('attraction', i);
-
-            const rating = item.rating || parseFloat((4.4 + (i % 6) * 0.1).toFixed(1));
-            const rating10 = parseFloat((rating * 2).toFixed(1));
-
-            attractions.push({
-              id: item.place_id || `g_attr_${i}`,
-              name: item.name || 'Punto di Interesse',
-              category: 'attraction',
-              categoryLabel: 'VISITE & CULTURA',
-              lat: pLat,
-              lng: pLng,
-              distanceKm: dist,
-              rating,
-              rating10,
-              userRatingsTotal: item.user_ratings_total || 80 + i * 20,
-              address: item.vicinity || 'Zona Panoramica',
-              photoUrl,
-              placeId: item.place_id,
-              source: 'google'
-            });
-          });
-        }
-        checkDone();
-      }
-    );
-  });
+  const all = [...restaurants, ...attractions].sort((a, b) => a.distanceKm - b.distanceKm);
+  return { restaurants, attractions, all };
 }
 
 /**
@@ -316,7 +263,7 @@ async function fetchFromOverpassAPI(
     out body 20;
   `;
 
-  const resp = await fetch(`https://overpass-api.de/api/interpreter`, {
+  const resp = await fetch(`/api/maps/overpass`, {
     method: 'POST',
     body: query,
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }

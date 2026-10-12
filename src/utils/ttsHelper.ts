@@ -68,27 +68,119 @@ export function applyTtsVoiceAndPitch(
   msg.pitch = targetPitch;
 }
 
-export function speakSampleTts(genderSetting: TtsGender, customText?: string) {
-  if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
+let isSpeakingState = false;
 
-  try {
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.resume();
+export function getIsTtsSpeaking(): boolean {
+  return isSpeakingState;
+}
 
-    const sampleText = customText || (
-      genderSetting === 'female'
-        ? "Impostazione voce femminile attivata. Tra 100 metri, svolta a destra."
-        : genderSetting === 'male'
-          ? "Impostazione voce maschile attivata. Tra 100 metri, svolta a destra."
-          : "Impostazione voce automatica di sistema attivata. Navigazione pronta."
+function setSpeakingState(speaking: boolean) {
+  isSpeakingState = speaking;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent('tts-state-changed', { detail: { isSpeaking: speaking } })
     );
-
-    const msg = new SpeechSynthesisUtterance(sampleText);
-    msg.rate = 1.0;
-    applyTtsVoiceAndPitch(msg, genderSetting);
-
-    window.speechSynthesis.speak(msg);
-  } catch (e) {
-    console.warn("Error speaking sample TTS:", e);
   }
+}
+
+let activeAudioFallback: HTMLAudioElement | null = null;
+
+export function speakSampleTts(
+  genderSetting: TtsGender,
+  customText?: string,
+  onStart?: () => void,
+  onEnd?: () => void
+) {
+  if (typeof window === "undefined") return;
+
+  const sampleText = customText || (
+    genderSetting === 'female'
+      ? "Impostazione voce femminile attivata. Tra 100 metri, svolta a destra."
+      : genderSetting === 'male'
+        ? "Impostazione voce maschile attivata. Tra 100 metri, svolta a destra."
+        : "Impostazione voce automatica di sistema attivata. Navigazione pronta."
+  );
+
+  // Stop any active audio fallback
+  if (activeAudioFallback) {
+    try {
+      activeAudioFallback.pause();
+      activeAudioFallback = null;
+    } catch (_) {}
+  }
+
+  setSpeakingState(true);
+  onStart?.();
+
+  const playFallbackAudio = () => {
+    try {
+      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=${encodeURIComponent(sampleText)}`;
+      const audio = new Audio(audioUrl);
+      activeAudioFallback = audio;
+      audio.onended = () => {
+        activeAudioFallback = null;
+        setSpeakingState(false);
+        onEnd?.();
+      };
+      audio.onerror = () => {
+        activeAudioFallback = null;
+        setSpeakingState(false);
+        onEnd?.();
+      };
+      audio.play().catch(() => {
+        activeAudioFallback = null;
+        setSpeakingState(false);
+        onEnd?.();
+      });
+    } catch (_) {
+      setSpeakingState(false);
+      onEnd?.();
+    }
+  };
+
+  if ('speechSynthesis' in window) {
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      synth.resume();
+
+      const msg = new SpeechSynthesisUtterance(sampleText);
+      msg.rate = 1.0;
+      msg.lang = 'it-IT';
+      applyTtsVoiceAndPitch(msg, genderSetting);
+
+      (window as any)._sampleUtterance = msg;
+
+      let finished = false;
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        (window as any)._sampleUtterance = null;
+        setSpeakingState(false);
+        onEnd?.();
+      };
+
+      msg.onend = cleanup;
+      msg.onerror = (e) => {
+        console.warn("Sample SpeechSynthesis error, trying audio fallback:", e);
+        cleanup();
+        playFallbackAudio();
+      };
+
+      // Safety timeout in case speech synth hangs
+      setTimeout(() => {
+        if (!finished && !synth.speaking) {
+          cleanup();
+          playFallbackAudio();
+        }
+      }, 5000);
+
+      synth.speak(msg);
+      return;
+    } catch (e) {
+      console.warn("Error using SpeechSynthesis, trying audio fallback:", e);
+    }
+  }
+
+  playFallbackAudio();
 }

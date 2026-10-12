@@ -260,7 +260,7 @@ try {
 
                   const fetchSingleServer = async (sUrl: string): Promise<Response> => {
                     const controller = new AbortController();
-                    const tId = setTimeout(() => controller.abort(), 3000);
+                    const tId = setTimeout(() => controller.abort(), 12000);
                     try {
                       const sRes = await originalFetch.call(window, sUrl, {
                         headers: { "User-Agent": "ViaCamperApp/2.0" },

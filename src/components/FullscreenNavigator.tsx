@@ -315,7 +315,9 @@ export default function FullscreenNavigator({
     mapRef.current = map;
 
     map.on('load', () => {
-      addRouteLayer(map, displayedRouteCoordinates);
+      if (displayedRouteCoordsRef.current && displayedRouteCoordsRef.current.length > 0) {
+        addRouteLayer(map, displayedRouteCoordsRef.current);
+      }
     });
 
     map.on('contextmenu', (e: maplibregl.MapMouseEvent) => {
@@ -1203,10 +1205,11 @@ out center;`;
     };
   }, []);
 
-  const [initialStart, setInitialStart] = React.useState<[number, number]>(() => {
+  const [currentStartLoc, setCurrentStartLoc] = React.useState<[number, number] | null>(null);
+  const startLoc: [number, number] = React.useMemo(() => {
+    if (currentStartLoc) return currentStartLoc;
     return userLocation ? [userLocation.lat, userLocation.lng] : [44.5422, 10.7024];
-  });
-  const startLoc = initialStart;
+  }, [currentStartLoc, userLocation?.lat, userLocation?.lng]);
   const endLoc: [number, number] = [dest.lat, dest.lng];
 
   const [osrmRoute, setOsrmRoute] = React.useState<[number, number][]>(() => {
@@ -1249,6 +1252,17 @@ out center;`;
   const spokenProssimitaRef = React.useRef<Record<number, boolean>>({});
   const hasShownOffRoadToastRef = React.useRef<boolean>(false);
   const lastPeriodicStraightSpeechTimeRef = React.useRef<number>(0);
+  const [isSpeakingTts, setIsSpeakingTts] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleTtsState = (e: any) => {
+      if (e.detail && typeof e.detail.isSpeaking === 'boolean') {
+        setIsSpeakingTts(e.detail.isSpeaking);
+      }
+    };
+    window.addEventListener('tts-state-changed', handleTtsState);
+    return () => window.removeEventListener('tts-state-changed', handleTtsState);
+  }, []);
 
   // Speech Queue & State Management for smooth uninterrupted playback across long navigation sessions
   const speechQueueRef = React.useRef<{ text: string; priority: 'immediate' | 'advance' | 'info'; timestamp: number }[]>([]);
@@ -1498,12 +1512,12 @@ out center;`;
   // Real-time off-route recalculation listener (triggers when driver strays > 20m away from route)
   React.useEffect(() => {
     if (userLocation && !isTunnelDeadReckoning) {
-      const isDefaultModena = Math.abs(initialStart[0] - 44.5422) < 0.0001 && Math.abs(initialStart[1] - 10.7024) < 0.0001;
+      const isDefaultModena = Math.abs(startLoc[0] - 44.5422) < 0.0001 && Math.abs(startLoc[1] - 10.7024) < 0.0001;
       if (isDefaultModena) {
         // If we were on default Modena, update immediately as GPS has resolved
-        const dist = Math.sqrt(Math.pow(initialStart[0] - userLocation.lat, 2) + Math.pow(initialStart[1] - userLocation.lng, 2));
+        const dist = Math.sqrt(Math.pow(startLoc[0] - userLocation.lat, 2) + Math.pow(startLoc[1] - userLocation.lng, 2));
         if (dist > 0.0001) {
-          setInitialStart([userLocation.lat, userLocation.lng]);
+          setCurrentStartLoc([userLocation.lat, userLocation.lng]);
         }
         lastRecalcPos.current = [userLocation.lat, userLocation.lng];
       } else if (!isPreview) { // Only recalculate route due to off-track deviation during active navigation, not during preview!
@@ -1513,7 +1527,7 @@ out center;`;
         if (osrmRoute && osrmRoute.length > 0) {
           minDistanceMeters = calculateDistanceToPolylineMeters(userPos, osrmRoute);
         } else {
-          minDistanceMeters = calculateHaversineDistance(initialStart, userPos) * 1000;
+          minDistanceMeters = calculateHaversineDistance(startLoc, userPos) * 1000;
         }
         
         let distFromLastRecalcMeters = Infinity;
@@ -1560,9 +1574,9 @@ out center;`;
               speakInstruction("Ricalcolo del percorso", 'immediate');
 
               isRecalculatedRef.current = true;
-              const dist = Math.sqrt(Math.pow(initialStart[0] - userLocation.lat, 2) + Math.pow(initialStart[1] - userLocation.lng, 2));
+              const dist = Math.sqrt(Math.pow(startLoc[0] - userLocation.lat, 2) + Math.pow(startLoc[1] - userLocation.lng, 2));
               if (dist > 0.0001) {
-                setInitialStart([userLocation.lat, userLocation.lng]);
+                setCurrentStartLoc([userLocation.lat, userLocation.lng]);
               }
               lastRecalcPos.current = [userLocation.lat, userLocation.lng];
             }
@@ -1676,7 +1690,7 @@ out center;`;
 
   // Real OSRM Routing States
   const [osrmSteps, setOsrmSteps] = React.useState<NavigationStep[]>([]);
-  const [loadingRoute, setLoadingRoute] = React.useState<boolean>(false);
+  const [loadingRoute, setLoadingRoute] = React.useState<boolean>(() => osrmRoute.length === 0);
   const [routeError, setRouteError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -2224,6 +2238,11 @@ out center;`;
     return routeCoordinates;
   }, [routeCoordinates, isGPSEnabled, effectiveUserLocation?.lat, effectiveUserLocation?.lng, isPreview, isTunnelDeadReckoning, tunnelStepTick]);
 
+  const displayedRouteCoordsRef = React.useRef<[number, number][]>(displayedRouteCoordinates);
+  React.useEffect(() => {
+    displayedRouteCoordsRef.current = displayedRouteCoordinates;
+  }, [displayedRouteCoordinates]);
+
   const fallbackSequence = React.useMemo((): NavigationStep[] => {
     const steps: NavigationStep[] = [];
     
@@ -2499,7 +2518,8 @@ out center;`;
   ]);
 
   const addRouteLayer = (mapInstance: maplibregl.Map, coords: [number, number][]) => {
-    if (!mapInstance || !mapInstance.getStyle()) return;
+    if (!mapInstance) return;
+    if (!coords || coords.length === 0) return;
 
     const geojson: any = {
       type: 'Feature',
@@ -2510,31 +2530,35 @@ out center;`;
       }
     };
 
-    if (mapInstance.getSource('route')) {
-      const source = mapInstance.getSource('route') as maplibregl.GeoJSONSource;
-      if (source && typeof source.setData === 'function') {
-        source.setData(geojson);
-      }
-    } else {
-      mapInstance.addSource('route', {
-        type: 'geojson',
-        data: geojson
-      });
-
-      mapInstance.addLayer({
-        id: 'route',
-        type: 'line',
-        source: 'route',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round'
-        },
-        paint: {
-          'line-color': '#3B82F6',
-          'line-width': 7,
-          'line-opacity': 0.9
+    try {
+      if (mapInstance.getSource('route')) {
+        const source = mapInstance.getSource('route') as maplibregl.GeoJSONSource;
+        if (source && typeof source.setData === 'function') {
+          source.setData(geojson);
         }
-      });
+      } else if (mapInstance.isStyleLoaded() || mapInstance.getStyle()) {
+        mapInstance.addSource('route', {
+          type: 'geojson',
+          data: geojson
+        });
+
+        mapInstance.addLayer({
+          id: 'route',
+          type: 'line',
+          source: 'route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          paint: {
+            'line-color': '#3B82F6',
+            'line-width': 7,
+            'line-opacity': 0.9
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Error updating route layer:", e);
     }
   };
 
@@ -2635,22 +2659,23 @@ out center;`;
     let flyTimeout: NodeJS.Timeout;
 
     const updateRoute = () => {
-      addRouteLayer(map, displayedRouteCoordinates);
+      const activeCoords = displayedRouteCoordsRef.current;
+      if (!activeCoords || activeCoords.length === 0) return;
 
-      if (displayedRouteCoordinates.length > 0) {
-        const activeStart = displayedRouteCoordinates[0];
-        const activeEnd = displayedRouteCoordinates[displayedRouteCoordinates.length - 1];
-        if (carMarkerRef.current) {
-          carMarkerRef.current.setLngLat([activeStart[1], activeStart[0]]);
-        }
-        if (destMarkerRef.current) {
-          destMarkerRef.current.setLngLat([activeEnd[1], activeEnd[0]]);
-        }
+      addRouteLayer(map, activeCoords);
+
+      const activeStart = activeCoords[0];
+      const activeEnd = activeCoords[activeCoords.length - 1];
+      if (carMarkerRef.current) {
+        carMarkerRef.current.setLngLat([activeStart[1], activeStart[0]]);
+      }
+      if (destMarkerRef.current) {
+        destMarkerRef.current.setLngLat([activeEnd[1], activeEnd[0]]);
       }
 
       // Adjust bounds to fit the full path safely
       try {
-        if (displayedRouteCoordinates.length > 0) {
+        if (activeCoords.length > 0) {
           if (isPreview) {
             // Force overhead vista dall'alto
             map.resize();
@@ -2658,7 +2683,7 @@ out center;`;
             map.setBearing(0);
 
             const bounds = new maplibregl.LngLatBounds();
-            displayedRouteCoordinates.forEach(c => bounds.extend([c[1], c[0]]));
+            activeCoords.forEach(c => bounds.extend([c[1], c[0]]));
             
             map.fitBounds(bounds, {
               padding: { top: 260, bottom: 200, left: 70, right: 70 },
@@ -2671,8 +2696,7 @@ out center;`;
           // Active navigation mode
           if (!hasInitiallyFitBounds.current) {
             hasInitiallyFitBounds.current = true;
-            const activeStart = displayedRouteCoordinates[0] || startLoc;
-            const nextCoords = displayedRouteCoordinates[1];
+            const nextCoords = activeCoords[1];
             let initBearing = 0;
             if (nextCoords && (activeStart[0] !== nextCoords[0] || activeStart[1] !== nextCoords[1])) {
               initBearing = getBearing(activeStart, nextCoords);
@@ -2691,8 +2715,7 @@ out center;`;
               duration: 1500
             });
           } else if (autoCenter) {
-            const activeStart = displayedRouteCoordinates[0] || startLoc;
-            const nextCoords = displayedRouteCoordinates[1];
+            const nextCoords = activeCoords[1];
             let initBearing = 0;
             if (nextCoords && (activeStart[0] !== nextCoords[0] || activeStart[1] !== nextCoords[1])) {
               initBearing = getBearing(activeStart, nextCoords);
@@ -2718,7 +2741,7 @@ out center;`;
       }
     };
 
-    if (map.isStyleLoaded() || map.getStyle()) {
+    if (map.isStyleLoaded()) {
       updateRoute();
     } else {
       map.once('load', updateRoute);
@@ -3501,9 +3524,12 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
             {/* Active Route Calculation Loading Badge */}
             {(loadingRoute || osrmRoute.length === 0) && (
-              <div className="bg-blue-600/90 text-white font-medium px-4 py-2 rounded-xl shadow-2xl border border-blue-400/50 animate-pulse text-xs flex items-center justify-center gap-2 pointer-events-auto">
-                <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" />
-                <span className="font-bold text-white">Calcolo del percorso stradale esatto in corso...</span>
+              <div className="bg-[#0b101d]/95 backdrop-blur-md border border-emerald-500/80 text-white font-medium px-4 py-2.5 rounded-2xl shadow-2xl animate-pulse text-xs flex items-center justify-center gap-3 pointer-events-auto">
+                <Loader2 className="w-5 h-5 animate-spin text-emerald-400 shrink-0" />
+                <div className="flex flex-col text-left">
+                  <span className="font-extrabold text-white text-xs sm:text-sm">Calcolo percorso camper in corso...</span>
+                  <span className="text-[10px] text-emerald-300">Generazione itinerario stradale esatto e verifica sagoma</span>
+                </div>
               </div>
             )}
 
@@ -3754,9 +3780,13 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           </button>
         </div>
 
-        {/* Floating Mini Media Player Control Bar (bottom-center, aligned at bottom-28) */}
+        {/* Floating Mini Media Player Control Bar (stacked neatly above simulation controls when active) */}
         {mediaState.currentTrack && hasBeenPlayed && (
-          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 h-[52px] px-3 bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto w-[80%] max-w-[255px] md:w-[325px]">
+          <div className={`absolute left-1/2 -translate-x-1/2 z-20 h-[52px] px-3 bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto w-[80%] max-w-[255px] md:w-[325px] transition-all ${
+            ((navigationMode === 'internal' && !isGPSEnabled) || navigationMode === 'google')
+              ? 'bottom-36 sm:bottom-38'
+              : 'bottom-20 sm:bottom-28'
+          }`}>
             {/* Album Cover / Radio Icon on the Left */}
             <div className="flex items-center shrink-0">
               <div className="w-8 h-8 rounded overflow-hidden border border-slate-800/80 flex items-center justify-center bg-slate-900 shadow-inner">
@@ -3946,10 +3976,18 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                     </span>
                     <button
                       type="button"
-                      onClick={() => speakSampleTts(settings?.ttsGender || 'auto')}
-                      className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova vocale GPS in corso...", duration: 3500 } }));
+                        speakSampleTts(settings?.ttsGender || 'auto');
+                      }}
+                      className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                        isSpeakingTts
+                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-md animate-pulse ring-2 ring-emerald-400/50'
+                          : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30'
+                      }`}
                     >
-                      Prova
+                      <Volume2 className={`w-3 h-3 ${isSpeakingTts ? 'animate-bounce' : ''}`} />
+                      <span>{isSpeakingTts ? "In corso..." : "Prova"}</span>
                     </button>
                   </div>
                   <div className="grid grid-cols-3 gap-1">
@@ -3968,12 +4006,15 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                               parsed.ttsGender = g;
                               localStorage.setItem("camper_app_settings", JSON.stringify(parsed));
                               window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { ttsGender: g } }));
+                              window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `🔊 Prova voce: ${label}`, duration: 3500 } }));
                               speakSampleTts(g);
                             } catch (_) {}
                           }}
                           className={`py-1 text-[9px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
                             isSel
-                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                              ? isSpeakingTts
+                                ? 'bg-emerald-500/30 border-emerald-400 text-emerald-200 ring-2 ring-emerald-500/80 animate-pulse'
+                                : 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                               : 'bg-slate-800/80 border-slate-700/80 text-slate-400 hover:text-slate-200'
                           }`}
                         >
@@ -4175,8 +4216,8 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
         {/* Floating Controls Overlay */}
         {((navigationMode === 'internal' && !isGPSEnabled) || navigationMode === 'google') && (
-          <div className="absolute bottom-24 inset-x-0 mx-auto flex justify-center z-10 pointer-events-none">
-            <div className="flex bg-[#0b0f19]/95 backdrop-blur-md rounded-3xl p-2 shadow-2xl border border-slate-800/90 pointer-events-auto gap-2">
+          <div className="absolute bottom-20 sm:bottom-22 inset-x-0 mx-auto flex justify-center z-10 pointer-events-none">
+            <div className="flex bg-[#0b0f19]/95 backdrop-blur-md rounded-3xl p-1.5 sm:p-2 shadow-2xl border border-slate-800/90 pointer-events-auto gap-2">
               {navigationMode === 'internal' && !isGPSEnabled && (
                 <>
                   <button
@@ -4217,7 +4258,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                       }));
                       
                       isRecalculatedRef.current = true;
-                      setInitialStart([devLat, devLng]);
+                      setCurrentStartLoc([devLat, devLng]);
                       lastRecalcPos.current = [devLat, devLng];
                       setSimRouteIndex(0);
                     }}

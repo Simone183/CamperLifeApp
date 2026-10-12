@@ -184,6 +184,7 @@ function MapEventsHelper({
   onMapClick: (lat: number, lng: number) => void;
   onMapContextMenu: (lat: number, lng: number) => void;
   onIdle: (lat: number, lng: number) => void;
+  onDragStart: () => void;
   mapMovedByUserRef: React.MutableRefObject<boolean>;
   onMapInstance?: (map: any) => void;
 }) {
@@ -197,6 +198,9 @@ function MapEventsHelper({
 
   const onIdleRef = React.useRef(onIdle);
   onIdleRef.current = onIdle;
+
+  const onDragStartRef = React.useRef(onDragStart);
+  onDragStartRef.current = onDragStart;
 
   const onMapInstanceRef = React.useRef(onMapInstance);
   onMapInstanceRef.current = onMapInstance;
@@ -294,6 +298,7 @@ function MapEventsHelper({
 
     const dragstartListener = map.addListener("dragstart", () => {
       mapMovedByUserRef.current = true;
+      onDragStartRef.current?.();
     });
 
     const dragListener = map.addListener("drag", () => {
@@ -395,8 +400,11 @@ function SmartRouteDisplay({
     return [];
   });
 
+  const [isLoadingRoute, setIsLoadingRoute] = React.useState<boolean>(realPath.length === 0);
+
   React.useEffect(() => {
     let active = true;
+    setIsLoadingRoute(realPath.length === 0);
     fetchOsrmRoute(startPt, endPt)
       .then(({ coordinates }) => {
         if (active && coordinates && coordinates.length > 0) {
@@ -405,6 +413,9 @@ function SmartRouteDisplay({
       })
       .catch((err) => {
         console.warn("Error fetching OSRM route for SmartRouteDisplay:", err);
+      })
+      .finally(() => {
+        if (active) setIsLoadingRoute(false);
       });
     return () => {
       active = false;
@@ -424,6 +435,12 @@ function SmartRouteDisplay({
 
   return (
     <>
+      {isLoadingRoute && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0b101d]/95 backdrop-blur-md border border-emerald-500/60 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-bold animate-pulse pointer-events-none">
+          <Loader2 className="w-4 h-4 animate-spin text-emerald-400 shrink-0" />
+          <span className="text-emerald-300">Calcolo percorso stradale in corso...</span>
+        </div>
+      )}
       {isBadWeather && (
         <div className="absolute top-4 left-4 z-50 bg-red-600 text-white p-2 rounded-lg text-xs font-bold shadow-lg animate-pulse">
           ⚠️ Meteo avverso: guida con cautela!
@@ -608,6 +625,7 @@ export default function MapTab({
   }, [userLocation]);
   const mapMovedByUserRef = React.useRef<boolean>(false);
   const [googleMapInstance, setGoogleMapInstance] = React.useState<any>(null);
+  const [isIdle, setIsIdle] = React.useState<boolean>(true);
 
   const activeTrip = trips?.find((t) => t.status === "Attivo");
 
@@ -2593,6 +2611,14 @@ export default function MapTab({
     selectedPlace?.id
   ]);
 
+  const [visiblePlaces, setVisiblePlaces] = React.useState<Place[]>([]);
+
+  React.useEffect(() => {
+    if (isIdle) {
+      setVisiblePlaces(filteredPlaces);
+    }
+  }, [filteredPlaces, isIdle]);
+
   const handleSelectAndFocus = (place: Place) => {
     setSelectedPlace(place);
     setMobileView("map");
@@ -3152,7 +3178,7 @@ out center;`;
     // Auto-search notification silenced on user request
 
     try {
-      const radiusMeters = 20 * 1000;
+      const radiusMeters = 10 * 1000;
       const dLat = radiusMeters / 111000;
       const dLng = radiusMeters / (111000 * Math.cos((lat * Math.PI) / 180));
       const bbox = `${lat - dLat},${lng - dLng},${lat + dLat},${lng + dLng}`;
@@ -3162,7 +3188,7 @@ out center;`;
       const minLng = lng - dLng;
       const maxLng = lng + dLng;
 
-      // Query Firestore soste collection in parallel for this 20km area
+      // Query Firestore soste collection in parallel for this 10km area
       let firestoreSoste: Place[] = [];
       try {
         const sosteRes = await fetch(resolveApiUrl(`/api/soste?minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&limit=500`));
@@ -3451,11 +3477,11 @@ out center;`;
       centerDebounceRef.current = setTimeout(async () => {
         setMapCenterCoords({ lat, lng });
 
-        // Auto-fetch OSM camper spots for this 15km diameter area in background if online
+        // Auto-fetch OSM camper spots for this 10km radius area in background if online
         if (!isOnline) return;
 
         const alreadyFetched = fetchedOSMCentersRef.current.some(
-          (c) => getDistanceKm(c.lat, c.lng, lat, lng) < 6
+          (c) => getDistanceKm(c.lat, c.lng, lat, lng) < 3
         );
         if (alreadyFetched) return;
 
@@ -3468,7 +3494,7 @@ out center;`;
           await autoLoadOSMForProximity(
             lat,
             lng,
-            "Ricerca soste entro 15 km...",
+            "Ricerca soste entro 10 km...",
             true
           );
         } catch (err) {
@@ -4876,6 +4902,10 @@ out center;`;
                     }}
                     onIdle={(lat, lng) => {
                       handleMapCenterChange(lat, lng);
+                      setIsIdle(true);
+                    }}
+                    onDragStart={() => {
+                      setIsIdle(false);
                     }}
                     mapMovedByUserRef={mapMovedByUserRef}
                   />
@@ -4897,7 +4927,7 @@ out center;`;
                   )}
 
                   {/* Places Markers */}
-                  {filteredPlaces
+                  {visiblePlaces
                     .filter((place) => {
                       if (showSmartRoute) {
                         if (selectedPlace && place.id === selectedPlace.id) {
@@ -4907,7 +4937,7 @@ out center;`;
                       }
                       return true;
                     })
-                    .slice(0, 300)
+                    .slice(0, 100)
                     .map((place) => {
                     const normCat = (place.category || "").toLowerCase();
                     let colorClass = "bg-[#0077B6]"; // Default/Service (blue)
@@ -5340,7 +5370,7 @@ out center;`;
           </div>
 
           {/* Pulsante di Ricentramento GPS SUBITO SOTTO al pulsante GPS (in alto a destra) */}
-          <div className="absolute top-13 right-2 md:top-14 md:right-3 z-[500] flex flex-col items-end gap-1.5">
+          <div className="absolute top-[52px] sm:top-14 md:top-16 right-2 md:right-3 z-[500] flex flex-col items-end gap-1.5">
             {isGPSEnabled && userLocation && (
               <button
                 type="button"
@@ -5390,7 +5420,7 @@ out center;`;
           </div>
 
           {/* Pulsanti + e - (Zoom) con Pulsante dei Livelli SUBITO SOTTO (Floating a sinistra) */}
-          <div className="absolute top-13 left-2 md:top-14 md:left-3 z-[500] flex flex-col items-center gap-1.5">
+          <div className="absolute top-[52px] sm:top-14 md:top-16 left-2 md:left-3 z-[500] flex flex-col items-center gap-1.5">
             {/* Zoom In (+) */}
             <button
               type="button"
@@ -5628,7 +5658,7 @@ out center;`;
                         window.dispatchEvent(
                           new CustomEvent("show-toast", {
                             detail: {
-                              message: `🔍 Carico ed evidenzio i punti camper entro 30km da questa puntina!`,
+                              message: `🔍 Carico ed evidenzio i punti camper entro 10km da questa puntina!`,
                             },
                           }),
                         );
@@ -5636,7 +5666,7 @@ out center;`;
                         await autoLoadOSMForProximity(
                           lat,
                           lng,
-                          "Ricerca soste vicine entro 30km..."
+                          "Ricerca soste vicine entro 10km..."
                         );
                       }}
                       disabled={isAutoLoadingOSM}
@@ -10519,10 +10549,10 @@ export function LeafletOfflineMap({
   return (
     <div className="w-full h-full relative">
       {/* Visual top indicator showing total places and fast OSM viewport scan */}
-      <div className="absolute top-13 md:top-14 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1.5 select-none pointer-events-auto">
-        <div className="bg-[#3E4A35] text-white px-3.5 py-1 rounded-full text-[10.5px] font-black uppercase tracking-wider flex items-center gap-2 shadow-lg border border-white/20 whitespace-nowrap">
+      <div className="absolute top-[52px] sm:top-14 md:top-16 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1.5 select-none pointer-events-auto max-w-[calc(100vw-180px)]">
+        <div className="bg-[#3E4A35] text-white px-3 py-1 rounded-full text-[9.5px] sm:text-[10.5px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg border border-white/20 whitespace-nowrap overflow-hidden max-w-full">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          <span>
+          <span className="truncate">
             {indicatorTitle ||
               (isOnline
                 ? `📍 ${places.length.toLocaleString()} SOSTE NEL DIAMETRO DI 10 KM 🗺️`

@@ -68,6 +68,17 @@ export default function GeneralSettingsTab({
   const [vibrations, setVibrations] = React.useState(initialSettings.vibrations ?? true);
   const [ttsEnabled, setTtsEnabled] = React.useState(initialSettings.ttsEnabled ?? true);
   const [ttsGender, setTtsGender] = React.useState<TtsGender>(initialSettings.ttsGender ?? 'auto');
+  const [isSpeakingTts, setIsSpeakingTts] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleTtsState = (e: any) => {
+      if (e.detail && typeof e.detail.isSpeaking === 'boolean') {
+        setIsSpeakingTts(e.detail.isSpeaking);
+      }
+    };
+    window.addEventListener('tts-state-changed', handleTtsState);
+    return () => window.removeEventListener('tts-state-changed', handleTtsState);
+  }, []);
   const [autoBackup, setAutoBackup] = React.useState(initialSettings.autoBackup ?? false);
   const [isBackingUp, setIsBackingUp] = React.useState(false);
 
@@ -646,11 +657,18 @@ export default function GeneralSettingsTab({
                 </span>
                 <button
                   type="button"
-                  onClick={() => speakSampleTts(ttsGender)}
-                  className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700/50 rounded-lg hover:bg-emerald-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova vocale GPS in corso...", duration: 3500 } }));
+                    speakSampleTts(ttsGender);
+                  }}
+                  className={`px-3 py-1.5 text-[11px] font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isSpeakingTts
+                      ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg animate-pulse ring-2 ring-emerald-400/50'
+                      : 'text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700/50 hover:bg-emerald-200'
+                  }`}
                 >
-                  <Volume2 className="w-3.5 h-3.5" />
-                  Ascolta Prova
+                  <Volume2 className={`w-4 h-4 ${isSpeakingTts ? 'animate-bounce' : ''}`} />
+                  <span>{isSpeakingTts ? "In riproduzione..." : "Ascolta Prova"}</span>
                 </button>
               </div>
 
@@ -659,11 +677,14 @@ export default function GeneralSettingsTab({
                   type="button"
                   onClick={() => {
                     setTtsGender('auto');
+                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Auto (Sistema)...", duration: 3500 } }));
                     speakSampleTts('auto');
                   }}
                   className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
                     ttsGender === 'auto'
-                      ? 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
+                      ? isSpeakingTts
+                        ? 'bg-emerald-500/25 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500 animate-pulse'
+                        : 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                   }`}
                 >
@@ -675,11 +696,14 @@ export default function GeneralSettingsTab({
                   type="button"
                   onClick={() => {
                     setTtsGender('female');
+                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Femminile...", duration: 3500 } }));
                     speakSampleTts('female');
                   }}
                   className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
                     ttsGender === 'female'
-                      ? 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
+                      ? isSpeakingTts
+                        ? 'bg-emerald-500/25 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500 animate-pulse'
+                        : 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                   }`}
                 >
@@ -691,11 +715,14 @@ export default function GeneralSettingsTab({
                   type="button"
                   onClick={() => {
                     setTtsGender('male');
+                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Maschile...", duration: 3500 } }));
                     speakSampleTts('male');
                   }}
                   className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
                     ttsGender === 'male'
-                      ? 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
+                      ? isSpeakingTts
+                        ? 'bg-emerald-500/25 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500 animate-pulse'
+                        : 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                   }`}
                 >
