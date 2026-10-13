@@ -774,26 +774,28 @@ function saveCachedWeatherAlerts(alerts: any[]) {
 }
 
 let lastCheckedWeatherAlertTime = 0;
+const recentSentWeatherPushes = new Map<string, number>(); // key: `${email}_${alertType}_${dateStr}`, value: timestamp
 
 async function checkAndSendWeatherAlertsPush() {
   const now = Date.now();
-  // Don't run weather background push check more than once every 30 minutes
-  if (now - lastCheckedWeatherAlertTime < 30 * 60 * 1000) {
+  // Throttle background weather push check to at most once every 15 minutes
+  if (now - lastCheckedWeatherAlertTime < 15 * 60 * 1000) {
     return;
   }
   lastCheckedWeatherAlertTime = now;
 
   try {
-    console.log("[Weather Push Scheduler] Checking recent weather alerts for background FCM dispatch...");
-    let recentAlerts: any[] = [];
+    console.log("[Weather Push Scheduler] Running background weather alert checks for FCM dispatch...");
 
+    // 1. Check Community Weather Alerts from Firestore
+    let recentAlerts: any[] = [];
     try {
       const snapshot = await firestoreDb.collection("community_weather_alerts").get();
       snapshot.forEach((doc: any) => {
         const data = doc.data();
         const expiresAt = new Date(data.expiresAt || 0).getTime();
         const createdAt = new Date(data.createdAt || Date.now()).getTime();
-        if (expiresAt > now && (now - createdAt) < 2 * 60 * 60 * 1000) {
+        if (expiresAt > now && (now - createdAt) < 3 * 60 * 60 * 1000) {
           recentAlerts.push({ id: doc.id, ...data });
         }
       });
@@ -801,13 +803,13 @@ async function checkAndSendWeatherAlertsPush() {
       const cachedAlerts = getCachedWeatherAlerts();
       recentAlerts = cachedAlerts.filter(a => {
         const createdAt = new Date(a.createdAt || Date.now()).getTime();
-        return (now - createdAt) < 2 * 60 * 60 * 1000; // created within last 2 hours
+        return (now - createdAt) < 3 * 60 * 60 * 1000;
       });
     }
 
     if (recentAlerts.length > 0) {
-      console.log(`[Weather Push Scheduler] Found ${recentAlerts.length} active weather alert(s). Sending background push...`);
-      for (const alert of recentAlerts.slice(0, 2)) {
+      console.log(`[Weather Push Scheduler] Found ${recentAlerts.length} active community weather alert(s). Sending FCM push...`);
+      for (const alert of recentAlerts.slice(0, 3)) {
         const typeLabels: Record<string, string> = {
           hail: "⚠️ Allerta Grandine!",
           storm: "🌩️ Allerta Temporale Violento!",
@@ -828,6 +830,87 @@ async function checkAndSendWeatherAlertsPush() {
           lng: String(alert.lng)
         });
       }
+    }
+
+    // 2. Check Official Open-Meteo Severe Weather for All Registered User Devices in Background
+    try {
+      const pushTokensSnap = await firestoreDb.collection("push_tokens").get();
+      const dateStr = new Date().toISOString().split('T')[0];
+
+      for (const tokenDoc of pushTokensSnap.docs) {
+        const tData = tokenDoc.data();
+        const email = tokenDoc.id;
+        const lat = tData?.lat;
+        const lng = tData?.lng;
+
+        if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+
+        try {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=weather_code,wind_speed_10m,wind_gusts_10m,precipitation&hourly=weather_code,wind_gusts_10m,precipitation&timezone=auto`;
+          const weatherRes = await fetch(url);
+          if (!weatherRes.ok) continue;
+
+          const weatherData = await weatherRes.json();
+          if (!weatherData || !weatherData.current) continue;
+
+          const currentCode = weatherData.current.weather_code ?? 0;
+          const gusts = weatherData.current.wind_gusts_10m ?? weatherData.current.wind_speed_10m ?? 0;
+
+          let maxGust12h = gusts;
+          let isHail = currentCode === 96 || currentCode === 99;
+          let isStorm = currentCode === 95 || currentCode === 96 || currentCode === 99;
+
+          if (weatherData.hourly && Array.isArray(weatherData.hourly.time)) {
+            const currentHour = new Date().getHours();
+            const sliceEnd = Math.min(currentHour + 12, weatherData.hourly.time.length);
+            for (let i = currentHour; i < sliceEnd; i++) {
+              const g = weatherData.hourly.wind_gusts_10m?.[i] ?? 0;
+              const c = weatherData.hourly.weather_code?.[i] ?? 0;
+              if (g > maxGust12h) maxGust12h = g;
+              if (c === 96 || c === 99) isHail = true;
+              if (c === 95 || c === 96 || c === 99) isStorm = true;
+            }
+          }
+
+          let alertType = "";
+          let title = "";
+          let body = "";
+
+          if (isHail) {
+            alertType = "hail";
+            title = "🧊 Allerta Grandine in Arrivo!";
+            body = "Possibile grandinata o temporale violento nella tua area. Proteggi il camper e chiudi gli oblò sul tetto.";
+          } else if (maxGust12h >= 55) {
+            alertType = "wind";
+            title = `💨 Allerta Vento Forte (${Math.round(maxGust12h)} km/h)!`;
+            body = `Previste raffiche di vento fino a ${Math.round(maxGust12h)} km/h. Riavvolgi il tendalino e chiudi le finestre.`;
+          } else if (isStorm) {
+            alertType = "storm";
+            title = "🌩️ Allerta Temporale Violento!";
+            body = "Forti rovesci e temporali previsti nelle prossime ore. Attenzione alla sosta vicino ad alberi o corsi d'acqua.";
+          }
+
+          if (alertType) {
+            const pushKey = `${email}_${alertType}_${dateStr}`;
+            const lastSent = recentSentWeatherPushes.get(pushKey) || 0;
+            // Only send background weather push once every 6 hours per alert type per device
+            if (now - lastSent > 6 * 60 * 60 * 1000) {
+              recentSentWeatherPushes.set(pushKey, now);
+              console.log(`[Weather Push Scheduler] Dispatching severe weather background FCM push (${alertType}) to ${email}`);
+              await sendPushNotification(email, title, body, {
+                type: "weather_alert",
+                alertType,
+                lat: String(lat),
+                lng: String(lng)
+              });
+            }
+          }
+        } catch (mErr) {
+          // Silent catch for single location API check
+        }
+      }
+    } catch (pushTokensErr) {
+      console.warn("[Weather Push Scheduler] Error checking push_tokens for background weather check:", pushTokensErr);
     }
   } catch (err: any) {
     console.error("[Weather Push Scheduler] Error in checkAndSendWeatherAlertsPush:", err);
