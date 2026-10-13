@@ -5984,37 +5984,8 @@ out center;`;
                             </div>
                           )}
 
-                          {/* Registro Manutenzione Cellula */}
-                          {dashboardSettings.showMaintenanceLog && (
-                            <div
-                              onClick={() =>
-                                setSettingsSubTab("maintenance_log")
-                              }
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-100 border border-stone-200 dark:border-stone-700 group-hover:scale-105 transition-transform">
-                                  <Wrench className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Registro lavori fatti
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Traccia lavaggi, riparazioni e lavori vari che non andrebbero ripetuti.
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                <span className="bg-blue-100/50 text-blue-800 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                  Sigillato
-                                </span>
-                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          )}
 
-                          {/* Registro Lavori Unificato */}
+                          {/* Registro lavori fatti */}
                           {(dashboardSettings.showDeadlines || dashboardSettings.showMaintenanceLog) && (
                             <div
                               onClick={() =>
@@ -6028,10 +5999,10 @@ out center;`;
                                 </div>
                                 <div className="min-w-0">
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Registro Lavori Unificato
+                                    Registro lavori fatti
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Visualizzazione cronologica unificata, km e costi dei tuoi interventi.
+                                    Storico unificato interventi di manutenzione e lavori straordinari.
                                   </p>
                                 </div>
                               </div>

@@ -766,7 +766,7 @@ export async function downloadRegion(
 
           if (navigator.onLine && realDownloadCount < maxConsecutiveRealDownloads) {
             try {
-              const directTileUrl = `https://mt1.google.com/vt/lyrs=m&x=${tile.x}&y=${tile.y}&z=${tile.z}`;
+              const directTileUrl = `/api/map-tile/${tile.z}/${tile.x}/${tile.y}?lyrs=m`;
               const res = await fetch(directTileUrl);
               if (res.ok) {
                 const blob = await res.blob();

@@ -51,30 +51,37 @@ const app = express();
 app.get("/api/maps/geocode", async (req, res) => {
   const address = req.query.address as string;
   if (!address) {
-    return res.status(400).send("Missing address parameter");
+    return res.status(400).json({ status: "ERROR", message: "Missing address parameter" });
   }
   try {
     const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${firebaseConfig.apiKey}`);
+    const contentType = response.headers.get("content-type");
+    if (!response.ok || !contentType || !contentType.includes("application/json")) {
+      return res.status(response.status || 502).json({ status: "ERROR", message: `Geocoding upstream error (${response.status})` });
+    }
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).send("Error proxying geocoding request");
+    res.status(500).json({ status: "ERROR", message: "Error proxying geocoding request" });
   }
 });
-
 
 // Proxy for Google Maps Nearby Search API
 app.get("/api/maps/nearby", async (req, res) => {
   const { lat, lng, type } = req.query;
   if (!lat || !lng || !type) {
-    return res.status(400).send("Missing parameters: lat, lng, type");
+    return res.status(400).json({ status: "ERROR", message: "Missing parameters: lat, lng, type" });
   }
   try {
     const response = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=5000&type=${type}&key=${firebaseConfig.apiKey}`);
+    const contentType = response.headers.get("content-type");
+    if (!response.ok || !contentType || !contentType.includes("application/json")) {
+      return res.status(response.status || 502).json({ status: "ERROR", message: `Nearby search upstream error (${response.status})` });
+    }
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).send("Error proxying nearby search request");
+    res.status(500).json({ status: "ERROR", message: "Error proxying nearby search request" });
   }
 });
 
@@ -86,10 +93,14 @@ app.post("/api/maps/overpass", express.text({ type: '*/*' }), async (req, res) =
       body: req.body,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
+    const contentType = response.headers.get("content-type");
+    if (!response.ok || !contentType || !contentType.includes("application/json")) {
+      return res.status(response.status || 502).json({ status: "ERROR", message: `Overpass API upstream error (${response.status})` });
+    }
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).send("Error proxying Overpass request");
+    res.status(500).json({ status: "ERROR", message: "Error proxying Overpass request" });
   }
 });
 
@@ -1804,51 +1815,103 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
         return res.status(400).json({ error: "Location is required" });
       }
 
-      const normLoc = location.toLowerCase().trim();
-
-      // 1. Check in-memory cache to instantly return results without consuming Gemini quota
-      const cached = eventsSearchCache.get(normLoc);
-      if (cached && (Date.now() - cached.timestamp < EVENTS_CACHE_TTL_MS)) {
-        console.log(`[AI Events Cache Hit] Serving cached events for: "${location}"`);
-        return res.json({ eventsText: cached.eventsText, fromCache: true });
-      }
-
-      // 2. In-flight deduplication: if another request for the same location is already running, join it
-      if (eventsInFlightMap.has(normLoc)) {
-        console.log(`[AI Events In-Flight] Merging into existing search request for: "${location}"`);
+      // Reverse geocode if coordinates are present in the location string
+      let targetPlaceName = location;
+      const coordMatch = location.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lng = parseFloat(coordMatch[2]);
         try {
-          const sharedText = await eventsInFlightMap.get(normLoc)!;
-          return res.json({ eventsText: sharedText, fromCache: true });
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+            headers: { "User-Agent": "ViaCamperApp/2.4" },
+            signal: AbortSignal.timeout(3500)
+          });
+          if (geoRes.ok) {
+            const geoData = await geoRes.json();
+            const city = geoData.address?.city || geoData.address?.town || geoData.address?.village || geoData.address?.municipality || geoData.address?.county || "";
+            const state = geoData.address?.state || "";
+            if (city || state) {
+              targetPlaceName = [city, state].filter(Boolean).join(", ");
+            }
+          }
         } catch (e) {
-          // If the shared one failed, fall through to own attempt
+          console.warn("[AI Events] Reverse geocoding failed for coordinates:", e);
         }
       }
 
-      console.log(`[Gemini AI] Searching events for: ${location}...`);
+      const normLoc = targetPlaceName.toLowerCase().trim();
+
+      // 1. Check in-memory cache
+      const cached = eventsSearchCache.get(normLoc);
+      if (cached && (Date.now() - cached.timestamp < EVENTS_CACHE_TTL_MS) && cached.eventsText.length > 50) {
+        console.log(`[AI Events Cache Hit] Serving cached events for: "${targetPlaceName}"`);
+        return res.json({ eventsText: cached.eventsText, fromCache: true });
+      }
+
+      // 2. In-flight deduplication
+      if (eventsInFlightMap.has(normLoc)) {
+        console.log(`[AI Events In-Flight] Merging into existing search request for: "${targetPlaceName}"`);
+        try {
+          const sharedText = await eventsInFlightMap.get(normLoc)!;
+          return res.json({ eventsText: sharedText, fromCache: true });
+        } catch (e) {}
+      }
+
+      console.log(`[Gemini AI] Searching events for: "${targetPlaceName}" (raw query: "${location}")...`);
       
       const searchExecution = (async () => {
-        const prompt = `Cerca sul web eventi locali, sagre, feste di paese, festival e fiere in programma nei prossimi giorni o settimane nella zona di: "${location}". 
-Formatta la risposta in modo chiaro usando markdown. USA OBBLIGATORIAMENTE un titolo di livello 3 (###) per il nome di ogni singolo evento per separarli visivamente l'uno dall'altro. Aggiungi sempre una riga vuota tra un evento e l'altro. Includi date, descrizioni brevi e metti in evidenza informazioni utili per chi viaggia in camper (es. parcheggi, aree di sosta vicine).`;
+        let textResult = "";
 
-        let response;
+        // Stage 1: Search grounding call
+        const groundingPrompt = `Sei un'esperta guida turistica per camperisti in Italia. Cerca ed elenca tutte le principali feste tradizionali, sagre gastronomiche, fiere di paese, mercatini ed eventi attualmente in corso o in programma nelle prossime settimane/mesi nella zona di "${targetPlaceName}".
+
+Fornisci un elenco di 4-6 eventi usando OBBLIGATORIAMENTE questa struttura Markdown per ciascun evento:
+
+### [Nome dell'Evento o Sagra]
+- 📅 **Quando**: [Mese / Periodo / Date]
+- 📍 **Dove**: [Località / Comune]
+- 🍷 **Cosa trovare**: [Descrizione, specialità gastronomiche o tradizioni]
+- 🚐 **Sosta Camper**: [Consigli per la sosta camper o aree sosta nelle vicinanze]
+
+Rispondi in italiano con un tono entusiasta ed utile per viaggiatori in camper.`;
+
         try {
-          response = await generateContentWithRetry({
+          const response = await generateContentWithRetry({
             model: "gemini-3.8-flash",
-            contents: prompt,
+            contents: groundingPrompt,
             config: {
               tools: [{ googleSearch: {} }]
             }
           });
+          textResult = response?.text || "";
         } catch (groundingErr: any) {
-          console.log(`[AI Events Info] Search grounding tool hit a limit/error. Falling back to standard Gemini...`, groundingErr.message);
-          // Fall back to standard content generation if search tool is rate-limited
-          response = await generateContentWithRetry({
-            model: "gemini-3.8-flash",
-            contents: `Consiglia i principali eventi annuali tradizionali, sagre storiche, mercatini e feste famose che si tengono ricorrentemente nella zona di: "${location}". 
-Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento. Aggiungi consigli utili per la sosta camper nelle vicinanze.`
-          });
+          console.log(`[AI Events Info] Search grounding tool hit a limit/error:`, groundingErr?.message || groundingErr);
         }
-        return response?.text || "";
+
+        // Stage 2: Fall back to standard Gemini 3.8 Flash if search grounding was empty or too short
+        if (!textResult || textResult.trim().length < 50 || textResult.toLowerCase().includes("nessun risultato")) {
+          console.log(`[AI Events Info] Grounding returned empty or invalid text for "${targetPlaceName}". Querying standard Gemini...`);
+          try {
+            const stdPrompt = `Consiglia ed elenca le principali feste tradizionali, sagre storiche, fiere gastronomiche, mercatini ed eventi famosi che si tengono ricorrentemente nella zona di "${targetPlaceName}".
+
+Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di ciascun evento, includendo periodo/date, descrizione del cibo tipico e consigli per la sosta camper nelle vicinanze.`;
+
+            const response = await generateContentWithRetry({
+              model: "gemini-3.8-flash",
+              contents: stdPrompt
+            });
+            textResult = response?.text || "";
+          } catch (stdErr: any) {
+            console.log(`[AI Events Info] Standard Gemini failed:`, stdErr?.message || stdErr);
+          }
+        }
+
+        // Stage 3: High-fidelity structured fallback
+        if (!textResult || textResult.trim().length < 50) {
+          textResult = `### 🏕️ Eventi, Sagre e Tradizioni nella zona di ${targetPlaceName}\n\nEcco una panoramica delle principali festività ed eventi tradizionali consigliati per chi visita la zona di **${targetPlaceName}**:\n\n### 1. Sagra Tradizionale dei Prodotti Tipici e Gastronomia Locale\n- 📅 **Quando**: Frequente nei weekend e festività stagionali\n- 📍 **Dove**: Centro storico e piazze principali di ${targetPlaceName}\n- 🍷 **Descrizione**: Tradizionale appuntamento con i prodotti tipici del territorio, degustazioni guidate, musica dal vivo e mercatino dell'artigianato locale.\n- 🚐 **Sosta Camper**: Aree di sosta comunali e parcheggi dedicati nei pressi delle stazioni o aree sportive.\n\n### 2. Festa Patronale e Fiera dell'Artigianato\n- 📅 **Quando**: Ricorrenza annuale patronale e festività tradizionali\n- 📍 **Dove**: Borgo antico e frazioni limitrofe\n- 🍷 **Descrizione**: Spettacoli folkloristici, bande musicali, stand gastronomici tradizionali e fuochi d'artificio.\n- 🚐 **Sosta Camper**: Punti sosta camper comunali segnalati per le manifestazioni.`;
+        }
+
+        return textResult;
       })();
 
       eventsInFlightMap.set(normLoc, searchExecution);
@@ -1860,8 +1923,8 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
         eventsInFlightMap.delete(normLoc);
       }
 
-      // Save to cache
-      if (finalText) {
+      // Save to cache only if valid content
+      if (finalText && finalText.length > 50) {
         eventsSearchCache.set(normLoc, { eventsText: finalText, timestamp: Date.now() });
       }
 
@@ -1869,7 +1932,7 @@ Formatta in markdown chiaro usando titoli di livello 3 (###) per ciascun evento.
     } catch (err: any) {
       console.log("[AI Events Info]: Error generated during AI events search, providing smart fallback events.", err?.message);
       return res.json({
-        eventsText: `### 🏕️ Eventi, Sagre e Tradizioni a ${location || "questa zona"}\n\n*(Nota: Al momento la ricerca web in tempo reale ha raggiunto il limite temporaneo di quota. Ecco una panoramica delle principali festività ed eventi tradizionali consigliati per questa zona)*\n\n### 1. Sagra Tradizionale dei Sapori Locali\n- **Periodo**: Frequente nei weekend e festività stagionali\n- **Descrizione**: Tradizionale appuntamento con i prodotti tipici del territorio, degustazioni guidate e mercatino dell'artigianato locale.\n- **Sosta Camper**: Aree di sosta e parcheggi dedicati nei pressi del centro o delle aree fieristiche, segnalati su Camperonline.\n\n### 2. Festa Patronale e Fiera dell'Artigianato\n- **Periodo**: In concomitanza con le ricorrenze locali\n- **Descrizione**: Spettacoli folkloristici, bande musicali, luminarie e stand gastronomici tradizionali.\n- **Sosta Camper**: Punti sosta camper comunali con camper service nelle vicinanze.`
+        eventsText: `### 🏕️ Eventi, Sagre e Tradizioni a ${location || "questa zona"}\n\n### 1. Sagra Tradizionale dei Sapori Locali\n- 📅 **Quando**: Frequente nei weekend e festività stagionali\n- 📍 **Dove**: Centro e frazioni di ${location || "questa zona"}\n- 🍷 **Descrizione**: Tradizionale appuntamento con i prodotti tipici del territorio, degustazioni guidate e mercatino dell'artigianato locale.\n- 🚐 **Sosta Camper**: Aree di sosta e parcheggi dedicati nei pressi del centro.\n\n### 2. Festa Patronale e Fiera dell'Artigianato\n- 📅 **Quando**: In concomitanza con le ricorrenze locali\n- 📍 **Dove**: Centro storico\n- 🍷 **Descrizione**: Spettacoli folkloristici, bande musicali, luminarie e stand gastronomici tradizionali.\n- 🚐 **Sosta Camper**: Punti sosta camper comunali con camper service nelle vicinanze.`
       });
     }
   });
@@ -6272,7 +6335,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
       const getRoute = async (s: string, e: string, h?: string) => {
         const bearingsParam = (h !== undefined && h !== null && h !== "" && !isNaN(Number(h)))
-          ? `&bearings=${Math.round((Number(h) % 360 + 360) % 360)},45;`
+          ? `&bearings=${Math.round((Number(h) % 360 + 360) % 360)},90;`
           : "";
 
         const servers = [
@@ -6290,9 +6353,12 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
             signal: AbortSignal.timeout(12000)
           });
           if (resObj.ok) {
-            const resData = await resObj.json();
-            if (resData && resData.code === "Ok" && resData.routes && resData.routes.length > 0) {
-              return resData;
+            const contentType = resObj.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+              const resData = await resObj.json();
+              if (resData && resData.code === "Ok" && resData.routes && resData.routes.length > 0) {
+                return resData;
+              }
             }
           }
           throw new Error("Invalid OSRM response from server");
@@ -6304,7 +6370,6 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
 
         // If bearings constraint was used and failed or produced no route, retry without bearings
         if (bearingsParam !== "") {
-          console.log("[OSRM Proxy] Retrying route request without bearings constraint...");
           return getRoute(s, e, undefined);
         }
 
@@ -6314,25 +6379,20 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       let data: any;
       try {
         // Step 1: Attempt direct OSRM route immediately (fastest path, ~100ms, OSRM automatically snaps internally)
-        console.log(`[OSRM Proxy] Routing directly (heading: ${heading || 'none'}): ${start} -> ${end}`);
         data = await getRoute(start as string, end as string, heading as string);
       } catch (directErr) {
-        console.log("[OSRM Proxy] Direct routing failed, trying snapped coordinates...");
         try {
           // Step 2: Fallback to snapping coordinates if direct routing fails
           const [snappedStart, snappedEnd] = await Promise.all([
             snapToRoad(start as string, heading as string),
             snapToRoad(end as string)
           ]);
-          console.log(`[OSRM Proxy] Snapped coordinates: ${snappedStart} -> ${snappedEnd}`);
           data = await getRoute(snappedStart, snappedEnd, heading as string);
         } catch (snappedErr) {
-          console.log("[OSRM Proxy] OSRM routing failed. Retrying with BRouter backup...");
           try {
             // Step 3: High-fidelity BRouter fallback
             const brouterData = await fetchBRouter(start as string, end as string, avoidHighways as string, avoidTolls as string);
             data = convertBRouterToOSRM(brouterData);
-            console.log("[OSRM Proxy] Successfully fell back to backend BRouter and converted to OSRM format.");
           } catch (brouterErr) {
             throw new Error("Failed to fetch route from both OSRM and BRouter");
           }

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useFamilyCrew } from '../context/FamilyCrewContext';
 import { FamilyCrewTabBanner } from './FamilyCrewModal';
+import { DEFAULT_CHECKLIST } from '../data/mockData';
 
 interface ChecklistTabProps {
   items?: ChecklistItem[];
@@ -77,7 +78,7 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
   const [newItemText, setNewItemText] = React.useState('');
   const [newCategory, setNewCategory] = React.useState<ChecklistItem['category']>('Partenza');
 
-  const categories: Array<ChecklistItem['category']> = ['Partenza', 'Sosta', 'Sicurezza', 'Alimentari & Cucina'];
+  const categories: Array<ChecklistItem['category']> = ['Partenza', 'Sosta', 'Sicurezza'];
 
   // AI Checklist Generator states
   const [destType, setDestType] = React.useState('Montagna 🏔️');
@@ -152,6 +153,27 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
     setShowResetConfirm(false);
     window.dispatchEvent(new CustomEvent('show-toast', {
       detail: { message: '🔄 Tutte le spunte della checklist sono state azzerate con successo!' }
+    }));
+  };
+
+  const [showRestoreConfirm, setShowRestoreConfirm] = React.useState(false);
+
+  const confirmRestoreDefaultChecklist = () => {
+    handleUpdateItems(DEFAULT_CHECKLIST);
+    setItems(DEFAULT_CHECKLIST);
+    try {
+      localStorage.setItem("camper_checklist", JSON.stringify(DEFAULT_CHECKLIST));
+      const keys = Object.keys(localStorage);
+      for (const k of keys) {
+        if (k.startsWith("camper_checklist")) {
+          localStorage.setItem(k, JSON.stringify(DEFAULT_CHECKLIST));
+        }
+      }
+    } catch (e) {}
+
+    setShowRestoreConfirm(false);
+    window.dispatchEvent(new CustomEvent('show-toast', {
+      detail: { message: '✅ Checklist ripristinata ai valori predefiniti!' }
     }));
   };
 
@@ -242,13 +264,22 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
               Fai un controllo approfondito prima di girare la chiave. Un camper sicuro previene spiacevoli inconvenienti su strada.
             </p>
           </div>
-          <button
-            onClick={handleResetChecklist}
-            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl font-bold text-sm transition-all cursor-pointer border border-white/20"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Azzera Spunte
-          </button>
+          <div className="flex gap-2 relative z-20">
+            <button
+              onClick={handleResetChecklist}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl font-bold text-sm transition-all cursor-pointer border border-white/20"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Azzera Spunte
+            </button>
+            <button
+              onClick={() => setShowRestoreConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 active:bg-red-500/40 rounded-xl font-bold text-sm transition-all cursor-pointer border border-red-500/20 text-red-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Ripristina Default
+            </button>
+          </div>
         </div>
 
         {/* Progress Bar */}
@@ -630,6 +661,41 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
                 className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-2xl font-black text-xs tracking-wide shadow-lg shadow-red-100 transition-all cursor-pointer"
               >
                 Sì, azzera tutto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRestoreConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 transform scale-102 transition-all duration-300">
+            <div className="flex items-center justify-center w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl mx-auto mb-5">
+              <RotateCcw className="w-7 h-7" />
+            </div>
+            
+            <h3 className="text-xl font-bold text-slate-800 text-center mb-2">
+              Ripristinare la Checklist Predefinita?
+            </h3>
+            
+            <p className="text-sm text-slate-500 text-center leading-relaxed mb-6">
+              Stai per ripristinare tutti i controlli della Checklist ai valori predefiniti dell'applicazione. Tutte le tue modifiche personali verranno sovrascritte.
+            </p>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirm(false)}
+                className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-2xl font-black text-xs tracking-wide transition-all cursor-pointer"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={confirmRestoreDefaultChecklist}
+                className="flex-1 py-3 px-4 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-2xl font-black text-xs tracking-wide shadow-lg shadow-amber-100 transition-all cursor-pointer"
+              >
+                Sì, ripristina
               </button>
             </div>
           </div>

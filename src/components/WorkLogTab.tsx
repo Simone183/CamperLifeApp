@@ -365,8 +365,8 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
         {/* Header Actions */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 sm:gap-4 mb-4 sm:mb-6 pb-4 sm:pb-5 border-b border-slate-50 dark:border-slate-700">
           <div className="space-y-1">
-            <h2 className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">Registro Lavori Unificato & Sincronizzato</h2>
-            <p className="text-[11px] sm:text-xs text-slate-400 dark:text-slate-400">Una vista cronologica globale con sincronizzazione bidirezionale immediata.</p>
+            <h2 className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">Registro lavori fatti</h2>
+            <p className="text-[11px] sm:text-xs text-slate-400 dark:text-slate-400">Storico unificato interventi di manutenzione e lavori straordinari.</p>
           </div>
 
           <button
@@ -619,101 +619,56 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
               {sortedItems.map((item) => (
                 <div
                   key={`mob-${item.source}-${item.id}`}
-                  className="p-3.5 space-y-2.5 bg-white dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs"
+                  className="p-2 space-y-1.5 bg-white dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs"
                 >
-                  {/* Top Bar: Source Badge + Date + Delete */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[9.5px] font-extrabold shrink-0 ${
-                        item.source === 'deadlines' 
-                          ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800' 
-                          : 'bg-stone-50 text-stone-700 border border-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-700'
-                      }`}>
-                        {item.source === 'deadlines' ? 'Scadenziario' : 'Cella & Impianti'}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${item.source === 'deadlines' ? 'bg-blue-50 text-blue-700' : 'bg-stone-50 text-stone-700'}`}>
+                        {item.source === 'deadlines' ? 'Scad' : 'Lav'}
                       </span>
                       <input
                         type="date"
                         value={item.date}
                         onChange={(e) => handleUpdateItem(item.id, item.source, 'date', e.target.value)}
-                        className="px-2 py-0.5 rounded text-[11px] font-mono text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:border-[#3E4A35]"
+                        className="bg-transparent font-mono text-[10px] text-slate-600 outline-none w-20"
                       />
                     </div>
                     <button
                       onClick={() => handleDeleteItem(item.id, item.source)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors shrink-0"
-                      title="Elimina permanentemente"
+                      className="text-slate-400 hover:text-red-500 p-1"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
-
-                  {/* Title & Notes */}
-                  <div>
-                    <h4 className={`font-bold text-xs leading-snug ${item.done ? 'text-slate-700 dark:text-slate-300' : 'text-[#3E4A35] dark:text-emerald-400 font-extrabold'}`}>
-                      {item.title}
-                    </h4>
-                    {item.notes && (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                        {item.notes}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Bottom Grid for Mobile: Status, Cost, Km */}
-                  <div className="pt-2 grid grid-cols-3 gap-2 items-center bg-slate-50 dark:bg-slate-900/80 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700/80">
-                    {/* Status Toggle */}
-                    <div className="flex flex-col">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tight">Stato</span>
-                      <button
-                        onClick={() => handleUpdateItem(item.id, item.source, 'done', !item.done)}
-                        className={`inline-flex items-center justify-center gap-1 px-1.5 py-1 rounded-lg text-[10px] font-black transition-colors mt-0.5 ${
-                          item.done 
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
-                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                        }`}
-                      >
-                        {item.done ? (
-                          <>
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                            Fatto
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
-                            In Attesa
-                          </>
-                        )}
-                      </button>
+                  
+                  <h4 className="font-bold text-xs truncate text-slate-800 dark:text-slate-100">{item.title}</h4>
+                  
+                  <div className="flex items-center justify-between gap-1.5 pt-1">
+                    <button
+                      onClick={() => handleUpdateItem(item.id, item.source, 'done', !item.done)}
+                      className={`px-2 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${item.done ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
+                    >
+                      {item.done ? 'Fatto' : 'Attesa'}
+                    </button>
+                    <div className="flex items-center gap-0.5 text-[10px] text-slate-500 min-w-0 flex-1 justify-end">
+                      <span>€</span>
+                      <input 
+                        type="number" 
+                        placeholder="0" 
+                        value={item.cost || ''} 
+                        onChange={(e) => handleUpdateItem(item.id, item.source, 'cost', e.target.value)} 
+                        className="w-full max-w-[60px] bg-slate-50 dark:bg-slate-900 rounded px-1 outline-none text-right font-mono"
+                      />
                     </div>
-
-                    {/* Cost Field - Prominently displayed */}
-                    <div className="flex flex-col">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tight">Costo ({getCurrencySymbol(settings)})</span>
-                      <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-0.5 mt-0.5 shadow-2xs">
-                        <span className="text-[10px] text-slate-400 font-bold">{getCurrencySymbol(settings)}</span>
-                        <input
-                          type="number"
-                          value={item.cost !== undefined ? item.cost : ''}
-                          onChange={(e) => handleUpdateItem(item.id, item.source, 'cost', e.target.value ? parseFloat(e.target.value) : undefined)}
-                          placeholder="0"
-                          className="w-full text-xs text-slate-800 dark:text-slate-100 bg-transparent outline-none font-mono font-bold"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Km Field */}
-                    <div className="flex flex-col">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tight">Chilometri</span>
-                      <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-0.5 mt-0.5 shadow-2xs">
-                        <input
-                          type="number"
-                          value={item.km !== undefined ? item.km : ''}
-                          onChange={(e) => handleUpdateItem(item.id, item.source, 'km', e.target.value ? parseInt(e.target.value) : undefined)}
-                          placeholder="--"
-                          className="w-full text-xs text-slate-800 dark:text-slate-100 bg-transparent outline-none font-mono font-bold"
-                        />
-                        <span className="text-[9px] text-slate-400 font-extrabold uppercase shrink-0">{getDistanceUnit(settings)}</span>
-                      </div>
+                    <div className="flex items-center gap-0.5 text-[10px] text-slate-500 min-w-0 flex-1 justify-end">
+                      <span>{getDistanceUnit(settings)}</span>
+                      <input 
+                        type="number" 
+                        placeholder="--" 
+                        value={item.km || ''} 
+                        onChange={(e) => handleUpdateItem(item.id, item.source, 'km', e.target.value)} 
+                        className="w-full max-w-[60px] bg-slate-50 dark:bg-slate-900 rounded px-1 outline-none text-right font-mono"
+                      />
                     </div>
                   </div>
                 </div>

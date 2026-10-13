@@ -74,7 +74,7 @@ interface Recipe {
   title: string;
   durationMin: number;
   difficulty: 'Facile' | 'Media';
-  gasUsage: 'Basso' | 'Medio';
+  gasUsage: 'Zero' | 'Minimo' | 'Basso' | 'Medio';
   waterUsage: 'Minimo' | 'Poco' | 'Normale';
   potsNeeded: number;
   ingredientsNeeded: { name: string; qtyStr: string; pantryMatchId?: string }[];
@@ -114,7 +114,7 @@ const CAMPER_RECIPES: Recipe[] = [
     potsNeeded: 1,
     ingredientsNeeded: [
       { name: 'Pane in cassetta (Bauletto)', qtyStr: '4 fette', pantryMatchId: 'p9' },
-      { name: 'Fagioli Canellini in scatola', qtyStr: '1 lattina', pantryMatchId: 'p11' },
+      { name: 'Fagioli Cannellini in scatola', qtyStr: '1 lattina', pantryMatchId: 'p11' },
       { name: 'Parmigiano Reggiano Grattugiato', qtyStr: '50g', pantryMatchId: 'p5' },
       { name: 'Olio Extra Vergine d\'Oliva', qtyStr: 'q.b.', pantryMatchId: 'p3' },
       { name: 'Sale, Pepe & Spezie Miste', qtyStr: 'q.b.', pantryMatchId: 'p10' }
@@ -165,6 +165,327 @@ const CAMPER_RECIPES: Recipe[] = [
       'Mescola i secchi direttamente in una tazza (Mug) resistente al calore.',
       'Aggiungi il latte mescolando con una forchetta fino ad ottenere una pastella densa.',
       'Cuoci nel microonde a bordo del camper (se munito di inverter da sosta) o a bagnomaria in una pentola coperta per 4-5 minuti sul fuoco basso.'
+    ]
+  },
+  {
+    id: 'r5',
+    title: 'Cous Cous Veloce ai Ceci e Verdure Sott\'Olio',
+    durationMin: 5,
+    difficulty: 'Facile',
+    gasUsage: 'Minimo',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Cous Cous', qtyStr: '200g' },
+      { name: 'Ceci in scatola', qtyStr: '1 lattina', pantryMatchId: 'p11' },
+      { name: 'Verdure sott\'olio (Caponata/Gardiniera)', qtyStr: '1 vasetto' },
+      { name: 'Olio Extra Vergine d\'Oliva', qtyStr: 'q.b.', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'Versa il cous cous in un recipiente con pari volume di acqua salata bollente. Copri e lascia idratare per 3 minuti a fuoco spento.',
+      'Sgranalo con una forchetta aggiungendo un filo d\'olio.',
+      'Unisci i ceci scolati e le verdure sott\'olio col loro olio di conservazione. Mescola e servi senza sporcare pentole!'
+    ]
+  },
+  {
+    id: 'r6',
+    title: 'Omelette Gourmet e Formaggio in Padella',
+    durationMin: 8,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Uova fresche o in brick', qtyStr: '3 pz' },
+      { name: 'Formaggio a fette o Caciotta', qtyStr: '50g' },
+      { name: 'Prosciutto cotto o bresaola', qtyStr: '3 fette' },
+      { name: 'Olio Extra Vergine d\'Oliva', qtyStr: '1 cucchiaio', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'Sbatti le uova con sale e pepe in una ciotola.',
+      'Scalda la padella con un filo d\'olio e versa le uova.',
+      'Quando i bordi iniziano a rapprendersi, adagia su metà frittata il formaggio e il prosciutto.',
+      'Ripiega a metà l\'omelette e copri con coperchio per 1 minuto finché il formaggio fonde dolce.'
+    ]
+  },
+  {
+    id: 'r7',
+    title: 'Insalata di Riso "Svuota-Cambusa" alle Olive e Tonno',
+    durationMin: 18,
+    difficulty: 'Facile',
+    gasUsage: 'Medio',
+    waterUsage: 'Poco',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Riso Parboiled o per insalate', qtyStr: '250g' },
+      { name: 'Condiriso o sottoli misti', qtyStr: '1 vasetto' },
+      { name: 'Tonno all\'olio d\'oliva', qtyStr: '2 lattine', pantryMatchId: 'p4' },
+      { name: 'Olive verdi/nere snocciolate', qtyStr: '50g' }
+    ],
+    instructions: [
+      'Cuoci il riso in abbondante acqua salata o con cottura a ridotto assorbimento.',
+      'Scola il riso e sciacqualo brevemente per raffreddarlo e fermare la cottura.',
+      'Unisci il condiriso, le olive e il tonno sfaldato con il suo olio per dare sapore naturally senza aggiungere altri grassi.'
+    ]
+  },
+  {
+    id: 'r8',
+    title: 'Piadina Arrotolata Tosta al Salmoriglio e Sgombro',
+    durationMin: 6,
+    difficulty: 'Facile',
+    gasUsage: 'Minimo',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Piadine Romagnole veloci', qtyStr: '2 pz' },
+      { name: 'Filetti di Sgombro/Sarda sott\'olio', qtyStr: '1 scatola' },
+      { name: 'Insalata o Rucola in busta', qtyStr: '1 manciata' },
+      { name: 'Maionese o Salsa yogurt', qtyStr: '2 cucchiai' }
+    ],
+    instructions: [
+      'Scalda le piadine 1 minuto per lato su un testo o padella ben calda.',
+      'Spalma un velo di maionese, adagia l\'insalata e i filetti di sgombro spezzettati.',
+      'Arrotola strettamente la piadina e tagliala a metà: pronta da gustare anche durante una sosta veloce in autostrada!'
+    ]
+  },
+  {
+    id: 'r9',
+    title: 'Polenta Istantanea Risottata con Funghi e Caciotta',
+    durationMin: 10,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Poco',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Polenta istantanea (pre-cotta)', qtyStr: '200g' },
+      { name: 'Funghi trifolati in vasetto', qtyStr: '1 vasetto' },
+      { name: 'Formaggio tipo Caciotta o Fontina', qtyStr: '60g' },
+      { name: 'Dado vegetale', qtyStr: '1/2 cubetto' }
+    ],
+    instructions: [
+      'Sciogli il mezzo dado in 750ml d\'acqua bollente.',
+      'Versa la polenta a pioggia mescolando continuamente per 3-5 minuti a fuoco minimo.',
+      'Spegni il fuoco, aggiungi i funghi trifolati e il formaggio a cubetti. Copri con coperchio 2 minuti per far mantecare.'
+    ]
+  },
+  {
+    id: 'r10',
+    title: 'Zuppa Rustica di Legumi e Crostini Speziati (One-Pot)',
+    durationMin: 12,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Poco',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Misto Legumi precotti (Lenticchie/Ceci/Fagioli)', qtyStr: '2 lattine', pantryMatchId: 'p11' },
+      { name: 'Passata o concentrato di pomodoro', qtyStr: '3 cucchiai', pantryMatchId: 'p2' },
+      { name: 'Pane tostato o Crostini pronti', qtyStr: '100g', pantryMatchId: 'p9' },
+      { name: 'Aglio, Rosmarino & Olio d\'oliva', qtyStr: 'q.b.', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'Scalda in pentola un soffritto veloce di olio, aglio liofilizzato e rosmarino.',
+      'Aggiungi i legumi con parte del loro liquido di governo e la passata di pomodoro.',
+      'Lascia sobbollire 6-8 minuti. Versa nelle ciotole sopra una manciata di crostini croccanti.'
+    ]
+  },
+  {
+    id: 'r11',
+    title: 'Frittata della Tradizione con Pasta Avanzata e Parmigiano',
+    durationMin: 12,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Pasta avanzata del giorno prima', qtyStr: '200g' },
+      { name: 'Uova', qtyStr: '3 pz' },
+      { name: 'Parmigiano Reggiano Grattugiato', qtyStr: '30g', pantryMatchId: 'p5' },
+      { name: 'Olio Extra Vergine d\'Oliva', qtyStr: '1 cucchiaio', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'In una ciotola sbatti le uova col parmigiano, sale e pepe.',
+      'Aggiungi la pasta avanzata spezzettata e amalgama bene.',
+      'Scalda l\'olio in padella antiaderente, versa il composto e cuoci a fuoco basso 5 minuti per lato fino a doratura.'
+    ]
+  },
+  {
+    id: 'r12',
+    title: 'Ceci Express al Curry e Latte di Cocco',
+    durationMin: 10,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Ceci precotti in scatola', qtyStr: '1 lattina', pantryMatchId: 'p11' },
+      { name: 'Latte di Cocco in lattina o panna UHT', qtyStr: '100ml' },
+      { name: 'Curry in polvere & Turmerico', qtyStr: '1 cucchiaino', pantryMatchId: 'p10' },
+      { name: 'Riso basmati cotto o piadina di accompagnamento', qtyStr: 'q.b.' }
+    ],
+    instructions: [
+      'Scola i ceci e rosolali 2 minuti in padella con olio e la polvere di curry.',
+      'Versa il latte di cocco e lascia restringere a fuoco medio per 5-7 minuti fino a ottenere una crema profumata.',
+      'Servi con riso Basmati pronto in busta o fette di pane tostato.'
+    ]
+  },
+  {
+    id: 'r13',
+    title: 'Crostoni di Bresaola, Rucola e Scaglie con Olio al Limone',
+    durationMin: 4,
+    difficulty: 'Facile',
+    gasUsage: 'Minimo',
+    waterUsage: 'Minimo',
+    potsNeeded: 0,
+    ingredientsNeeded: [
+      { name: 'Pane tipo Altamura o Bauletto', qtyStr: '4 fette', pantryMatchId: 'p9' },
+      { name: 'Bresaola della Valtellina o Capocollo', qtyStr: '100g' },
+      { name: 'Rucola fresca in busta', qtyStr: '50g' },
+      { name: 'Parmigiano Reggiano a scaglie', qtyStr: '30g', pantryMatchId: 'p5' },
+      { name: 'Limone e Olio d\'Oliva', qtyStr: 'q.b.', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'Tosta leggermente il pane sul fornello o sul pentolino antiaderente senza grassi.',
+      'Disponi le fette di bresaola sulle fette calde.',
+      'Guarnisci con rucola fresca, scaglie di parmigiano e una spruzzata d\'olio al limone. Zero pentole da lavare!'
+    ]
+  },
+  {
+    id: 'r14',
+    title: 'Gnocchi di Patate al Pesto Ligure Senza Cottura Prolungata',
+    durationMin: 6,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Poco',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Gnocchi di patate freschi/ambient', qtyStr: '400g' },
+      { name: 'Pesto alla Genovese pronto in vasetto', qtyStr: '1 vasetto' },
+      { name: 'Parmigiano Reggiano Grattugiato', qtyStr: '30g', pantryMatchId: 'p5' },
+      { name: 'Pinoli o noci tritate (opzionale)', qtyStr: '1 manciata' }
+    ],
+    instructions: [
+      'Porta ad ebollizione un pentolino di acqua salata (basta poca acqua).',
+      'Tuffa gli gnocchi: appena salgono a galla (circa 1-2 minuti), scolali con una schiumarola direttamente in una ciotola con il pesto.',
+      'Mescola delicatamente aggiungendo un cucchiaio di acqua di cottura per renderli cremosi. Pronti in meno di 6 minuti!'
+    ]
+  },
+  {
+    id: 'r15',
+    title: 'Vellutata di Verdure in Busta con Crostini all\'Aglio',
+    durationMin: 8,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Vellutata pronda in brik (Zucca/Carote/Legumi)', qtyStr: '500ml' },
+      { name: 'Crostini dorati o fette di pane', qtyStr: '80g', pantryMatchId: 'p9' },
+      { name: 'Olio Extra Vergine d\'Oliva e Pepe', qtyStr: 'q.b.', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'Versa la vellutata nel pentolino e scaldala a fuoco dolce per 5 minuti stirandola con un filo d\'olio.',
+      'Nel frattempo strofina un po\' d\'aglio in polvere sulle fette di pane e tostale.',
+      'Servi la vellutata bollente nei piattini con i crostini immersi. Perfetto per le serate fresche in montagna!'
+    ]
+  },
+  {
+    id: 'r16',
+    title: 'Tramezzino Salva-Sosta Tonno, Maionese e Capperini',
+    durationMin: 3,
+    difficulty: 'Facile',
+    gasUsage: 'Minimo',
+    waterUsage: 'Minimo',
+    potsNeeded: 0,
+    ingredientsNeeded: [
+      { name: 'Pane da Tramezzino senza crosta', qtyStr: '4 fette' },
+      { name: 'Tonno all\'olio d\'oliva', qtyStr: '1 lattina grande', pantryMatchId: 'p4' },
+      { name: 'Maionese in tubetto', qtyStr: '2 cucchiai' },
+      { name: 'Capperi dissalati o mais dolce', qtyStr: '1 cucchiaio' }
+    ],
+    instructions: [
+      'In una tazza schiaccia il tonno con la maionese e i capperi triturati.',
+      'Spalma generosamente sul pane da tramezzino.',
+      'Chiudi e taglia a triangoli. Pratico e saporito per i pranzi veloci al volante o in spiaggia.'
+    ]
+  },
+  {
+    id: 'r17',
+    title: 'Fagioli Borlotti all\'Uccelletto Express in Padella',
+    durationMin: 10,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Fagioli Borlotti precotti', qtyStr: '1 lattina', pantryMatchId: 'p11' },
+      { name: 'Passata di Pomodoro o Polpa', qtyStr: '150g', pantryMatchId: 'p2' },
+      { name: 'Salsiccia secca a cubetti o Bacon', qtyStr: '50g' },
+      { name: 'Aglio liofilizzato & Salvia', qtyStr: 'q.b.', pantryMatchId: 'p10' }
+    ],
+    instructions: [
+      'In padella rosola la salsiccia secca a pezzetti con olio e un pizzico di salvia.',
+      'Aggiungi i fagioli borlotti scolati e la passata di pomodoro.',
+      'Cuoci a fuoco vivo per 6-8 minuti lasciando ritirare il sugo. Servire caldo accompagnato da pane rustico.'
+    ]
+  },
+  {
+    id: 'r18',
+    title: 'Risotto Risottato con Brik di Pomodoro e Salsiccia Secca',
+    durationMin: 16,
+    difficulty: 'Facile',
+    gasUsage: 'Medio',
+    waterUsage: 'Poco',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Riso Carnaroli o Arborio', qtyStr: '200g' },
+      { name: 'Passata di Pomodoro in brik', qtyStr: '1/2 confezione', pantryMatchId: 'p2' },
+      { name: 'Salamino secco o Salsiccia piccante', qtyStr: '50g' },
+      { name: 'Dado vegetale e Parmigiano', qtyStr: 'q.b.', pantryMatchId: 'p5' }
+    ],
+    instructions: [
+      'Tosta il riso a secco in pentola per 1 minuto insieme ai dadini di salamino secco.',
+      'Aggiungi la passata di pomodoro e acqua bollente salata poco alla volta fino a coprire il riso.',
+      'Cuoci mescolando come un normale risotto (circa 14 minuti). Manteca a fuoco spento con parmigiano grattugiato.'
+    ]
+  },
+  {
+    id: 'r19',
+    title: 'Shakshuka Semplice in Padella con Uova e Pomodoro',
+    durationMin: 12,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Minimo',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Polpa di Pomodoro in lattina', qtyStr: '1 lattina', pantryMatchId: 'p2' },
+      { name: 'Uova fresche', qtyStr: '2 pz' },
+      { name: 'Cipolla in polvere, Paprika e Cumino', qtyStr: 'q.b.', pantryMatchId: 'p10' },
+      { name: 'Pane rustico per scarpetta', qtyStr: 'q.b.', pantryMatchId: 'p9' }
+    ],
+    instructions: [
+      'Versa la polpa di pomodoro in padella con olio, paprika, cumino e sale. Fai sobbollire per 5 minuti.',
+      'Crea due piccoli incavi nella salsa di pomodoro con un cucchiaio e rompi un uovo dentro ciascun incavo.',
+      'Copri la padella con un coperchio e cuoci a fuoco lento per 4-5 minuti finché gli albumi si rapprendono lasciando il tuorlo morbido.'
+    ]
+  },
+  {
+    id: 'r20',
+    title: 'Taboulé di Farro Freddo con Pomodorini, Feta e Menta',
+    durationMin: 12,
+    difficulty: 'Facile',
+    gasUsage: 'Basso',
+    waterUsage: 'Poco',
+    potsNeeded: 1,
+    ingredientsNeeded: [
+      { name: 'Farro o Orzo perlato (a rapida cottura)', qtyStr: '200g' },
+      { name: 'Pomodorini freschi o essiccati sott\'olio', qtyStr: '100g' },
+      { name: 'Formaggio Feta o Caciottina', qtyStr: '80g' },
+      { name: 'Olio Extra Vergine d\'Oliva e Origano', qtyStr: 'q.b.', pantryMatchId: 'p3' }
+    ],
+    instructions: [
+      'Cuoci il farro in acqua salata bollente per 10 minuti (o usa il farro precotto a vapore).',
+      'Scola e raffredda il farro sotto un filo d\'acqua fredda.',
+      'In un\'insalatiera unisci i pomodorini a spicchi, la feta sbriciolata e l\'origano. Condisci abbondantemente con olio extravergine.'
     ]
   }
 ];

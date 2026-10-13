@@ -166,8 +166,8 @@ export function getTileConfig(mapTheme: string): TileConfig {
   }
   if (mapTheme === 'standard') {
     return {
-      url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-      subdomains: '0123',
+      url: '/api/map-tile/{z}/{x}/{y}?lyrs=m',
+      subdomains: 'abc',
       attribution: '&copy; Google'
     };
   }
@@ -180,8 +180,8 @@ export function getTileConfig(mapTheme: string): TileConfig {
   }
   const lyrs = mapTheme === 'satellite' ? 's' : mapTheme === 'hybrid' ? 'y' : 'm';
   return {
-    url: `https://mt{s}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`,
-    subdomains: '0123',
+    url: `/api/map-tile/{z}/{x}/{y}?lyrs=${lyrs}`,
+    subdomains: 'abc',
     attribution: '&copy; Google'
   };
 }

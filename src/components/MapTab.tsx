@@ -179,6 +179,7 @@ function MapEventsHelper({
   onIdle,
   mapMovedByUserRef,
   onMapInstance,
+  onDragStart,
 }: {
   mapRef: React.MutableRefObject<any>;
   onMapClick: (lat: number, lng: number) => void;
@@ -10224,7 +10225,7 @@ export function LeafletOfflineMap({
         maxZoom: 19,
         maxNativeZoom: offlineActive ? 16 : 19, // Support detailed offline maps up to zoom 16
         attribution: tileCfg.attribution + " | ViaCamper Offline Cache",
-        subdomains: tileCfg.subdomains,
+        subdomains: tileCfg.subdomains || 'abc',
       },
     );
 

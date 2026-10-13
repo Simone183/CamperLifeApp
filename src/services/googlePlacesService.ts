@@ -200,6 +200,9 @@ async function fetchFromGooglePlacesJS(
   const fetchResults = async (type: string, category: 'restaurant' | 'attraction', categoryLabel: string) => {
     try {
       const response = await fetch(`/api/maps/nearby?lat=${lat}&lng=${lng}&type=${type}`);
+      if (!response.ok) return;
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) return;
       const data = await response.json();
       
       if (data.status === 'OK' && data.results) {
@@ -270,6 +273,10 @@ async function fetchFromOverpassAPI(
   });
 
   if (!resp.ok) throw new Error(`Overpass HTTP error ${resp.status}`);
+  const contentType = resp.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    throw new Error(`Overpass returned non-JSON content type: ${contentType}`);
+  }
 
   const data = await resp.json();
   const elements = data.elements || [];

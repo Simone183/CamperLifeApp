@@ -18,7 +18,9 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
   // Auto-trigger search if location is known on mount
   React.useEffect(() => {
     if (userLocation) {
-      executeSearch(`5 feste o sagre nel raggio di 150km da coordinate ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`);
+      const initialLoc = `Coordinate: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
+      setSearchLocation(initialLoc);
+      executeSearch(initialLoc);
     }
   }, [userLocation]);
   
@@ -47,9 +49,13 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
       });
       if (res.ok) {
         const data = await res.json();
-        const text = data.eventsText || data.text || 'Nessun risultato trovato.';
-        clientCacheRef.current[cacheKey] = text;
-        setAiEventsResponse(text);
+        const text = data.eventsText || data.text;
+        if (text && text.trim().length > 30) {
+          clientCacheRef.current[cacheKey] = text;
+          setAiEventsResponse(text);
+        } else {
+          setAiEventsResponse("⚠️ Nessun evento specifico trovato per questa richiesta. Prova ad inserire il nome di una città o regione (es: Firenze, Toscana).");
+        }
       } else {
         setAiEventsResponse("⚠️ Si è verificato un errore durante la ricerca degli eventi.");
       }
@@ -64,21 +70,21 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
   const handleAISearch = () => {
     if (!searchLocation.trim() || isSearching) return;
 
-    // Clear any pending debounce
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Apply a light debounce of 400ms to pace user actions
     setIsSearching(true);
     debounceTimerRef.current = setTimeout(() => {
       executeSearch(searchLocation);
-    }, 400);
+    }, 300);
   };
 
   const handleUseMyLocation = () => {
     if (userLocation) {
-      setSearchLocation(`Coordinate: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`);
+      const locStr = `Coordinate: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
+      setSearchLocation(locStr);
+      executeSearch(locStr);
       return;
     }
 
@@ -88,7 +94,9 @@ export default function EventsTab({ onBack, userLocation, onNavigateFullscreen }
       }));
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setSearchLocation(`Coordinate: ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`);
+          const locStr = `Coordinate: ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`;
+          setSearchLocation(locStr);
+          executeSearch(locStr);
         },
         (error) => {
           console.warn("GPS fetch warning: ", error);

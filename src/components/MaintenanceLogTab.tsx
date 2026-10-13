@@ -179,29 +179,29 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
 
 
   const handleToggleLogCompleted = (id: string) => {
-    setLogs(prev => {
-      const nextLogs = prev.map(log => {
-        if (log.id === id) {
-          return { ...log, completed: !log.completed };
-        }
-        return log;
-      });
-      syncToFamilyCrew(nextLogs);
-      return nextLogs;
+    const nextLogs = logs.map(log => {
+      if (log.id === id) {
+        return { ...log, completed: !log.completed };
+      }
+      return log;
     });
+    setLogs(nextLogs);
+    syncToFamilyCrew(nextLogs);
   };
 
   const handleUpdateLogDate = (id: string, newDate: string) => {
-    setLogs(prev => prev.map(log => {
+    const nextLogs = logs.map(log => {
       if (log.id === id) {
         return { ...log, date: newDate };
       }
       return log;
-    }));
+    });
+    setLogs(nextLogs);
+    syncToFamilyCrew(nextLogs);
   };
 
   const handleUpdateLogCost = (id: string, newCost: number | undefined) => {
-    setLogs(prev => prev.map(log => {
+    const nextLogs = logs.map(log => {
       if (log.id === id) {
         const item = { ...log };
         if (newCost !== undefined && !isNaN(newCost)) {
@@ -212,11 +212,13 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         return item;
       }
       return log;
-    }));
+    });
+    setLogs(nextLogs);
+    syncToFamilyCrew(nextLogs);
   };
 
   const handleUpdateLogKm = (id: string, newKm: number | undefined) => {
-    setLogs(prev => prev.map(log => {
+    const nextLogs = logs.map(log => {
       if (log.id === id) {
         const item = { ...log };
         if (newKm !== undefined && !isNaN(newKm)) {
@@ -227,11 +229,15 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         return item;
       }
       return log;
-    }));
+    });
+    setLogs(nextLogs);
+    syncToFamilyCrew(nextLogs);
   };
 
   const handleDeleteLog = (id: string) => {
-    setLogs(prev => prev.filter(log => log.id !== id));
+    const nextLogs = logs.filter(log => log.id !== id);
+    setLogs(nextLogs);
+    syncToFamilyCrew(nextLogs);
     window.dispatchEvent(new CustomEvent('show-toast', {
       detail: { message: '🗑️ Annotazione di manutenzione rimossa.' }
     }));
@@ -252,11 +258,9 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
       completed: false
     };
 
-    setLogs(prev => {
-        const nextLogs = [newLog, ...prev];
-        syncToFamilyCrew(nextLogs);
-        return nextLogs;
-    });
+    const nextLogs = [newLog, ...logs];
+    setLogs(nextLogs);
+    syncToFamilyCrew(nextLogs);
     setNewTitle('');
     setNewDesc('');
     setNewCost(0);
@@ -298,59 +302,20 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
           <div className="space-y-1">
-            <span className="text-[10px] uppercase font-black tracking-widest bg-amber-500/20 text-yellow-300 border border-yellow-500/30 px-2.5 py-1 rounded-full inline-block">
-              Registrazione lavori fatti e spese sostenute
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
               <Wrench className="w-6 h-6 text-yellow-300" />
               Registro lavori fatti
             </h2>
             <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
-              Previeni le infiltrazioni (il nemico numero uno del camperista!) e controlla gli impianti domestici di rinfresco, riscaldamento e idraulici con tabelle di controllo e l’igrometro digitale virtuale, registra i lavori effettuati su tutto il mezzo e la spesa sostenuta.
+              Registra i lavori effettuati su tutto il mezzo e la spesa sostenuta.
             </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => setShowIgrometro(!showIgrometro)}
-              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
-            >
-              <Droplet className="w-3.5 h-3.5" />
-              <span>{showIgrometro ? 'Nascondi Igrometro' : 'Igrometro Cellula'}</span>
-            </button>
-
-            <button
-              onClick={handleResetToDefault}
-              className="px-3.5 py-2 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
-              title="Ripristina dati iniziali"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Ripristina Log</span>
-            </button>
+            <div className="mt-4 bg-white/10 rounded-xl p-3 border border-white/10 inline-block">
+              <span className="block text-[10px] text-stone-350 font-bold uppercase tracking-widest text-center">Spesa Totale</span>
+              <span className="text-xl font-mono font-black text-rose-300 leading-tight block text-center">{getCurrencySymbol(settings)}{totalInvestment.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+            </div>
           </div>
         </div>
 
-        {/* Global Stats bar */}
-        <div className="mt-6 pt-6 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10 text-center md:text-left">
-          <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-            <span className="block text-[8px] text-stone-350 font-bold uppercase tracking-widest">Controlli</span>
-            <span className="text-xl font-mono font-black text-emerald-300 leading-tight block">{totalCompletedCount} <span className="text-base">completati</span></span>
-          </div>
-          <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-            <span className="block text-[8px] text-stone-350 font-bold uppercase tracking-widest">Interventi</span>
-            <span className="text-xl font-mono font-black text-amber-300 leading-tight block text-center">
-              <span className="block">{totalPendingCount}</span>
-              <span className="block text-base">attivi</span>
-            </span>
-          </div>
-          <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-            <span className="block text-[8px] text-stone-350 font-bold uppercase tracking-widest text-center">Spesa Totale</span>
-            <span className="text-xl font-mono font-black text-rose-300 leading-tight block text-center mt-2">{getCurrencySymbol(settings)}{totalInvestment.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
-          </div>
-          <div className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center justify-center">
-            <span className="text-xs font-bold text-white">Pronto a partire!</span>
-          </div>
-        </div>
 
       </div>
 
@@ -362,9 +327,104 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* LEFT COLUMN (7/12) - Checklist & History */}
+        {/* LEFT COLUMN (7/12) - Add New Entry Form & Checklist History */}
         <div className="lg:col-span-7 space-y-6">
           
+          {/* Section B: Add Log Entry Form (placed at top so users don't need to scroll down) */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm space-y-4">
+            <h3 className="font-black text-slate-800 dark:text-slate-100 text-sm uppercase tracking-wider flex items-center gap-1.5">
+              <Plus className="w-4 h-4 text-[#A45C40]" />
+              Annota nuovo Controllo Impianti
+            </h3>
+            <p className="text-[11px] text-slate-400 font-medium">Registra un filtro cambiato, una sigillatura o un controllo igrometrico positivo</p>
+
+            <form onSubmit={handleAddLog} className="space-y-3">
+              <div className="space-y-1">
+                <label className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">Nome Attività / Controllo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Es. Sostituzione pompa Shurflo, Igienizzazione..."
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-900 text-[#2D2926] dark:text-slate-100 rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#3E4A35]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">Data Scadenza / Esecuzione</label>
+                  <input
+                    type="date"
+                    required
+                    value={newDate}
+                    onChange={(e) => setNewDate(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-900 text-[#2D2926] dark:text-slate-100 rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#3E4A35]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">Macrocategoria</label>
+                  <select
+                    value={newCat}
+                    onChange={(e) => setNewCat(e.target.value as any)}
+                    className="w-full px-3 py-2 text-xs border border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-900 text-[#2D2926] dark:text-slate-100 rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#3E4A35] cursor-pointer"
+                  >
+                    <option value="Estetica">Estetica</option>
+                    <option value="Installazioni">Installazioni</option>
+                    <option value="Riparazioni">Riparazioni</option>
+                    <option value="Pulizie">Pulizie</option>
+                    <option value="Generica">Generica</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1 space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">Costo ({getCurrencySymbol(settings)})</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Es. 45"
+                    value={newCost || ''}
+                    onChange={(e) => setNewCost(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-3 py-2 text-xs border border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-900 text-[#2D2926] dark:text-slate-100 rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#3E4A35] font-mono text-center font-bold"
+                  />
+                </div>
+
+                <div className="col-span-1 space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">Km effettuati</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Es. 45000"
+                    value={newKm || ''}
+                    onChange={(e) => setNewKm(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-3 py-2 text-xs border border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-900 text-[#2D2926] dark:text-slate-100 rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#3E4A35] font-mono text-center font-bold"
+                  />
+                </div>
+
+                <div className="col-span-1 space-y-1">
+                  <label className="block text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400">Note / Descrizione</label>
+                  <input
+                    type="text"
+                    placeholder="Es. Sostituito..."
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-900 text-[#2D2926] dark:text-slate-100 rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:border-[#3E4A35]"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-black rounded-lg text-xs tracking-wider transition-all uppercase cursor-pointer text-center shadow-sm"
+              >
+                Incolla Attività nel Registro
+              </button>
+            </form>
+          </div>
+
           {/* Active Maintenance Activities Card */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm space-y-4">
             
@@ -486,109 +546,12 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
 
         </div>
 
-        {/* RIGHT COLUMN (5/12) - Humidity Control & Add New entry form */}
+        {/* RIGHT COLUMN (5/12) - Educational camper protection rules */}
         <div className="lg:col-span-5 space-y-6">
           
-
-
-          {/* Section B: Add Log Entry Form */}
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
-            <h3 className="font-black text-slate-800 text-sm uppercase tracking-wider flex items-center gap-1.5">
-              <Plus className="w-4 h-4 text-[#A45C40]" />
-              Annota nuovo Controllo Impianti
-            </h3>
-            <p className="text-[11px] text-slate-400 font-medium">Registra un filtro cambiato, una sigillatura o un controllo igrometrico positivo</p>
-
-            <form onSubmit={handleAddLog} className="space-y-3">
-              <div className="space-y-1">
-                <label className="block text-[9px] uppercase font-bold text-slate-500">Nome Attività / Controllo</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Es. Sostituzione pompa Shurflo, Igienizzazione..."
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[9px] uppercase font-bold text-slate-500">Data Scadenza / Esecuzione</label>
-                  <input
-                    type="date"
-                    required
-                    value={newDate}
-                    onChange={(e) => setNewDate(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-[9px] uppercase font-bold text-slate-500">Macrocategoria</label>
-                  <select
-                    value={newCat}
-                    onChange={(e) => setNewCat(e.target.value as any)}
-                    className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35] cursor-pointer"
-                  >
-                    <option value="Estetica">Estetica</option>
-                    <option value="Installazioni">Installazioni</option>
-                    <option value="Riparazioni">Riparazioni</option>
-                    <option value="Pulizie">Pulizie</option>
-                    <option value="Generica">Generica</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-1 space-y-1">
-                  <label className="block text-[9px] uppercase font-bold text-slate-500">Costo ({getCurrencySymbol(settings)})</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Es. 45"
-                    value={newCost || ''}
-                    onChange={(e) => setNewCost(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35] font-mono text-center font-bold"
-                  />
-                </div>
-
-                <div className="col-span-1 space-y-1">
-                  <label className="block text-[9px] uppercase font-bold text-slate-500">Km effettuati</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Es. 45000"
-                    value={newKm || ''}
-                    onChange={(e) => setNewKm(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35] font-mono text-center font-bold"
-                  />
-                </div>
-
-                <div className="col-span-1 space-y-1">
-                  <label className="block text-[9px] uppercase font-bold text-slate-500">Note / Descrizione</label>
-                  <input
-                    type="text"
-                    placeholder="Es. Sostituito..."
-                    value={newDesc}
-                    onChange={(e) => setNewDesc(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-stone-200 bg-stone-50 rounded-lg text-[#2D2926] focus:bg-white focus:outline-none focus:border-[#3E4A35]"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white font-black rounded-lg text-xs tracking-wider transition-all uppercase cursor-pointer text-center shadow-sm"
-              >
-                Incolla Attività nel Registro
-              </button>
-            </form>
-          </div>
-
           {/* Section C: Educational camper protection rules */}
           <div className="bg-stone-50 dark:bg-slate-800 rounded-2xl border border-stone-200 dark:border-slate-700 p-4 space-y-2 text-[10.5px] leading-relaxed text-stone-600 dark:text-slate-400 font-medium">
-            <p className="text-stone-500 font-semibold leading-relaxed">
+            <p className="text-stone-500 dark:text-slate-300 font-semibold leading-relaxed">
               Consiglio per gli impianti: lascia aperti i rubinetti del camper (a pompa e termostati spenti!) durante le gelate invernali per evitare che le tubature in plastica scoppino a causa del ghiaccio!
             </p>
           </div>

@@ -277,10 +277,7 @@ export default function FullscreenNavigator({
         'raster-tiles': {
           type: 'raster',
           tiles: [
-            "https://mt0.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-            "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-            "https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-            "https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+            "/api/map-tile/{z}/{x}/{y}?lyrs=m"
           ],
           tileSize: 256,
           attribution: 'Dati cartografici © contributori di OpenStreetMap © CARTO',

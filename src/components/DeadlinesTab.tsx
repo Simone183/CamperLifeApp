@@ -100,6 +100,7 @@ export function saveCompletedToMaintenanceHistory(log: { title: string; date: st
       cost: log.cost,
       km: log.km,
       category: log.category || 'Manutenzione',
+      completed: true,
       notes: log.notes ? `[Rinnovo Scadenza] ${log.notes}` : '[Rinnovo Scadenza Programmata]'
     };
     const updated = [newEntry, ...(Array.isArray(logs) ? logs : [])];
@@ -203,16 +204,15 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
     const target = deadlines.find(d => d.id === id);
     if (!target) return;
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const currentOdo = getVehicleCurrentOdometer() || target.km || 0;
+    const isRecurring = target.recurringType === 'time' || target.recurringType === 'km' || target.recurringType === 'both' || (target.repeatMonths && target.repeatMonths > 0) || (target.repeatKm && target.repeatKm > 0);
+
     if (!target.done) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const currentOdo = getVehicleCurrentOdometer() || target.km || 0;
-
-      const isRecurring = target.recurringType === 'time' || target.recurringType === 'km' || target.recurringType === 'both' || (target.repeatMonths && target.repeatMonths > 0) || (target.repeatKm && target.repeatKm > 0);
-
       if (isRecurring) {
         const { nextDueDate, nextKm } = calculateNextDeadline(target, todayStr, currentOdo);
 
-        // 1. Save completed job into Maintenance Log history
+        // Save completed job into Maintenance Log history
         saveCompletedToMaintenanceHistory({
           title: target.title,
           date: todayStr,
@@ -222,7 +222,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
           category: target.category
         });
 
-        // 2. Automatically update deadline to next recurrence cycle
+        // Automatically update deadline to next recurrence cycle
         setDeadlines(deadlines.map(d => {
           if (d.id === id) {
             return {
@@ -244,6 +244,16 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
           }
         }));
         return;
+      } else {
+        // Not recurring, just save to history
+        saveCompletedToMaintenanceHistory({
+          title: target.title,
+          date: todayStr,
+          cost: target.price,
+          km: currentOdo > 0 ? currentOdo : target.km,
+          notes: target.notes,
+          category: target.category
+        });
       }
     }
 

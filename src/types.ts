@@ -377,7 +377,7 @@ export interface Deadline {
 export interface ChecklistItem {
   id: string;
   text: string;
-  category: 'Partenza' | 'Sosta' | 'Sicurezza' | 'Alimentari & Cucina';
+  category: 'Partenza' | 'Sosta' | 'Sicurezza';
   checked: boolean;
 }
 
