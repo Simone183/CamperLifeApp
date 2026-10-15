@@ -125,6 +125,7 @@ export interface AppSettings {
   appPin?: string;
   mapEngine?: string; // "google" | "leaflet"
   ttsEnabled: boolean;
+  readAppNotifications: boolean;
   ttsGender?: 'auto' | 'female' | 'male';
 }
 
@@ -590,6 +591,7 @@ export interface Trip {
   aiItinerary?: AIItineraryResult;
   stops?: TripStop[];
   coverPhoto?: string;
+  selectedCoverPhotoUrl?: string;
   photosCount?: number;
   budgetEuro?: number;
   kmTotal?: number;

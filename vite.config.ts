@@ -22,7 +22,27 @@ export default defineConfig(() => {
       outDir: 'dist',
       sourcemap: false,
       minify: 'esbuild' as const,
-      chunkSizeWarningLimit: 3000
+      chunkSizeWarningLimit: 5000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('leaflet') || id.includes('maplibre') || id.includes('googlemaps') || id.includes('vis.gl')) {
+                return 'vendor-maps';
+              }
+              if (id.includes('firebase')) {
+                return 'vendor-firebase';
+              }
+              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('jimp')) {
+                return 'vendor-pdf';
+              }
+              if (id.includes('hls.js')) {
+                return 'vendor-hls';
+              }
+            }
+          }
+        }
+      }
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

@@ -6,7 +6,7 @@ import { Trip, CommunityMessage } from "../types";
 export function createSocialPostFromTrip(
   trip: Trip,
   currentUser?: { nickname?: string; email?: string; name?: string; profilePhoto?: string } | null,
-  options?: { includeExpenses?: boolean; shareToSharedTrips?: boolean }
+  options?: { includeExpenses?: boolean; shareToSharedTrips?: boolean; selectedCoverPhotoUrl?: string }
 ): CommunityMessage {
   const includeExpenses = options?.includeExpenses ?? (trip.includeExpenses ?? true);
   const shareToSharedTrips = options?.shareToSharedTrips ?? (trip.shareToSharedTrips ?? true);
@@ -64,7 +64,7 @@ export function createSocialPostFromTrip(
     .filter((line) => line !== undefined)
     .join("\n");
 
-  const mainPhoto = trip.photos && trip.photos.length > 0 ? trip.photos[0].url : undefined;
+  const mainPhoto = options?.selectedCoverPhotoUrl || (trip.photos && trip.photos.length > 0 ? trip.photos[0].url : undefined);
 
   return {
     id: `m_trip_${trip.id}_${Date.now()}`,

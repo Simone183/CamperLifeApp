@@ -88,6 +88,15 @@ export default function AIItineraryTab({
   const [showSavedModal, setShowSavedModal] = React.useState(false);
   const [showCommunityItinerariesModal, setShowCommunityItinerariesModal] = React.useState(false);
 
+  // Scroll to top when AIItineraryTab mounts
+  React.useEffect(() => {
+    const mainEl = document.getElementById("main-content");
+    if (mainEl) mainEl.scrollTop = 0;
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
+
   // Export states
   const [showExportModal, setShowExportModal] = React.useState(false);
   const [selectedTripTargetId, setSelectedTripTargetId] = React.useState<string>("new");
@@ -494,42 +503,6 @@ export default function AIItineraryTab({
 
   return (
     <div className="space-y-5 font-sans">
-      {/* Rolly Companion Top Header */}
-      <div className="bg-[#FAF8F3] dark:bg-[#131912] p-4.5 rounded-3xl border border-stone-200/80 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <CartoonCamperAvatar className="w-12 h-12 shrink-0" />
-            <div className="min-w-0">
-              <h2 className="text-lg font-extrabold text-[#1C241D] dark:text-white tracking-tight leading-tight">
-                Rolly
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-tight">
-                Il tuo compagno di viaggio in camper ed intelligenza artificiale
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 bg-[#1C3D2B]/10 dark:bg-emerald-950/40 py-1.5 px-3 rounded-xl border border-[#1C3D2B]/20 text-xs max-w-full">
-            <Truck className="w-4 h-4 text-[#1C3D2B] dark:text-emerald-400 shrink-0" />
-            <span className="font-bold text-[#1C3D2B] dark:text-emerald-300 text-[11px] truncate max-w-[220px] sm:max-w-xs">
-              {vehicleDimensions.modelName || 'Camper'} ({vehicleDimensions.height}m h)
-            </span>
-          </div>
-        </div>
-
-        {/* Speech Bubble Greeting Card matching reference photo */}
-        <div className="bg-[#F5F2EA] dark:bg-[#1B2419] p-4 rounded-2xl border border-[#E5DFD3] dark:border-slate-800 flex gap-3.5 items-start">
-          <CartoonCamperAvatar className="w-11 h-11 shrink-0 mt-0.5" />
-          <div className="space-y-1 text-xs text-slate-800 dark:text-slate-200">
-            <p className="leading-relaxed font-medium">
-              Ehi, Camperista! Ti aiuto a tracciare percorsi perfetti, verificare sottopassi e scoprire soste mozzafiato escludendo barriere superiori a <strong>{vehicleDimensions.height}m</strong>. Dove ti piacerebbe andare?
-            </p>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
-              Assistente attivo gratuitamente per itinerari illimitati · <span className="text-emerald-700 dark:text-emerald-400 font-bold">ViaCamper App AI</span>
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* Prominent Large Rolly & Community Itineraries Feature Banner */}
       <div 
@@ -558,7 +531,7 @@ export default function AIItineraryTab({
             </h3>
 
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed font-medium">
-              Sfoglia i 5 itinerari curati con foto reali per Toscana, Dolomiti, Calabria, Sardegna e Umbria, oppure proponi il tuo viaggio per la community!
+              Sfoglia gli itinerari creati da Rolly per tutta l'Italia, oppure proponi il tuo viaggio per la community!
             </p>
           </div>
 
@@ -577,40 +550,15 @@ export default function AIItineraryTab({
 
       {/* Quick Itineraries Toolbar */}
       <div className="bg-white dark:bg-stone-850 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-3">
-        {/* Centered full-width Itinerari Rolly button */}
+        {/* Full-width button: I Miei Salvati */}
         <button
           type="button"
-          onClick={() => setShowCommunityItinerariesModal(true)}
-          className="w-full px-4 py-3 bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] hover:from-[#142C1F] hover:to-[#2D3727] text-white text-xs sm:text-sm font-black rounded-xl transition-all shadow-md flex items-center justify-center text-center gap-2.5 cursor-pointer active:scale-[0.99] border border-emerald-500/30"
+          onClick={() => setShowSavedModal(true)}
+          className="w-full px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center text-center gap-2 cursor-pointer active:scale-95"
         >
-          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse shrink-0" />
-          <span className="truncate">🗺️ Itinerari Rolly e Community (5+)</span>
+          <FolderHeart className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>I Miei Salvati ({savedItineraries.length})</span>
         </button>
-
-        {/* Side-by-side buttons: I Miei Salvati & Crea Nuovo */}
-        <div className="grid grid-cols-2 gap-2.5 w-full">
-          <button
-            type="button"
-            onClick={() => setShowSavedModal(true)}
-            className="w-full px-3 sm:px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center text-center gap-1.5 cursor-pointer active:scale-95"
-          >
-            <FolderHeart className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="truncate">I Miei Salvati ({savedItineraries.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setResult(null)}
-            className={`w-full px-3 sm:px-4 py-2.5 border text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center text-center gap-1.5 cursor-pointer active:scale-95 ${
-              !result
-                ? 'bg-[#3E4A35] text-white border-[#3E4A35]'
-                : 'bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 text-slate-700 dark:text-stone-300 border-slate-200 dark:border-slate-700'
-            }`}
-          >
-            <PlusCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="truncate">➕ Crea Nuovo</span>
-          </button>
-        </div>
 
         {result && (
           <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-700 bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 px-3 py-1.5 rounded-xl w-full text-center">

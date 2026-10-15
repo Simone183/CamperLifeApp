@@ -960,13 +960,10 @@ async function throttleGeminiCall(hasSearchGrounding = false): Promise<void> {
   }
 }
 
-async function generateContentWithRetry(params: any, maxRetries = 5) {
-  const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
+async function generateContentWithRetry(params: any, maxRetries = 6) {
   const primaryModel = params?.model || "gemini-3.8-flash";
-  // Expanded sequence of fallback models
-  const defaultFallbacks = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
+  const defaultFallbacks = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
   
-  // Build a distinct sequence of models to try, starting with the requested model
   const modelsSequence: string[] = [primaryModel];
   for (const m of defaultFallbacks) {
     if (!modelsSequence.includes(m)) {
@@ -978,44 +975,30 @@ async function generateContentWithRetry(params: any, maxRetries = 5) {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Throttle and debounce call to maintain pacing and avoid bursting
+      const activeModel = modelsSequence[currentModelIdx];
+      const hasGrounding = Boolean(params?.config?.tools?.some((t: any) => t.googleSearch));
+      
       await throttleGeminiCall(hasGrounding);
 
-      params.model = modelsSequence[currentModelIdx];
-      return await ai.models.generateContent(params);
+      const currentParams = { ...params, model: activeModel };
+      return await ai.models.generateContent(currentParams);
     } catch (err: any) {
       const errMsg = err.message || "";
       const isQuotaError = err.status === 429 || errMsg.includes("RESOURCE_EXHAUSTED");
-      const isTransientError =
-        err.status === 503 ||
-        err.status === 500 ||
-        errMsg.includes("503") ||
-        errMsg.includes("high demand") ||
-        errMsg.includes("UNAVAILABLE") ||
-        isQuotaError;
+      const is503HighDemand = err.status === 503 || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
+      const isTransientError = is503HighDemand || err.status === 500 || isQuotaError;
 
       if (isTransientError) {
-        console.warn(`[Gemini AI] Transient error on attempt ${attempt} with model ${modelsSequence[currentModelIdx]}: ${errMsg.slice(0, 140)}`);
+        console.warn(`[Gemini AI] Transient error (${err.status || 503}) on attempt ${attempt} with model ${modelsSequence[currentModelIdx]}: ${errMsg.slice(0, 140)}`);
         
-        // If quota error, switch model immediately
-        if (isQuotaError) {
-             currentModelIdx = (currentModelIdx + 1) % modelsSequence.length;
-             console.warn(`[Gemini AI] Quota exhausted. Switching to: ${modelsSequence[currentModelIdx]}`);
-             await new Promise((r) => setTimeout(r, 1000));
-             continue;
-        }
-
-        // Pause slightly longer before switching models to allow service recovery
-        await new Promise((r) => setTimeout(r, 1000 * attempt));
-
-        // If another model is available in the sequence, switch to it immediately
+        // If there's another fallback model available, switch instantly with a fast 500ms retry
         if (currentModelIdx < modelsSequence.length - 1) {
           currentModelIdx++;
-          console.warn(`[Gemini AI] Switching to fallback model: ${modelsSequence[currentModelIdx]}`);
+          console.warn(`[Gemini AI] Instantly switching to fallback model: ${modelsSequence[currentModelIdx]}`);
+          await new Promise((r) => setTimeout(r, 500));
           continue;
         } else if (attempt < maxRetries) {
-          // Wrapped around or reached end; pause with backoff and retry from start of sequence
-          const backoffMs = Math.min(2500 * attempt, 10000); // More aggressive backoff
+          const backoffMs = Math.min(1500 * attempt, 6000);
           console.warn(`[Gemini AI] Reached end of model sequence. Retrying in ${backoffMs}ms...`);
           currentModelIdx = 0;
           await new Promise((r) => setTimeout(r, backoffMs));
@@ -1781,26 +1764,25 @@ async function startServer() {
       const vProps = vehicleDims ? `Lunghezza: ${vehicleDims.length}m, Larghezza: ${vehicleDims.width}m, Altezza: ${vehicleDims.height}m` : "Dimensioni standard camper";
       const vType = vehicleType || "Mansardato";
 
-      const systemInstruction = 
+       const systemInstruction = 
         "Sei 'ViaCamperApp AI', una guida turistica esperta specializzata in viaggi itineranti in camper. " +
         "Il tuo compito è generare un itinerario in camper realistico, entusiasmante e sicuro, partendo dalla località richiesta, toccando tutte le tappe intermedie inserite dall'utente (se presenti) e terminando nella località specificata (se presente, altrimenti proponi un itinerario circolare o aperto). " +
-        "Fornisci consigli specifici per i camperisti (ad esempio strade strette da evitare se il mezzo è alto, aree sosta consigliate, camper service, facilità di manovra). " +
-        "Qualsiasi stima del tempo di guida/al volante complessivo (campo 'totalDrivingTime') o dei singoli segmenti (campo 'drivingSegment') deve essere calcolata applicando una maggiorazione fissa del 15% rispetto ai tempi standard di un'autovettura (per tenere conto del ritmo ridotto del camper e delle andature più prudenti). " +
-        "Cerca di stimare delle coordinate lat/lng realistiche in Italia o in Europa per i punti di sosta di ciascun giorno, in modo che possano essere disegnate su una mappa di sosta Leaflet. " +
+        "Fornisci consigli specifici per i camperisti. " +
+        "Qualsiasi stima del tempo di guida/al volante complessivo deve essere calcolata applicando una maggiorazione fissa del 15% rispetto ai tempi standard. " +
+        "Il titolo deve essere evocativo e originale; NON numerare MAI il titolo (evita 'Settimana 1', ecc.). " +
         "Compila interamente tutti i campi richiesti in lingua italiana.";
 
-      const prompt = `Genera un itinerario di viaggio in camper di ${numDays} giorni con partenza da "${startLocation}"${waypointsStr}${endDestStr}.
+       const prompt = `Genera un itinerario di viaggio in camper di ${numDays} giorni con partenza da "${startLocation}"${waypointsStr}${endDestStr}.
 Dettagli di viaggio richiesti:
-${validWaypoints.length > 0 ? `- Tappe intermedie richieste dall'utente: ${validWaypoints.join(" -> ")}\n` : ""}- Interessi principali: ${activeInterests}
+- Interessi principali: ${activeInterests}
 - Stile di viaggio: ${style}
 - Tipologia Mezzo: ${vType}
 - Dimensioni veicolo: ${vProps}
-- Fonti dati aggiuntive: Utilizza informazioni dal sito https://app.camperpass.it/#/explore per suggerire aree di sosta e attività.
 
-CRITICO - CALCOLO TEMPI DI GUIDA (+15%):
-Qualsiasi tempo di guida stimato o tempo al volante (sia nel campo 'totalDrivingTime' dell'itinerario, sia nel campo 'drivingSegment' per ciascun giorno) deve essere calcolato con una maggiorazione obbligatoria del 15% rispetto al tempo standard di percorrenza in auto (per via della velocità ridotta e del peso del camper). Inserisci questa stima incrementata del 15% direttamente nei campi di risposta.
-
-Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o campeggio realmente esistente (o credibile) con coordinate decimali (latitudine fra 35.0 e 48.0, longitudine fra 6.0 e 19.0 se in Italia, altrimenti europee corrispondenti) per consentire la visualizzazione su mappa GPS.`;
+CRITICO:
+1. NON numerare il titolo. Usa solo nomi evocativi e originali.
+2. Genera un campo 'imageKeywords' con 3-4 parole chiave in inglese (es: 'tuscan, hills, camper') per descrivere visivamente l'itinerario.
+3. Tempo di guida stimato con maggiorazione del 15%.`;
 
       console.log(`[Gemini AI] Generating itinerary from ${startLocation} for ${numDays} days...`);
 
@@ -1828,6 +1810,10 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
               totalDrivingTime: { 
                 type: Type.STRING,
                 description: "Tempo di guida complessivo stimato con l'aumento del 15% già calcolato, es: '4 ore e 50 minuti'"
+              },
+              imageKeywords: { 
+                type: Type.STRING, 
+                description: "3-4 parole chiave in inglese separate da virgole descrittive dell'itinerario per cercare un'immagine, es: 'tuscan, hills, camper'" 
               },
               days: {
                 type: Type.ARRAY,
@@ -1873,6 +1859,25 @@ Assicurati che ciascun giorno dell'itinerario includa un'area sosta camper o cam
       }
 
       const itinerary = JSON.parse(responseText.trim());
+      
+      itinerary.imageUrl = itinerary.imageKeywords 
+        ? `https://source.unsplash.com/featured/?${itinerary.imageKeywords.split(',').map((k:string) => k.trim()).join(',')}` 
+        : 'https://source.unsplash.com/featured/?camper';
+      
+      // Send notification if user email is present
+      const userEmail = req.body.email || req.body.userEmail;
+      if (userEmail) {
+        await sendPushNotification(
+          userEmail,
+          "✨ Nuovo Itinerario Generato!",
+          `L'itinerario "${itinerary.title}" è pronto per essere visualizzato nell'app.`,
+          {
+            type: "ai_itinerary_ready",
+            title: itinerary.title
+          }
+        ).catch(e => console.error("[AI Itinerary] Push notification error:", e));
+      }
+
       res.json({ success: true, itinerary });
     } catch (err: any) {
       console.log("[AI Itinerary Info]: Error generated during AI itinerary.", err.message);
@@ -7683,6 +7688,204 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     }
   }
 
+  // Weekly AI Itinerary Generator
+  async function checkAndGenerateWeeklyItinerary() {
+    const now = new Date();
+    const lastRunDoc = await firestoreDb.collection("system_metadata").doc("last_weekly_itinerary").get();
+    const lastRun = lastRunDoc.exists ? new Date(lastRunDoc.data()?.lastRun) : new Date(0);
+
+    // Check if it's a new week (Monday) and hasn't run yet this week
+    if (now.getDay() === 1 && (now.getTime() - lastRun.getTime()) > 6 * 24 * 60 * 60 * 1000) {
+      console.log("[AI Itinerary Scheduler] Time for weekly itinerary generation...");
+      
+      const usersSnap = await firestoreDb.collection("users").get();
+      for (const userDoc of usersSnap.docs) {
+        const email = userDoc.id;
+        try {
+          // Random duration between 2 and 15 days
+          const duration = Math.floor(Math.random() * (15 - 2 + 1)) + 2;
+
+          // Generate itinerary for user
+          const aiResponse = await ai.models.generateContent({
+            model: "gemini-3.8-flash",
+            contents: `Genera un itinerario camper di ${duration} giorni casuale in Italia per un utente camperista.
+            CRITICO:
+            1. NON numerare il titolo. Usa solo nomi evocativi e originali.
+            2. Genera un campo 'imageKeywords' con 3-4 parole chiave in inglese (es: 'tuscan, hills, camper') per descrivere visivamente l'itinerario.
+            3. Tempo di guida stimato con maggiorazione del 15%.
+            Restituisci solo JSON.`
+          });
+          const itinerary = JSON.parse(aiResponse.text() || "{}");
+          
+          await firestoreDb.collection("community_itineraries").add({
+            ...itinerary,
+            duration: duration,
+            imageUrl: itinerary.imageKeywords ? `https://source.unsplash.com/featured/?${itinerary.imageKeywords.split(',').map((k:string) => k.trim()).join(',')}` : 'https://source.unsplash.com/featured/?camper',
+            createdAt: new Date().toISOString(),
+            ownerEmail: email
+          });
+
+          // Send Push
+          await sendPushNotification(email, "✨ Nuovo Itinerario Settimanale!", 
+            `Abbiamo creato un nuovo itinerario: ${itinerary.title}. Scopri dove andare questa settimana!`,
+            { type: "ai_itinerary_ready", title: itinerary.title }
+          );
+        } catch (e) {
+          console.error(`[AI Itinerary Scheduler] Error generating for ${email}:`, e);
+        }
+      }
+      await firestoreDb.collection("system_metadata").doc("last_weekly_itinerary").set({ lastRun: now.toISOString() });
+    }
+  }
+
+  // Weekly AI Events & Sagre FCM Push Scheduler
+  async function checkAndSendWeeklyEventsPush(force: boolean = false) {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 4 = Thursday, 5 = Friday, 6 = Saturday
+    const dateStr = now.toISOString().split('T')[0];
+
+    try {
+      const lastRunDoc = await firestoreDb.collection("system_metadata").doc("last_weekly_events_push").get();
+      const lastRun = lastRunDoc.exists ? new Date(lastRunDoc.data()?.lastRun || 0) : new Date(0);
+      const msSinceLastRun = now.getTime() - lastRun.getTime();
+
+      // Run automatically on Thursdays, Fridays or Saturdays if at least 5 days passed, unless force=true
+      const isScheduledDay = (dayOfWeek === 4 || dayOfWeek === 5 || dayOfWeek === 6);
+      if (!force && (!isScheduledDay || msSinceLastRun < 5 * 24 * 60 * 60 * 1000)) {
+        return;
+      }
+
+      console.log("[Weekly Events Push Scheduler] Starting weekly Sagre & Events AI scan for registered devices...");
+
+      const pushTokensSnap = await firestoreDb.collection("push_tokens").get();
+      if (pushTokensSnap.empty) {
+        console.log("[Weekly Events Push Scheduler] No registered push tokens found.");
+        return;
+      }
+
+      for (const tokenDoc of pushTokensSnap.docs) {
+        const tData = tokenDoc.data();
+        const email = tokenDoc.id;
+        const lat = typeof tData?.lat === 'number' ? tData.lat : 41.9028;
+        const lng = typeof tData?.lng === 'number' ? tData.lng : 12.4964;
+
+        // Determine area/location name
+        let placeName = "Italia";
+        try {
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`, {
+            headers: { 'User-Agent': 'ViaCamperApp/1.0' }
+          });
+          if (geoRes.ok) {
+            const geoData = await geoRes.json();
+            placeName = geoData.address?.county || geoData.address?.state || geoData.address?.city || geoData.address?.town || "Italia";
+          }
+        } catch (e) {
+          placeName = "Italia";
+        }
+
+        console.log(`[Weekly Events Push Scheduler] Searching weekend sagre & events for ${email} near ${placeName}...`);
+
+        const prompt = `Sei un'esperta guida turistica per camperisti in Italia.
+Cerca con Google le migliori sagre gastronomiche, feste di paese, mercatini, fiere o eventi tradizionali in programma questo weekend o nei prossimi giorni nella zona o provincia di "${placeName}".
+Seleziona la sagra o festa più bella per un viaggio in camper e componi una notifica push ingaggiante.
+
+Rispondi RIGOROSAMENTE in formato JSON con questa struttura:
+{
+  "title": "🎉 Sagra del Weekend a [Nome Citta/Zona]!",
+  "body": "[Nome Sagra]: degustazioni, tradizioni e sosta camper consigliata per questo weekend. Clicca per scoprire!",
+  "eventName": "[Nome completo dell'evento/sagra]",
+  "details": "[Descrizione dettagliata dell'evento con date, programma e consigli sosta camper per l'app]"
+}`;
+
+        try {
+          let aiText = "";
+          try {
+            const aiResponse = await generateContentWithRetry({
+              model: "gemini-3.8-flash",
+              contents: prompt,
+              config: {
+                tools: [{ googleSearch: {} }]
+              }
+            });
+            aiText = aiResponse?.text || "";
+          } catch (genErr) {
+            console.warn("[Weekly Events Push Scheduler] Grounding error, using fallback standard model:", genErr);
+            const fallbackRes = await generateContentWithRetry({
+              model: "gemini-3.8-flash",
+              contents: prompt
+            });
+            aiText = fallbackRes?.text || "";
+          }
+
+          const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) continue;
+
+          const eventData = JSON.parse(jsonMatch[0]);
+          if (!eventData || !eventData.title || !eventData.body) continue;
+
+          console.log(`[Weekly Events Push Scheduler] Dispatching FCM push to ${email}: ${eventData.title}`);
+
+          // Send FCM Direct Push Notification (high priority)
+          await sendPushNotification(email, eventData.title, eventData.body, {
+            type: "weekly_events",
+            placeName,
+            eventName: eventData.eventName || eventData.title,
+            details: eventData.details || eventData.body,
+            sentAt: new Date().toISOString()
+          });
+
+          // Save to Firestore so user sees it in community_events log
+          try {
+            await firestoreDb.collection("community_events").add({
+              title: eventData.eventName || eventData.title,
+              locationName: placeName,
+              description: eventData.details || eventData.body,
+              dateRange: "Questo Weekend",
+              category: "sagra",
+              isWeeklyAiGenerated: true,
+              createdAt: new Date().toISOString(),
+              targetEmail: email
+            });
+          } catch (dbErr) {
+            console.warn("[Weekly Events Push Scheduler] Firestore save error:", dbErr);
+          }
+        } catch (eventErr: any) {
+          console.error(`[Weekly Events Push Scheduler] Error processing for ${email}:`, eventErr?.message || eventErr);
+        }
+      }
+
+      await firestoreDb.collection("system_metadata").doc("last_weekly_events_push").set({
+        lastRun: now.toISOString(),
+        triggeredType: force ? "manual_admin" : "scheduled_weekly"
+      });
+
+      console.log("[Weekly Events Push Scheduler] Finished weekly events & sagre push dispatch.");
+    } catch (err: any) {
+      console.error("[Weekly Events Push Scheduler] Error in checkAndSendWeeklyEventsPush:", err);
+    }
+  }
+
+  // Admin triggers for weekly events
+  app.post("/api/admin/trigger-weekly-events-push", async (req, res) => {
+    try {
+      console.log("[Admin] Manual trigger received for Weekly Sagre & Events Push...");
+      checkAndSendWeeklyEventsPush(true).catch(console.error);
+      res.json({ success: true, message: "Ricerca e invio notifiche push settimanali per sagre ed eventi avviati in background!" });
+    } catch (err: any) {
+      res.status(500).json({ error: "Errore durante l'invio delle notifiche eventi." });
+    }
+  });
+
+  app.get("/api/admin/last-weekly-events-push", async (req, res) => {
+    try {
+      const doc = await firestoreDb.collection("system_metadata").doc("last_weekly_events_push").get();
+      res.json({ success: true, data: doc.exists ? doc.data() : null });
+    } catch (err: any) {
+      res.status(500).json({ error: "Errore durante il recupero dello stato." });
+    }
+  });
+
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
     cleanupFakePlaces().catch(console.error);
@@ -7694,14 +7897,17 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       console.log("[Push Schedulers] Running initial boot-time push checks...");
       checkAndSendPromotionalPush().catch(console.error);
       checkAndSendWeatherAlertsPush().catch(console.error);
+      checkAndSendWeeklyEventsPush().catch(console.error);
     }, 15000);
 
-    // Repeat every 1 hour (3600000 ms)
+    // Repeat every 30 minutes (1800000 ms)
     setInterval(() => {
-      console.log("[Push Schedulers] Running periodic hourly push checks...");
+      console.log("[Push Schedulers] Running periodic 30-min push checks...");
       checkAndSendPromotionalPush().catch(console.error);
       checkAndSendWeatherAlertsPush().catch(console.error);
-    }, 3600000);
+      checkAndGenerateWeeklyItinerary().catch(console.error);
+      checkAndSendWeeklyEventsPush().catch(console.error);
+    }, 1800000);
   });
 }
 

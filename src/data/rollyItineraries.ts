@@ -991,25 +991,23 @@ export const ROLLY_52_WEEKLY_CATALOG = [
 export function buildItineraryFromCatalogItem(item: any, isCurrentWeek: boolean): CommunityItinerary {
   return {
     id: `rolly_weekly_special_w${item.week}_${item.title.substring(0, 15).replace(/\s+/g, '-').toLowerCase()}_${Math.random().toString(36).substr(2, 4)}`,
-    title: isCurrentWeek 
-      ? `🌟 Itinerario Rolly della Settimana #${item.week}: ${item.title}`
-      : `Itinerario Rolly Settimana #${item.week}: ${item.title}`,
+    title: item.title,
     description: item.desc,
-    authorName: isCurrentWeek ? 'Rolly AI 🤖 (Speciale Settimanale)' : 'Rolly AI 🤖',
+    authorName: isCurrentWeek ? 'Rolly AI 🤖 (In Evidenza)' : 'Rolly AI 🤖',
     createdAt: new Date(Date.now() - (38 - item.week) * 7 * 24 * 3600 * 1000).toISOString(),
     durationDays: item.days,
     startLocation: item.start,
     endLocation: item.end,
     waypoints: item.stops.map((s: any) => s.name),
-    travelStyle: 'Proposta Settimanale Rolly AI',
+    travelStyle: 'Proposta Rolly AI',
     interests: ['Natura', 'Borghi', 'Panorami', 'Cultura'],
     totalKm: item.km,
     status: 'approved',
     source: 'rolly_weekly',
     isWeeklySpecial: isCurrentWeek,
     weeklyBadgeText: isCurrentWeek 
-      ? `Proposta Rolly Settimana ${item.week} (In Corso)`
-      : `Proposta Rolly Settimana ${item.week}`,
+      ? `Itinerario Rolly in Evidenza 🌟`
+      : `Itinerario Rolly`,
     imageUrl: item.imageUrl,
     days: item.stops.map((stop: any, idx: number) => ({
       dayNumber: idx + 1,

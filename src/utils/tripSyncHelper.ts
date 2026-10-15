@@ -274,6 +274,7 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
     soste: cleanStops,
     photos: cleanPhotos,
     routePoints: cleanRoutePoints,
+    includeExpenses: (rawTrip.isShared || rawTrip.shareToSharedTrips || rawTrip.shareToSocial) ? (rawTrip.includeExpenses ?? true) : true,
     ...(rawTrip.updatedAt ? { updatedAt: String(rawTrip.updatedAt) } : {}),
   } as Trip;
 }
@@ -484,9 +485,22 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
 
   const mergedStops = Array.from(stopMap.values());
 
+  const bestIsShared = isLocalNewer
+    ? (localTrip.isShared ?? false)
+    : (cloudTrip.isShared ?? localTrip.isShared ?? false);
+
+  const bestShareToSharedTrips = isLocalNewer
+    ? (localTrip.shareToSharedTrips ?? false)
+    : (cloudTrip.shareToSharedTrips ?? localTrip.shareToSharedTrips ?? false);
+
+  const bestShareToSocial = isLocalNewer
+    ? (localTrip.shareToSocial ?? false)
+    : (cloudTrip.shareToSocial ?? localTrip.shareToSocial ?? false);
+
+  const baseObj = isLocalNewer ? { ...cloudTrip, ...localTrip } : { ...localTrip, ...cloudTrip };
+
   return {
-    ...localTrip,
-    ...cloudTrip,
+    ...baseObj,
     title: bestTitle,
     description: cleanTravelStoryText(bestDescription),
     startDate: bestStartDate,
@@ -494,6 +508,9 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
     status: bestStatus,
     startOdometer: bestStartOdo,
     endOdometer: bestEndOdo,
+    isShared: bestIsShared,
+    shareToSharedTrips: bestShareToSharedTrips,
+    shareToSocial: bestShareToSocial,
     expenses: Array.from(expenseMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     movements: Array.from(movementMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     photos: Array.from(photoMap.values()),

@@ -1235,6 +1235,7 @@ export default function App() {
     | "delete_account"
   >("hub");
 
+
   // Tracking unread community messages for notification badge on main page & header
   const [lastSeenCommunityCount, setLastSeenCommunityCount] = React.useState<number>(() => {
     try {
@@ -1705,6 +1706,35 @@ export default function App() {
     | "challenges"
     | "push_notifications"
   >("pending");
+
+  // --- SCROLL TO TOP ON TAB / SUBTAB CHANGE ---
+  React.useEffect(() => {
+    const resetScrollPosition = () => {
+      const mainEl = document.getElementById("main-content");
+      if (mainEl) {
+        mainEl.scrollTop = 0;
+      }
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+
+    resetScrollPosition();
+
+    const handle = requestAnimationFrame(() => {
+      resetScrollPosition();
+    });
+
+    const timer1 = setTimeout(resetScrollPosition, 30);
+    const timer2 = setTimeout(resetScrollPosition, 120);
+
+    return () => {
+      cancelAnimationFrame(handle);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [activeTab, diarySubTab, mapNavSubTab, settingsSubTab, adminSubTab]);
+
   const [adminEditingChal, setAdminEditingChal] = React.useState<ChallengeItem | null>(null);
   const [chalTitle, setChalTitle] = React.useState("");
   const [chalBadgeTag, setChalBadgeTag] = React.useState("");
@@ -2337,7 +2367,7 @@ export default function App() {
         setToastMessage(e.detail.message);
         playAlertSound();
         const settings = JSON.parse(localStorage.getItem("camper_app_settings") || "{}");
-        if (settings.ttsEnabled !== false && 'speechSynthesis' in window) {
+        if (settings.readAppNotifications !== false && 'speechSynthesis' in window) {
            // Clean emojis, icons, and double spaces so browser TTS doesn't read emojis (like waving hand 👋)
            const cleanText = e.detail.message
              .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")
@@ -4113,8 +4143,24 @@ out center;`;
 
   const [tripForShareModal, setTripForShareModal] = React.useState<Trip | null>(null);
 
+  const handleDeleteSharedTrip = React.useCallback((tripId: string) => {
+    setCommunityMessages(prevMsgs => {
+      const postsToDelete = prevMsgs.filter(m => m.sharedTripId === tripId);
+      if (postsToDelete.length === 0) return prevMsgs;
+      
+      const postIds = postsToDelete.map(m => m.id);
+      postIds.forEach(id => {
+        firestore.collection("deleted_community_messages").doc(id).set({ id, deletedAt: new Date().toISOString() }).catch(console.warn);
+      });
+      
+      const updated = prevMsgs.filter(m => m.sharedTripId !== tripId);
+      handleCommunityChange(updated);
+      return updated;
+    });
+  }, [handleCommunityChange]);
+
   const handleShareTripWithOptions = React.useCallback(
-    (tripToShare: Trip, options: { shareToSocial: boolean; shareToSharedTrips: boolean; includeExpenses: boolean }) => {
+    (tripToShare: Trip, options: { shareToSocial: boolean; shareToSharedTrips: boolean; includeExpenses: boolean; selectedCoverPhotoUrl?: string }) => {
       const isNowShared = options.shareToSharedTrips || options.shareToSocial;
       setTrips((prevTrips) => {
         const updated = prevTrips.map((t) =>
@@ -4125,6 +4171,7 @@ out center;`;
                 includeExpenses: options.includeExpenses,
                 shareToSharedTrips: options.shareToSharedTrips,
                 shareToSocial: options.shareToSocial,
+                selectedCoverPhotoUrl: options.selectedCoverPhotoUrl
               }
             : t
         );
@@ -4135,6 +4182,7 @@ out center;`;
         const socialMsg = createSocialPostFromTrip(tripToShare, currentUser, {
           includeExpenses: options.includeExpenses,
           shareToSharedTrips: options.shareToSharedTrips,
+          selectedCoverPhotoUrl: options.selectedCoverPhotoUrl
         });
         setCommunityMessages((prevMsgs) => {
           if (prevMsgs.some((m) => m.id === socialMsg.id)) {
@@ -4167,11 +4215,80 @@ out center;`;
         setTripForShareModal(e.detail.trip);
       }
     };
+
+    const handleUnshareTrip = (e: CustomEvent) => {
+      const tripId = e.detail?.tripId;
+      if (!tripId) return;
+
+      const nowIso = new Date().toISOString();
+
+      // 1. Update local trips and save to Firestore/server immediately
+      setTrips((prevTrips) => {
+        const updated = prevTrips.map((t) => {
+          if (t.id === tripId) {
+            return {
+              ...t,
+              isShared: false,
+              shareToSharedTrips: false,
+              shareToSocial: false,
+              updatedAt: nowIso
+            };
+          }
+          return t;
+        });
+
+        if (currentUser?.email) {
+          const cleanEmail = currentUser.email.toLowerCase().trim();
+          try {
+            localStorage.setItem(`camper_trips_${cleanEmail}`, JSON.stringify(updated));
+          } catch (err) {}
+          saveTripsToFirestore(updated);
+        }
+        return updated;
+      });
+
+      // 2. Remove social posts from communityMessages and record deletion in deleted_community_messages
+      setCommunityMessages((prevMsgs) => {
+        const postsToDelete = prevMsgs.filter((m) => m.sharedTripId === tripId);
+        if (postsToDelete.length > 0) {
+          postsToDelete.forEach((m) => {
+            firestore
+              .collection("deleted_community_messages")
+              .doc(m.id)
+              .set({ id: m.id, deletedAt: nowIso })
+              .catch(console.warn);
+
+            firestore
+              .collection("communityMessages")
+              .doc(m.id)
+              .delete()
+              .catch(console.warn);
+
+            // Also call server API endpoint to delete
+            fetch(resolveApiUrl("/api/community-messages/delete"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: m.id })
+            }).catch(console.warn);
+          });
+
+          const updatedMsgs = prevMsgs.filter((m) => m.sharedTripId !== tripId);
+          handleCommunityChange(updatedMsgs);
+          fetchCommunityMessages(); // Force refresh to re-sync with server state
+          return updatedMsgs;
+        }
+        return prevMsgs;
+      });
+    };
+
     window.addEventListener("open-trip-share-modal" as any, handleOpenShareModal);
+    window.addEventListener("unshare-trip" as any, handleUnshareTrip);
+
     return () => {
       window.removeEventListener("open-trip-share-modal" as any, handleOpenShareModal);
+      window.removeEventListener("unshare-trip" as any, handleUnshareTrip);
     };
-  }, []);
+  }, [currentUser?.email, handleCommunityChange, saveTripsToFirestore]);
 
   // Setup periodic sync interval to keep stopping points and community chat fully synchronized in real-time
   React.useEffect(() => {
@@ -5629,6 +5746,7 @@ out center;`;
               trips={trips}
               setTrips={setTrips}
               onOpenCrewModal={() => setShowFamilyCrewModal(true)}
+              deleteSharedTrip={handleDeleteSharedTrip}
             />
           ) : (
             <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl shadow-lg mt-10">

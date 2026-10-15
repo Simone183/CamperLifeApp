@@ -94,6 +94,7 @@ interface DiaryTabProps {
   trips?: Trip[];
   setTrips?: (trips: Trip[]) => void;
   onOpenCrewModal?: () => void;
+  deleteSharedTrip?: (tripId: string) => void;
 }
 
 export default function DiaryTab({
@@ -403,6 +404,9 @@ export default function DiaryTab({
           if (fsSnap.exists()) {
             const fsData = fsSnap.data();
             if (fsData && Array.isArray(fsData.trips)) {
+              if (Array.isArray(fsData.deletedIds)) {
+                fsData.deletedIds.forEach((id: string) => recordDeletedId('trips', id, cleanEmail));
+              }
               const fsTrips = fsData.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
               preFetchedCloudTrips = mergeTrips(preFetchedCloudTrips, fsTrips, cleanEmail);
             }
@@ -418,6 +422,9 @@ export default function DiaryTab({
           });
           if (fetchRes.ok) {
             const fetchJson = await fetchRes.json().catch(() => ({}));
+            if (fetchJson?.deletedIds && Array.isArray(fetchJson.deletedIds)) {
+              fetchJson.deletedIds.forEach((id: string) => recordDeletedId('trips', id, cleanEmail));
+            }
             if (fetchJson?.trips && Array.isArray(fetchJson.trips)) {
               const apiTrips = fetchJson.trips.map((t: Trip) => normalizeTrip(t, cleanEmail));
               preFetchedCloudTrips = mergeTrips(preFetchedCloudTrips, apiTrips, cleanEmail);
@@ -447,7 +454,7 @@ export default function DiaryTab({
         try {
           const docRef = doc(db, "users", cleanEmail, "data", "trips");
           const sanitized = sanitizeForFirestore(JSON.parse(JSON.stringify(cloudSafeTrips)));
-          await setDoc(docRef, { trips: sanitized, updatedAt: new Date().toISOString() }, { merge: true });
+          await setDoc(docRef, { trips: sanitized, deletedIds, updatedAt: new Date().toISOString() }, { merge: true });
           firestoreSuccess = true;
         } catch (fsWriteErr: any) {
           console.warn("[Cloud Sync] Firestore direct write notice:", fsWriteErr?.message);
@@ -1537,6 +1544,7 @@ export default function DiaryTab({
   const handleDeleteActiveTrip = () => {
     if (!selectedTripId) return;
     recordDeletedId('trips', selectedTripId, emailKey);
+    if (props.deleteSharedTrip) props.deleteSharedTrip(selectedTripId);
     const filtered = trips.filter((t) => t.id !== selectedTripId);
     setTrips(filtered);
     if (emailKey) {
@@ -3563,7 +3571,7 @@ export default function DiaryTab({
   }, [activeTrip]);
 
   // Calculate stats for current active trip
-  const totalExpensesOfActive = activeTrip && activeTrip.includeExpenses !== false
+  const totalExpensesOfActive = activeTrip
     ? activeTrip.expenses.reduce((sum, exp) => sum + exp.amount, 0)
     : 0;
     
@@ -3635,7 +3643,7 @@ export default function DiaryTab({
       }
 
       // Expenses
-      if (t.includeExpenses !== false && Array.isArray(t.expenses)) {
+      if (Array.isArray(t.expenses)) {
         t.expenses.forEach((e) => {
           const expAmount = e.amount || 0;
           totalSpent += expAmount;
@@ -4518,9 +4526,7 @@ export default function DiaryTab({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-sans">
                   {sortedTrips.map((trip) => {
                     const isSelected = selectedTripId === trip.id;
-                    const totalSpent = trip.includeExpenses !== false
-                      ? trip.expenses.reduce((sum, e) => sum + e.amount, 0)
-                      : 0;
+                    const totalSpent = (trip.expenses || []).reduce((sum, e) => sum + e.amount, 0);
 
                     return (
                       <div
@@ -4871,13 +4877,8 @@ export default function DiaryTab({
                               </button>
                               <button
                                 onClick={() => {
+                                  const nowIso = new Date().toISOString();
                                   const nextIsShared = !activeTrip.isShared;
-                                  const updated = trips.map((t) =>
-                                    t.id === activeTrip.id
-                                      ? { ...t, isShared: nextIsShared }
-                                      : t,
-                                  );
-                                  setTrips(updated);
                                   if (nextIsShared) {
                                     window.dispatchEvent(
                                       new CustomEvent("open-trip-share-modal", {
@@ -4885,10 +4886,21 @@ export default function DiaryTab({
                                       })
                                     );
                                   } else {
+                                    const updated = trips.map((t) =>
+                                      t.id === activeTrip.id
+                                        ? { ...t, isShared: false, shareToSharedTrips: false, shareToSocial: false, updatedAt: nowIso }
+                                        : t,
+                                    );
+                                    setTrips(updated);
+                                    window.dispatchEvent(
+                                      new CustomEvent("unshare-trip", {
+                                        detail: { tripId: activeTrip.id }
+                                      })
+                                    );
                                     window.dispatchEvent(
                                       new CustomEvent("show-toast", {
                                         detail: {
-                                          message: `🔒 Viaggio "${activeTrip.title}" reso privato.`,
+                                          message: `🔒 Viaggio "${activeTrip.title}" reso privato e rimosso dalla community.`,
                                         },
                                       }),
                                     );
@@ -6158,13 +6170,13 @@ export default function DiaryTab({
                     ) : expenseSubMode === "general" ? (
                       /* ---------------- GENERAL EXPENSES VIEW ---------------- */
                       <div className="space-y-4 animate-fade-in">
-                        {activeTrip.includeExpenses === false ? (
-                          <div className="p-8 text-center bg-stone-50 rounded-xl border border-stone-200/60 text-slate-500 space-y-2">
-                            <span className="text-2xl">🔒</span>
-                            <p className="text-xs font-bold text-slate-700">Le spese di questo viaggio sono nascoste per privacy.</p>
+                        {activeTrip.includeExpenses === false && (activeTrip.isShared || activeTrip.shareToSharedTrips || activeTrip.shareToSocial) && (
+                          <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-2">
+                            <span className="text-base">🔒</span>
+                            <span>Nota Privacy: Le spese sono nascoste agli altri utenti nella Community/Social, ma completamente visibili e gestibili da te nel tuo diario.</span>
                           </div>
-                        ) : (
-                          <>
+                        )}
+                        <>
                         <div className="flex justify-between items-center">
                           <h3 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                             💸 Nuova Spesa di Viaggio
@@ -6408,18 +6420,17 @@ export default function DiaryTab({
                           )}
                         </div>
                           </>
-                        )}
                       </div>
                     ) : expenseSubMode === "refuel" ? (
                       /* ---------------- FUEL REFUELING DIARY VIEW ---------------- */
                       <div className="space-y-4 animate-fade-in font-sans">
-                        {activeTrip.includeExpenses === false ? (
-                          <div className="p-8 text-center bg-stone-50 rounded-xl border border-stone-200/60 text-slate-500 space-y-2">
-                            <span className="text-2xl">🔒</span>
-                            <p className="text-xs font-bold text-slate-700">I rifornimenti e le spese di questo viaggio sono nascosti per privacy.</p>
+                        {activeTrip.includeExpenses === false && (activeTrip.isShared || activeTrip.shareToSharedTrips || activeTrip.shareToSocial) && (
+                          <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-2">
+                            <span className="text-base">🔒</span>
+                            <span>Nota Privacy: I rifornimenti e le spese sono nascosti agli altri utenti nella Community/Social, ma completamente visibili e gestibili da te nel tuo diario.</span>
                           </div>
-                        ) : (
-                          <>
+                        )}
+                        <>
                         <div className="flex justify-between items-center">
                           <h3 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                             {editingExpenseId ? "✏️ Modifica Rifornimento Carburante" : "⛽ Nuovo Rifornimento Carburante"}
@@ -6771,7 +6782,6 @@ export default function DiaryTab({
                           )}
                         </div>
                           </>
-                        )}
                       </div>
                     ) : expenseSubMode === "movement" ? (
                       <div className="space-y-4 animate-fade-in">
@@ -7204,7 +7214,7 @@ export default function DiaryTab({
                     )}
 
                     {/* Comprehensive overall Category budget breakdown progress bars */}
-                    {expenseSubMode === "general" && activeTrip.expenses.length > 0 && activeTrip.includeExpenses !== false && (
+                    {expenseSubMode === "general" && activeTrip.expenses.length > 0 && (
                       <div className="p-3 bg-[#F2EFE9]/40 border border-slate-200/60 rounded-xl space-y-2 text-sans select-none mt-3 animate-fade-in">
                         <div className="flex justify-between items-center">
                           <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">

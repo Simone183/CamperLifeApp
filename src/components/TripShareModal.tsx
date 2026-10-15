@@ -6,13 +6,20 @@ interface Props {
   trip: Trip | null;
   isOpen: boolean;
   onClose: () => void;
-  onConfirmShare: (options: { shareToSocial: boolean; shareToSharedTrips: boolean; includeExpenses: boolean }) => void;
+  onConfirmShare: (options: { shareToSocial: boolean; shareToSharedTrips: boolean; includeExpenses: boolean; selectedCoverPhotoUrl?: string }) => void;
 }
 
 export function TripShareModal({ trip, isOpen, onClose, onConfirmShare }: Props) {
   const [shareToSocial, setShareToSocial] = useState(true);
   const [shareToSharedTrips, setShareToSharedTrips] = useState(true);
   const [includeExpenses, setIncludeExpenses] = useState(true);
+  const [selectedPhoto, setSelectedPhoto] = useState<string>(trip?.selectedCoverPhotoUrl || (trip?.photos?.[0]?.url || ''));
+
+  React.useEffect(() => {
+    if (trip) {
+      setSelectedPhoto(trip.selectedCoverPhotoUrl || (trip.photos?.[0]?.url || ''));
+    }
+  }, [trip]);
 
   if (!isOpen || !trip) return null;
 
@@ -35,6 +42,24 @@ export function TripShareModal({ trip, isOpen, onClose, onConfirmShare }: Props)
         </div>
 
         <div className="space-y-4">
+          {/* Cover Photo Selection */}
+          <div className="space-y-2">
+            <label className="text-xs font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest block">
+              📸 Scegli foto copertina
+            </label>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {trip.photos?.map((photo, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSelectedPhoto(photo.url)}
+                  className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 shrink-0 ${selectedPhoto === photo.url ? 'border-emerald-500' : 'border-transparent'}`}
+                >
+                  <img src={photo.url} alt="Trip photo" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <label className="text-xs font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest block">
               📍 Dove desideri condividere?
@@ -113,7 +138,7 @@ export function TripShareModal({ trip, isOpen, onClose, onConfirmShare }: Props)
                 window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "⚠️ Seleziona almeno una destinazione di condivisione!" } }));
                 return;
               }
-              onConfirmShare({ shareToSocial, shareToSharedTrips, includeExpenses });
+              onConfirmShare({ shareToSocial, shareToSharedTrips, includeExpenses, selectedCoverPhotoUrl: selectedPhoto });
               onClose();
             }}
             className="px-5 py-2.5 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white text-xs font-black rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"

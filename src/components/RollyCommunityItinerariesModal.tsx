@@ -213,11 +213,9 @@ export function RollyCommunityItinerariesModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-3 sm:p-5 overflow-y-auto">
-      <div className="bg-stone-50 dark:bg-stone-900 w-full max-w-4xl rounded-3xl border border-stone-200 dark:border-stone-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        
-        {/* Header Modal */}
-        <div className="bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] p-5 text-white flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 z-[1100] bg-stone-50 dark:bg-stone-900 w-full h-full min-h-screen flex flex-col overflow-hidden">
+      {/* Header Modal */}
+      <div className="bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] p-4 sm:p-5 text-white flex items-center justify-between shrink-0 shadow-md">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20">
               <CartoonCamperAvatar className="w-9 h-9" />
@@ -713,8 +711,6 @@ export function RollyCommunityItinerariesModal({
             Chiudi
           </button>
         </div>
-
-      </div>
     </div>
   );
 }

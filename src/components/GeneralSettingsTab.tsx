@@ -67,6 +67,7 @@ export default function GeneralSettingsTab({
   const [sounds, setSounds] = React.useState(initialSettings.sounds ?? true);
   const [vibrations, setVibrations] = React.useState(initialSettings.vibrations ?? true);
   const [ttsEnabled, setTtsEnabled] = React.useState(initialSettings.ttsEnabled ?? true);
+  const [readAppNotifications, setReadAppNotifications] = React.useState(initialSettings.readAppNotifications ?? true);
   const [ttsGender, setTtsGender] = React.useState<TtsGender>(initialSettings.ttsGender ?? 'auto');
   const [isSpeakingTts, setIsSpeakingTts] = React.useState(false);
 
@@ -153,7 +154,7 @@ export default function GeneralSettingsTab({
     const appSettings = {
       language, textSize, metric, dimensionUnit, temperatureUnit, currency, fuelUnit,
       avoidUnpaved, mapTheme, defaultPOI, deadlineReminder,
-      sounds, vibrations, ttsEnabled, ttsGender, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
+      sounds, vibrations, ttsEnabled, readAppNotifications, ttsGender, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
       autoBackup, wifiOnlySync, photoQuality, pinEnabled, appPin, mapEngine
     };
     localStorage.setItem("camper_app_settings", JSON.stringify(appSettings));
@@ -636,8 +637,8 @@ export default function GeneralSettingsTab({
             <div className="flex items-center gap-3">
               <Volume2 className="w-5 h-5 text-slate-400" />
               <div>
-                <p className="font-bold text-[#2D2926] dark:text-white">Sintesi Vocale & Istruzioni</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Leggi ad alta voce notifiche e guida navigatore GPS</p>
+                <p className="font-bold text-[#2D2926] dark:text-white">Sintesi Vocale Navigatore</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Leggi ad alta voce istruzioni guida navigatore GPS</p>
               </div>
             </div>
             <button
@@ -647,6 +648,22 @@ export default function GeneralSettingsTab({
               <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${ttsEnabled ? 'translate-x-6' : ''}`} />
             </button>
           </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Bell className="w-5 h-5 text-slate-400" />
+              <div>
+                <p className="font-bold text-[#2D2926] dark:text-white">Lettura Notifiche App</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Leggi ad alta voce le notifiche quando appaiono nell'app</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setReadAppNotifications(!readAppNotifications)}
+              className={`w-12 h-6 shrink-0 rounded-full relative transition-colors ${readAppNotifications ? 'bg-[#3E4A35]' : 'bg-slate-200 dark:bg-slate-600'}`}
+            >
+              <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${readAppNotifications ? 'translate-x-6' : ''}`} />
+            </button>
+          </div>
+        </div>
 
           {ttsEnabled && (
             <div className="pl-8 pt-1 flex flex-col gap-2.5 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-700/60">
@@ -784,7 +801,6 @@ export default function GeneralSettingsTab({
         </div>
 
 
-      </div>
     </section>
   );
 

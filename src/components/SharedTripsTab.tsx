@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function SharedTripsTab({ trips, onViewTrip, setTrips }: Props) {
-  const sharedTrips = trips.filter(t => t.isShared);
+  const sharedTrips = trips.filter(t => Boolean(t.isShared || t.shareToSharedTrips || t.shareToSocial));
 
   const [confirmAction, setConfirmAction] = useState<{
     type: 'edit' | 'delete';
@@ -62,8 +62,27 @@ export default function SharedTripsTab({ trips, onViewTrip, setTrips }: Props) {
         })
       );
     } else if (type === 'delete' && setTrips) {
-      const updated = trips.map(t => t.id === trip.id ? { ...t, isShared: false } : t);
+      const nowIso = new Date().toISOString();
+      const updated = trips.map(t => {
+        if (t.id === trip.id) {
+          return {
+            ...t,
+            isShared: false,
+            shareToSharedTrips: false,
+            shareToSocial: false,
+            updatedAt: nowIso
+          };
+        }
+        return t;
+      });
       setTrips(updated);
+
+      window.dispatchEvent(
+        new CustomEvent("unshare-trip", {
+          detail: { tripId: trip.id }
+        })
+      );
+
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: { message: `🗑️ Viaggio rimosso dai viaggi condivisi.` }

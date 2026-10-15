@@ -524,20 +524,7 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
             );
           })}
 
-          {onNavigateToDeadlines && (
-            <button
-              type="button"
-              onClick={onNavigateToDeadlines}
-              className="w-full px-4 py-3 text-xs font-black rounded-2xl bg-amber-700 hover:bg-amber-800 text-white border border-amber-600 transition-all cursor-pointer flex items-center justify-between gap-3 text-left shadow-xs active:scale-98"
-              title="Vai alla scheda dello Scadenziere per registrare o controllare manutenzioni e scadenze"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Calendar className="w-4 h-4 text-amber-200 shrink-0" />
-                <span className="truncate">Scadenziere & Lavori</span>
-              </div>
-              <ArrowRight className="w-3.5 h-3.5 text-amber-200 shrink-0 opacity-90" />
-            </button>
-          )}
+          {/* Tab buttons end */}
         </div>
       </div>
 
@@ -547,32 +534,6 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
         {/* TAB 1: ANAGRAFICA */}
         {activeSubTab === 'anagrafica' && (
           <div className="space-y-6 animate-fade-in">
-            {/* Quick Link Banner to Scadenziere & Manutenzioni */}
-            <div className="bg-gradient-to-r from-amber-500/10 via-amber-50 to-orange-50/80 border border-amber-200/90 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-xs shrink-0">
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-amber-950 text-xs sm:text-sm tracking-tight flex items-center gap-2">
-                    <span>Scadenziere, Tagliandi & Manutenzioni Camper</span>
-                  </h4>
-                  <p className="text-[11px] text-amber-900/80 mt-0.5 leading-snug">
-                    Controlla e gestisci scadenze legali (revisione, bollo, assicurazione), tagliandi, garanzie infiltrazioni e il registro dei lavori fatti o da fare.
-                  </p>
-                </div>
-              </div>
-              {onNavigateToDeadlines && (
-                <button
-                  type="button"
-                  onClick={onNavigateToDeadlines}
-                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0 self-end sm:self-auto"
-                >
-                  <span>Apri Scadenziere & Lavori</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
 
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <div>
