@@ -1413,13 +1413,13 @@ out center;`;
         triggerAudioFallback();
       };
 
-      // Watchdog: If speech start is not detected within 1.5 seconds on Android WebView, switch to fallback audio
+      // Watchdog: Allow Android WebView SpeechSynthesis up to 5 seconds to initialize and start speaking
       startWatchdogTimer = setTimeout(() => {
         if (!startDetected && !finished) {
-          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 1.5s, switching to audio fallback.");
+          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 5s, switching to audio fallback.");
           triggerAudioFallback();
         }
-      }, 1500);
+      }, 5000);
 
       window.speechSynthesis.resume();
       window.speechSynthesis.speak(msg);
@@ -3588,7 +3588,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
             )}
 
             {/* Active Route Calculation Loading Badge */}
-            {(loadingRoute || osrmRoute.length === 0) && (
+            {(loadingRoute && displayedRouteCoordinates.length === 0) && (
               <div className="bg-[#0b101d]/95 backdrop-blur-md border border-emerald-500/80 text-white font-medium px-4 py-2.5 rounded-2xl shadow-2xl animate-pulse text-xs flex items-center justify-center gap-3 pointer-events-auto">
                 <Loader2 className="w-5 h-5 animate-spin text-emerald-400 shrink-0" />
                 <div className="flex flex-col text-left">
@@ -3675,9 +3675,15 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               <button
                 type="button"
                 onClick={() => {
+                  if (typeof window !== "undefined" && 'speechSynthesis' in window) {
+                    try {
+                      window.speechSynthesis.cancel();
+                      window.speechSynthesis.resume();
+                    } catch (_) {}
+                  }
                   setIsPreview(false);
                   setIsDriving(true);
-                  speakInstruction("Navigazione pronta", "immediate");
+                  speakInstruction("Navigazione avviata", "immediate");
                 }}
                 className="w-full max-w-md px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3 cursor-pointer shadow-lg active:scale-95 text-lg border border-emerald-400/20"
               >

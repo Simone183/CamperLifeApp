@@ -38,19 +38,19 @@ export function applyTtsVoiceAndPitch(
       targetPitch = 1.02;
     } else if (italianVoices.length > 0) {
       selectedVoice = italianVoices[0];
-      targetPitch = 1.18;
+      targetPitch = 1.05;
     } else {
-      targetPitch = 1.18;
+      targetPitch = 1.05;
     }
   } else if (genderSetting === 'male') {
     selectedVoice = italianVoices.find(v => MALE_VOICE_REGEX.test(v.name)) || null;
     if (selectedVoice) {
-      targetPitch = 0.98;
+      targetPitch = 0.95;
     } else if (italianVoices.length > 0) {
       selectedVoice = italianVoices[0];
-      targetPitch = 0.78;
+      targetPitch = 0.92;
     } else {
-      targetPitch = 0.78;
+      targetPitch = 0.92;
     }
   } else {
     // Auto
