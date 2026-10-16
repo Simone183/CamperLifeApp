@@ -19,7 +19,23 @@ export function applyTtsVoiceAndPitch(
   if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
 
   msg.lang = 'it-IT';
+  msg.rate = 1.0;
   
+  // Detect if running in native Android/Capacitor WebView (installed Play Store app)
+  const isNativeApp = typeof window !== "undefined" && (
+    Boolean((window as any).Capacitor) ||
+    window.location.protocol.startsWith("file:") ||
+    window.location.protocol.startsWith("capacitor:") ||
+    window.location.protocol.startsWith("ionic:") ||
+    !window.location.hostname.includes("run.app")
+  );
+
+  // On native mobile APKs, do not override msg.voice so Android OS uses its native Google Speech Engine directly!
+  if (isNativeApp) {
+    msg.pitch = genderSetting === 'female' ? 1.08 : genderSetting === 'male' ? 0.92 : 1.0;
+    return;
+  }
+
   let voices: SpeechSynthesisVoice[] = [];
   try {
     voices = window.speechSynthesis.getVoices() || [];
@@ -39,7 +55,6 @@ export function applyTtsVoiceAndPitch(
     selectedVoice = italianVoices.find(v => MALE_VOICE_REGEX.test(v.name) && v.localService) || italianVoices.find(v => MALE_VOICE_REGEX.test(v.name)) || null;
     targetPitch = 0.95;
   } else {
-    // Auto: leave msg.voice null so Android OS uses the native system default Italian voice directly
     selectedVoice = null;
     targetPitch = 1.0;
   }
@@ -126,8 +141,9 @@ export function speakSampleTts(
   if ('speechSynthesis' in window) {
     try {
       const synth = window.speechSynthesis;
-      synth.cancel();
-      synth.resume();
+      if (synth.paused) {
+        try { synth.resume(); } catch (_) {}
+      }
 
       const msg = new SpeechSynthesisUtterance(sampleText);
       msg.rate = 1.0;

@@ -1422,25 +1422,27 @@ out center;`;
           };
           fallbackMsg.onend = () => finishSpeech();
           fallbackMsg.onerror = () => triggerAudioFallback();
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.resume();
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
           window.speechSynthesis.speak(fallbackMsg);
         } catch (_) {
           triggerAudioFallback();
         }
       };
 
-      // Watchdog: Allow Android WebView SpeechSynthesis up to 5 seconds to initialize and start speaking
+      // Watchdog: Allow Android WebView SpeechSynthesis up to 8 seconds to initialize and start speaking
       startWatchdogTimer = setTimeout(() => {
         if (!startDetected && !finished) {
-          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 5s, retrying native default voice.");
-          msg.onerror?.({} as any);
+          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 8s, switching to audio fallback.");
+          triggerAudioFallback();
         }
-      }, 5000);
+      }, 8000);
 
       try {
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.resume();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
       } catch (_) {}
       window.speechSynthesis.speak(msg);
     } catch (e) {
