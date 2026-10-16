@@ -133,7 +133,7 @@ export function getWeightUnitTonnes(settings: AppSettings): string {
 
 export interface TileConfig {
   url: string;
-  subdomains: string;
+  subdomains: string | string[];
   attribution: string;
 }
 
@@ -145,30 +145,23 @@ export function getTileUrl(mapTheme: string): string {
 export function getTileConfig(mapTheme: string): TileConfig {
   if (mapTheme === 'positron' || mapTheme === 'light') {
     return {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      subdomains: 'abc',
-      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
     };
   }
-  if (mapTheme === 'esri') {
+  if (mapTheme === 'esri' || mapTheme === 'street') {
     return {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
       subdomains: 'abc',
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom'
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ'
     };
   }
   if (mapTheme === 'dark') {
     return {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      subdomains: 'abc',
-      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
-    };
-  }
-  if (mapTheme === 'standard') {
-    return {
-      url: '/api/map-tile/{z}/{x}/{y}?lyrs=m',
-      subdomains: 'abc',
-      attribution: '&copy; Google'
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
     };
   }
   if (mapTheme === 'osm') {
@@ -178,11 +171,26 @@ export function getTileConfig(mapTheme: string): TileConfig {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     };
   }
-  const lyrs = mapTheme === 'satellite' ? 's' : mapTheme === 'hybrid' ? 'y' : 'm';
+  if (mapTheme === 'satellite') {
+    return {
+      url: 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      attribution: '&copy; Google Maps'
+    };
+  }
+  if (mapTheme === 'hybrid') {
+    return {
+      url: 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      attribution: '&copy; Google Maps'
+    };
+  }
+
+  // Default / Standard / Google Roadmap: Direct Google Maps Vector Road Tiles with subdomains mt0..mt3
   return {
-    url: `/api/map-tile/{z}/{x}/{y}?lyrs=${lyrs}`,
-    subdomains: 'abc',
-    attribution: '&copy; Google'
+    url: 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    attribution: '&copy; Google Maps'
   };
 }
 

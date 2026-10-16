@@ -704,11 +704,12 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     });
 
     const initialUrl = isSatellite
-      ? "/api/map-tile/{z}/{x}/{y}?lyrs=s"
-      : "/api/map-tile/{z}/{x}/{y}?lyrs=m";
-    const initialAttr = "&copy; Google | ViaCamper";
+      ? "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+      : "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+    const initialAttr = "&copy; Google Maps | ViaCamper";
 
     const layer = L.tileLayer(initialUrl, {
+      subdomains: ["mt0", "mt1", "mt2", "mt3"],
       attribution: initialAttr
     }).addTo(mapInstance);
     tileLayerRef.current = layer;
@@ -765,11 +766,14 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     }
 
     const url = isSatellite
-      ? "/api/map-tile/{z}/{x}/{y}?lyrs=s"
-      : "/api/map-tile/{z}/{x}/{y}?lyrs=m";
-    const attr = "&copy; Google | ViaCamper";
+      ? "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+      : "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+    const attr = "&copy; Google Maps | ViaCamper";
 
-    const newTileLayer = L.tileLayer(url, { attribution: attr }).addTo(map);
+    const newTileLayer = L.tileLayer(url, {
+      subdomains: ["mt0", "mt1", "mt2", "mt3"],
+      attribution: attr
+    }).addTo(map);
     tileLayerRef.current = newTileLayer;
   }, [isSatellite]);
 

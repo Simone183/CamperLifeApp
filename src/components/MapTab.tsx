@@ -2108,7 +2108,7 @@ export default function MapTab({
           window.dispatchEvent(
             new CustomEvent("show-toast", {
               detail: {
-                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 15 km.`,
+                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 10 km.`,
               },
             }),
           );
@@ -2171,8 +2171,8 @@ export default function MapTab({
       new CustomEvent("show-toast", {
         detail: {
           message: isCity
-            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 15 km.`
-            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 15 km.`,
+            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 10 km.`
+            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 10 km.`,
         },
       }),
     );
@@ -2507,7 +2507,7 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (Mostra solo le aree sosta entro 15 km di raggio / circonferenza dal centro visualizzato)
+      // 3. Proximity Radius (Mostra solo le aree sosta entro 10 km di raggio / circonferenza dal centro visualizzato)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
@@ -2525,7 +2525,7 @@ export default function MapTab({
           centerLng = filterCenter.lng;
         }
         const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
-        matchesDistance = dist <= 15; // Circonferenza / raggio di 15 km
+        matchesDistance = dist <= 10; // Circonferenza / raggio di 10 km
       }
       if (!matchesDistance) return false;
 
@@ -4611,7 +4611,7 @@ out center;`;
               <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
                 <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
                 <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
-                  Nessuna sosta trovata entro 15 km di diametro
+                  Nessuna sosta trovata entro 10 km di raggio
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
                   Trascina la mappa per esplorare un'altra zona (le soste si caricano automaticamente), oppure cerca una città specifica nella barra di ricerca.
@@ -5978,7 +5978,7 @@ out center;`;
                 ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent"
                 : "bg-white hover:bg-slate-50 text-[#3E4A35] border border-slate-200"
             }`}
-            title="Apri filtri ed elenco delle soste entro 15 km di diametro"
+            title="Apri filtri ed elenco delle soste entro 10 km dal centro"
           >
             <Filter
               className={`w-3.5 h-3.5 ${
@@ -10225,7 +10225,7 @@ export function LeafletOfflineMap({
         maxZoom: 19,
         maxNativeZoom: offlineActive ? 16 : 19, // Support detailed offline maps up to zoom 16
         attribution: tileCfg.attribution + " | ViaCamper Offline Cache",
-        subdomains: tileCfg.subdomains || 'abc',
+        subdomains: tileCfg.subdomains || ['mt0', 'mt1', 'mt2', 'mt3'],
       },
     );
 
@@ -10233,6 +10233,12 @@ export function LeafletOfflineMap({
     const origCreateTile = (customTileLayer as any).createTile;
     (customTileLayer as any).createTile = function (coords: any, done: any) {
       const tile = origCreateTile.call(this, coords, done);
+
+      // Attach automatic tile fallback if primary tile server fails or times out
+      tile.onerror = () => {
+        tile.onerror = null; // Prevent loop
+        tile.src = `https://a.tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
+      };
       
       const isSimulated = localStorage.getItem("camper_simulated_offline") === "true";
       const offlineActive = isSimulated || !isOnline || (typeof navigator !== "undefined" && !navigator.onLine);
