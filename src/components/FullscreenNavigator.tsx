@@ -1409,19 +1409,38 @@ out center;`;
       };
 
       msg.onerror = (e) => {
-        console.warn("SpeechSynthesis utterance error, triggering fallback audio:", e);
-        triggerAudioFallback();
+        console.warn("SpeechSynthesis utterance error, retrying native default voice:", e);
+        try {
+          const fallbackMsg = new SpeechSynthesisUtterance(nextItem.text);
+          fallbackMsg.lang = 'it-IT';
+          fallbackMsg.rate = 1.0;
+          fallbackMsg.onstart = () => {
+            startDetected = true;
+            if (startWatchdogTimer) clearTimeout(startWatchdogTimer);
+            isSpeakingRef.current = true;
+          };
+          fallbackMsg.onend = () => finishSpeech();
+          fallbackMsg.onerror = () => triggerAudioFallback();
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+          window.speechSynthesis.speak(fallbackMsg);
+        } catch (_) {
+          triggerAudioFallback();
+        }
       };
 
       // Watchdog: Allow Android WebView SpeechSynthesis up to 5 seconds to initialize and start speaking
       startWatchdogTimer = setTimeout(() => {
         if (!startDetected && !finished) {
-          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 5s, switching to audio fallback.");
-          triggerAudioFallback();
+          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 5s, retrying native default voice.");
+          msg.onerror?.({} as any);
         }
       }, 5000);
 
-      window.speechSynthesis.resume();
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
+      } catch (_) {}
       window.speechSynthesis.speak(msg);
     } catch (e) {
       console.warn("SpeechSynthesis speak exception, triggering fallback audio:", e);

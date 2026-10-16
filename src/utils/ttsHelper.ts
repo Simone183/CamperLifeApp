@@ -33,34 +33,18 @@ export function applyTtsVoiceAndPitch(
   let targetPitch = 1.0;
 
   if (genderSetting === 'female') {
-    selectedVoice = italianVoices.find(v => FEMALE_VOICE_REGEX.test(v.name)) || null;
-    if (selectedVoice) {
-      targetPitch = 1.02;
-    } else if (italianVoices.length > 0) {
-      selectedVoice = italianVoices[0];
-      targetPitch = 1.05;
-    } else {
-      targetPitch = 1.05;
-    }
+    selectedVoice = italianVoices.find(v => FEMALE_VOICE_REGEX.test(v.name) && v.localService) || italianVoices.find(v => FEMALE_VOICE_REGEX.test(v.name)) || null;
+    targetPitch = 1.05;
   } else if (genderSetting === 'male') {
-    selectedVoice = italianVoices.find(v => MALE_VOICE_REGEX.test(v.name)) || null;
-    if (selectedVoice) {
-      targetPitch = 0.95;
-    } else if (italianVoices.length > 0) {
-      selectedVoice = italianVoices[0];
-      targetPitch = 0.92;
-    } else {
-      targetPitch = 0.92;
-    }
+    selectedVoice = italianVoices.find(v => MALE_VOICE_REGEX.test(v.name) && v.localService) || italianVoices.find(v => MALE_VOICE_REGEX.test(v.name)) || null;
+    targetPitch = 0.95;
   } else {
-    // Auto
-    if (italianVoices.length > 0) {
-      selectedVoice = italianVoices[0];
-    }
+    // Auto: leave msg.voice null so Android OS uses the native system default Italian voice directly
+    selectedVoice = null;
     targetPitch = 1.0;
   }
 
-  if (selectedVoice) {
+  if (selectedVoice && selectedVoice.localService !== false) {
     try {
       msg.voice = selectedVoice;
     } catch (_) {}
@@ -169,18 +153,31 @@ export function speakSampleTts(
 
       msg.onend = cleanup;
       msg.onerror = (e) => {
-        console.warn("Sample SpeechSynthesis error, trying audio fallback:", e);
-        cleanup();
-        playFallbackAudio();
+        console.warn("Sample SpeechSynthesis error, retrying native default voice:", e);
+        try {
+          const fallbackMsg = new SpeechSynthesisUtterance(sampleText);
+          fallbackMsg.lang = 'it-IT';
+          fallbackMsg.rate = 1.0;
+          fallbackMsg.onend = cleanup;
+          fallbackMsg.onerror = () => {
+            cleanup();
+            playFallbackAudio();
+          };
+          synth.cancel();
+          synth.resume();
+          synth.speak(fallbackMsg);
+        } catch (_) {
+          cleanup();
+          playFallbackAudio();
+        }
       };
 
       // Safety timeout in case speech synth hangs
       setTimeout(() => {
         if (!finished && !synth.speaking) {
           cleanup();
-          playFallbackAudio();
         }
-      }, 4000);
+      }, 5000);
 
       synth.speak(msg);
       return;
