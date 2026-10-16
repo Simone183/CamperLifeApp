@@ -2108,7 +2108,7 @@ export default function MapTab({
           window.dispatchEvent(
             new CustomEvent("show-toast", {
               detail: {
-                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 10 km.`,
+                message: `📍 Mappa centrata su: ${targetLocality.name || query}! Mostrate le aree sosta nel raggio di 5 km (circonferenza 10 km).`,
               },
             }),
           );
@@ -2171,8 +2171,8 @@ export default function MapTab({
       new CustomEvent("show-toast", {
         detail: {
           message: isCity
-            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 10 km.`
-            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 10 km.`,
+            ? `📍 Mappa centrata su: ${title}! Mostrate le aree sosta nel raggio di 5 km (circonferenza 10 km).`
+            : `📍 Selezionato: ${title}! Mostrate le aree sosta nel raggio di 5 km (circonferenza 10 km).`,
         },
       }),
     );
@@ -2507,7 +2507,7 @@ export default function MapTab({
         (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (Mostra solo le aree sosta entro 10 km di raggio / circonferenza dal centro visualizzato)
+      // 3. Proximity Radius (Mostra solo le aree sosta entro 5 km di raggio / 10 km di circonferenza-diametro dal centro visualizzato)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
@@ -2525,7 +2525,7 @@ export default function MapTab({
           centerLng = filterCenter.lng;
         }
         const dist = getDistanceKm(centerLat, centerLng, p.lat, p.lng);
-        matchesDistance = dist <= 10; // Circonferenza / raggio di 10 km
+        matchesDistance = dist <= 5; // Raggio di 5 km (Circonferenza / diametro di 10 km)
       }
       if (!matchesDistance) return false;
 
@@ -3495,7 +3495,7 @@ out center;`;
           await autoLoadOSMForProximity(
             lat,
             lng,
-            "Ricerca soste entro 10 km...",
+            "Ricerca soste entro 5 km...",
             true
           );
         } catch (err) {
@@ -4611,7 +4611,7 @@ out center;`;
               <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
                 <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
                 <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
-                  Nessuna sosta trovata entro 10 km di raggio
+                  Nessuna sosta trovata entro 5 km di raggio (10 km circonferenza)
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
                   Trascina la mappa per esplorare un'altra zona (le soste si caricano automaticamente), oppure cerca una città specifica nella barra di ricerca.
@@ -5978,7 +5978,7 @@ out center;`;
                 ? "bg-orange-600 hover:bg-[#d4510d] text-white border-transparent"
                 : "bg-white hover:bg-slate-50 text-[#3E4A35] border border-slate-200"
             }`}
-            title="Apri filtri ed elenco delle soste entro 10 km dal centro"
+            title="Apri filtri ed elenco delle soste entro 5 km dal centro (10 km circonferenza)"
           >
             <Filter
               className={`w-3.5 h-3.5 ${
