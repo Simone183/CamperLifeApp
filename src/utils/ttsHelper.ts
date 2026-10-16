@@ -98,7 +98,8 @@ export function speakSampleTts(
 
   const playFallbackAudio = () => {
     try {
-      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=${encodeURIComponent(sampleText)}`;
+      const voiceName = genderSetting === 'female' ? 'Bianca' : 'Giorgio';
+      const audioUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(sampleText)}`;
       const audio = new Audio(audioUrl);
       activeAudioFallback = audio;
       audio.onended = () => {

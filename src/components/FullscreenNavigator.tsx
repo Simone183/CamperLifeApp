@@ -1283,7 +1283,8 @@ out center;`;
         try { activeFallbackAudioRef.current.pause(); } catch (_) {}
         activeFallbackAudioRef.current = null;
       }
-      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=${encodeURIComponent(text)}`;
+      const voiceName = settings?.ttsGender === 'female' ? 'Bianca' : 'Giorgio';
+      const audioUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
       const audio = new Audio(audioUrl);
       activeFallbackAudioRef.current = audio;
 
@@ -1301,7 +1302,7 @@ out center;`;
     } catch (_) {
       onEnded();
     }
-  }, []);
+  }, [settings?.ttsGender]);
 
   const processSpeechQueue = React.useCallback(() => {
     if (typeof window === "undefined") return;
