@@ -277,11 +277,14 @@ export default function FullscreenNavigator({
         'raster-tiles': {
           type: 'raster',
           tiles: [
-            "/api/map-tile/{z}/{x}/{y}?lyrs=m"
+            "https://mt0.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+            "https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+            "https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           ],
           tileSize: 256,
-          attribution: 'Dati cartografici © contributori di OpenStreetMap © CARTO',
-          maxzoom: 18
+          attribution: 'Dati cartografici © Google Maps & OpenStreetMap',
+          maxzoom: 19
         }
       },
       layers: [
