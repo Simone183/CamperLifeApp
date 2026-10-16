@@ -1503,10 +1503,10 @@ out center;`;
 
   const speakInstruction = React.useCallback((text: string, priority: 'immediate' | 'advance' | 'info' = 'info') => {
     if (!text || typeof window === "undefined" || !('speechSynthesis' in window)) return;
+    if (settings?.ttsEnabled === false) return; // Respect user settings
     
     // Clean emojis, extraneous characters, and formatting for natural Italian speech
     let cleanText = text
-      .replace(/navigazione/gi, "")
       .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨🔄🚦]/g, "")
       .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
       .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, "")

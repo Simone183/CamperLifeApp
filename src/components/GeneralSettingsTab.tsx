@@ -173,7 +173,7 @@ export default function GeneralSettingsTab({
   }, [
     language, textSize, metric, dimensionUnit, temperatureUnit, currency, fuelUnit,
     avoidUnpaved, mapTheme, defaultPOI, deadlineReminder,
-    sounds, vibrations, ttsEnabled, ttsGender, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
+    sounds, vibrations, ttsEnabled, readAppNotifications, ttsGender, weatherAlerts, drivingStyle, publicProfile, shareData, shareLocation,
     autoBackup, wifiOnlySync, photoQuality, pinEnabled, appPin, mapEngine
   ]);
 
