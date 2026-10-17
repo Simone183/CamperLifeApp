@@ -1284,8 +1284,11 @@ out center;`;
         activeFallbackAudioRef.current = null;
       }
       const voiceName = settings?.ttsGender === 'female' ? 'Bianca' : 'Giorgio';
-      const audioUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
-      const audio = new Audio(audioUrl);
+      const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
+      const secondaryUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=${encodeURIComponent(text)}`;
+
+      const audio = new Audio();
+      audio.crossOrigin = "anonymous";
       activeFallbackAudioRef.current = audio;
 
       let called = false;
@@ -1297,8 +1300,28 @@ out center;`;
       };
 
       audio.onended = safeDone;
-      audio.onerror = safeDone;
-      audio.play().catch(() => safeDone());
+
+      let triedSecondary = false;
+      audio.onerror = () => {
+        if (!triedSecondary) {
+          triedSecondary = true;
+          audio.src = secondaryUrl;
+          audio.play().catch(() => safeDone());
+        } else {
+          safeDone();
+        }
+      };
+
+      audio.src = primaryUrl;
+      audio.play().catch(() => {
+        if (!triedSecondary) {
+          triedSecondary = true;
+          audio.src = secondaryUrl;
+          audio.play().catch(() => safeDone());
+        } else {
+          safeDone();
+        }
+      });
     } catch (_) {
       onEnded();
     }
@@ -1367,6 +1390,27 @@ out center;`;
         setTimeout(() => processSpeechQueue(), 100);
       });
     };
+
+    // On native mobile APK (Capacitor/WebView) where SpeechSynthesis is muted by WebView gesture policy:
+    const isNativeApp = typeof window !== "undefined" && (
+      Boolean((window as any).Capacitor) ||
+      window.location.protocol.startsWith("file:") ||
+      window.location.protocol.startsWith("capacitor:") ||
+      window.location.protocol.startsWith("ionic:") ||
+      !window.location.hostname.includes("run.app")
+    );
+
+    if (isNativeApp) {
+      playFallbackAudio(nextItem.text, () => finishSpeech());
+      if ('speechSynthesis' in window) {
+        try {
+          const msg = new SpeechSynthesisUtterance(nextItem.text);
+          msg.lang = 'it-IT';
+          window.speechSynthesis.speak(msg);
+        } catch (_) {}
+      }
+      return;
+    }
 
     if (!('speechSynthesis' in window)) {
       triggerAudioFallback();
