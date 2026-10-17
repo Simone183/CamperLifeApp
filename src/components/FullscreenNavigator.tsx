@@ -1300,9 +1300,12 @@ out center;`;
       };
 
       audio.onended = safeDone;
+      audio.onplay = () => console.log("[TTS] Audio started playing:", text);
+      audio.onplaying = () => console.log("[TTS] Audio actively playing:", text);
 
       let triedSecondary = false;
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error("[TTS] Audio error, URL:", audio.src, "Error:", e);
         if (!triedSecondary) {
           triedSecondary = true;
           audio.src = secondaryUrl;
@@ -1313,7 +1316,8 @@ out center;`;
       };
 
       audio.src = primaryUrl;
-      audio.play().catch(() => {
+      audio.play().catch((err) => {
+        console.error("[TTS] Playback error:", err);
         if (!triedSecondary) {
           triedSecondary = true;
           audio.src = secondaryUrl;
