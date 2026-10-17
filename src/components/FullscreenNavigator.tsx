@@ -1402,13 +1402,6 @@ out center;`;
 
     if (isNativeApp) {
       playFallbackAudio(nextItem.text, () => finishSpeech());
-      if ('speechSynthesis' in window) {
-        try {
-          const msg = new SpeechSynthesisUtterance(nextItem.text);
-          msg.lang = 'it-IT';
-          window.speechSynthesis.speak(msg);
-        } catch (_) {}
-      }
       return;
     }
 
