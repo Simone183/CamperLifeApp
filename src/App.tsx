@@ -36,6 +36,7 @@ import { mergeNearbyPlaces, PROXIMITY_MERGE_DISTANCE_KM } from "./utils/placeMer
 import { resolveApiUrl } from "./utils/resolveMediaUrl";
 import { sanitizeForFirestore } from "./utils/firestoreHelper";
 import { sqliteService } from "./utils/sqliteService";
+import { unlockGlobalMobileAudio } from "./utils/ttsHelper";
 
 
 // Modular Tab Components
@@ -227,11 +228,18 @@ export default function App() {
   React.useEffect(() => {
     const handleOpenCrew = () => setShowFamilyCrewModal(true);
     const handleOpenPerms = () => setShowPermissionModal(true);
+    const handleTouchUnlock = () => unlockGlobalMobileAudio();
+
     window.addEventListener("open-family-crew-modal", handleOpenCrew);
     window.addEventListener("open-permission-modal", handleOpenPerms);
+    window.addEventListener("click", handleTouchUnlock, { passive: true });
+    window.addEventListener("touchstart", handleTouchUnlock, { passive: true });
+
     return () => {
       window.removeEventListener("open-family-crew-modal", handleOpenCrew);
       window.removeEventListener("open-permission-modal", handleOpenPerms);
+      window.removeEventListener("click", handleTouchUnlock);
+      window.removeEventListener("touchstart", handleTouchUnlock);
     };
   }, []);
 

@@ -9,7 +9,7 @@ import { getTileUrl, getCurrencySymbol, parseDimToNumber, formatMeters } from '.
 import { Place, VehicleDimensions, OSMObstacle, NavigationStep } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
-import { applyTtsVoiceAndPitch, speakSampleTts, TtsGender } from '../utils/ttsHelper';
+import { applyTtsVoiceAndPitch, speakSampleTts, unlockGlobalMobileAudio, TtsGender } from '../utils/ttsHelper';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
 import { 
   ArrowLeft, 
@@ -3731,9 +3731,9 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               <button
                 type="button"
                 onClick={() => {
+                  unlockGlobalMobileAudio();
                   if (typeof window !== "undefined" && 'speechSynthesis' in window) {
                     try {
-                      window.speechSynthesis.cancel();
                       window.speechSynthesis.resume();
                     } catch (_) {}
                   }

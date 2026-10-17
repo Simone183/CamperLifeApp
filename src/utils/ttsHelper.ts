@@ -82,6 +82,57 @@ function setSpeakingState(speaking: boolean) {
   }
 }
 
+let globalAudioCtx: AudioContext | null = null;
+let globalSilentAudio: HTMLAudioElement | null = null;
+
+export function unlockGlobalMobileAudio() {
+  if (typeof window === "undefined") return;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtx) {
+      if (!globalAudioCtx) {
+        try { globalAudioCtx = new AudioCtx(); } catch (_) {}
+      }
+      if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+        try { globalAudioCtx.resume(); } catch (_) {}
+      }
+      if (globalAudioCtx) {
+        try {
+          const osc = globalAudioCtx.createOscillator();
+          const gain = globalAudioCtx.createGain();
+          gain.gain.value = 0.0001;
+          osc.connect(gain);
+          gain.connect(globalAudioCtx.destination);
+          osc.start(0);
+          osc.stop(globalAudioCtx.currentTime + 0.05);
+        } catch (_) {}
+      }
+    }
+
+    if (!globalSilentAudio) {
+      try {
+        globalSilentAudio = new Audio(
+          "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA=="
+        );
+        globalSilentAudio.loop = true;
+        globalSilentAudio.volume = 0.01;
+      } catch (_) {}
+    }
+    if (globalSilentAudio) {
+      globalSilentAudio.play().catch(() => {});
+    }
+
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.getVoices();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
 let activeAudioFallback: HTMLAudioElement | null = null;
 
 export function speakSampleTts(
@@ -91,6 +142,8 @@ export function speakSampleTts(
   onEnd?: () => void
 ) {
   if (typeof window === "undefined") return;
+
+  unlockGlobalMobileAudio();
 
   const sampleText = customText || (
     genderSetting === 'female'
