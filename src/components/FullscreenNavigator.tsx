@@ -1400,6 +1400,7 @@ out center;`;
       !window.location.hostname.includes("run.app")
     );
 
+    // FORCE fallback audio for native APK to ensure reliable voice guidance
     if (isNativeApp) {
       playFallbackAudio(nextItem.text, () => finishSpeech());
       return;
@@ -1453,6 +1454,7 @@ out center;`;
           fallbackMsg.lang = 'it-IT';
           fallbackMsg.rate = 1.0;
           fallbackMsg.onstart = () => {
+            console.log("[TTS] Native fallback voice started speaking.");
             startDetected = true;
             if (startWatchdogTimer) clearTimeout(startWatchdogTimer);
             isSpeakingRef.current = true;
