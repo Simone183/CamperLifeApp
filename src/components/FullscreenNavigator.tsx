@@ -1376,7 +1376,6 @@ out center;`;
       msg.lang = 'it-IT';
       applyTtsVoiceAndPitch(msg, settings?.ttsGender || 'auto');
 
-      // Retain strong reference to prevent V8 garbage collection mid-speech on Android WebView
       activeUtteranceRef.current = msg;
       (window as any)._activeUtterance = msg;
       (window as any)._ttsAnchors = (window as any)._ttsAnchors || [];
@@ -1407,44 +1406,23 @@ out center;`;
       };
 
       msg.onerror = (e) => {
-        console.warn("SpeechSynthesis utterance error, retrying native default voice:", e);
-        try {
-          const fallbackMsg = new SpeechSynthesisUtterance(nextItem.text);
-          fallbackMsg.lang = 'it-IT';
-          fallbackMsg.rate = 1.0;
-          fallbackMsg.onstart = () => {
-            console.log("[TTS] Native fallback voice started speaking.");
-            startDetected = true;
-            if (startWatchdogTimer) clearTimeout(startWatchdogTimer);
-            isSpeakingRef.current = true;
-          };
-          fallbackMsg.onend = () => finishSpeech();
-          fallbackMsg.onerror = () => triggerAudioFallback();
-          if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-          }
-          window.speechSynthesis.speak(fallbackMsg);
-        } catch (_) {
-          triggerAudioFallback();
-        }
+        console.warn("SpeechSynthesis utterance error, trying web audio fallback:", e);
+        triggerAudioFallback();
       };
 
-      // Watchdog: Allow Android WebView SpeechSynthesis up to 8 seconds to initialize and start speaking
       startWatchdogTimer = setTimeout(() => {
         if (!startDetected && !finished) {
-          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 8s, switching to audio fallback.");
+          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 5s, switching to web audio fallback.");
           triggerAudioFallback();
         }
-      }, 8000);
+      }, 5000);
 
       try {
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
+        window.speechSynthesis.resume();
       } catch (_) {}
       window.speechSynthesis.speak(msg);
     } catch (e) {
-      console.warn("SpeechSynthesis speak exception, triggering fallback audio:", e);
+      console.warn("SpeechSynthesis speak exception, triggering fallback:", e);
       triggerAudioFallback();
     }
   }, [playFallbackAudio, settings?.ttsGender]);
