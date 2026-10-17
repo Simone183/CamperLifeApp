@@ -154,6 +154,64 @@ export function getSharedAudioContext(): AudioContext | null {
   }
 }
 
+function decodeAudioBufferPromise(ctx: AudioContext, arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      let isResolved = false;
+      const resFn = (buf: AudioBuffer) => {
+        if (!isResolved) {
+          isResolved = true;
+          resolve(buf);
+        }
+      };
+      const rejFn = (err: any) => {
+        if (!isResolved) {
+          isResolved = true;
+          reject(err);
+        }
+      };
+
+      const result = ctx.decodeAudioData(arrayBuffer, resFn, rejFn);
+      if (result && typeof (result as any).then === 'function') {
+        (result as any).then(resFn).catch(rejFn);
+      }
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+export function playOfflineChime(): void {
+  try {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    osc2.frequency.setValueAtTime(880, now + 0.12); // A5
+
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc1.stop(now + 0.15);
+    osc2.start(now + 0.12);
+    osc2.stop(now + 0.4);
+  } catch (_) {}
+}
+
 export function playTextToSpeechWebAudio(
   text: string,
   genderSetting: TtsGender = 'auto',
@@ -209,7 +267,7 @@ export function playTextToSpeechWebAudio(
     }
   };
 
-  const fetchAndDecode = (url: string, fallbackUrl?: string) => {
+  const fetchAndDecode = (url: string, nextFallbackUrl?: string, tertiaryUrl?: string) => {
     if (isCancelled) { finish(); return; }
     fetch(url)
       .then(res => {
@@ -218,26 +276,30 @@ export function playTextToSpeechWebAudio(
       })
       .then(arrayBuffer => {
         if (isCancelled || !ctx) { finish(); return; }
-        return ctx.decodeAudioData(arrayBuffer);
+        return decodeAudioBufferPromise(ctx, arrayBuffer);
       })
       .then(decodedBuffer => {
         if (decodedBuffer) {
           playBuffer(decodedBuffer);
         } else {
-          finish();
+          throw new Error("Empty buffer");
         }
       })
       .catch(err => {
-        console.warn("[WebAudioTTS] Fetch or decode failed for URL:", url, err);
-        if (fallbackUrl && !isCancelled) {
-          fetchAndDecode(fallbackUrl);
+        console.warn("[WebAudioTTS] Fetch/Decode error for URL:", url, err);
+        if (nextFallbackUrl && !isCancelled) {
+          fetchAndDecode(nextFallbackUrl, tertiaryUrl);
+        } else if (tertiaryUrl && !isCancelled) {
+          fetchAndDecode(tertiaryUrl);
         } else {
+          // Play offline chime tone as absolute last audio fallback so driver is alerted
+          playOfflineChime();
           finish();
         }
       });
   };
 
-  fetchAndDecode(proxyUrl, primaryUrl);
+  fetchAndDecode(proxyUrl, primaryUrl, secondaryUrl);
 
   return cancelFn;
 }

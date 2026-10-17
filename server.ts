@@ -130,6 +130,9 @@ app.get("/api/tts", async (req, res) => {
     res.status(500).send("Server TTS error");
   }
 });
+
+// Proxy for OpenStreetMap Overpass API
+app.post("/api/maps/overpass", express.text({ type: '*/*' }), async (req, res) => {
   try {
     const response = await fetch(`https://overpass-api.de/api/interpreter`, {
       method: 'POST',
