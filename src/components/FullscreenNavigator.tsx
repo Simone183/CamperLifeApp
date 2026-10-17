@@ -9,7 +9,7 @@ import { getTileUrl, getCurrencySymbol, parseDimToNumber, formatMeters } from '.
 import { Place, VehicleDimensions, OSMObstacle, NavigationStep } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
-import { applyTtsVoiceAndPitch, speakSampleTts, unlockGlobalMobileAudio, TtsGender } from '../utils/ttsHelper';
+import { applyTtsVoiceAndPitch, speakSampleTts, playTextToSpeechWebAudio, unlockGlobalMobileAudio, TtsGender } from '../utils/ttsHelper';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
 import { 
   ArrowLeft, 
@@ -1277,61 +1277,25 @@ out center;`;
 
   const activeFallbackAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
+  const activeCancelFnRef = React.useRef<(() => void) | null>(null);
+
   const playFallbackAudio = React.useCallback((text: string, onEnded: () => void) => {
     try {
-      if (activeFallbackAudioRef.current) {
-        const oldAudio = activeFallbackAudioRef.current;
-        activeFallbackAudioRef.current = null;
-        oldAudio.onended = null;
-        oldAudio.onerror = null;
-        try { oldAudio.pause(); } catch (_) {}
+      if (activeCancelFnRef.current) {
+        try { activeCancelFnRef.current(); } catch (_) {}
+        activeCancelFnRef.current = null;
       }
 
-      const voiceName = settings?.ttsGender === 'female' ? 'Bianca' : 'Giorgio';
-      const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
-      const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(text)}`;
-
-      const audio = new Audio();
-      activeFallbackAudioRef.current = audio;
-
-      let called = false;
-      const safeDone = () => {
-        if (called) return;
-        called = true;
-        activeFallbackAudioRef.current = null;
-        onEnded();
-      };
-
-      audio.onended = safeDone;
-
-      let triedSecondary = false;
-      const tryPlay = (url: string) => {
-        audio.src = url;
-        const promise = audio.play();
-        if (promise !== undefined) {
-          promise.catch((err) => {
-            console.warn("[TTS] Audio play promise caught:", err);
-            if (!triedSecondary) {
-              triedSecondary = true;
-              tryPlay(secondaryUrl);
-            } else {
-              safeDone();
-            }
-          });
+      const cancelFn = playTextToSpeechWebAudio(
+        text,
+        settings?.ttsGender || 'auto',
+        undefined,
+        () => {
+          activeCancelFnRef.current = null;
+          onEnded();
         }
-      };
-
-      audio.onerror = (e) => {
-        console.warn("[TTS] Audio src onerror:", e);
-        if (!triedSecondary) {
-          triedSecondary = true;
-          tryPlay(secondaryUrl);
-        } else {
-          safeDone();
-        }
-      };
-
-      tryPlay(primaryUrl);
+      );
+      activeCancelFnRef.current = cancelFn;
     } catch (_) {
       onEnded();
     }

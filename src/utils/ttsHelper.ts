@@ -133,7 +133,111 @@ export function unlockGlobalMobileAudio() {
   } catch (_) {}
 }
 
-let activeAudioFallback: HTMLAudioElement | null = null;
+let sharedAudioCtx: AudioContext | null = null;
+
+export function getSharedAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtx();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function playTextToSpeechWebAudio(
+  text: string,
+  genderSetting: TtsGender = 'auto',
+  onStart?: () => void,
+  onEnd?: () => void
+): () => void {
+  if (typeof window === "undefined") {
+    onEnd?.();
+    return () => {};
+  }
+
+  let isCancelled = false;
+  let activeSource: AudioBufferSourceNode | null = null;
+
+  const finish = () => {
+    if (isCancelled) return;
+    isCancelled = true;
+    onEnd?.();
+  };
+
+  const cancelFn = () => {
+    isCancelled = true;
+    if (activeSource) {
+      try { activeSource.stop(); } catch (_) {}
+      activeSource = null;
+    }
+    onEnd?.();
+  };
+
+  const voiceName = genderSetting === 'female' ? 'Bianca' : 'Giorgio';
+  const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
+  const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(text)}`;
+
+  const ctx = getSharedAudioContext();
+
+  const playBuffer = (buffer: AudioBuffer) => {
+    if (isCancelled || !ctx) { finish(); return; }
+    try {
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      activeSource = source;
+      source.onended = () => {
+        activeSource = null;
+        finish();
+      };
+      onStart?.();
+      source.start(0);
+    } catch (_) {
+      finish();
+    }
+  };
+
+  const fetchAndDecode = (url: string, fallbackUrl?: string) => {
+    if (isCancelled) { finish(); return; }
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.arrayBuffer();
+      })
+      .then(arrayBuffer => {
+        if (isCancelled || !ctx) { finish(); return; }
+        return ctx.decodeAudioData(arrayBuffer);
+      })
+      .then(decodedBuffer => {
+        if (decodedBuffer) {
+          playBuffer(decodedBuffer);
+        } else {
+          finish();
+        }
+      })
+      .catch(err => {
+        console.warn("[WebAudioTTS] Fetch or decode failed for URL:", url, err);
+        if (fallbackUrl && !isCancelled) {
+          fetchAndDecode(fallbackUrl);
+        } else {
+          finish();
+        }
+      });
+  };
+
+  fetchAndDecode(primaryUrl, secondaryUrl);
+
+  return cancelFn;
+}
 
 export function speakSampleTts(
   genderSetting: TtsGender,
@@ -153,133 +257,17 @@ export function speakSampleTts(
         : "Impostazione voce automatica di sistema attivata. Navigazione pronta."
   );
 
-  // Stop any active audio fallback
-  if (activeAudioFallback) {
-    try {
-      activeAudioFallback.pause();
-      activeAudioFallback = null;
-    } catch (_) {}
-  }
-
   setSpeakingState(true);
-  onStart?.();
 
-  const playFallbackAudio = () => {
-    try {
-      const voiceName = genderSetting === 'female' ? 'Bianca' : 'Giorgio';
-      const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(sampleText)}`;
-      const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(sampleText)}`;
-      
-      const audio = new Audio();
-      activeAudioFallback = audio;
-      
-      let called = false;
-      const safeDone = () => {
-        if (called) return;
-        called = true;
-        activeAudioFallback = null;
-        setSpeakingState(false);
-        onEnd?.();
-      };
-
-      audio.onended = safeDone;
-
-      let triedSecondary = false;
-      const tryPlay = (url: string) => {
-        audio.src = url;
-        const promise = audio.play();
-        if (promise !== undefined) {
-          promise.catch(() => {
-            if (!triedSecondary) {
-              triedSecondary = true;
-              tryPlay(secondaryUrl);
-            } else {
-              safeDone();
-            }
-          });
-        }
-      };
-
-      audio.onerror = () => {
-        if (!triedSecondary) {
-          triedSecondary = true;
-          tryPlay(secondaryUrl);
-        } else {
-          safeDone();
-        }
-      };
-
-      tryPlay(primaryUrl);
-    } catch (_) {
+  playTextToSpeechWebAudio(
+    sampleText,
+    genderSetting,
+    () => {
+      onStart?.();
+    },
+    () => {
       setSpeakingState(false);
       onEnd?.();
     }
-  };
-
-  if ('speechSynthesis' in window) {
-    try {
-      const synth = window.speechSynthesis;
-      if (synth.paused) {
-        try { synth.resume(); } catch (_) {}
-      }
-
-      const msg = new SpeechSynthesisUtterance(sampleText);
-      msg.rate = 1.0;
-      msg.lang = 'it-IT';
-      applyTtsVoiceAndPitch(msg, genderSetting);
-
-      (window as any)._ttsAnchors = (window as any)._ttsAnchors || [];
-      (window as any)._ttsAnchors.push(msg);
-      if ((window as any)._ttsAnchors.length > 10) {
-        (window as any)._ttsAnchors.shift();
-      }
-
-      let finished = false;
-      const cleanup = () => {
-        if (finished) return;
-        finished = true;
-        setSpeakingState(false);
-        onEnd?.();
-      };
-
-      msg.onstart = () => {
-        setSpeakingState(true);
-      };
-
-      msg.onend = cleanup;
-      msg.onerror = (e) => {
-        console.warn("Sample SpeechSynthesis error, retrying native default voice:", e);
-        try {
-          const fallbackMsg = new SpeechSynthesisUtterance(sampleText);
-          fallbackMsg.lang = 'it-IT';
-          fallbackMsg.rate = 1.0;
-          fallbackMsg.onend = cleanup;
-          fallbackMsg.onerror = () => {
-            cleanup();
-            playFallbackAudio();
-          };
-          synth.cancel();
-          synth.resume();
-          synth.speak(fallbackMsg);
-        } catch (_) {
-          cleanup();
-          playFallbackAudio();
-        }
-      };
-
-      // Safety timeout in case speech synth hangs
-      setTimeout(() => {
-        if (!finished && !synth.speaking) {
-          cleanup();
-        }
-      }, 5000);
-
-      synth.speak(msg);
-      return;
-    } catch (e) {
-      console.warn("Error using SpeechSynthesis, trying audio fallback:", e);
-    }
-  }
-
-  playFallbackAudio();
+  );
 }
