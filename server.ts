@@ -85,8 +85,51 @@ app.get("/api/maps/nearby", async (req, res) => {
   }
 });
 
-// Proxy for OpenStreetMap Overpass API
-app.post("/api/maps/overpass", express.text({ type: '*/*' }), async (req, res) => {
+// Proxy for TTS Speech Generation (returns audio/mpeg MP3 directly)
+app.get("/api/tts", async (req, res) => {
+  try {
+    const text = String(req.query.text || "").trim();
+    if (!text) return res.status(400).send("Text parameter is required");
+
+    const gender = String(req.query.gender || "auto");
+    const voiceName = gender === "female" ? "Bianca" : "Giorgio";
+
+    // Primary endpoint: StreamElements TTS API
+    const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
+    // Fallback endpoint: Google Translate TTS API
+    const secondaryUrl = `https://translate.google.com/translate_tts?client=tw-ob&tl=it&q=${encodeURIComponent(text)}`;
+
+    let response = await fetch(primaryUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    }).catch(() => null);
+
+    if (!response || !response.ok) {
+      response = await fetch(secondaryUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://translate.google.com/"
+        }
+      }).catch(() => null);
+    }
+
+    if (!response || !response.ok) {
+      return res.status(502).send("TTS upstream failed");
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(buffer);
+  } catch (err) {
+    console.error("Server /api/tts proxy error:", err);
+    res.status(500).send("Server TTS error");
+  }
+});
   try {
     const response = await fetch(`https://overpass-api.de/api/interpreter`, {
       method: 'POST',

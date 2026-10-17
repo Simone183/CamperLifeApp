@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './resolveMediaUrl';
+
 export type TtsGender = 'auto' | 'female' | 'male';
 
 const FEMALE_VOICE_REGEX = /alice|elsa|federica|sonia|monica|silvia|isabella|paola|giulia|chiara|female|femminile|woman|siri|zira|samantha/i;
@@ -182,6 +184,7 @@ export function playTextToSpeechWebAudio(
   };
 
   const voiceName = genderSetting === 'female' ? 'Bianca' : 'Giorgio';
+  const proxyUrl = resolveApiUrl(`/api/tts?text=${encodeURIComponent(text)}&gender=${genderSetting}`);
   const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
   const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(text)}`;
 
@@ -234,7 +237,7 @@ export function playTextToSpeechWebAudio(
       });
   };
 
-  fetchAndDecode(primaryUrl, secondaryUrl);
+  fetchAndDecode(proxyUrl, primaryUrl);
 
   return cancelFn;
 }
