@@ -114,24 +114,49 @@ export function speakSampleTts(
   const playFallbackAudio = () => {
     try {
       const voiceName = genderSetting === 'female' ? 'Bianca' : 'Giorgio';
-      const audioUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(sampleText)}`;
-      const audio = new Audio(audioUrl);
+      const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(sampleText)}`;
+      const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(sampleText)}`;
+      
+      const audio = new Audio();
       activeAudioFallback = audio;
-      audio.onended = () => {
+      
+      let called = false;
+      const safeDone = () => {
+        if (called) return;
+        called = true;
         activeAudioFallback = null;
         setSpeakingState(false);
         onEnd?.();
       };
+
+      audio.onended = safeDone;
+
+      let triedSecondary = false;
+      const tryPlay = (url: string) => {
+        audio.src = url;
+        const promise = audio.play();
+        if (promise !== undefined) {
+          promise.catch(() => {
+            if (!triedSecondary) {
+              triedSecondary = true;
+              tryPlay(secondaryUrl);
+            } else {
+              safeDone();
+            }
+          });
+        }
+      };
+
       audio.onerror = () => {
-        activeAudioFallback = null;
-        setSpeakingState(false);
-        onEnd?.();
+        if (!triedSecondary) {
+          triedSecondary = true;
+          tryPlay(secondaryUrl);
+        } else {
+          safeDone();
+        }
       };
-      audio.play().catch(() => {
-        activeAudioFallback = null;
-        setSpeakingState(false);
-        onEnd?.();
-      });
+
+      tryPlay(primaryUrl);
     } catch (_) {
       setSpeakingState(false);
       onEnd?.();

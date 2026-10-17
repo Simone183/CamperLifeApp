@@ -1280,15 +1280,18 @@ out center;`;
   const playFallbackAudio = React.useCallback((text: string, onEnded: () => void) => {
     try {
       if (activeFallbackAudioRef.current) {
-        try { activeFallbackAudioRef.current.pause(); } catch (_) {}
+        const oldAudio = activeFallbackAudioRef.current;
         activeFallbackAudioRef.current = null;
+        oldAudio.onended = null;
+        oldAudio.onerror = null;
+        try { oldAudio.pause(); } catch (_) {}
       }
+
       const voiceName = settings?.ttsGender === 'female' ? 'Bianca' : 'Giorgio';
       const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
-      const secondaryUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=it&client=tw-ob&q=${encodeURIComponent(text)}`;
+      const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(text)}`;
 
       const audio = new Audio();
-      audio.crossOrigin = "anonymous";
       activeFallbackAudioRef.current = audio;
 
       let called = false;
@@ -1300,32 +1303,35 @@ out center;`;
       };
 
       audio.onended = safeDone;
-      audio.onplay = () => console.log("[TTS] Audio started playing:", text);
-      audio.onplaying = () => console.log("[TTS] Audio actively playing:", text);
 
       let triedSecondary = false;
+      const tryPlay = (url: string) => {
+        audio.src = url;
+        const promise = audio.play();
+        if (promise !== undefined) {
+          promise.catch((err) => {
+            console.warn("[TTS] Audio play promise caught:", err);
+            if (!triedSecondary) {
+              triedSecondary = true;
+              tryPlay(secondaryUrl);
+            } else {
+              safeDone();
+            }
+          });
+        }
+      };
+
       audio.onerror = (e) => {
-        console.error("[TTS] Audio error, URL:", audio.src, "Error:", e);
+        console.warn("[TTS] Audio src onerror:", e);
         if (!triedSecondary) {
           triedSecondary = true;
-          audio.src = secondaryUrl;
-          audio.play().catch(() => safeDone());
+          tryPlay(secondaryUrl);
         } else {
           safeDone();
         }
       };
 
-      audio.src = primaryUrl;
-      audio.play().catch((err) => {
-        console.error("[TTS] Playback error:", err);
-        if (!triedSecondary) {
-          triedSecondary = true;
-          audio.src = secondaryUrl;
-          audio.play().catch(() => safeDone());
-        } else {
-          safeDone();
-        }
-      });
+      tryPlay(primaryUrl);
     } catch (_) {
       onEnded();
     }
@@ -1394,21 +1400,6 @@ out center;`;
         setTimeout(() => processSpeechQueue(), 100);
       });
     };
-
-    // On native mobile APK (Capacitor/WebView) where SpeechSynthesis is muted by WebView gesture policy:
-    const isNativeApp = typeof window !== "undefined" && (
-      Boolean((window as any).Capacitor) ||
-      window.location.protocol.startsWith("file:") ||
-      window.location.protocol.startsWith("capacitor:") ||
-      window.location.protocol.startsWith("ionic:") ||
-      !window.location.hostname.includes("run.app")
-    );
-
-    // FORCE fallback audio for native APK to ensure reliable voice guidance
-    if (isNativeApp) {
-      playFallbackAudio(nextItem.text, () => finishSpeech());
-      return;
-    }
 
     if (!('speechSynthesis' in window)) {
       triggerAudioFallback();
