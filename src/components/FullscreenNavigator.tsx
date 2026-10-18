@@ -2441,6 +2441,18 @@ out center;`;
     if (activeStepIndex !== simStepRef.current) {
       simStepRef.current = activeStepIndex;
       setSimStep(activeStepIndex);
+
+      // Read new step instruction banner that appears on screen
+      if (!justStartedNavigation && lastSpokenStepRef.current !== activeStepIndex) {
+        lastSpokenStepRef.current = activeStepIndex;
+        const currentStepObj = directionsSequence[activeStepIndex];
+        if (currentStepObj) {
+          const stepText = (currentStepObj.desc || currentStepObj.title || "").trim();
+          if (stepText) {
+            speakInstruction(stepText, 'immediate');
+          }
+        }
+      }
     }
 
     if (justStartedNavigation) {
