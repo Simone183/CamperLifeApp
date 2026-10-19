@@ -250,7 +250,13 @@ export default function FullscreenNavigator({
     }
     setSpeed(targetSpeed);
   }, [settings?.drivingStyle, vehicleDimensions?.weight]);
-  const [isPreview, setIsPreview] = React.useState<boolean>(true);
+  const [isPreview, setIsPreview] = React.useState<boolean>(() => !String(dest?.id || '').startsWith('auto_'));
+  React.useEffect(() => {
+    if (String(dest?.id || '').startsWith('auto_')) {
+      setIsPreview(false);
+      setIsDriving(true);
+    }
+  }, [dest?.id]);
   const [isMinimized, setIsMinimized] = React.useState<boolean>(false);
   const handleSetMinimized = (val: boolean) => {
     setIsMinimized(val);

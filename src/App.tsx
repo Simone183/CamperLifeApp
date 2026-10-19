@@ -4486,46 +4486,81 @@ out center;`;
   const lastProcessedAutoDestRef = React.useRef<number>(0);
 
   React.useEffect(() => {
-    const checkAutoTargetDest = () => {
+    const checkAutoTargetDest = async () => {
       try {
-        const raw = localStorage.getItem("camper_auto_target_destination");
+        let raw = "";
+        try {
+          const bridge = (window as any).AndroidNativeTTS;
+          if (bridge && typeof bridge.consumePendingAutoDestination === "function") {
+            const fromNative = bridge.consumePendingAutoDestination();
+            if (fromNative && typeof fromNative === "string" && fromNative.trim()) {
+              raw = fromNative.trim();
+            }
+          }
+        } catch (_) {}
+
+        if (!raw) {
+          raw = localStorage.getItem("camper_auto_target_destination") || "";
+        }
+
         if (raw) {
           const data = JSON.parse(raw);
-          const timestamp = Number(data.timestamp || 0);
+          const timestamp = Number(data.timestamp || Date.now());
           const now = Date.now();
-          if (data && data.lat && data.lng && (now - timestamp < 300000)) {
+          if (data && (now - timestamp < 300000)) {
             if (lastProcessedAutoDestRef.current !== timestamp) {
               lastProcessedAutoDestRef.current = timestamp;
-              console.log("[Android Auto Sync] Avvio navigatore interno per:", data);
+              localStorage.removeItem("camper_auto_target_destination");
 
-              const placeObj: Place = {
-                id: data.id || `auto_${timestamp}`,
-                name: data.name || "Destinazione Android Auto",
-                address: data.name || "Posizione selezionata da Android Auto",
-                lat: Number(data.lat),
-                lng: Number(data.lng),
-                category: "area_sosta",
-                priceInfo: "Nessuna tariffa",
-                priceEuro: 0,
-                rating: 5,
-                facilities: [],
-                reviews: [],
-                imageUrl: "",
-              };
+              let targetLat = Number(data.lat || 0);
+              let targetLng = Number(data.lng || 0);
+              const destName = String(data.name || "Destinazione Android Auto").trim();
 
-              setNavDestination(placeObj);
-              setIsFullscreenNav(true);
-              setIsNavMinimized(false);
-              setIsGPSEnabled(true);
+              if ((!targetLat || !targetLng) && destName) {
+                try {
+                  const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=it&q=${encodeURIComponent(destName)}`);
+                  if (nomRes.ok) {
+                    const nomArr = await nomRes.json();
+                    if (Array.isArray(nomArr) && nomArr.length > 0) {
+                      targetLat = Number(nomArr[0].lat || 0);
+                      targetLng = Number(nomArr[0].lon || 0);
+                    }
+                  }
+                } catch (_) {}
+              }
 
-              window.dispatchEvent(
-                new CustomEvent("show-toast", {
-                  detail: {
-                    message: `🗺️ Rotta avviata da Android Auto verso: ${data.name || 'Destinazione'}`,
-                    duration: 5000,
-                  },
-                })
-              );
+              if (targetLat && targetLng) {
+                console.log("[Android Auto Sync] Avvio navigatore interno per:", destName, targetLat, targetLng);
+
+                const placeObj: Place = {
+                  id: data.id && String(data.id).startsWith("auto_") ? String(data.id) : `auto_${timestamp}`,
+                  name: destName,
+                  address: destName,
+                  lat: targetLat,
+                  lng: targetLng,
+                  category: "area_sosta",
+                  priceInfo: "Nessuna tariffa",
+                  priceEuro: 0,
+                  rating: 5,
+                  facilities: [],
+                  reviews: [],
+                  imageUrl: "",
+                };
+
+                setNavDestination(placeObj);
+                setIsFullscreenNav(true);
+                setIsNavMinimized(false);
+                setIsGPSEnabled(true);
+
+                window.dispatchEvent(
+                  new CustomEvent("show-toast", {
+                    detail: {
+                      message: `🗺️ Navigatore avviato da Android Auto verso: ${destName}`,
+                      duration: 5000,
+                    },
+                  })
+                );
+              }
             }
           }
         }
