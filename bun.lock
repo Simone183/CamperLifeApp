@@ -6,6 +6,7 @@
       "name": "viacamper",
       "dependencies": {
         "@capacitor-community/sqlite": "^8.1.1",
+        "@capacitor-community/text-to-speech": "^8.0.2",
         "@capacitor/android": "^8.4.1",
         "@capacitor/app": "^8.1.1",
         "@capacitor/core": "^8.4.1",
@@ -98,6 +99,8 @@
     "@borewit/text-codec": ["@borewit/text-codec@0.2.2", "", {}, ""],
 
     "@capacitor-community/sqlite": ["@capacitor-community/sqlite@8.1.1", "", { "dependencies": { "jeep-sqlite": "^2.7.2" }, "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-wsqscMOMveDeIvB9WHLm38jkUV2317LmuWvvbhvmOB1REdr8GH6weFZpAiKmLimbpP2CQ2eVs8nmRcrTqbd9ng=="],
+
+    "@capacitor-community/text-to-speech": ["@capacitor-community/text-to-speech@8.0.2", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-SbpBMzcmzdTiN8jQDme/yUYHEJISZA+IiaRn5zT14k3UKpjaA7eYBnSm9h76rJHRV/y6DVZVhT1J0SaK5JTKtA=="],
 
     "@capacitor/android": ["@capacitor/android@8.5.0", "", { "peerDependencies": { "@capacitor/core": "^8.5.0" } }, ""],
 

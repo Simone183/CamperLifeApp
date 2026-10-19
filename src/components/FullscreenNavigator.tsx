@@ -9,7 +9,7 @@ import { getTileUrl, getCurrencySymbol, parseDimToNumber, formatMeters } from '.
 import { Place, VehicleDimensions, OSMObstacle, NavigationStep } from '../types';
 import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
-import { applyTtsVoiceAndPitch, speakSampleTts, playTextToSpeechWebAudio, unlockGlobalMobileAudio, TtsGender } from '../utils/ttsHelper';
+import { applyTtsVoiceAndPitch, speakSampleTts, playTextToSpeechWebAudio, unlockGlobalMobileAudio, isNativeMobileApp, TtsGender } from '../utils/ttsHelper';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
 import { 
   ArrowLeft, 
@@ -1365,7 +1365,7 @@ out center;`;
       });
     };
 
-    if (!('speechSynthesis' in window)) {
+    if (!('speechSynthesis' in window) || isNativeMobileApp()) {
       triggerAudioFallback();
       return;
     }
@@ -1412,10 +1412,10 @@ out center;`;
 
       startWatchdogTimer = setTimeout(() => {
         if (!startDetected && !finished) {
-          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 5s, switching to web audio fallback.");
+          console.warn("[TTS Watchdog] SpeechSynthesis start not detected after 2.5s, switching to web audio fallback.");
           triggerAudioFallback();
         }
-      }, 5000);
+      }, 2500);
 
       try {
         window.speechSynthesis.resume();
@@ -1427,39 +1427,42 @@ out center;`;
     }
   }, [playFallbackAudio, settings?.ttsGender]);
 
-  // Continuous watchdog & keep-alive monitor to prevent browser TTS engine freeze / standby drop during long driving sessions
+  // Continuous watchdog & keep-alive monitor to prevent TTS engine freeze / standby drop during long driving sessions
   React.useEffect(() => {
-    if (typeof window === "undefined" || !('speechSynthesis' in window)) return;
+    if (typeof window === "undefined") return;
 
     const keepAliveInterval = setInterval(() => {
-      const synth = window.speechSynthesis;
-      if (!synth) return;
+      const synth = 'speechSynthesis' in window ? window.speechSynthesis : null;
 
       const now = Date.now();
       const timeSinceSpeech = now - lastSpeechTimeRef.current;
 
       // 1. Always keep audio context / synth active
       try {
-        if (synth.paused) {
+        if (synth && synth.paused) {
           synth.resume();
         }
       } catch (_) {}
 
-      // 2. Detect stuck lock (e.g. Chrome speaking === true bug or lost onend event after >8s)
-      if (isSpeakingRef.current && timeSinceSpeech > 8000) {
-        console.warn("[TTS Keep-Alive Watchdog] Releasing stuck speech lock after 8s inactivity.");
+      // 2. Detect stuck lock (e.g. Chrome speaking === true bug or lost onend event after >10s)
+      if (isSpeakingRef.current && timeSinceSpeech > 10000) {
+        console.warn("[TTS Keep-Alive Watchdog] Releasing stuck speech lock after 10s inactivity.");
         isSpeakingRef.current = false;
         activeUtteranceRef.current = null;
         (window as any)._activeUtterance = null;
         if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-        try { synth.cancel(); } catch (_) {}
+        if (activeCancelFnRef.current) {
+          try { activeCancelFnRef.current(); } catch (_) {}
+          activeCancelFnRef.current = null;
+        }
+        try { if (synth) synth.cancel(); } catch (_) {}
         processSpeechQueue();
       }
 
-      // 3. Periodic engine keep-alive pulse (Web Audio API) so Android media channel stays active without SpeechSynthesis hangs
+      // 3. Periodic engine keep-alive pulse (Web Audio API) so Android media channel stays active
       if (!isSpeakingRef.current && timeSinceSpeech > 12000 && speechQueueRef.current.length === 0) {
         try {
-          synth.resume();
+          if (synth) synth.resume();
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
           if (AudioCtx) {
             const ctx = new AudioCtx();
@@ -1481,7 +1484,7 @@ out center;`;
   }, [processSpeechQueue]);
 
   const speakInstruction = React.useCallback((text: string, priority: 'immediate' | 'advance' | 'info' = 'info') => {
-    if (!text || typeof window === "undefined" || !('speechSynthesis' in window)) return;
+    if (!text || typeof window === "undefined") return;
     if (settings?.ttsEnabled === false) return; // Respect user settings
     
     // Clean emojis, extraneous characters, and formatting for natural Italian speech
@@ -1556,9 +1559,13 @@ out center;`;
     if (priority === 'immediate') {
       // For immediate turn warnings ("Ora, svolta a destra"), clear any low-priority background speech and speak immediately
       if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+      if (activeCancelFnRef.current) {
+        try { activeCancelFnRef.current(); } catch (_) {}
+        activeCancelFnRef.current = null;
+      }
       activeUtteranceRef.current = null;
       try {
-        window.speechSynthesis.cancel();
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       } catch (_) {}
       isSpeakingRef.current = false;
       speechQueueRef.current = [{ text: cleanText, priority, timestamp: now }];
@@ -3693,7 +3700,6 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   }
                   setIsPreview(false);
                   setIsDriving(true);
-                  speakInstruction("Navigazione avviata", "immediate");
                 }}
                 className="w-full max-w-md px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3 cursor-pointer shadow-lg active:scale-95 text-lg border border-emerald-400/20"
               >

@@ -1,9 +1,41 @@
+import { Capacitor } from '@capacitor/core';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { resolveApiUrl } from './resolveMediaUrl';
 
 export type TtsGender = 'auto' | 'female' | 'male';
 
 const FEMALE_VOICE_REGEX = /alice|elsa|federica|sonia|monica|silvia|isabella|paola|giulia|chiara|female|femminile|woman|siri|zira|samantha/i;
 const MALE_VOICE_REGEX = /cosimo|luca|diego|paolo|marco|matteo|giorgio|mario|roberto|stefano|male|maschile|man|guy|david|george/i;
+
+export function isNativeMobileApp(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if ((window as any).AndroidNativeTTS) return true;
+    if (Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform()) {
+      return true;
+    }
+  } catch (_) {}
+
+  const cap = (window as any).Capacitor;
+  if (cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) return true;
+  if (cap && cap.platform && cap.platform !== 'web') return true;
+
+  const ua = typeof navigator !== "undefined" ? (navigator.userAgent || "") : "";
+  if (/;\s*wv\)/i.test(ua) || /Capacitor/i.test(ua)) return true;
+
+  const proto = window.location.protocol || "";
+  if (proto.startsWith("capacitor") || proto.startsWith("ionic") || proto.startsWith("file")) {
+    return true;
+  }
+
+  const host = window.location.hostname || "";
+  const port = window.location.port || "";
+  if ((host === "localhost" || host === "127.0.0.1") && port !== "3000" && port !== "5173") {
+    return true;
+  }
+
+  return false;
+}
 
 if (typeof window !== "undefined" && 'speechSynthesis' in window) {
   try {
@@ -22,18 +54,8 @@ export function applyTtsVoiceAndPitch(
 
   msg.lang = 'it-IT';
   msg.rate = 1.0;
-  
-  // Detect if running in native Android/Capacitor WebView (installed Play Store app)
-  const isNativeApp = typeof window !== "undefined" && (
-    Boolean((window as any).Capacitor) ||
-    window.location.protocol.startsWith("file:") ||
-    window.location.protocol.startsWith("capacitor:") ||
-    window.location.protocol.startsWith("ionic:") ||
-    !window.location.hostname.includes("run.app")
-  );
 
-  // On native mobile APKs, do not override msg.voice so Android OS uses its native Google Speech Engine directly!
-  if (isNativeApp) {
+  if (isNativeMobileApp()) {
     msg.pitch = genderSetting === 'female' ? 1.08 : genderSetting === 'male' ? 0.92 : 1.0;
     return;
   }
@@ -182,34 +204,7 @@ function decodeAudioBufferPromise(ctx: AudioContext, arrayBuffer: ArrayBuffer): 
 }
 
 export function playOfflineChime(): void {
-  try {
-    const ctx = getSharedAudioContext();
-    if (!ctx) return;
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    
-    const now = ctx.currentTime;
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc1.type = 'sine';
-    osc2.type = 'sine';
-    osc1.frequency.setValueAtTime(587.33, now); // D5
-    osc2.frequency.setValueAtTime(880, now + 0.12); // A5
-
-    gain.gain.setValueAtTime(0.01, now);
-    gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc1.start(now);
-    osc1.stop(now + 0.15);
-    osc2.start(now + 0.12);
-    osc2.stop(now + 0.4);
-  } catch (_) {}
+  // Intentionally no-op for voice fallback to avoid metallic tones when user tests or uses voice navigation
 }
 
 export function playTextToSpeechWebAudio(
@@ -218,91 +213,307 @@ export function playTextToSpeechWebAudio(
   onStart?: () => void,
   onEnd?: () => void
 ): () => void {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || !text || !text.trim()) {
     onEnd?.();
     return () => {};
   }
 
+  const cleanText = text.trim();
   let isCancelled = false;
   let activeSource: AudioBufferSourceNode | null = null;
+  let activeHtmlAudio: HTMLAudioElement | null = null;
+  let safetyTimer: any = null;
+  let nativeDoneListener: (() => void) | null = null;
+
+  const cleanupListeners = () => {
+    if (safetyTimer) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
+    if (nativeDoneListener && typeof window !== "undefined") {
+      window.removeEventListener('android-native-tts-done', nativeDoneListener);
+      nativeDoneListener = null;
+    }
+  };
 
   const finish = () => {
     if (isCancelled) return;
     isCancelled = true;
+    cleanupListeners();
     onEnd?.();
   };
 
   const cancelFn = () => {
+    if (isCancelled) return;
     isCancelled = true;
+    cleanupListeners();
+    try {
+      if ((window as any).AndroidNativeTTS && typeof (window as any).AndroidNativeTTS.stop === 'function') {
+        (window as any).AndroidNativeTTS.stop();
+      }
+    } catch (_) {}
+    try {
+      if (isNativeMobileApp()) {
+        TextToSpeech.stop().catch(() => {});
+      }
+    } catch (_) {}
     if (activeSource) {
       try { activeSource.stop(); } catch (_) {}
       activeSource = null;
     }
+    if (activeHtmlAudio) {
+      try {
+        activeHtmlAudio.onended = null;
+        activeHtmlAudio.onerror = null;
+        activeHtmlAudio.pause();
+      } catch (_) {}
+      activeHtmlAudio = null;
+    }
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    } catch (_) {}
     onEnd?.();
   };
 
-  const voiceName = genderSetting === 'female' ? 'Bianca' : 'Giorgio';
-  const proxyUrl = resolveApiUrl(`/api/tts?text=${encodeURIComponent(text)}&gender=${genderSetting}`);
-  const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
-  const secondaryUrl = `https://code.responsivevoice.org/getvoice.php?tl=it&sv=g1&vn=&pitch=0.5&rate=0.5&vol=1&key=free&text=${encodeURIComponent(text)}`;
+  const targetPitch = genderSetting === 'female' ? 1.08 : genderSetting === 'male' ? 0.90 : 1.0;
+  const maxDurationMs = Math.min(14000, Math.max(4000, cleanText.length * 140));
 
-  const ctx = getSharedAudioContext();
-
-  const playBuffer = (buffer: AudioBuffer) => {
-    if (isCancelled || !ctx) { finish(); return; }
+  // Fallback Layer 4: Browser SpeechSynthesis (last resort if network/audio elements fail)
+  const playViaBrowserSpeechSynthesis = () => {
+    if (isCancelled) { finish(); return; }
+    if (!('speechSynthesis' in window)) {
+      finish();
+      return;
+    }
     try {
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      activeSource = source;
-      source.onended = () => {
-        activeSource = null;
-        finish();
+      const msg = new SpeechSynthesisUtterance(cleanText);
+      applyTtsVoiceAndPitch(msg, genderSetting);
+      safetyTimer = setTimeout(() => finish(), maxDurationMs);
+      msg.onstart = () => {
+        if (!isCancelled) onStart?.();
       };
-      onStart?.();
-      source.start(0);
+      msg.onend = () => finish();
+      msg.onerror = () => finish();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      window.speechSynthesis.speak(msg);
     } catch (_) {
       finish();
     }
   };
 
-  const fetchAndDecode = (url: string, nextFallbackUrl?: string, tertiaryUrl?: string) => {
+  // Fallback Layer 3: Direct HTML5 <audio referrerpolicy="no-referrer"> (works even if fetch CORS or AudioContext is restricted)
+  const playViaHtmlAudioElement = (proxyUrl: string) => {
     if (isCancelled) { finish(); return; }
-    fetch(url)
+    try {
+      const directTranslateUrl = `https://translate.google.com/translate_tts?client=tw-ob&tl=it&q=${encodeURIComponent(cleanText.slice(0, 190))}`;
+      const audio = new Audio();
+      activeHtmlAudio = audio;
+      try {
+        audio.setAttribute('referrerpolicy', 'no-referrer');
+        (audio as any).referrerPolicy = 'no-referrer';
+      } catch (_) {}
+      audio.preload = 'auto';
+      audio.volume = 1.0;
+
+      safetyTimer = setTimeout(() => finish(), maxDurationMs);
+
+      let triedDirectTranslate = false;
+
+      audio.onplay = () => {
+        if (!isCancelled) onStart?.();
+      };
+
+      audio.onended = () => {
+        activeHtmlAudio = null;
+        finish();
+      };
+
+      audio.onerror = () => {
+        if (isCancelled) return;
+        if (!triedDirectTranslate) {
+          triedDirectTranslate = true;
+          try {
+            audio.setAttribute('referrerpolicy', 'no-referrer');
+            (audio as any).referrerPolicy = 'no-referrer';
+            audio.src = directTranslateUrl;
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+              playPromise.catch(() => {
+                activeHtmlAudio = null;
+                playViaBrowserSpeechSynthesis();
+              });
+            }
+          } catch (_) {
+            activeHtmlAudio = null;
+            playViaBrowserSpeechSynthesis();
+          }
+        } else {
+          activeHtmlAudio = null;
+          playViaBrowserSpeechSynthesis();
+        }
+      };
+
+      audio.src = proxyUrl;
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          if (isCancelled) return;
+          if (!triedDirectTranslate) {
+            triedDirectTranslate = true;
+            try {
+              audio.setAttribute('referrerpolicy', 'no-referrer');
+              (audio as any).referrerPolicy = 'no-referrer';
+              audio.src = directTranslateUrl;
+              audio.play().catch(() => {
+                activeHtmlAudio = null;
+                playViaBrowserSpeechSynthesis();
+              });
+            } catch (_) {
+              activeHtmlAudio = null;
+              playViaBrowserSpeechSynthesis();
+            }
+          } else {
+            activeHtmlAudio = null;
+            playViaBrowserSpeechSynthesis();
+          }
+        });
+      }
+    } catch (_) {
+      playViaBrowserSpeechSynthesis();
+    }
+  };
+
+  // Layer 2: Backend /api/tts MP3 Stream via WebAudio API (supports male/female detune & background keep-alive)
+  const playViaServerWebAudio = () => {
+    if (isCancelled) { finish(); return; }
+    const proxyUrl = resolveApiUrl(`/api/tts?text=${encodeURIComponent(cleanText)}&gender=${genderSetting}`);
+    const ctx = getSharedAudioContext();
+
+    if (!ctx) {
+      playViaHtmlAudioElement(proxyUrl);
+      return;
+    }
+
+    fetch(proxyUrl)
       .then(res => {
-        if (!res.ok) throw new Error("HTTP error " + res.status);
+        if (!res.ok) throw new Error("HTTP status " + res.status);
+        const ct = (res.headers.get("content-type") || "").toLowerCase();
+        if (ct.includes("text/html")) {
+          throw new Error("Received HTML instead of audio");
+        }
         return res.arrayBuffer();
       })
       .then(arrayBuffer => {
-        if (isCancelled || !ctx) { finish(); return; }
+        if (isCancelled) return null;
+        if (!arrayBuffer || arrayBuffer.byteLength < 100) {
+          throw new Error("Audio buffer too small");
+        }
         return decodeAudioBufferPromise(ctx, arrayBuffer);
       })
       .then(decodedBuffer => {
-        if (decodedBuffer) {
-          playBuffer(decodedBuffer);
-        } else {
-          throw new Error("Empty buffer");
+        if (isCancelled) { finish(); return; }
+        if (!decodedBuffer) throw new Error("Empty decoded buffer");
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
         }
-      })
-      .catch(err => {
-        console.warn("[WebAudioTTS] Fetch/Decode error for URL:", url, err);
-        if (nextFallbackUrl && !isCancelled) {
-          fetchAndDecode(nextFallbackUrl, tertiaryUrl);
-        } else if (tertiaryUrl && !isCancelled) {
-          fetchAndDecode(tertiaryUrl);
-        } else {
-          // Play offline chime tone as absolute last audio fallback so driver is alerted
-          playOfflineChime();
+        const source = ctx.createBufferSource();
+        source.buffer = decodedBuffer;
+        // Apply subtle pitch shift for male/female voice differentiation on MP3 stream
+        try {
+          if (source.detune) {
+            source.detune.value = genderSetting === 'female' ? 90 : genderSetting === 'male' ? -110 : 0;
+          }
+        } catch (_) {}
+        source.connect(ctx.destination);
+        activeSource = source;
+        safetyTimer = setTimeout(() => finish(), maxDurationMs);
+        source.onended = () => {
+          activeSource = null;
           finish();
+        };
+        onStart?.();
+        source.start(0);
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          playViaHtmlAudioElement(proxyUrl);
         }
       });
   };
 
-  fetchAndDecode(proxyUrl, primaryUrl, secondaryUrl);
+  // Layer 1A: Direct Native Android JavaScriptInterface Bridge (MainActivity AndroidNativeTTS)
+  try {
+    const androidBridge = (window as any).AndroidNativeTTS;
+    if (androidBridge && typeof androidBridge.isReady === 'function' && androidBridge.isReady()) {
+      nativeDoneListener = () => finish();
+      window.addEventListener('android-native-tts-done', nativeDoneListener, { once: true });
+      safetyTimer = setTimeout(() => finish(), maxDurationMs);
+      const started = androidBridge.speak(cleanText, targetPitch, 1.0, true);
+      if (started) {
+        onStart?.();
+        return cancelFn;
+      } else {
+        cleanupListeners();
+      }
+    }
+  } catch (_) {
+    cleanupListeners();
+  }
+
+  // Layer 1B: Capacitor Community Native TextToSpeech Plugin (Android/iOS native OS engine)
+  if (isNativeMobileApp()) {
+    try {
+      safetyTimer = setTimeout(() => finish(), maxDurationMs);
+      let didStart = false;
+      const startTimer = setTimeout(() => {
+        if (!isCancelled) {
+          didStart = true;
+          onStart?.();
+        }
+      }, 60);
+
+      TextToSpeech.speak({
+        text: cleanText,
+        lang: 'it-IT',
+        rate: 1.0,
+        pitch: targetPitch,
+        volume: 1.0,
+        category: 'playback',
+      })
+        .then(() => {
+          clearTimeout(startTimer);
+          if (!didStart && !isCancelled) onStart?.();
+          finish();
+        })
+        .catch(() => {
+          clearTimeout(startTimer);
+          if (safetyTimer) {
+            clearTimeout(safetyTimer);
+            safetyTimer = null;
+          }
+          // Native plugin not compiled in older APK or unavailable -> immediately use WebAudio / HTML5 Audio
+          if (!isCancelled) {
+            playViaServerWebAudio();
+          }
+        });
+
+      return cancelFn;
+    } catch (_) {
+      cleanupListeners();
+    }
+  }
+
+  // On Web or if native bridges are unavailable, run Server WebAudio -> HTML5 Audio -> Browser SpeechSynthesis
+  playViaServerWebAudio();
 
   return cancelFn;
 }
+
+let activeSampleCancelFn: (() => void) | null = null;
 
 export function speakSampleTts(
   genderSetting: TtsGender,
@@ -314,6 +525,11 @@ export function speakSampleTts(
 
   unlockGlobalMobileAudio();
 
+  if (activeSampleCancelFn) {
+    try { activeSampleCancelFn(); } catch (_) {}
+    activeSampleCancelFn = null;
+  }
+
   const sampleText = customText || (
     genderSetting === 'female'
       ? "Impostazione voce femminile attivata. Tra 100 metri, svolta a destra."
@@ -324,13 +540,14 @@ export function speakSampleTts(
 
   setSpeakingState(true);
 
-  playTextToSpeechWebAudio(
+  activeSampleCancelFn = playTextToSpeechWebAudio(
     sampleText,
     genderSetting,
     () => {
       onStart?.();
     },
     () => {
+      activeSampleCancelFn = null;
       setSpeakingState(false);
       onEnd?.();
     }

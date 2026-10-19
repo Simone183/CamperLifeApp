@@ -2375,7 +2375,7 @@ export default function App() {
         setToastMessage(e.detail.message);
         playAlertSound();
         const settings = JSON.parse(localStorage.getItem("camper_app_settings") || "{}");
-        if (settings.readAppNotifications !== false && 'speechSynthesis' in window) {
+        if (settings.readAppNotifications !== false) {
            // Clean emojis, icons, and double spaces so browser TTS doesn't read emojis (like waving hand 👋)
            const cleanText = e.detail.message
              .replace(/[👋👋🏻👋🏼👋🏽👋🏾👋🏿🚗🚐📍⏱️⛰️🌲🌅🏕️🗺️🚨⛔⚠️⚓🌦️🌧️⛈️⛱️💤🔋🚰🎵📻📻✨]/g, "")

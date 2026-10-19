@@ -44,111 +44,6 @@ const adminApp = admin.getApps().length === 0 ? admin.initializeApp({
   projectId: firebaseConfig.projectId
 }) : admin.getApp();
 
-// Initialize Express App
-const app = express();
-
-// Proxy for Google Maps API
-app.get("/api/maps/geocode", async (req, res) => {
-  const address = req.query.address as string;
-  if (!address) {
-    return res.status(400).json({ status: "ERROR", message: "Missing address parameter" });
-  }
-  try {
-    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${firebaseConfig.apiKey}`);
-    const contentType = response.headers.get("content-type");
-    if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      return res.status(response.status || 502).json({ status: "ERROR", message: `Geocoding upstream error (${response.status})` });
-    }
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ status: "ERROR", message: "Error proxying geocoding request" });
-  }
-});
-
-// Proxy for Google Maps Nearby Search API
-app.get("/api/maps/nearby", async (req, res) => {
-  const { lat, lng, type } = req.query;
-  if (!lat || !lng || !type) {
-    return res.status(400).json({ status: "ERROR", message: "Missing parameters: lat, lng, type" });
-  }
-  try {
-    const response = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=5000&type=${type}&key=${firebaseConfig.apiKey}`);
-    const contentType = response.headers.get("content-type");
-    if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      return res.status(response.status || 502).json({ status: "ERROR", message: `Nearby search upstream error (${response.status})` });
-    }
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ status: "ERROR", message: "Error proxying nearby search request" });
-  }
-});
-
-// Proxy for TTS Speech Generation (returns audio/mpeg MP3 directly)
-app.get("/api/tts", async (req, res) => {
-  try {
-    const text = String(req.query.text || "").trim();
-    if (!text) return res.status(400).send("Text parameter is required");
-
-    const gender = String(req.query.gender || "auto");
-    const voiceName = gender === "female" ? "Bianca" : "Giorgio";
-
-    // Primary endpoint: StreamElements TTS API
-    const primaryUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${voiceName}&text=${encodeURIComponent(text)}`;
-    // Fallback endpoint: Google Translate TTS API
-    const secondaryUrl = `https://translate.google.com/translate_tts?client=tw-ob&tl=it&q=${encodeURIComponent(text)}`;
-
-    let response = await fetch(primaryUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      }
-    }).catch(() => null);
-
-    if (!response || !response.ok) {
-      response = await fetch(secondaryUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/"
-        }
-      }).catch(() => null);
-    }
-
-    if (!response || !response.ok) {
-      return res.status(502).send("TTS upstream failed");
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.send(buffer);
-  } catch (err) {
-    console.error("Server /api/tts proxy error:", err);
-    res.status(500).send("Server TTS error");
-  }
-});
-
-// Proxy for OpenStreetMap Overpass API
-app.post("/api/maps/overpass", express.text({ type: '*/*' }), async (req, res) => {
-  try {
-    const response = await fetch(`https://overpass-api.de/api/interpreter`, {
-      method: 'POST',
-      body: req.body,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
-    const contentType = response.headers.get("content-type");
-    if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      return res.status(response.status || 502).json({ status: "ERROR", message: `Overpass API upstream error (${response.status})` });
-    }
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ status: "ERROR", message: "Error proxying Overpass request" });
-  }
-});
 
 const bucketName = (firebaseConfig as any).storageBucket || `${firebaseConfig.projectId}.appspot.com`;
 const bucket = getStorage(adminApp).bucket(bucketName);
@@ -1787,6 +1682,117 @@ async function startServer() {
   // API proxy routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Proxy for Google Maps API
+  app.get("/api/maps/geocode", async (req, res) => {
+    const address = req.query.address as string;
+    if (!address) {
+      return res.status(400).json({ status: "ERROR", message: "Missing address parameter" });
+    }
+    try {
+      const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${firebaseConfig.apiKey}`);
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        return res.status(response.status || 502).json({ status: "ERROR", message: `Geocoding upstream error (${response.status})` });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ status: "ERROR", message: "Error proxying geocoding request" });
+    }
+  });
+
+  // Proxy for Google Maps Nearby Search API
+  app.get("/api/maps/nearby", async (req, res) => {
+    const { lat, lng, type } = req.query;
+    if (!lat || !lng || !type) {
+      return res.status(400).json({ status: "ERROR", message: "Missing parameters: lat, lng, type" });
+    }
+    try {
+      const response = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=5000&type=${type}&key=${firebaseConfig.apiKey}`);
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        return res.status(response.status || 502).json({ status: "ERROR", message: `Nearby search upstream error (${response.status})` });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ status: "ERROR", message: "Error proxying nearby search request" });
+    }
+  });
+
+  // Proxy for TTS Speech Generation (returns audio/mpeg MP3 directly)
+  app.get("/api/tts", async (req, res) => {
+    try {
+      const text = String(req.query.text || "").trim();
+      if (!text) return res.status(400).send("Text parameter is required");
+
+      // Split text into chunks <= 180 chars so Google Translate TTS handles long navigation instructions seamlessly
+      const words = text.split(/\s+/);
+      const chunks: string[] = [];
+      let current = "";
+      for (const word of words) {
+        if ((current + " " + word).trim().length > 180) {
+          if (current.trim()) chunks.push(current.trim());
+          current = word;
+        } else {
+          current = (current + " " + word).trim();
+        }
+      }
+      if (current.trim()) chunks.push(current.trim());
+      if (chunks.length === 0) chunks.push(text.slice(0, 180));
+
+      const buffers: Buffer[] = [];
+      for (const chunk of chunks) {
+        const ttsUrl = `https://translate.google.com/translate_tts?client=tw-ob&tl=it&q=${encodeURIComponent(chunk)}`;
+        const response = await fetch(ttsUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+          }
+        }).catch(() => null);
+
+        if (response && response.ok) {
+          const arrBuf = await response.arrayBuffer();
+          if (arrBuf.byteLength > 0) {
+            buffers.push(Buffer.from(arrBuf));
+          }
+        }
+      }
+
+      if (buffers.length === 0) {
+        return res.status(502).send("TTS upstream failed");
+      }
+
+      const finalBuffer = Buffer.concat(buffers);
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", String(finalBuffer.length));
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.send(finalBuffer);
+    } catch (err) {
+      console.error("Server /api/tts proxy error:", err);
+      res.status(500).send("Server TTS error");
+    }
+  });
+
+  // Proxy for OpenStreetMap Overpass API
+  app.post("/api/maps/overpass", express.text({ type: '*/*' }), async (req, res) => {
+    try {
+      const response = await fetch(`https://overpass-api.de/api/interpreter`, {
+        method: 'POST',
+        body: req.body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        return res.status(response.status || 502).json({ status: "ERROR", message: `Overpass API upstream error (${response.status})` });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ status: "ERROR", message: "Error proxying Overpass request" });
+    }
   });
 
   // AI Itinerary Generator endpoint

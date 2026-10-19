@@ -51,10 +51,11 @@ export function configureAndroidAuto() {
   if (fs.existsSync(manifestPath)) {
     let manifest = fs.readFileSync(manifestPath, 'utf-8');
 
-    // Permessi necessari per navigazione e posizione in auto
+    // Permessi necessari per navigazione, posizione e audio guida in auto
     const permissionsToAdd = [
       '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
       '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+      '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
       '    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />',
       '    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />',
       '    <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />'
@@ -64,6 +65,12 @@ export function configureAndroidAuto() {
       if (!manifest.includes(perm.trim())) {
         manifest = manifest.replace('<application', `${perm}\n    <application`);
       }
+    }
+
+    // Android 11+ (API 30+) Package Visibility per motore vocale nativo TTS_SERVICE
+    if (!manifest.includes('android.intent.action.TTS_SERVICE')) {
+      const ttsQueryBlock = `    <queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n    <application`;
+      manifest = manifest.replace('<application', ttsQueryBlock);
     }
 
     // Service declaration per CarApp con etichetta e icona esplicite
@@ -91,9 +98,9 @@ export function configureAndroidAuto() {
 
     if (!manifest.includes('ViaCamperCarAppService')) {
       manifest = manifest.replace('</application>', carServiceDeclaration);
-      fs.writeFileSync(manifestPath, manifest, 'utf-8');
-      console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService e metadati.');
     }
+    fs.writeFileSync(manifestPath, manifest, 'utf-8');
+    console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService, queries TTS e metadati.');
   }
 
   // 4. Modifica build.gradle per includere le dipendenze Car App Library e aggiornare versionCode/versionName
@@ -1358,7 +1365,168 @@ public class AddMovementScreen extends Screen {
 `;
   fs.writeFileSync(path.join(javaDir, 'AddMovementScreen.java'), addMovementJava, 'utf-8');
 
-  console.log('[Android Auto] File sorgenti Java per Android Auto generati con successo in:', javaDir);
+  // H. MainActivity.java (Abilita riproduzione audio GPS senza blocco gesture e bridge nativo Android TextToSpeech)
+  const mainActivityDir = path.join(javaDir, '..');
+  const mainActivityJava = `package com.ViaCamper.myapp;
+
+import android.content.Context;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import com.getcapacitor.BridgeActivity;
+import java.util.Locale;
+
+public class MainActivity extends BridgeActivity {
+    private TextToSpeech nativeTts;
+    private boolean ttsReady = false;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        nativeTts = new TextToSpeech(getApplicationContext(), status -> {
+            if (status == TextToSpeech.SUCCESS && nativeTts != null) {
+                int res = nativeTts.setLanguage(Locale.ITALIAN);
+                if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    nativeTts.setLanguage(Locale.getDefault());
+                }
+                AudioAttributes attrs = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build();
+                nativeTts.setAudioAttributes(attrs);
+                nativeTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {}
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        abandonNavAudioFocus();
+                        notifyWebTtsDone();
+                    }
+
+                    @Override
+                    public void onError(String utteranceId) {
+                        abandonNavAudioFocus();
+                        notifyWebTtsDone();
+                    }
+                });
+                ttsReady = true;
+            }
+        });
+
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            WebSettings settings = webView.getSettings();
+            settings.setMediaPlaybackRequiresUserGesture(false);
+            webView.addJavascriptInterface(new AndroidNativeTtsBridge(), "AndroidNativeTTS");
+        }
+    }
+
+    private void requestNavAudioFocus() {
+        try {
+            if (audioManager == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (focusRequest == null) {
+                    AudioAttributes attrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+                    focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                            .setAudioAttributes(attrs)
+                            .setAcceptsDelayedFocusGain(false)
+                            .setOnAudioFocusChangeListener(focusChange -> {})
+                            .build();
+                }
+                audioManager.requestAudioFocus(focusRequest);
+            } else {
+                audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void abandonNavAudioFocus() {
+        try {
+            if (audioManager == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
+                audioManager.abandonAudioFocusRequest(focusRequest);
+            } else {
+                audioManager.abandonAudioFocus(null);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void notifyWebTtsDone() {
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                WebView webView = getBridge().getWebView();
+                webView.post(() -> webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('android-native-tts-done'));", null));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public class AndroidNativeTtsBridge {
+        @JavascriptInterface
+        public boolean isReady() {
+            return ttsReady && nativeTts != null;
+        }
+
+        @JavascriptInterface
+        public boolean speak(String text, float pitch, float rate, boolean flush) {
+            if (!ttsReady || nativeTts == null || text == null || text.trim().isEmpty()) {
+                return false;
+            }
+            try {
+                requestNavAudioFocus();
+                nativeTts.setPitch(pitch > 0 ? pitch : 1.0f);
+                nativeTts.setSpeechRate(rate > 0 ? rate : 1.0f);
+                int queueMode = flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD;
+                String utteranceId = "nav_" + System.currentTimeMillis();
+                int result = nativeTts.speak(text, queueMode, null, utteranceId);
+                return result == TextToSpeech.SUCCESS;
+            } catch (Exception e) {
+                abandonNavAudioFocus();
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public void stop() {
+            try {
+                if (nativeTts != null) {
+                    nativeTts.stop();
+                }
+                abandonNavAudioFocus();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        try {
+            if (nativeTts != null) {
+                nativeTts.stop();
+                nativeTts.shutdown();
+            }
+        } catch (Exception ignored) {}
+        super.onDestroy();
+    }
+}
+`;
+  fs.writeFileSync(path.join(mainActivityDir, 'MainActivity.java'), mainActivityJava, 'utf-8');
+
+  console.log('[Android Auto] File sorgenti Java per Android Auto e MainActivity TTS generati con successo in:', javaDir);
 }
 
 // Esegui se chiamato direttamente
