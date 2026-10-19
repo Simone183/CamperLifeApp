@@ -1,5 +1,4 @@
 import { resolveApiUrl } from './resolveMediaUrl';
-import { synthesizeLocalFormantSpeech } from './localVoiceEngine';
 
 export type TtsGender = 'auto' | 'female' | 'male';
 
@@ -293,8 +292,9 @@ export function playTextToSpeechWebAudio(
         } else if (tertiaryUrl && !isCancelled) {
           fetchAndDecode(tertiaryUrl);
         } else {
-          // Play in-code local offline Italian speech synthesis directly in memory
-          synthesizeLocalFormantSpeech(text, onStart, finish);
+          // Play offline chime tone as absolute last audio fallback so driver is alerted
+          playOfflineChime();
+          finish();
         }
       });
   };
