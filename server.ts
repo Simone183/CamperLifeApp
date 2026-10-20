@@ -412,7 +412,6 @@ async function sendPushNotification(
           channelId: "fcm_default_channel",
           notificationPriority: "PRIORITY_MAX" as const,
           visibility: "public" as const,
-          icon: "ic_notification",
           defaultSound: true,
           defaultVibrateTimings: true,
         }
@@ -719,8 +718,8 @@ const recentSentWeatherPushes = new Map<string, number>(); // key: `${email}_${a
 
 async function checkAndSendWeatherAlertsPush() {
   const now = Date.now();
-  // Throttle background weather push check to at most once every 15 minutes
-  if (now - lastCheckedWeatherAlertTime < 15 * 60 * 1000) {
+  // Throttle background weather push check to at most once every 10 minutes
+  if (now - lastCheckedWeatherAlertTime < 10 * 60 * 1000) {
     return;
   }
   lastCheckedWeatherAlertTime = now;
@@ -781,8 +780,25 @@ async function checkAndSendWeatherAlertsPush() {
       for (const tokenDoc of pushTokensSnap.docs) {
         const tData = tokenDoc.data();
         const email = tokenDoc.id;
-        const lat = tData?.lat;
-        const lng = tData?.lng;
+        let lat = tData?.lat;
+        let lng = tData?.lng;
+
+        // Fallback: Check users collection if location not present on push_token
+        if (typeof lat !== 'number' || typeof lng !== 'number') {
+          try {
+            const userDoc = await firestoreDb.collection("users").doc(email).get();
+            if (userDoc.exists) {
+              const uData = userDoc.data() || {};
+              if (typeof uData.lastLocation?.lat === 'number') {
+                lat = uData.lastLocation.lat;
+                lng = uData.lastLocation.lng;
+              } else if (typeof uData.lat === 'number') {
+                lat = uData.lat;
+                lng = uData.lng;
+              }
+            }
+          } catch (uErr) {}
+        }
 
         if (typeof lat !== 'number' || typeof lng !== 'number') continue;
 
@@ -7767,7 +7783,7 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
             3. Tempo di guida stimato con maggiorazione del 15%.
             Restituisci solo JSON.`
           });
-          const itinerary = JSON.parse(aiResponse.text() || "{}");
+          const itinerary = JSON.parse(aiResponse.text || "{}");
           
           await firestoreDb.collection("community_itineraries").add({
             ...itinerary,
@@ -7952,11 +7968,16 @@ Rispondi RIGOROSAMENTE in formato JSON con questa struttura:
       checkAndSendWeeklyEventsPush().catch(console.error);
     }, 15000);
 
-    // Repeat every 30 minutes (1800000 ms)
+    // Repeat every 10 minutes (600000 ms) for background weather safety checks
     setInterval(() => {
-      console.log("[Push Schedulers] Running periodic 30-min push checks...");
-      checkAndSendPromotionalPush().catch(console.error);
+      console.log("[Push Schedulers] Running periodic 10-min push checks...");
       checkAndSendWeatherAlertsPush().catch(console.error);
+    }, 600000);
+
+    // Repeat every 30 minutes (1800000 ms) for promo and weekly events
+    setInterval(() => {
+      console.log("[Push Schedulers] Running periodic 30-min promo & events push checks...");
+      checkAndSendPromotionalPush().catch(console.error);
       checkAndGenerateWeeklyItinerary().catch(console.error);
       checkAndSendWeeklyEventsPush().catch(console.error);
     }, 1800000);

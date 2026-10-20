@@ -51,13 +51,17 @@ export function configureAndroidAuto() {
   if (fs.existsSync(manifestPath)) {
     let manifest = fs.readFileSync(manifestPath, 'utf-8');
 
-    // Permessi necessari per navigazione continua, foreground location su Android 14 e audio guida in auto
+    // Permessi necessari per navigazione continua, notifiche push in background (Android 13/14) e audio guida in auto
     const permissionsToAdd = [
       '    <uses-permission android:name="android.permission.INTERNET" />',
       '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
       '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
       '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
       '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />',
+      '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+      '    <uses-permission android:name="android.permission.VIBRATE" />',
+      '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
+      '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
       '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
       '    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />',
       '    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />',
@@ -76,8 +80,16 @@ export function configureAndroidAuto() {
       manifest = manifest.replace('<application', ttsQueryBlock);
     }
 
-    // Service declaration per CarApp con foregroundServiceType="location" per non bloccare il GPS in movimento
+    // Service declaration per CarApp e Firebase Messaging Default Channel per notifiche a schermo spento/app chiusa
     const carServiceDeclaration = `
+        <!-- FCM Default Notification Channel & Icon for Closed App Push Alerts -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="fcm_default_channel" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+
         <!-- Android Auto ViaCamper Service -->
         <service
             android:name="com.ViaCamper.myapp.auto.ViaCamperCarAppService"
@@ -102,6 +114,8 @@ export function configureAndroidAuto() {
 
     if (!manifest.includes('ViaCamperCarAppService')) {
       manifest = manifest.replace('</application>', carServiceDeclaration);
+    } else if (!manifest.includes('default_notification_channel_id')) {
+      manifest = manifest.replace('</application>', carServiceDeclaration);
     } else if (!manifest.includes('android:foregroundServiceType="location"')) {
       manifest = manifest.replace(
         'android:name="com.ViaCamper.myapp.auto.ViaCamperCarAppService"',
@@ -109,7 +123,7 @@ export function configureAndroidAuto() {
       );
     }
     fs.writeFileSync(manifestPath, manifest, 'utf-8');
-    console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService (foregroundServiceType=location), queries TTS e metadati.');
+    console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService, permessi POST_NOTIFICATIONS, canale FCM predefinito e metadati.');
   }
 
   // 4. Modifica build.gradle per includere le dipendenze Car App Library e aggiornare versionCode/versionName

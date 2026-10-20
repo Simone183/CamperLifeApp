@@ -1,4 +1,4 @@
-import { PlaceCategory, CamperServiceSubtype } from "../types";
+import type { PlaceCategory, CamperServiceSubtype } from "../types.ts";
 
 export interface PlaceCategoryInfo {
   category: PlaceCategory;

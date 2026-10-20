@@ -106,6 +106,7 @@ export default function DiaryTab({
   trips: propsTrips,
   setTrips: propsSetTrips,
   onOpenCrewModal,
+  deleteSharedTrip,
 }: DiaryTabProps) {
   const settings = useAppSettings();
   const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
@@ -1544,7 +1545,7 @@ export default function DiaryTab({
   const handleDeleteActiveTrip = () => {
     if (!selectedTripId) return;
     recordDeletedId('trips', selectedTripId, emailKey);
-    if (props.deleteSharedTrip) props.deleteSharedTrip(selectedTripId);
+    if (deleteSharedTrip) deleteSharedTrip(selectedTripId);
     const filtered = trips.filter((t) => t.id !== selectedTripId);
     setTrips(filtered);
     if (emailKey) {
