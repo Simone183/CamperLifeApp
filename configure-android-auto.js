@@ -1785,13 +1785,14 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     public Template onGetTemplate() {
         Location activeLoc = (currentLocation != null) ? currentLocation : AutoDataBridge.getBestLiveLocation(getCarContext());
 
-        double totalDistKm = destination.distanceKm;
+        double computedDistKm = destination.distanceKm;
         if (activeLoc != null && destination.lat != 0.0 && destination.lng != 0.0) {
             float[] res = new float[1];
             Location.distanceBetween(activeLoc.getLatitude(), activeLoc.getLongitude(), destination.lat, destination.lng, res);
-            totalDistKm = res[0] / 1000.0;
+            computedDistKm = res[0] / 1000.0;
         }
-        int etaMin = Math.max(1, (int) Math.round((totalDistKm / 70.0) * 60.0));
+        final double totalDistKm = computedDistKm;
+        final int etaMin = Math.max(1, (int) Math.round((totalDistKm / 70.0) * 60.0));
 
         AutoDataBridge.RouteStepItem activeStep = (!routeSteps.isEmpty() && currentStepIndex < routeSteps.size())
                 ? routeSteps.get(currentStepIndex)
