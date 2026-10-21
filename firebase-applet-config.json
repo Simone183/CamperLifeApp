@@ -6,5 +6,7 @@
   "firestoreDatabaseId": "ai-studio-camperlifeapp-fbcd1f6d-679b-4649-8f91-6a9b5a40d0b9",
   "storageBucket": "calm-light-fg02f.firebasestorage.app",
   "messagingSenderId": "17441453721",
-  "measurementId": ""
+  "measurementId": "",
+  "oAuthClientId": "17441453721-cde74e3juni7fk19k0b4sqq975s24374.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

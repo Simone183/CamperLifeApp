@@ -160,7 +160,10 @@ export default function GeneralSettingsTab({
     localStorage.setItem("camper_app_settings", JSON.stringify(appSettings));
     
     // Dispatch to App
-    window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { textSize, pinEnabled, appPin, ttsEnabled, ttsGender } }));
+    window.dispatchEvent(new CustomEvent("app-settings-changed", { detail: { textSize, pinEnabled, appPin, ttsEnabled, ttsGender, weatherAlerts } }));
+    try {
+      (window as any).AndroidNativeTTS?.setWeatherAlertsEnabled?.(Boolean(weatherAlerts));
+    } catch {}
 
     // Apply text size locally
     if (textSize === "small") {

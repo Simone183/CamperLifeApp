@@ -104,6 +104,63 @@ export class CommunityWeatherAlertsService {
 
   public async fetchFromApiFallback() {
     try {
+      // 1. Direct Firestore REST runQuery (Works 24/7 on Android APK & Web without session cookies)
+      const fsUrl = 'https://firestore.googleapis.com/v1/projects/calm-light-fg02f/databases/ai-studio-camperlifeapp-fbcd1f6d-679b-4649-8f91-6a9b5a40d0b9/documents:runQuery?key=AIzaSyBrLUDywyD1lgs6WyS1fd6dvegBjExJxTM';
+      const fsRes = await fetch(fsUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'community_weather_alerts' }],
+            limit: 40
+          }
+        })
+      });
+      if (fsRes.ok) {
+        const rows = await fsRes.json();
+        if (Array.isArray(rows)) {
+          const now = Date.now();
+          const loaded: CommunityWeatherAlert[] = [];
+          for (const row of rows) {
+            const docObj = row?.document;
+            const f = docObj?.fields;
+            if (!f) continue;
+            const id = f.id?.stringValue || (docObj.name ? String(docObj.name).split('/').pop() : '');
+            const expiresAt = f.expiresAt?.stringValue || '';
+            if (!id || (expiresAt && new Date(expiresAt).getTime() <= now)) continue;
+            const lat = Number(f.lat?.doubleValue ?? f.lat?.integerValue ?? 0);
+            const lng = Number(f.lng?.doubleValue ?? f.lng?.integerValue ?? 0);
+            loaded.push({
+              id,
+              type: (f.type?.stringValue as WeatherAlertType) || 'storm',
+              severity: (f.severity?.stringValue as WeatherAlertSeverity) || 'severe',
+              title: f.title?.stringValue || 'Allerta Meteo',
+              description: f.description?.stringValue || '',
+              lat,
+              lng,
+              locationName: f.locationName?.stringValue || 'Posizione GPS',
+              reportedBy: f.reportedBy?.stringValue || 'Camperista',
+              userEmail: f.userEmail?.stringValue,
+              createdAt: f.createdAt?.stringValue || new Date().toISOString(),
+              expiresAt: expiresAt || new Date(Date.now() + 2.5 * 3600 * 1000).toISOString(),
+              hailSize: f.hailSize?.stringValue as any,
+              windSpeedKmh: f.windSpeedKmh?.integerValue ? Number(f.windSpeedKmh.integerValue) : (f.windSpeedKmh?.doubleValue ? Number(f.windSpeedKmh.doubleValue) : undefined),
+              source: 'community',
+              verifiedCount: Number(f.verifiedCount?.integerValue ?? f.verifiedCount?.doubleValue ?? 1),
+              verifiedBy: []
+            });
+          }
+          if (loaded.length > 0) {
+            this.alerts = loaded.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            this.saveToLocalStorage();
+            this.notifyListeners();
+            return;
+          }
+        }
+      }
+    } catch (e) {}
+
+    try {
       const url = resolveApiUrl('/api/weather-alerts');
       const res = await fetch(url);
       if (res.ok) {
@@ -193,11 +250,11 @@ export class CommunityWeatherAlertsService {
       lng: params.lng,
       locationName: params.locationName || 'Posizione GPS',
       reportedBy: params.reportedBy,
-      userEmail: params.userEmail,
+      ...(params.userEmail ? { userEmail: params.userEmail } : {}),
       createdAt: nowIso,
       expiresAt: expiresIso,
-      hailSize: params.hailSize,
-      windSpeedKmh: params.windSpeedKmh,
+      ...(params.hailSize ? { hailSize: params.hailSize } : {}),
+      ...(typeof params.windSpeedKmh === 'number' ? { windSpeedKmh: params.windSpeedKmh } : {}),
       source: 'community',
       verifiedCount: 1,
       verifiedBy: params.userEmail ? [params.userEmail] : []
@@ -208,15 +265,57 @@ export class CommunityWeatherAlertsService {
     this.saveToLocalStorage();
     this.notifyListeners();
 
-    // 2. Save to Firestore
+    // 1b. Schedule native Android background push notification (fires even if user closes app / locks phone)
+    try {
+      const nativeBridge = typeof window !== 'undefined' ? (window as any).AndroidNativeTTS : null;
+      if (nativeBridge && typeof nativeBridge.scheduleClosedAppWeatherPush === 'function') {
+        nativeBridge.scheduleClosedAppWeatherPush(
+          `⚠️ ${newAlert.title}`,
+          `${newAlert.description} (Entro 30 km dalla tua posizione)`,
+          newAlert.id,
+          7
+        );
+      }
+    } catch (e) {}
+
+    // 2. Save to Firestore via SDK (without undefined fields!)
     if (db) {
       try {
         const docRef = doc(db, 'community_weather_alerts', alertId);
         await setDoc(docRef, newAlert);
       } catch (fErr) {
-        console.warn('[WeatherAlerts] Firestore save failed:', fErr);
+        console.warn('[WeatherAlerts] Firestore SDK save fallback to REST:', fErr);
       }
     }
+
+    // 2b. Direct Firestore REST API PATCH (Guaranteed delivery for background Android WeatherAlertMonitor)
+    try {
+      const restUrl = `https://firestore.googleapis.com/v1/projects/calm-light-fg02f/databases/ai-studio-camperlifeapp-fbcd1f6d-679b-4649-8f91-6a9b5a40d0b9/documents/community_weather_alerts/${alertId}?key=AIzaSyBrLUDywyD1lgs6WyS1fd6dvegBjExJxTM`;
+      const fields: Record<string, any> = {
+        id: { stringValue: newAlert.id },
+        type: { stringValue: newAlert.type },
+        severity: { stringValue: newAlert.severity },
+        title: { stringValue: newAlert.title },
+        description: { stringValue: newAlert.description },
+        lat: { doubleValue: Number(newAlert.lat) },
+        lng: { doubleValue: Number(newAlert.lng) },
+        locationName: { stringValue: newAlert.locationName || 'Posizione GPS' },
+        reportedBy: { stringValue: newAlert.reportedBy },
+        createdAt: { stringValue: newAlert.createdAt },
+        expiresAt: { stringValue: newAlert.expiresAt },
+        source: { stringValue: 'community' },
+        verifiedCount: { integerValue: '1' }
+      };
+      if (newAlert.userEmail) fields.userEmail = { stringValue: newAlert.userEmail };
+      if (newAlert.hailSize) fields.hailSize = { stringValue: newAlert.hailSize };
+      if (typeof newAlert.windSpeedKmh === 'number') fields.windSpeedKmh = { integerValue: String(Math.round(newAlert.windSpeedKmh)) };
+
+      fetch(restUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      }).catch(() => {});
+    } catch (e) {}
 
     // 3. Save to server backend
     try {

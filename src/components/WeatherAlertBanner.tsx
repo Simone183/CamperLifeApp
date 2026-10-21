@@ -41,7 +41,29 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
   });
   
   const [confirmedIds, setConfirmedIds] = useState<string[]>([]);
-  const pushedAlertIdsRef = useRef<Set<string>>(new Set());
+  const pushedAlertIdsRef = useRef<Set<string>>((() => {
+    try {
+      const saved = localStorage.getItem('camper_notified_weather_alert_ids');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return new Set<string>(Array.isArray(parsed) ? parsed : []);
+    } catch (e) {
+      return new Set<string>();
+    }
+  })());
+
+  // Sync live GPS coordinates to native Android background WeatherAlertMonitor (so it works when app is closed in pocket)
+  useEffect(() => {
+    if (!userLocation || typeof userLocation.lat !== 'number' || typeof userLocation.lng !== 'number') return;
+    if (userLocation.lat === 0 && userLocation.lng === 0) return;
+    try {
+      localStorage.setItem('camper_last_lat', String(userLocation.lat));
+      localStorage.setItem('camper_last_lng', String(userLocation.lng));
+      const nativeBridge = typeof window !== 'undefined' ? (window as any).AndroidNativeTTS : null;
+      if (nativeBridge && typeof nativeBridge.updateCamperLocation === 'function') {
+        nativeBridge.updateCamperLocation(userLocation.lat, userLocation.lng);
+      }
+    } catch (e) {}
+  }, [userLocation?.lat, userLocation?.lng]);
 
   // Subscribe to community alerts
   useEffect(() => {
@@ -92,6 +114,10 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
     try {
       sessionStorage.setItem('camper_dismissed_weather_alerts', JSON.stringify(updated));
       localStorage.setItem('camper_dismissed_weather_alerts', JSON.stringify(updated));
+      const nativeBridge = typeof window !== 'undefined' ? (window as any).AndroidNativeTTS : null;
+      if (nativeBridge && typeof nativeBridge.markWeatherAlertDismissed === 'function') {
+        updated.forEach(id => nativeBridge.markWeatherAlertDismissed(id));
+      }
     } catch (e) {}
   };
 
@@ -117,8 +143,37 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
     const meteoData = !isCommunity ? (activeAlert.data as MeteoAlarmWarning) : null;
     const alertId = isCommunity ? commData?.id : meteoData?.id;
 
-    if (alertId && !pushedAlertIdsRef.current.has(alertId) && !dismissedIds.includes(alertId)) {
+    if (!alertId || dismissedIds.includes(alertId)) return;
+
+    const nativeBridge = typeof window !== 'undefined' ? (window as any).AndroidNativeTTS : null;
+    const alreadyNotifiedNatively = Boolean(
+      nativeBridge &&
+      typeof nativeBridge.isWeatherAlertNotified === 'function' &&
+      nativeBridge.isWeatherAlertNotified(alertId)
+    );
+
+    if (alreadyNotifiedNatively) {
       pushedAlertIdsRef.current.add(alertId);
+      try {
+        localStorage.setItem('camper_notified_weather_alert_ids', JSON.stringify(Array.from(pushedAlertIdsRef.current)));
+      } catch (e) {}
+      return;
+    }
+
+    if (!pushedAlertIdsRef.current.has(alertId)) {
+      pushedAlertIdsRef.current.add(alertId);
+      try {
+        localStorage.setItem('camper_notified_weather_alert_ids', JSON.stringify(Array.from(pushedAlertIdsRef.current)));
+      } catch (e) {}
+
+      // If this alert was just created on this Android device (< 10s ago), scheduleClosedAppWeatherPush is already queued
+      const isJustCreatedLocally = isCommunity && commData?.createdAt && (Date.now() - new Date(commData.createdAt).getTime() < 10000);
+      if (isJustCreatedLocally && nativeBridge && typeof nativeBridge.scheduleClosedAppWeatherPush === 'function') {
+        try {
+          playAlertSound();
+        } catch (e) {}
+        return;
+      }
 
       const title = isCommunity 
         ? (commData?.title || 'Segnalazione Allerta Meteo') 
@@ -127,8 +182,11 @@ export const WeatherAlertBanner: React.FC<WeatherAlertBannerProps> = ({
         ? (commData?.description || 'Allerta segnalata nelle tue vicinanze entro 30 km.') 
         : (meteoData?.description || 'Presta attenzione ai pericoli meteo nella tua zona.');
 
-      // Send Android native & Web push notification
-      sendWeatherAlertPushNotification(title, body, alertId).catch(() => {});
+      if (nativeBridge && typeof nativeBridge.triggerImmediateWeatherNotification === 'function') {
+        nativeBridge.triggerImmediateWeatherNotification(`⚠️ ${title}`, body, alertId);
+      } else {
+        sendWeatherAlertPushNotification(title, body, alertId).catch(() => {});
+      }
 
       // Play alert sound
       try {

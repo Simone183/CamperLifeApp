@@ -51,17 +51,20 @@ export function configureAndroidAuto() {
   if (fs.existsSync(manifestPath)) {
     let manifest = fs.readFileSync(manifestPath, 'utf-8');
 
-    // Permessi necessari per navigazione continua, notifiche push in background (Android 13/14) e audio guida in auto
+    // Permessi necessari per navigazione continua, notifiche push in background ad app chiusa (Android 12/13/14) e audio guida in auto
     const permissionsToAdd = [
       '    <uses-permission android:name="android.permission.INTERNET" />',
       '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
       '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+      '    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />',
       '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
       '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />',
       '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
       '    <uses-permission android:name="android.permission.VIBRATE" />',
       '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
       '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
+      '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />',
+      '    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />',
       '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
       '    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />',
       '    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />',
@@ -80,15 +83,43 @@ export function configureAndroidAuto() {
       manifest = manifest.replace('<application', ttsQueryBlock);
     }
 
-    // Service declaration per CarApp e Firebase Messaging Default Channel per notifiche a schermo spento/app chiusa
+    // Service & Receiver declarations per CarApp + Background Weather Alert Engine ad app chiusa
     const carServiceDeclaration = `
         <!-- FCM Default Notification Channel & Icon for Closed App Push Alerts -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="fcm_default_channel" />
+            android:value="viacamper_weather_emergency_v2" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
+
+        <!-- Native Background Weather Alert Receiver (Funziona ad app chiusa e schermo spento in tasca) -->
+        <receiver
+            android:name="com.ViaCamper.myapp.auto.WeatherAlertReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ViaCamper.myapp.ACTION_WEATHER_ALERT_CHECK" />
+                <action android:name="com.ViaCamper.myapp.ACTION_DELAYED_WEATHER_PUSH" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Native Background Weather JobService (Persistente anche dopo chiusura app o riavvio telefono) -->
+        <service
+            android:name="com.ViaCamper.myapp.auto.WeatherAlertJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:enabled="true"
+            android:exported="true" />
+
+        <!-- Native Sticky Weather Guard Service (Riattiva l'allarme se l'app viene chiusa dalle app recenti) -->
+        <service
+            android:name="com.ViaCamper.myapp.auto.WeatherGuardService"
+            android:enabled="true"
+            android:exported="false" />
 
         <!-- Android Auto ViaCamper Service -->
         <service
@@ -112,18 +143,11 @@ export function configureAndroidAuto() {
             android:resource="@xml/automotive_app_desc" />
     </application>`;
 
-    if (!manifest.includes('ViaCamperCarAppService')) {
+    if (!manifest.includes('WeatherAlertReceiver')) {
       manifest = manifest.replace('</application>', carServiceDeclaration);
-    } else if (!manifest.includes('default_notification_channel_id')) {
-      manifest = manifest.replace('</application>', carServiceDeclaration);
-    } else if (!manifest.includes('android:foregroundServiceType="location"')) {
-      manifest = manifest.replace(
-        'android:name="com.ViaCamper.myapp.auto.ViaCamperCarAppService"',
-        'android:name="com.ViaCamper.myapp.auto.ViaCamperCarAppService"\n            android:foregroundServiceType="location"'
-      );
     }
     fs.writeFileSync(manifestPath, manifest, 'utf-8');
-    console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService, permessi POST_NOTIFICATIONS, canale FCM predefinito e metadati.');
+    console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService, WeatherAlertReceiver, WeatherAlertJobService e permessi background.');
   }
 
   // 4. Modifica build.gradle per includere le dipendenze Car App Library e aggiornare versionCode/versionName
@@ -2030,13 +2054,768 @@ public class AddMovementScreen extends Screen {
 `;
   fs.writeFileSync(path.join(javaDir, 'AddMovementScreen.java'), addMovementJava, 'utf-8');
 
-  // H. MainActivity.java (Bridge nativo Android TextToSpeech + sincronizzazione bidirezionale con Android Auto)
+  // G1. WeatherAlertMonitor.java (Motore nativo Android per controllo allerte meteo e invio notifiche push ad app chiusa / in tasca)
+  const weatherAlertMonitorJava = `package com.ViaCamper.myapp.auto;
+
+import android.app.AlarmManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.location.Location;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.PowerManager;
+import com.ViaCamper.myapp.MainActivity;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
+
+public class WeatherAlertMonitor {
+
+    public static final String CHANNEL_ID = "viacamper_weather_emergency_v2";
+    public static final String ACTION_CHECK = "com.ViaCamper.myapp.ACTION_WEATHER_ALERT_CHECK";
+    public static final String ACTION_DELAYED_PUSH = "com.ViaCamper.myapp.ACTION_DELAYED_WEATHER_PUSH";
+    private static final String PREFS_NAME = "CapacitorStorage";
+    private static final String NOTIFIED_IDS_KEY = "camper_notified_weather_alert_ids";
+    private static final String DISMISSED_IDS_KEY = "camper_dismissed_weather_alerts";
+    private static final String FIRESTORE_RUN_QUERY_URL =
+        "https://firestore.googleapis.com/v1/projects/calm-light-fg02f/databases/ai-studio-camperlifeapp-fbcd1f6d-679b-4649-8f91-6a9b5a40d0b9/documents:runQuery?key=AIzaSyBrLUDywyD1lgs6WyS1fd6dvegBjExJxTM";
+
+    private static final int JOB_ID_PERIODIC = 7701;
+    private static final int JOB_ID_FAST = 7702;
+
+    public static void ensureNotificationChannel(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm == null) return;
+
+                Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                AudioAttributes audioAttrs = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+
+                NotificationChannel emergencyChannel = new NotificationChannel(
+                        CHANNEL_ID,
+                        "Allerte Meteo & Emergenze Camper 🚨",
+                        NotificationManager.IMPORTANCE_HIGH
+                );
+                emergencyChannel.setDescription("Avvisi immediati per grandine, vento forte e temporali anche ad app chiusa");
+                emergencyChannel.enableVibration(true);
+                emergencyChannel.setVibrationPattern(new long[]{0, 600, 250, 600, 250, 800});
+                emergencyChannel.enableLights(true);
+                emergencyChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                emergencyChannel.setBypassDnd(true);
+                if (soundUri != null) {
+                    emergencyChannel.setSound(soundUri, audioAttrs);
+                }
+                nm.createNotificationChannel(emergencyChannel);
+
+                // Crea anche il canale weather_alert_channel per piena compatibilità
+                NotificationChannel legacyChannel = new NotificationChannel(
+                        "weather_alert_channel",
+                        "Allerte Meteo ViaCamper ⚡",
+                        NotificationManager.IMPORTANCE_HIGH
+                );
+                legacyChannel.enableVibration(true);
+                legacyChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                if (soundUri != null) {
+                    legacyChannel.setSound(soundUri, audioAttrs);
+                }
+                nm.createNotificationChannel(legacyChannel);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    public static void saveLastKnownLocation(Context context, double lat, double lng) {
+        if (lat == 0.0 && lng == 0.0) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit()
+                    .putString("camper_last_lat", String.valueOf(lat))
+                    .putString("camper_last_lng", String.valueOf(lng))
+                    .putLong("camper_last_loc_time", System.currentTimeMillis())
+                    .apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static double[] getCamperLocation(Context context) {
+        try {
+            Location live = AutoDataBridge.getBestLiveLocation(context);
+            if (live != null && (live.getLatitude() != 0.0 || live.getLongitude() != 0.0)) {
+                saveLastKnownLocation(context, live.getLatitude(), live.getLongitude());
+                return new double[]{live.getLatitude(), live.getLongitude()};
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String latStr = prefs.getString("camper_last_lat", null);
+            String lngStr = prefs.getString("camper_last_lng", null);
+            if (latStr != null && lngStr != null) {
+                double lat = Double.parseDouble(latStr);
+                double lng = Double.parseDouble(lngStr);
+                if (lat != 0.0 || lng != 0.0) {
+                    return new double[]{lat, lng};
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    public static synchronized boolean isAlertNotified(Context context, String alertId) {
+        if (alertId == null || alertId.isEmpty()) return false;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String raw = prefs.getString(NOTIFIED_IDS_KEY, "[]");
+            JSONArray arr = new JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                if (alertId.equals(arr.optString(i))) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    public static synchronized void markAlertNotified(Context context, String alertId) {
+        if (alertId == null || alertId.isEmpty()) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String raw = prefs.getString(NOTIFIED_IDS_KEY, "[]");
+            JSONArray arr;
+            try {
+                arr = new JSONArray(raw);
+            } catch (Exception e) {
+                arr = new JSONArray();
+            }
+            for (int i = 0; i < arr.length(); i++) {
+                if (alertId.equals(arr.optString(i))) return;
+            }
+            JSONArray next = new JSONArray();
+            int start = Math.max(0, arr.length() - 80);
+            for (int i = start; i < arr.length(); i++) {
+                next.put(arr.optString(i));
+            }
+            next.put(alertId);
+            prefs.edit().putString(NOTIFIED_IDS_KEY, next.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static synchronized boolean isAlertDismissed(Context context, String alertId) {
+        if (alertId == null || alertId.isEmpty()) return false;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String raw = prefs.getString(DISMISSED_IDS_KEY, "[]");
+            JSONArray arr = new JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                if (alertId.equals(arr.optString(i))) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    public static synchronized void markAlertDismissed(Context context, String alertId) {
+        if (alertId == null || alertId.isEmpty()) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String raw = prefs.getString(DISMISSED_IDS_KEY, "[]");
+            JSONArray arr;
+            try {
+                arr = new JSONArray(raw);
+            } catch (Exception e) {
+                arr = new JSONArray();
+            }
+            for (int i = 0; i < arr.length(); i++) {
+                if (alertId.equals(arr.optString(i))) return;
+            }
+            arr.put(alertId);
+            prefs.edit().putString(DISMISSED_IDS_KEY, arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static void showWeatherPushNotification(Context context, String title, String body, String alertId) {
+        try {
+            ensureNotificationChannel(context);
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+
+            // Risveglia brevemente il dispositivo per garantire suono e vibrazione anche in tasca
+            try {
+                PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    PowerManager.WakeLock wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ViaCamper:WeatherNotifWake");
+                    wl.acquire(5000L);
+                }
+            } catch (Exception ignored) {}
+
+            Intent openIntent = new Intent(context, MainActivity.class);
+            openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            openIntent.putExtra("OPEN_WEATHER_RADAR", true);
+            openIntent.putExtra("WEATHER_ALERT_ID", alertId != null ? alertId : "");
+
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            int notifId = (alertId != null && !alertId.isEmpty())
+                    ? (Math.abs(alertId.hashCode()) % 90000 + 10000)
+                    : (int) (System.currentTimeMillis() % 90000 + 10000);
+
+            PendingIntent pendingIntent = PendingIntent.getActivity(context, notifId, openIntent, flags);
+
+            int iconRes = context.getApplicationInfo().icon;
+            if (iconRes == 0) {
+                iconRes = android.R.drawable.ic_dialog_alert;
+            }
+
+            Notification.Builder builder;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                builder = new Notification.Builder(context, CHANNEL_ID);
+            } else {
+                builder = new Notification.Builder(context);
+                builder.setPriority(Notification.PRIORITY_MAX);
+                builder.setDefaults(Notification.DEFAULT_ALL);
+            }
+
+            builder.setSmallIcon(iconRes)
+                    .setContentTitle(title != null ? title : "⚠️ Allerta Meteo Camper")
+                    .setContentText(body != null ? body : "Attenzione: condizioni meteo avverse rilevate nella tua area.")
+                    .setStyle(new Notification.BigTextStyle()
+                            .bigText(body != null ? body : "")
+                            .setBigContentTitle(title != null ? title : "⚠️ Allerta Meteo Camper"))
+                    .setAutoCancel(true)
+                    .setContentIntent(pendingIntent);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                builder.setVisibility(Notification.VISIBILITY_PUBLIC);
+                builder.setCategory(Notification.CATEGORY_ALARM);
+            }
+
+            nm.notify(notifId, builder.build());
+        } catch (Exception ignored) {}
+    }
+
+    public static void scheduleBackgroundChecks(Context context, long delayMs) {
+        long safeDelay = Math.max(5000L, delayMs);
+
+        // 1. AlarmManager (setExactAndAllowWhileIdle per funzionare anche in Doze Mode a schermo spento in tasca)
+        try {
+            AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                Intent intent = new Intent(context, WeatherAlertReceiver.class);
+                intent.setAction(ACTION_CHECK);
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    flags |= PendingIntent.FLAG_IMMUTABLE;
+                }
+                PendingIntent pi = PendingIntent.getBroadcast(context, 7700, intent, flags);
+                long triggerAt = System.currentTimeMillis() + safeDelay;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    } catch (SecurityException se) {
+                        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    }
+                } else {
+                    am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 2. JobScheduler (JobService nativo persistente con overrideDeadline garantita dall'OS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                JobScheduler js = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+                if (js != null) {
+                    ComponentName serviceComponent = new ComponentName(context, WeatherAlertJobService.class);
+
+                    JobInfo.Builder fastBuilder = new JobInfo.Builder(JOB_ID_FAST, serviceComponent)
+                            .setMinimumLatency(safeDelay)
+                            .setOverrideDeadline(safeDelay + 25000L)
+                            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                            .setPersisted(true);
+                    js.schedule(fastBuilder.build());
+
+                    boolean hasPeriodic = false;
+                    for (JobInfo ji : js.getAllPendingJobs()) {
+                        if (ji.getId() == JOB_ID_PERIODIC) {
+                            hasPeriodic = true;
+                            break;
+                        }
+                    }
+                    if (!hasPeriodic) {
+                        JobInfo.Builder periodicBuilder = new JobInfo.Builder(JOB_ID_PERIODIC, serviceComponent)
+                                .setPeriodic(15 * 60 * 1000L)
+                                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                                .setPersisted(true);
+                        js.schedule(periodicBuilder.build());
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    public static void scheduleDelayedPushNotification(Context context, String title, String body, String alertId, long delayMs) {
+        try {
+            AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+
+            Intent intent = new Intent(context, WeatherAlertReceiver.class);
+            intent.setAction(ACTION_DELAYED_PUSH);
+            intent.putExtra("EXTRA_TITLE", title);
+            intent.putExtra("EXTRA_BODY", body);
+            intent.putExtra("EXTRA_ALERT_ID", alertId);
+
+            int reqCode = (alertId != null) ? (Math.abs(alertId.hashCode()) % 50000 + 20000) : 20001;
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pi = PendingIntent.getBroadcast(context, reqCode, intent, flags);
+            long triggerAt = System.currentTimeMillis() + Math.max(1000L, delayMs);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                } catch (SecurityException se) {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                }
+            } else {
+                am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static double extractFirestoreDouble(JSONObject fieldObj) {
+        if (fieldObj == null) return 0.0;
+        if (fieldObj.has("doubleValue")) return fieldObj.optDouble("doubleValue", 0.0);
+        if (fieldObj.has("integerValue")) {
+            try {
+                return Double.parseDouble(fieldObj.optString("integerValue", "0"));
+            } catch (Exception ignored) {}
+        }
+        if (fieldObj.has("stringValue")) {
+            try {
+                return Double.parseDouble(fieldObj.optString("stringValue", "0"));
+            } catch (Exception ignored) {}
+        }
+        return 0.0;
+    }
+
+    private static boolean isIsoTimestampFuture(String isoStr) {
+        if (isoStr == null || isoStr.isEmpty()) return true;
+        try {
+            String clean = isoStr.replace("Z", "");
+            if (clean.contains(".")) {
+                clean = clean.substring(0, clean.indexOf('.'));
+            }
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
+            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date parsed = sdf.parse(clean);
+            if (parsed != null) {
+                return parsed.getTime() > System.currentTimeMillis();
+            }
+        } catch (Exception ignored) {}
+        return true;
+    }
+
+    public static void checkWeatherAlertsSynchronously(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            boolean enabled = prefs.getBoolean("camper_weather_alerts_enabled", true);
+            if (!enabled) return;
+
+            double[] coords = getCamperLocation(context);
+            if (coords == null) return;
+            final double userLat = coords[0];
+            final double userLng = coords[1];
+
+            // 1. Controlla le Segnalazioni Allerte Meteo dei Camperisti (Firestore REST API diretta)
+            checkFirestoreCommunityAlerts(context, userLat, userLng);
+
+            // 2. Controlla il Bollettino Ufficiale Open-Meteo / MeteoAlarm (ogni 5 minuti in background)
+            long now = System.currentTimeMillis();
+            long lastMeteoCheck = prefs.getLong("camper_last_openmeteo_bg_check", 0L);
+            if (now - lastMeteoCheck >= 5 * 60 * 1000L) {
+                prefs.edit().putLong("camper_last_openmeteo_bg_check", now).apply();
+                checkOpenMeteoSevereWeather(context, userLat, userLng);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static void checkFirestoreCommunityAlerts(Context context, double userLat, double userLng) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(FIRESTORE_RUN_QUERY_URL);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conn.setConnectTimeout(7000);
+            conn.setReadTimeout(7000);
+            conn.setDoOutput(true);
+
+            String payload = "{\"structuredQuery\":{\"from\":[{\"collectionId\":\"community_weather_alerts\"}],\"limit\":35}}";
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload.getBytes(StandardCharsets.UTF_8));
+            }
+
+            if (conn.getResponseCode() == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONArray results = new JSONArray(sb.toString());
+                for (int i = 0; i < results.length(); i++) {
+                    JSONObject row = results.optJSONObject(i);
+                    if (row == null || !row.has("document")) continue;
+                    JSONObject doc = row.optJSONObject("document");
+                    if (doc == null) continue;
+                    JSONObject fields = doc.optJSONObject("fields");
+                    if (fields == null) continue;
+
+                    String docName = doc.optString("name", "");
+                    String fallbackId = docName.contains("/") ? docName.substring(docName.lastIndexOf('/') + 1) : "";
+                    JSONObject idObj = fields.optJSONObject("id");
+                    String alertId = (idObj != null) ? idObj.optString("stringValue", fallbackId) : fallbackId;
+                    if (alertId == null || alertId.isEmpty()) continue;
+
+                    JSONObject expObj = fields.optJSONObject("expiresAt");
+                    String expiresAt = (expObj != null) ? expObj.optString("stringValue", "") : "";
+                    if (!isIsoTimestampFuture(expiresAt)) continue;
+
+                    double alertLat = extractFirestoreDouble(fields.optJSONObject("lat"));
+                    double alertLng = extractFirestoreDouble(fields.optJSONObject("lng"));
+                    if (alertLat == 0.0 && alertLng == 0.0) continue;
+
+                    float[] distRes = new float[1];
+                    Location.distanceBetween(userLat, userLng, alertLat, alertLng, distRes);
+                    float distKm = distRes[0] / 1000.0f;
+
+                    // Avvisa se l'allerta è entro 30 km dalla posizione del camper
+                    if (distKm <= 30.0f && !isAlertNotified(context, alertId) && !isAlertDismissed(context, alertId)) {
+                        markAlertNotified(context, alertId);
+
+                        JSONObject typeObj = fields.optJSONObject("type");
+                        String type = (typeObj != null) ? typeObj.optString("stringValue", "storm") : "storm";
+                        JSONObject titleObj = fields.optJSONObject("title");
+                        String rawTitle = (titleObj != null) ? titleObj.optString("stringValue", "Allerta Meteo") : "Allerta Meteo";
+                        JSONObject descObj = fields.optJSONObject("description");
+                        String rawDesc = (descObj != null) ? descObj.optString("stringValue", "Segnalazione di pericolo meteo vicino a te.") : "Segnalazione di pericolo meteo vicino a te.";
+
+                        String emoji = "⚡";
+                        String advice = "Presta attenzione a sottopassi, torrenti e alberi lungo il percorso.";
+                        if ("hail".equals(type)) {
+                            emoji = "🧊";
+                            advice = "Chiudi subito tutti gli oblò sul tetto e proteggi il camper.";
+                        } else if ("wind".equals(type)) {
+                            emoji = "💨";
+                            advice = "Riavvolgi subito il tendalino e chiudi le finestre a compasso.";
+                        } else if ("flood".equals(type)) {
+                            emoji = "🌊";
+                            advice = "Allontanati da corsi d'acqua, sottopassi e zone a rischio allagamento.";
+                        } else if ("snow".equals(type)) {
+                            emoji = "❄️";
+                            advice = "Possibile ghiaccio o neve sulla carreggiata. Verifica catene o pneumatici invernali.";
+                        }
+
+                        String notifTitle = String.format(Locale.ITALIAN, "%s %s (a %.1f km)", emoji, rawTitle, distKm);
+                        String notifBody = rawDesc + "\n🛡️ Consiglio Camper: " + advice;
+                        showWeatherPushNotification(context, notifTitle, notifBody, alertId);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static void checkOpenMeteoSevereWeather(Context context, double userLat, double userLng) {
+        HttpURLConnection conn = null;
+        try {
+            String apiUrl = String.format(
+                    Locale.US,
+                    "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=weather_code,wind_speed_10m,wind_gusts_10m,precipitation&hourly=weather_code,wind_gusts_10m,precipitation&timezone=auto&forecast_days=1",
+                    userLat,
+                    userLng
+            );
+            URL url = new URL(apiUrl);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(7000);
+            conn.setReadTimeout(7000);
+
+            if (conn.getResponseCode() == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONObject root = new JSONObject(sb.toString());
+                JSONObject current = root.optJSONObject("current");
+                if (current == null) return;
+
+                int currentCode = current.optInt("weather_code", 0);
+                double currentGusts = current.optDouble("wind_gusts_10m", current.optDouble("wind_speed_10m", 0.0));
+                double currentPrecip = current.optDouble("precipitation", 0.0);
+
+                double maxGustNext12h = currentGusts;
+                double maxPrecipNext12h = currentPrecip;
+                boolean hasHail = (currentCode == 96 || currentCode == 99);
+                boolean hasStorm = (currentCode == 95 || currentCode == 96 || currentCode == 99);
+
+                JSONObject hourly = root.optJSONObject("hourly");
+                if (hourly != null) {
+                    JSONArray codes = hourly.optJSONArray("weather_code");
+                    JSONArray gusts = hourly.optJSONArray("wind_gusts_10m");
+                    JSONArray precips = hourly.optJSONArray("precipitation");
+                    int nowHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+                    int totalHours = (codes != null) ? codes.length() : 0;
+                    int endHour = Math.min(nowHour + 12, totalHours);
+                    for (int h = nowHour; h < endHour; h++) {
+                        int c = (codes != null) ? codes.optInt(h, 0) : 0;
+                        double g = (gusts != null) ? gusts.optDouble(h, 0.0) : 0.0;
+                        double p = (precips != null) ? precips.optDouble(h, 0.0) : 0.0;
+                        if (g > maxGustNext12h) maxGustNext12h = g;
+                        if (p > maxPrecipNext12h) maxPrecipNext12h = p;
+                        if (c == 96 || c == 99) hasHail = true;
+                        if (c == 95 || c == 96 || c == 99) hasStorm = true;
+                    }
+                }
+
+                String dateStr = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+
+                if (hasHail) {
+                    String hailId = "meteoalarm-hail-" + dateStr;
+                    if (!isAlertNotified(context, hailId) && !isAlertDismissed(context, hailId)) {
+                        markAlertNotified(context, hailId);
+                        showWeatherPushNotification(
+                                context,
+                                "🧊 ALLERTA GRANDINE E TEMPORALE!",
+                                "Celle temporalesche con elevato rischio grandine nella tua zona. Chiudi subito tutti gli oblò sul tetto e metti in sicurezza il camper!",
+                                hailId
+                        );
+                    }
+                }
+
+                if (maxGustNext12h >= 55.0) {
+                    String windId = "meteoalarm-wind-" + dateStr;
+                    if (!isAlertNotified(context, windId) && !isAlertDismissed(context, windId)) {
+                        markAlertNotified(context, windId);
+                        showWeatherPushNotification(
+                                context,
+                                String.format(Locale.ITALIAN, "💨 ALLERTA VENTO FORTE (%.0f km/h)!", maxGustNext12h),
+                                String.format(Locale.ITALIAN, "Previste raffiche di vento fino a %.0f km/h. Riavvolgi subito il tendalino e chiudi le finestre a compasso del camper!", maxGustNext12h),
+                                windId
+                        );
+                    }
+                }
+
+                if (hasStorm && !hasHail) {
+                    String stormId = "meteoalarm-storm-" + dateStr;
+                    if (!isAlertNotified(context, stormId) && !isAlertDismissed(context, stormId)) {
+                        markAlertNotified(context, stormId);
+                        showWeatherPushNotification(
+                                context,
+                                "⚡ ALLERTA FORTI TEMPORALI!",
+                                "Temporali e rovesci intensi previsti nella tua zona. Evita la sosta vicino ad alberi, torrenti o sottopassi a rischio allagamento.",
+                                stormId
+                        );
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'WeatherAlertMonitor.java'), weatherAlertMonitorJava, 'utf-8');
+
+  // G2. WeatherAlertReceiver.java (BroadcastReceiver che risveglia il controllo meteo anche ad app chiusa / Doze Mode)
+  const weatherAlertReceiverJava = `package com.ViaCamper.myapp.auto;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.PowerManager;
+
+public class WeatherAlertReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(final Context context, final Intent intent) {
+        if (context == null) return;
+        final String action = (intent != null) ? intent.getAction() : "";
+
+        // Riprogramma subito il controllo successivo per continuità h24 ad app chiusa
+        WeatherAlertMonitor.scheduleBackgroundChecks(context.getApplicationContext(), 35000L);
+
+        if (WeatherAlertMonitor.ACTION_DELAYED_PUSH.equals(action) && intent != null) {
+            final String title = intent.getStringExtra("EXTRA_TITLE");
+            final String body = intent.getStringExtra("EXTRA_BODY");
+            final String alertId = intent.getStringExtra("EXTRA_ALERT_ID");
+            if (alertId != null && !alertId.isEmpty()) {
+                WeatherAlertMonitor.markAlertNotified(context.getApplicationContext(), alertId);
+            }
+            WeatherAlertMonitor.showWeatherPushNotification(context.getApplicationContext(), title, body, alertId);
+            return;
+        }
+
+        final PendingResult pendingResult = goAsync();
+        final Context appCtx = context.getApplicationContext();
+
+        new Thread(() -> {
+            PowerManager.WakeLock wakeLock = null;
+            try {
+                PowerManager pm = (PowerManager) appCtx.getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ViaCamper:WeatherReceiverWakeLock");
+                    wakeLock.acquire(15000L);
+                }
+                WeatherAlertMonitor.checkWeatherAlertsSynchronously(appCtx);
+            } catch (Exception ignored) {
+            } finally {
+                if (wakeLock != null && wakeLock.isHeld()) {
+                    try { wakeLock.release(); } catch (Exception ignored) {}
+                }
+                try { pendingResult.finish(); } catch (Exception ignored) {}
+            }
+        }).start();
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'WeatherAlertReceiver.java'), weatherAlertReceiverJava, 'utf-8');
+
+  // G3. WeatherAlertJobService.java (JobService di sistema persistente che opera anche con app rimossa dai recenti)
+  const weatherAlertJobServiceJava = `package com.ViaCamper.myapp.auto;
+
+import android.app.job.JobParameters;
+import android.app.job.JobService;
+import android.content.Context;
+
+public class WeatherAlertJobService extends JobService {
+
+    @Override
+    public boolean onStartJob(final JobParameters params) {
+        final Context appCtx = getApplicationContext();
+        WeatherAlertMonitor.scheduleBackgroundChecks(appCtx, 35000L);
+
+        new Thread(() -> {
+            try {
+                WeatherAlertMonitor.checkWeatherAlertsSynchronously(appCtx);
+            } catch (Exception ignored) {
+            } finally {
+                try {
+                    jobFinished(params, false);
+                } catch (Exception ignored) {}
+            }
+        }).start();
+
+        return true;
+    }
+
+    @Override
+    public boolean onStopJob(JobParameters params) {
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 20000L);
+        return true;
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'WeatherAlertJobService.java'), weatherAlertJobServiceJava, 'utf-8');
+
+  // G4. WeatherGuardService.java (Service sticky con intercettazione chiusura app onTaskRemoved)
+  const weatherGuardServiceJava = `package com.ViaCamper.myapp.auto;
+
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+
+public class WeatherGuardService extends Service {
+
+    private final Handler guardHandler = new Handler(Looper.getMainLooper());
+    private final Runnable checkLoopRunnable = new Runnable() {
+        @Override
+        public void run() {
+            final Context appCtx = getApplicationContext();
+            new Thread(() -> {
+                try {
+                    WeatherAlertMonitor.checkWeatherAlertsSynchronously(appCtx);
+                } catch (Exception ignored) {}
+            }).start();
+            WeatherAlertMonitor.scheduleBackgroundChecks(appCtx, 35000L);
+            guardHandler.postDelayed(this, 30000L);
+        }
+    };
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
+        guardHandler.postDelayed(checkLoopRunnable, 10000L);
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 30000L);
+        return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // Quando l'utente chiude l'app scorrendola via dalle app recenti, riattiva subito l'allarme in background!
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 5000L);
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
+    public void onDestroy() {
+        guardHandler.removeCallbacksAndMessages(null);
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 10000L);
+        super.onDestroy();
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'WeatherGuardService.java'), weatherGuardServiceJava, 'utf-8');
+
+  // H. MainActivity.java (Bridge nativo Android TextToSpeech + sincronizzazione Android Auto + avvio WeatherAlertMonitor ad app chiusa)
   const mainActivityDir = path.join(javaDir, '..');
   const mainActivityJava = `package com.ViaCamper.myapp;
 
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -2047,6 +2826,8 @@ import android.speech.tts.UtteranceProgressListener;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import com.ViaCamper.myapp.auto.WeatherAlertMonitor;
+import com.ViaCamper.myapp.auto.WeatherGuardService;
 import com.getcapacitor.BridgeActivity;
 import org.json.JSONObject;
 import java.util.Locale;
@@ -2062,6 +2843,22 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        // 1. Configura subito il canale notifiche ad alta priorità e richiedi il permesso POST_NOTIFICATIONS su Android 13+
+        WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1001);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 2. Avvia il servizio e gli scheduler nativi per il monitoraggio meteo a schermo spento / app chiusa
+        try {
+            startService(new Intent(this, WeatherGuardService.class));
+        } catch (Exception ignored) {}
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 20000L);
 
         nativeTts = new TextToSpeech(getApplicationContext(), status -> {
             if (status == TextToSpeech.SUCCESS && nativeTts != null) {
@@ -2109,6 +2906,18 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleIncomingAutoIntent(intent);
+    }
+
+    @Override
+    public void onPause() {
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 15000L);
+        super.onPause();
+    }
+
+    @Override
+    public void onStop() {
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 15000L);
+        super.onStop();
     }
 
     private void handleIncomingAutoIntent(Intent intent) {
@@ -2230,10 +3039,62 @@ public class MainActivity extends BridgeActivity {
                 prefs.edit().putString(key, jsonValue != null ? jsonValue : "").apply();
             } catch (Exception ignored) {}
         }
+
+        @JavascriptInterface
+        public void updateCamperLocation(double lat, double lng) {
+            WeatherAlertMonitor.saveLastKnownLocation(getApplicationContext(), lat, lng);
+            WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 25000L);
+        }
+
+        @JavascriptInterface
+        public boolean isWeatherAlertNotified(String alertId) {
+            return WeatherAlertMonitor.isAlertNotified(getApplicationContext(), alertId);
+        }
+
+        @JavascriptInterface
+        public void markWeatherAlertNotified(String alertId) {
+            WeatherAlertMonitor.markAlertNotified(getApplicationContext(), alertId);
+        }
+
+        @JavascriptInterface
+        public void markWeatherAlertDismissed(String alertId) {
+            WeatherAlertMonitor.markAlertDismissed(getApplicationContext(), alertId);
+        }
+
+        @JavascriptInterface
+        public void triggerImmediateWeatherNotification(String title, String body, String alertId) {
+            if (alertId != null && !alertId.isEmpty()) {
+                WeatherAlertMonitor.markAlertNotified(getApplicationContext(), alertId);
+            }
+            WeatherAlertMonitor.showWeatherPushNotification(getApplicationContext(), title, body, alertId);
+        }
+
+        @JavascriptInterface
+        public void scheduleClosedAppWeatherPush(String title, String body, String alertId, int delaySeconds) {
+            WeatherAlertMonitor.scheduleDelayedPushNotification(
+                    getApplicationContext(),
+                    title,
+                    body,
+                    alertId,
+                    Math.max(1, delaySeconds) * 1000L
+            );
+        }
+
+        @JavascriptInterface
+        public void setWeatherAlertsEnabled(boolean enabled) {
+            try {
+                SharedPreferences prefs = getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+                prefs.edit().putBoolean("camper_weather_alerts_enabled", enabled).apply();
+                if (enabled) {
+                    WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 15000L);
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override
     public void onDestroy() {
+        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 10000L);
         try {
             if (nativeTts != null) {
                 nativeTts.stop();
@@ -2246,7 +3107,7 @@ public class MainActivity extends BridgeActivity {
 `;
   fs.writeFileSync(path.join(mainActivityDir, 'MainActivity.java'), mainActivityJava, 'utf-8');
 
-  console.log('[Android Auto] File sorgenti Java per Android Auto e MainActivity TTS generati con successo in:', javaDir);
+  console.log('[Android Auto] File sorgenti Java per Android Auto, WeatherAlertMonitor in background e MainActivity TTS generati con successo in:', javaDir);
 }
 
 // Esegui se chiamato direttamente
