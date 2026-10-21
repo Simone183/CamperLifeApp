@@ -2540,7 +2540,7 @@ public class WeatherAlertMonitor {
                         }
 
                         String notifTitle = String.format(Locale.ITALIAN, "%s %s (a %.1f km)", emoji, rawTitle, distKm);
-                        String notifBody = rawDesc + "\n🛡️ Consiglio Camper: " + advice;
+                        String notifBody = rawDesc + "\\n\\uD83D\\uDEE1 Consiglio Camper: " + advice;
                         showWeatherPushNotification(context, notifTitle, notifBody, alertId);
                     }
                 }
