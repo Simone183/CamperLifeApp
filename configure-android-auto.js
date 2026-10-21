@@ -2473,7 +2473,7 @@ public class WeatherAlertMonitor {
             conn.setReadTimeout(7000);
             conn.setDoOutput(true);
 
-            String payload = "{\"structuredQuery\":{\"from\":[{\"collectionId\":\"community_weather_alerts\"}],\"limit\":35}}";
+            String payload = "{~structuredQuery~:{~from~:[{~collectionId~:~community_weather_alerts~}],~limit~:35}}".replace('~', '"');
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload.getBytes(StandardCharsets.UTF_8));
             }
