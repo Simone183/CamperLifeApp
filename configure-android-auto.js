@@ -2453,8 +2453,202 @@ public class WeatherAlertMonitor {
         return true;
     }
 
+    public static void showAdminPushNotification(Context context, String title, String body, String notifId) {
+        try {
+            ensureNotificationChannel(context);
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+
+            try {
+                PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    PowerManager.WakeLock wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ViaCamper:AdminNotifWake");
+                    wl.acquire(5000L);
+                }
+            } catch (Exception ignored) {}
+
+            Intent openIntent = new Intent(context, MainActivity.class);
+            openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            openIntent.putExtra("NAVIGATE_TO", "admin_users");
+
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            int idNum = (notifId != null && !notifId.isEmpty())
+                    ? (Math.abs(notifId.hashCode()) % 90000 + 10000)
+                    : (int) (System.currentTimeMillis() % 90000 + 10000);
+
+            PendingIntent pendingIntent = PendingIntent.getActivity(context, idNum, openIntent, flags);
+
+            int iconRes = context.getApplicationInfo().icon;
+            if (iconRes == 0) {
+                iconRes = android.R.drawable.ic_dialog_info;
+            }
+
+            Notification.Builder builder;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                builder = new Notification.Builder(context, "fcm_default_channel");
+            } else {
+                builder = new Notification.Builder(context);
+                builder.setPriority(Notification.PRIORITY_MAX);
+                builder.setDefaults(Notification.DEFAULT_ALL);
+            }
+
+            builder.setSmallIcon(iconRes)
+                    .setContentTitle(title != null ? title : "Richiesta Iscrizione Utente")
+                    .setContentText(body != null ? body : "Nuovo utente in attesa di approvazione.")
+                    .setStyle(new Notification.BigTextStyle()
+                            .bigText(body != null ? body : "")
+                            .setBigContentTitle(title != null ? title : "Richiesta Iscrizione Utente"))
+                    .setAutoCancel(true)
+                    .setContentIntent(pendingIntent);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                builder.setVisibility(Notification.VISIBILITY_PUBLIC);
+                builder.setCategory(Notification.CATEGORY_STATUS);
+            }
+
+            nm.notify(idNum, builder.build());
+        } catch (Exception ignored) {}
+    }
+
+    private static void checkFirestoreAdminNotifications(Context context) {
+        HttpURLConnection conn = null;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String userEmail = prefs.getString("camper_user_email", "");
+            if (userEmail == null || userEmail.isEmpty()) {
+                userEmail = prefs.getString("user_email", "");
+            }
+            if (userEmail == null) userEmail = "";
+            userEmail = userEmail.toLowerCase().trim();
+
+            boolean isAdmin = userEmail.isEmpty() ||
+                              userEmail.contains("sambucci") ||
+                              userEmail.contains("viacamper") ||
+                              prefs.getBoolean("camper_is_moderator", false) ||
+                              prefs.getBoolean("camper_is_admin", false);
+
+            if (!isAdmin) return;
+
+            URL url = new URL(FIRESTORE_RUN_QUERY_URL);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conn.setConnectTimeout(7000);
+            conn.setReadTimeout(7000);
+            conn.setDoOutput(true);
+
+            String payload = "{~structuredQuery~:{~from~:[{~collectionId~:~adminNotifications~}],~limit~:15}}".replace('~', '"');
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload.getBytes(StandardCharsets.UTF_8));
+            }
+
+            if (conn.getResponseCode() == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONArray results = new JSONArray(sb.toString());
+                for (int i = 0; i < results.length(); i++) {
+                    JSONObject row = results.optJSONObject(i);
+                    if (row == null || !row.has("document")) continue;
+                    JSONObject doc = row.optJSONObject("document");
+                    if (doc == null) continue;
+                    JSONObject fields = doc.optJSONObject("fields");
+                    if (fields == null) continue;
+
+                    String docName = doc.optString("name", "");
+                    String fallbackId = docName.contains("/") ? docName.substring(docName.lastIndexOf('/') + 1) : "";
+                    String notifId = "admin_notif_" + fallbackId;
+                    if (fallbackId.isEmpty() || isAlertNotified(context, notifId)) continue;
+
+                    JSONObject readObj = fields.optJSONObject("read");
+                    boolean isRead = readObj != null && readObj.optBoolean("booleanValue", false);
+                    if (isRead) continue;
+
+                    JSONObject titleObj = fields.optJSONObject("title");
+                    String title = (titleObj != null) ? titleObj.optString("stringValue", "Richiesta Iscrizione Utente") : "Richiesta Iscrizione Utente";
+                    JSONObject bodyObj = fields.optJSONObject("body");
+                    String body = (bodyObj != null) ? bodyObj.optString("stringValue", "Nuovo camperista in attesa di approvazione.") : "Nuovo camperista in attesa di approvazione.";
+
+                    markAlertNotified(context, notifId);
+                    showAdminPushNotification(context, title, body, notifId);
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static void checkFirestoreEmergencySos(Context context) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(FIRESTORE_RUN_QUERY_URL);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conn.setConnectTimeout(7000);
+            conn.setReadTimeout(7000);
+            conn.setDoOutput(true);
+
+            String payload = "{~structuredQuery~:{~from~:[{~collectionId~:~communityMessages~}],~where~:{~fieldFilter~:{~field~:{~fieldPath~:~tag~},~op~:~EQUAL~,~value~:{~stringValue~:~SOS~}}},~limit~:5}}".replace('~', '"');
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload.getBytes(StandardCharsets.UTF_8));
+            }
+
+            if (conn.getResponseCode() == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONArray results = new JSONArray(sb.toString());
+                for (int i = 0; i < results.length(); i++) {
+                    JSONObject row = results.optJSONObject(i);
+                    if (row == null || !row.has("document")) continue;
+                    JSONObject doc = row.optJSONObject("document");
+                    if (doc == null) continue;
+                    JSONObject fields = doc.optJSONObject("fields");
+                    if (fields == null) continue;
+
+                    JSONObject isResolvedObj = fields.optJSONObject("isResolved");
+                    boolean isResolved = isResolvedObj != null && isResolvedObj.optBoolean("booleanValue", false);
+                    if (isResolved) continue;
+
+                    String docName = doc.optString("name", "");
+                    String fallbackId = docName.contains("/") ? docName.substring(docName.lastIndexOf('/') + 1) : "";
+                    String sosId = "sos_" + fallbackId;
+                    if (fallbackId.isEmpty() || isAlertNotified(context, sosId)) continue;
+
+                    JSONObject userObj = fields.optJSONObject("user");
+                    String user = (userObj != null) ? userObj.optString("stringValue", "Camperista") : "Camperista";
+                    JSONObject textObj = fields.optJSONObject("text");
+                    String text = (textObj != null) ? textObj.optString("stringValue", "Richiesta di aiuto o emergenza in corso.") : "Richiesta di aiuto o emergenza in corso.";
+
+                    markAlertNotified(context, sosId);
+                    showWeatherPushNotification(context, "🚨 S.O.S. ViaCamper da " + user, text, sosId);
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
     public static void checkWeatherAlertsSynchronously(Context context) {
         try {
+            // Controlla sempre le Notifiche Amministratore (anche senza GPS e ad app chiusa)
+            checkFirestoreAdminNotifications(context);
+
+            // Controlla emergenze S.O.S. per tutti i camperisti
+            checkFirestoreEmergencySos(context);
+
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             boolean enabled = prefs.getBoolean("camper_weather_alerts_enabled", true);
             if (!enabled) return;

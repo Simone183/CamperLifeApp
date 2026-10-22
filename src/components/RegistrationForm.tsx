@@ -120,7 +120,7 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
           } catch {}
         }
 
-        // Notify moderators in background without blocking UI
+        // Notify moderators and trigger admin email/push in background without blocking UI
         if (!isSuperAdmin) {
           (async () => {
             try {
@@ -144,7 +144,25 @@ export default function RegistrationForm({ onBack, onSuccess, onSwitchToLogin, h
                 });
               }
             } catch (notifErr) {
-              console.warn("Could not dispatch registration notification:", notifErr);
+              console.warn("Could not dispatch registration notification to Firestore:", notifErr);
+            }
+
+            // Also trigger backend email and push notifications
+            try {
+              const notifyUrl = resolveMediaUrl('/api/notify-user-registration');
+              await fetch(notifyUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  email: cleanEmail,
+                  nickname: cleanNickname,
+                  name: cleanName,
+                  surname: cleanSurname,
+                  dob
+                })
+              });
+            } catch (backendErr) {
+              console.warn("Could not call /api/notify-user-registration:", backendErr);
             }
           })().catch(() => {});
         }

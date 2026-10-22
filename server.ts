@@ -403,9 +403,7 @@ async function dispatchMulticastToTokens(
           
           if (
             code === 'messaging/invalid-registration-token' ||
-            code === 'messaging/registration-token-not-registered' ||
-            code === 'messaging/invalid-argument' ||
-            code === 'messaging/mismatched-credential'
+            code === 'messaging/registration-token-not-registered'
           ) {
             tokensToClean.push(failedToken);
           }
@@ -3763,6 +3761,83 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
     }
   });
 
+  // Dedicated endpoint to guarantee email and push notifications for user registration
+  app.post("/api/notify-user-registration", async (req, res) => {
+    try {
+      const { email, nickname, name, surname, dob } = req.body || {};
+      const cleanEmail = String(email || '').toLowerCase().trim();
+      const cleanNickname = String(nickname || '').trim() || cleanEmail;
+
+      if (!cleanEmail) {
+        return res.status(400).json({ error: "Email obbligatoria." });
+      }
+
+      console.log(`[Notification API] Processing registration notification for ${cleanNickname} (${cleanEmail})`);
+
+      // 1. Send email to admin
+      const regSubject = `Richiesta di approvazione nuovo utente su ViaCamperApp [${cleanNickname}]`;
+      const regHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
+          <div style="background: linear-gradient(135deg, #1C3D2B 0%, #2D5A40 100%); padding: 20px; border-radius: 12px; color: white;">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0; margin-bottom: 4px;">ViaCamperApp • Notifica Amministratore</div>
+            <h2 style="margin: 0; color: #ffffff; font-size: 20px;">👥 Richiesta Approvazione Nuovo Utente</h2>
+          </div>
+          <div style="background: #ffffff; padding: 22px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
+            <p style="font-size: 14px; color: #1e293b; margin-top: 0;">Un nuovo camperista si è appena registrato ed è in attesa di essere approvato per accedere all'app:</p>
+            <table style="width: 100%; font-size: 13.5px; color: #334155; border-collapse: collapse; margin-top: 12px;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; width: 140px; color: #64748b;">Nickname:</td>
+                <td style="padding: 8px 0; font-weight: 700; color: #0f172a;">${cleanNickname}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Email:</td>
+                <td style="padding: 8px 0; color: #0f172a;">${cleanEmail}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Nome e Cognome:</td>
+                <td style="padding: 8px 0; color: #0f172a;">${name || ''} ${surname || ''}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Data Iscrizione:</td>
+                <td style="padding: 8px 0; color: #0f172a;">${new Date().toLocaleString('it-IT')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Stato:</td>
+                <td style="padding: 8px 0; font-weight: 700; color: #d97706;">IN ATTESA DI APPROVAZIONE</td>
+              </tr>
+            </table>
+            <div style="margin-top: 20px; text-align: center;">
+              <p style="font-size: 12.5px; color: #64748b; margin-bottom: 8px;">Puoi approvare o moderare questo utente direttamente dall'applicazione nel <strong>Pannello Moderatore &gt; Iscritti</strong>.</p>
+            </div>
+          </div>
+        </div>
+      `;
+      sendAdminNotificationEmail(regSubject, regHtml).catch((err) =>
+        console.warn("[Notify Registration API] sendAdminNotificationEmail notice:", err)
+      );
+
+      // 2. Notify in Firestore
+      notifyModerators("users", "Richiesta Iscrizione Utente", `Nuovo utente in attesa di approvazione: ${cleanNickname} (${cleanEmail})`, { email: cleanEmail, nickname: cleanNickname, type: "user_approval" }).catch(e => console.warn(e));
+
+      // 3. Send Push to Admin
+      const adminPushTargets = ["sambucci.simone@gmail.com", "viacamperapp@gmail.com"];
+      if (process.env.ADMIN_EMAIL && !adminPushTargets.includes(process.env.ADMIN_EMAIL.toLowerCase().trim())) {
+        adminPushTargets.push(process.env.ADMIN_EMAIL.toLowerCase().trim());
+      }
+      sendPushNotification(
+        adminPushTargets,
+        `👥 Nuovo camperista iscritto!`,
+        `L'utente ${cleanNickname} si è registrato ed è in attesa di approvazione.`,
+        { type: "new_registration", userEmail: cleanEmail, nickname: cleanNickname }
+      ).catch(e => console.warn(e));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Notify Registration API] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/login", async (req, res) => {
     try {
       const { email, password } = req.body || {};
@@ -7040,39 +7115,55 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
   }
 
   // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
+  // --- HELPER FOR ADMIN EMAIL NOTIFICATIONS ---
   async function sendAdminNotificationEmail(subject: string, htmlContent: string) {
     const rawFrom = (process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev").trim();
     const isSandbox = rawFrom.toLowerCase().includes("resend.dev");
-    const allowedOwnerEmail = (process.env.RESEND_ALLOWED_RECIPIENT || process.env.ADMIN_EMAIL || "viacamperapp@gmail.com").trim().toLowerCase();
 
-    let adminTargets = Array.from(
-      new Set([
-        "viacamperapp@gmail.com",
-        "sambucci.simone@gmail.com",
-        ...(process.env.ADMIN_EMAIL ? [process.env.ADMIN_EMAIL.toLowerCase().trim()] : [])
-      ])
-    );
+    // viacamperapp@gmail.com is the verified account owner of the Resend API key
+    const primaryAdmin = "viacamperapp@gmail.com";
+    const additionalAdmin = (process.env.ADMIN_EMAIL || "sambucci.simone@gmail.com").toLowerCase().trim();
 
-    if (isSandbox) {
-      adminTargets = adminTargets.filter(t => t === allowedOwnerEmail);
-    }
-    
-    console.log(`[Email Service] Preparing notification for: "${subject}" to ${adminTargets.join(', ')}`);
-    
+    console.log(`[Email Service] Preparing notification for: "${subject}" to ${primaryAdmin}`);
+
     if (!process.env.RESEND_API_KEY) {
       console.warn(`[Email Service] RESEND_API_KEY non definita. Impossibile inviare email per: "${subject}".`);
       return { success: false, reason: "RESEND_API_KEY missing" };
     }
 
     let anySuccess = false;
-    for (const recipient of adminTargets) {
-      const res = await sendResendEmail({
-        to: recipient,
+
+    // 1. Always deliver directly to primary admin viacamperapp@gmail.com
+    try {
+      const primaryRes = await sendResendEmail({
+        to: primaryAdmin,
         subject: subject,
         html: htmlContent
       });
-      if (res.success) anySuccess = true;
+      if (primaryRes.success) {
+        anySuccess = true;
+        console.log(`[Email Service] Admin notification delivered successfully to ${primaryAdmin}`);
+      } else {
+        console.warn(`[Email Service] Primary admin delivery attempt note:`, primaryRes.error);
+      }
+    } catch (e) {
+      console.warn(`[Email Service] Error sending to ${primaryAdmin}:`, e);
     }
+
+    // 2. If not restricted to sandbox or if additionalAdmin is registered on domain, attempt secondary delivery
+    if (!isSandbox && additionalAdmin && additionalAdmin !== primaryAdmin) {
+      try {
+        const secRes = await sendResendEmail({
+          to: additionalAdmin,
+          subject: subject,
+          html: htmlContent
+        });
+        if (secRes.success) anySuccess = true;
+      } catch (secErr) {
+        console.warn(`[Email Service] Secondary admin delivery note:`, secErr);
+      }
+    }
+
     return { success: anySuccess };
   }
 
