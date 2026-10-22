@@ -323,83 +323,41 @@ async function fixExistingPlaces() {
       }
     }
 
-async function sendPushNotification(
-  emails: string | string[],
+async function dispatchMulticastToTokens(
+  uniqueTokens: string[],
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, any>,
+  emailList: string[] = []
 ) {
-  try {
-    const emailList = Array.isArray(emails) ? emails : [emails];
-    if (emailList.length === 0) return;
-    console.log(`[FCM Push] Preparing to send push notification to users:`, emailList);
+  if (!uniqueTokens || uniqueTokens.length === 0) return;
 
-    const tokensRef = firestoreDb.collection("push_tokens");
-    const rawTokens: string[] = [];
-    const tokensToClean: string[] = [];
+  const isEmergencyOrWeather = data?.type === "weather_alert" || data?.type === "sos_message";
+  const channelId = isEmergencyOrWeather ? "viacamper_weather_emergency_v2" : "fcm_default_channel";
 
-    const isValidToken = (t: any) =>
-      typeof t === "string" && t.trim().length >= 20 && !t.includes(" ");
-
-    for (const rawEmail of emailList) {
-      const email = String(rawEmail || '').toLowerCase().trim();
-      if (!email) continue;
-
-      // 1. Check push_tokens collection
-      try {
-        const doc = await tokensRef.doc(email).get();
-        if (doc.exists) {
-          const t = doc.data()?.token || doc.data()?.pushToken;
-          if (isValidToken(t)) {
-            if (!rawTokens.includes(t)) rawTokens.push(t);
-          } else if (t) {
-            tokensToClean.push(t);
-          }
-        }
-      } catch (err) {
-        console.error(`[FCM Push] Error reading push token from push_tokens for ${email}:`, err);
-      }
-
-      // 2. Also check users collection as backup
-      try {
-        const userDoc = await firestoreDb.collection("users").doc(email).get();
-        if (userDoc.exists) {
-          const uData = userDoc.data() || {};
-          if (isValidToken(uData.pushToken)) {
-            if (!rawTokens.includes(uData.pushToken)) {
-              rawTokens.push(uData.pushToken);
-            }
-          } else if (uData.pushToken) {
-            tokensToClean.push(uData.pushToken);
-          }
-
-          if (Array.isArray(uData.pushTokens)) {
-            uData.pushTokens.forEach((t: string) => {
-              if (isValidToken(t)) {
-                if (!rawTokens.includes(t)) rawTokens.push(t);
-              } else if (t) {
-                tokensToClean.push(t);
-              }
-            });
-          }
-        }
-      } catch (uErr) {
-        // silent
+  // Sanitize data values: all FCM data fields MUST strictly be strings
+  const sanitizedData: Record<string, string> = {
+    title: String(title || ''),
+    body: String(body || '')
+  };
+  if (data && typeof data === 'object') {
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined && v !== null) {
+        sanitizedData[k] = typeof v === 'object' ? JSON.stringify(v) : String(v);
       }
     }
+  }
 
-    const uniqueTokens = Array.from(new Set(rawTokens));
+  const tokensRef = firestoreDb.collection("push_tokens");
+  const tokensToClean: string[] = [];
 
-    if (uniqueTokens.length === 0) {
-      console.log(`[FCM Push] No valid active push tokens found for users:`, emailList);
-      if (tokensToClean.length > 0) {
-        await cleanStaleTokens(tokensToClean, emailList, tokensRef);
-      }
-      return;
-    }
+  // Split tokens into chunks of 500 (FCM sendEachForMulticast limit)
+  const chunks: string[][] = [];
+  for (let i = 0; i < uniqueTokens.length; i += 500) {
+    chunks.push(uniqueTokens.slice(i, i + 500));
+  }
 
-    console.log(`[FCM Push] Sending notification to ${uniqueTokens.length} device(s) for ${emailList.join(", ")}...`);
-
+  for (const chunk of chunks) {
     const message = {
       notification: {
         title: title,
@@ -409,11 +367,12 @@ async function sendPushNotification(
         priority: "high" as const,
         notification: {
           sound: "default",
-          channelId: "fcm_default_channel",
+          channelId: channelId,
           notificationPriority: "PRIORITY_MAX" as const,
           visibility: "public" as const,
           defaultSound: true,
           defaultVibrateTimings: true,
+          clickAction: "FLUTTER_NOTIFICATION_CLICK"
         }
       },
       apns: {
@@ -425,25 +384,21 @@ async function sendPushNotification(
           }
         }
       },
-      data: {
-        title: title,
-        body: body,
-        ...(data || {})
-      },
-      tokens: uniqueTokens,
+      data: sanitizedData,
+      tokens: chunk,
     };
 
     try {
       const messaging = getMessaging(adminApp);
       const response = await messaging.sendEachForMulticast(message);
       if (response.successCount > 0) {
-        console.log(`[FCM Push] Multicast delivery success: ${response.successCount} received`);
+        console.log(`[FCM Push] Multicast delivery success: ${response.successCount}/${chunk.length} devices reached (Channel: ${channelId})`);
       }
 
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           const error = resp.error;
-          const failedToken = uniqueTokens[idx];
+          const failedToken = chunk[idx];
           const code = error?.code || "";
           
           if (
@@ -457,12 +412,79 @@ async function sendPushNotification(
         }
       });
     } catch (messagingErr: any) {
-      // Non-critical messaging exception
+      console.warn(`[FCM Push] Warning in sendEachForMulticast:`, messagingErr?.message || messagingErr);
+    }
+  }
+
+  if (tokensToClean.length > 0) {
+    await cleanStaleTokens(tokensToClean, emailList, tokensRef);
+  }
+}
+
+async function sendPushNotification(
+  emails: string | string[],
+  title: string,
+  body: string,
+  data?: Record<string, any>
+) {
+  try {
+    const emailList = Array.isArray(emails) ? emails : [emails];
+    if (emailList.length === 0) return;
+    console.log(`[FCM Push] Preparing to send push notification to targeted users:`, emailList);
+
+    const tokensRef = firestoreDb.collection("push_tokens");
+    const rawTokens: string[] = [];
+
+    const isValidToken = (t: any) =>
+      typeof t === "string" && t.trim().length >= 20 && !t.includes(" ");
+
+    for (const rawEmail of emailList) {
+      const email = String(rawEmail || '').toLowerCase().trim();
+      if (!email) continue;
+
+      // 1. Check push_tokens collection
+      try {
+        const doc = await tokensRef.doc(email).get();
+        if (doc.exists) {
+          const t = doc.data()?.token || doc.data()?.pushToken;
+          if (isValidToken(t) && !rawTokens.includes(t)) {
+            rawTokens.push(t);
+          }
+        }
+      } catch (err) {
+        console.error(`[FCM Push] Error reading push token from push_tokens for ${email}:`, err);
+      }
+
+      // 2. Also check users collection as backup
+      try {
+        const userDoc = await firestoreDb.collection("users").doc(email).get();
+        if (userDoc.exists) {
+          const uData = userDoc.data() || {};
+          if (isValidToken(uData.pushToken) && !rawTokens.includes(uData.pushToken)) {
+            rawTokens.push(uData.pushToken);
+          }
+          if (Array.isArray(uData.pushTokens)) {
+            uData.pushTokens.forEach((t: string) => {
+              if (isValidToken(t) && !rawTokens.includes(t)) {
+                rawTokens.push(t);
+              }
+            });
+          }
+        }
+      } catch (uErr) {
+        // silent
+      }
     }
 
-    if (tokensToClean.length > 0) {
-      await cleanStaleTokens(tokensToClean, emailList, tokensRef);
+    const uniqueTokens = Array.from(new Set(rawTokens));
+
+    if (uniqueTokens.length === 0) {
+      console.log(`[FCM Push] No valid active push tokens found for users:`, emailList);
+      return;
     }
+
+    console.log(`[FCM Push] Sending notification to ${uniqueTokens.length} device(s) for ${emailList.join(", ")}...`);
+    await dispatchMulticastToTokens(uniqueTokens, title, body, data, emailList);
   } catch (err) {
     console.log(`[FCM Push] Notification flow completed with note:`, err);
   }
@@ -525,14 +547,15 @@ let latestPromoPushInMemory = {
 async function sendPushNotificationToAll(
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, any>,
+  excludeEmail?: string
 ) {
   try {
     // Always update local in-memory state for ultra-fast, zero-quota web polling fallback
     latestPromoPushInMemory = {
       title,
       body,
-      data: data || {},
+      data: (data as any) || {},
       sentAt: new Date().toISOString()
     };
 
@@ -554,11 +577,63 @@ async function sendPushNotificationToAll(
       }
     }
 
-    const tokensRef = firestoreDb.collection("push_tokens");
-    const snapshot = await tokensRef.get();
-    const emails = snapshot.docs.map(doc => doc.id);
-    if (emails.length > 0) {
-      await sendPushNotification(emails, title, body, data);
+    const isValidToken = (t: any) =>
+      typeof t === "string" && t.trim().length >= 20 && !t.includes(" ");
+
+    const excludeClean = (excludeEmail || '').toLowerCase().trim();
+    const rawTokens: string[] = [];
+    const directEmails: string[] = [];
+
+    // Query all push_tokens in bulk
+    try {
+      const tokensRef = firestoreDb.collection("push_tokens");
+      const snapshot = await tokensRef.get();
+      snapshot.docs.forEach((doc: any) => {
+        const email = doc.id.toLowerCase().trim();
+        if (excludeClean && email === excludeClean) return;
+        directEmails.push(email);
+
+        const d = doc.data() || {};
+        const t = d.token || d.pushToken;
+        if (isValidToken(t) && !rawTokens.includes(t)) {
+          rawTokens.push(t);
+        }
+      });
+    } catch (tokErr) {
+      console.warn("[FCM Push Broadcast] Warning reading push_tokens collection:", tokErr);
+    }
+
+    // Also collect tokens from users collection to reach all registered users
+    try {
+      const usersSnap = await firestoreDb.collection("users").get();
+      usersSnap.docs.forEach((doc: any) => {
+        const u = doc.data() || {};
+        const email = (u.email || doc.id).toLowerCase().trim();
+        if (excludeClean && email === excludeClean) return;
+
+        if (isValidToken(u.pushToken) && !rawTokens.includes(u.pushToken)) {
+          rawTokens.push(u.pushToken);
+          if (!directEmails.includes(email)) directEmails.push(email);
+        }
+        if (Array.isArray(u.pushTokens)) {
+          u.pushTokens.forEach((t: string) => {
+            if (isValidToken(t) && !rawTokens.includes(t)) {
+              rawTokens.push(t);
+              if (!directEmails.includes(email)) directEmails.push(email);
+            }
+          });
+        }
+      });
+    } catch (uErr) {
+      // non-fatal
+    }
+
+    const uniqueTokens = Array.from(new Set(rawTokens));
+    if (uniqueTokens.length > 0) {
+      console.log(`[FCM Push Broadcast] Dispatching to ${uniqueTokens.length} active device(s) for ${directEmails.length} registered user(s)...`);
+      await dispatchMulticastToTokens(uniqueTokens, title, body, data, directEmails);
+    } else {
+      console.log(`[FCM Push Broadcast] No active push tokens found to broadcast "${title}".`);
     }
   } catch (err) {
     console.error("[FCM Push] Error sending notification to all users:", err);
@@ -5770,17 +5845,20 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       console.log(`[Firestore Chat] Shared message from ${msg.user} (Type: ${entry.type})`);
 
       // Trigger automatic push notifications for new community message or SOS
+      const senderEmail = (msg.userEmail || (req.body && req.body.email) || "").toLowerCase().trim();
       if (entry.tag === "SOS" || entry.tag === "S.O.S.") {
         sendPushNotificationToAll(
           `🚨 S.O.S. ViaCamper!`,
           `${entry.user}: ${entry.text}`,
-          { type: "sos_message", msgId }
+          { type: "sos_message", msgId },
+          senderEmail
         ).catch(err => console.error("[FCM Push] Error sending SOS notification:", err));
       } else {
         sendPushNotificationToAll(
           `💬 Nuovo post in bacheca da ${entry.user}`,
           entry.text.length > 60 ? `${entry.text.substring(0, 60)}...` : entry.text,
-          { type: "community_message", msgId }
+          { type: "community_message", msgId },
+          senderEmail
         ).catch(err => console.error("[FCM Push] Error sending post notification:", err));
       }
 
@@ -7432,15 +7510,16 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
       }
 
       // Send push notification to admin about new proposed itinerary
-      const adminEmailForItin = process.env.ADMIN_EMAIL || "viacamperapp@gmail.com";
-      if (adminEmailForItin) {
-        sendPushNotification(
-          adminEmailForItin,
-          `🗺️ Nuovo itinerario proposto!`,
-          `L'utente ${authorName} ha proposto l'itinerario "${title}".`,
-          { type: "new_itinerary", itineraryId }
-        ).catch(err => console.error("[FCM Push] Failed to notify admin of new itinerary:", err));
+      const adminPushTargetsForItin = ["sambucci.simone@gmail.com", "viacamperapp@gmail.com"];
+      if (process.env.ADMIN_EMAIL && !adminPushTargetsForItin.includes(process.env.ADMIN_EMAIL.toLowerCase().trim())) {
+        adminPushTargetsForItin.push(process.env.ADMIN_EMAIL.toLowerCase().trim());
       }
+      sendPushNotification(
+        adminPushTargetsForItin,
+        `🗺️ Nuovo itinerario proposto!`,
+        `L'utente ${authorName} ha proposto l'itinerario "${title}".`,
+        { type: "new_itinerary", itineraryId }
+      ).catch(err => console.error("[FCM Push] Failed to notify admin of new itinerary:", err));
 
       res.json({ success: true, id: itineraryId, message: "Itinerario inviato per la moderazione con successo!" });
     } catch (err: any) {

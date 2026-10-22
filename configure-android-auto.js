@@ -2143,6 +2143,21 @@ public class WeatherAlertMonitor {
                     legacyChannel.setSound(soundUri, audioAttrs);
                 }
                 nm.createNotificationChannel(legacyChannel);
+
+                // Crea anche il canale fcm_default_channel per tutte le notifiche generali (community, eventi, approvazioni, promo)
+                NotificationChannel fcmChannel = new NotificationChannel(
+                        "fcm_default_channel",
+                        "Notifiche Generali ViaCamper",
+                        NotificationManager.IMPORTANCE_HIGH
+                );
+                fcmChannel.setDescription("Notifiche istantanee per approvazioni, eventi, bacheca e consigli di bordo ad app chiusa");
+                fcmChannel.enableVibration(true);
+                fcmChannel.enableLights(true);
+                fcmChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                if (soundUri != null) {
+                    fcmChannel.setSound(soundUri, audioAttrs);
+                }
+                nm.createNotificationChannel(fcmChannel);
             } catch (Exception ignored) {}
         }
     }

@@ -45,7 +45,7 @@ import { ConfirmDeleteModal } from "./components/ConfirmDeleteModal";
 import MapTab from "./components/MapTab";
 import { MovementLog } from "./components/MovementLog";
 import NavTab from "./components/NavTab";
-import ChecklistTab from "./components/ChecklistTab";
+import ChecklistTab, { sanitizeChecklistItems } from "./components/ChecklistTab";
 import DeadlinesTab, { sanitizeDeadlines } from "./components/DeadlinesTab";
 import CommunityTab from "./components/CommunityTab";
 import VehicleSettings from "./components/VehicleSettings";
@@ -539,7 +539,7 @@ export default function App() {
       const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeChecklistItems(parsed);
       }
     } catch (e) {
       console.error("Error reading camper_checklist:", e);
@@ -586,7 +586,7 @@ export default function App() {
     if (cleanEmail) {
       try {
         const savedChecklist = localStorage.getItem(`camper_checklist_${cleanEmail}`);
-        setChecklistItems(savedChecklist ? JSON.parse(savedChecklist) : DEFAULT_CHECKLIST);
+        setChecklistItems(savedChecklist ? sanitizeChecklistItems(JSON.parse(savedChecklist)) : DEFAULT_CHECKLIST);
         
         const savedDeadlines = localStorage.getItem(`camper_deadlines_${cleanEmail}`);
         if (savedDeadlines) {

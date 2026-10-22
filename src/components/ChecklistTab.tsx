@@ -23,6 +23,19 @@ import { useFamilyCrew } from '../context/FamilyCrewContext';
 import { FamilyCrewTabBanner } from './FamilyCrewModal';
 import { DEFAULT_CHECKLIST } from '../data/mockData';
 
+export function sanitizeChecklistItems(items: ChecklistItem[]): ChecklistItem[] {
+  if (!Array.isArray(items) || items.length === 0) return DEFAULT_CHECKLIST;
+  const filtered = items.filter((item) => {
+    if (!item) return false;
+    if (item.id === 'c3' || item.id === 'c5') return false;
+    const t = (item.text || '').toLowerCase().trim();
+    if (t.includes("spegnere la pompa dell'acqua interna") || t.includes("pompa dell'acqua interna")) return false;
+    if (t.includes("chiudere la serranda del serbatoio delle acque grigie") || t.includes("serranda del serbatoio delle acque grigie")) return false;
+    return true;
+  });
+  return filtered.length > 0 ? filtered : DEFAULT_CHECKLIST;
+}
+
 interface ChecklistTabProps {
   items?: ChecklistItem[];
   setItems?: React.Dispatch<React.SetStateAction<ChecklistItem[]>>;
@@ -36,15 +49,16 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
       const saved = localStorage.getItem("camper_checklist");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeChecklistItems(parsed);
       }
     } catch (e) {
       console.error("Error reading camper_checklist:", e);
     }
-    return [];
+    return DEFAULT_CHECKLIST;
   });
 
-  const items = propItems !== undefined ? propItems : localItems;
+  const rawItems = propItems !== undefined ? propItems : localItems;
+  const items = React.useMemo(() => sanitizeChecklistItems(rawItems), [rawItems]);
   const setItems = propSetItems !== undefined ? propSetItems : setLocalItems;
 
   const itemsRef = React.useRef(items);
@@ -52,10 +66,28 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
     itemsRef.current = items;
   }, [items]);
 
+  // Ensure parent state and localStorage are automatically cleaned if legacy items (c3, c5) were present
+  React.useEffect(() => {
+    if (Array.isArray(rawItems) && rawItems.length !== items.length) {
+      setItems(items);
+      try {
+        localStorage.setItem("camper_checklist", JSON.stringify(items));
+        for (const k of Object.keys(localStorage)) {
+          if (k.startsWith("camper_checklist")) {
+            localStorage.setItem(k, JSON.stringify(items));
+          }
+        }
+      } catch (e) {}
+      if (currentCrew && isModuleSynced('checklists')) {
+        syncCrewSection('checklists', items).catch(() => {});
+      }
+    }
+  }, [rawItems, items, setItems, currentCrew, isModuleSynced, syncCrewSection]);
+
   // Sync incoming family crew checklists
   React.useEffect(() => {
     if (currentCrew && isModuleSynced('checklists') && Array.isArray(currentCrew.sharedData?.checklists) && currentCrew.sharedData.checklists.length > 0) {
-      const incoming = currentCrew.sharedData.checklists;
+      const incoming = sanitizeChecklistItems(currentCrew.sharedData.checklists);
       const incomingStr = JSON.stringify(incoming);
       const currentStr = JSON.stringify(itemsRef.current);
       if (incomingStr !== currentStr) {
@@ -64,15 +96,19 @@ export default function ChecklistTab({ items: propItems, setItems: propSetItems,
           localStorage.setItem("camper_checklist", incomingStr);
         } catch (e) {}
       }
+      if (incoming.length !== currentCrew.sharedData.checklists.length) {
+        syncCrewSection('checklists', incoming).catch(() => {});
+      }
     }
-  }, [currentCrew?.sharedData?.checklists, isModuleSynced, setItems]);
+  }, [currentCrew?.sharedData?.checklists, isModuleSynced, setItems, syncCrewSection]);
 
   // Sync to family crew when items change
   const handleUpdateItems = React.useCallback((newItems: ChecklistItem[]) => {
-    setItems(newItems);
-    localStorage.setItem("camper_checklist", JSON.stringify(newItems));
+    const cleaned = sanitizeChecklistItems(newItems);
+    setItems(cleaned);
+    localStorage.setItem("camper_checklist", JSON.stringify(cleaned));
     if (currentCrew && isModuleSynced('checklists')) {
-      syncCrewSection('checklists', newItems).catch(() => {});
+      syncCrewSection('checklists', cleaned).catch(() => {});
     }
   }, [currentCrew, isModuleSynced, setItems, syncCrewSection]);
   const [newItemText, setNewItemText] = React.useState('');
