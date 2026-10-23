@@ -235,6 +235,17 @@ public class AutoDataBridge {
         public double distanceMeters;
         public double lat;
         public double lng;
+        public String maneuverType = "";
+        public String maneuverModifier = "";
+        public int roundaboutExit = 0;
+        public float bearingAfter = 0.0f;
+    }
+
+    public static class RouteData {
+        public List<RouteStepItem> steps = new ArrayList<>();
+        public List<double[]> polyline = new ArrayList<>();
+        public double totalDistanceMeters = 0.0;
+        public double totalDurationSeconds = 0.0;
     }
 
     private static final String PREFS_NAME = "CapacitorStorage";
@@ -330,19 +341,19 @@ public class AutoDataBridge {
     }
 
     /**
-     * Calcola le indicazioni stradali turn-by-turn in italiano tramite OSRM per il Navigatore Interno su Android Auto.
+     * Calcola il percorso completo (polilinea stradale + manovre turn-by-turn in italiano) tramite OSRM per il Navigatore 3D su Android Auto.
      */
-    public static List<RouteStepItem> fetchOsrmRouteSteps(double startLat, double startLng, double endLat, double endLng, String destName) {
-        List<RouteStepItem> steps = new ArrayList<>();
+    public static RouteData fetchOsrmRouteData(double startLat, double startLng, double endLat, double endLng, String destName) {
+        RouteData data = new RouteData();
         try {
             String urlStr = String.format(Locale.US,
-                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=false&steps=true",
+                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true",
                 startLng, startLat, endLng, endLat);
             HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("User-Agent", "ViaCamperAuto/2.5");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(6000);
             if (conn.getResponseCode() == 200) {
                 BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                 StringBuilder sb = new StringBuilder();
@@ -354,6 +365,26 @@ public class AutoDataBridge {
                 JSONArray routes = root.optJSONArray("routes");
                 if (routes != null && routes.length() > 0) {
                     JSONObject route = routes.getJSONObject(0);
+                    data.totalDistanceMeters = route.optDouble("distance", 0.0);
+                    data.totalDurationSeconds = route.optDouble("duration", 0.0);
+
+                    JSONObject geom = route.optJSONObject("geometry");
+                    if (geom != null) {
+                        JSONArray coords = geom.optJSONArray("coordinates");
+                        if (coords != null) {
+                            for (int c = 0; c < coords.length(); c++) {
+                                JSONArray pt = coords.optJSONArray(c);
+                                if (pt != null && pt.length() >= 2) {
+                                    double lng = pt.optDouble(0, 0.0);
+                                    double lat = pt.optDouble(1, 0.0);
+                                    if (lat != 0.0 || lng != 0.0) {
+                                        data.polyline.add(new double[]{lat, lng});
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     JSONArray legs = route.optJSONArray("legs");
                     if (legs != null && legs.length() > 0) {
                         JSONArray rawSteps = legs.getJSONObject(0).optJSONArray("steps");
@@ -370,6 +401,7 @@ public class AutoDataBridge {
                                 String type = man != null ? man.optString("type", "") : "";
                                 String mod = man != null ? man.optString("modifier", "") : "";
                                 int exit = man != null ? man.optInt("exit", 0) : 0;
+                                float bearingAfter = man != null ? (float) man.optDouble("bearing_after", 0.0) : 0.0f;
 
                                 double mLat = endLat;
                                 double mLng = endLng;
@@ -390,7 +422,11 @@ public class AutoDataBridge {
                                 item.distanceMeters = dist;
                                 item.lat = mLat;
                                 item.lng = mLng;
-                                steps.add(item);
+                                item.maneuverType = type;
+                                item.maneuverModifier = mod;
+                                item.roundaboutExit = exit;
+                                item.bearingAfter = bearingAfter;
+                                data.steps.add(item);
                             }
                         }
                     }
@@ -398,8 +434,8 @@ public class AutoDataBridge {
             }
         } catch (Exception ignored) {}
 
-        if (steps.isEmpty()) {
-            float[] res = new float[1];
+        if (data.steps.isEmpty()) {
+            float[] res = new float[2];
             Location.distanceBetween(startLat, startLng, endLat, endLng, res);
             RouteStepItem fallback = new RouteStepItem();
             fallback.instruction = "Procedi verso " + (destName != null ? destName : "la destinazione");
@@ -407,9 +443,28 @@ public class AutoDataBridge {
             fallback.distanceMeters = res[0];
             fallback.lat = endLat;
             fallback.lng = endLng;
-            steps.add(fallback);
+            fallback.maneuverType = "depart";
+            fallback.maneuverModifier = "straight";
+            fallback.bearingAfter = (res[1] + 360.0f) % 360.0f;
+            data.steps.add(fallback);
+            data.totalDistanceMeters = res[0];
+            data.totalDurationSeconds = Math.max(60.0, (res[0] / 1000.0) / 65.0 * 3600.0);
         }
-        return steps;
+
+        if (data.polyline.isEmpty()) {
+            data.polyline.add(new double[]{startLat, startLng});
+            for (RouteStepItem st : data.steps) {
+                if (st.lat != 0.0 || st.lng != 0.0) {
+                    data.polyline.add(new double[]{st.lat, st.lng});
+                }
+            }
+            data.polyline.add(new double[]{endLat, endLng});
+        }
+        return data;
+    }
+
+    public static List<RouteStepItem> fetchOsrmRouteSteps(double startLat, double startLng, double endLat, double endLng, String destName) {
+        return fetchOsrmRouteData(startLat, startLng, endLat, endLng, destName).steps;
     }
 
     private static String translateManeuverToItalian(String type, String modifier, String road, int exit, String destName) {
@@ -842,6 +897,7 @@ public class ViaCamperCarAppService extends CarAppService {
 
 import android.content.Intent;
 import androidx.annotation.NonNull;
+import androidx.car.app.AppManager;
 import androidx.car.app.Screen;
 import androidx.car.app.Session;
 
@@ -850,11 +906,816 @@ public class ViaCamperCarSession extends Session {
     @NonNull
     @Override
     public Screen onCreateScreen(@NonNull Intent intent) {
+        try {
+            getCarContext().getCarService(AppManager.class)
+                .setSurfaceCallback(CarSurfaceRenderer.getInstance(getCarContext()));
+        } catch (Exception ignored) {}
         return new MainMapScreen(getCarContext());
     }
 }
 `;
   fs.writeFileSync(path.join(javaDir, 'ViaCamperCarSession.java'), sessionJava, 'utf-8');
+
+  // C1. CarSurfaceRenderer.java (Motore grafico 3D Prospettico Cockpit per Navigatore Interno Android Auto)
+  const carSurfaceRendererJava = `package com.ViaCamper.myapp.auto;
+
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Camera;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.Shader;
+import android.graphics.Typeface;
+import android.location.Location;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.LruCache;
+import android.view.Surface;
+import androidx.annotation.NonNull;
+import androidx.car.app.AppManager;
+import androidx.car.app.CarContext;
+import androidx.car.app.SurfaceCallback;
+import androidx.car.app.SurfaceContainer;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Motore di rendering 3D Prospettico (Vista Navigatore Cockpit) su Surface nativa Android Auto:
+ * - Disegna la mappa stradale con inclinazione 3D (52°) e rotazione automatica nella direzione di marcia (Heading-Up).
+ * - Disegna il tracciato blu/ciano reale del percorso OSRM con frecce direzionali bianche sulla carreggiata.
+ * - Posiziona il cursore 3D del camper nella parte inferiore dello schermo per dare massima visibilità alla strada davanti.
+ * - Mostra tachimetro digitale km/h, bussola, nome della via corrente e badge Sagoma Camper OK.
+ */
+public class CarSurfaceRenderer implements SurfaceCallback {
+
+    private static CarSurfaceRenderer instance;
+
+    public static synchronized CarSurfaceRenderer getInstance(CarContext context) {
+        if (instance == null) {
+            instance = new CarSurfaceRenderer(context);
+        } else if (context != null) {
+            instance.carContext = context;
+        }
+        return instance;
+    }
+
+    private CarContext carContext;
+    private SurfaceContainer surfaceContainer;
+    private Rect visibleArea;
+    private boolean navigationActive = false;
+    private boolean is3DPerspective = true;
+    private int zoomLevel = 17;
+
+    private double currentLat = 41.9028;
+    private double currentLng = 12.4964;
+    private double displayLat = 41.9028;
+    private double displayLng = 12.4964;
+    private boolean hasInitialFix = false;
+
+    private float targetBearing = 0.0f;
+    private float displayBearing = 0.0f;
+    private float currentSpeedKmh = 0.0f;
+
+    private double destLat = 0.0;
+    private double destLng = 0.0;
+    private String destName = "";
+    private String currentRoadName = "";
+    private String nextInstruction = "";
+
+    private List<double[]> routePolyline = new ArrayList<>();
+    private List<AutoDataBridge.RouteStepItem> routeSteps = new ArrayList<>();
+    private int currentStepIndex = 0;
+
+    private float panOffsetX = 0.0f;
+    private float panOffsetY = 0.0f;
+
+    private final LruCache<String, Bitmap> tileCache;
+    private final Set<String> downloadingTiles = Collections.synchronizedSet(new HashSet<>());
+    private final ExecutorService tileExecutor = Executors.newFixedThreadPool(4);
+    private final Handler renderHandler = new Handler(Looper.getMainLooper());
+
+    private final Paint tilePaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+    private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint routeBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint routeInnerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint routeTraveledPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint chevronPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint hudBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint hudBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private final Runnable animationRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!navigationActive) return;
+            boolean needsMoreFrames = stepInterpolation();
+            renderFrame();
+            renderHandler.postDelayed(this, needsMoreFrames ? 40L : 250L);
+        }
+    };
+
+    private CarSurfaceRenderer(CarContext context) {
+        this.carContext = context;
+        this.tileCache = new LruCache<String, Bitmap>(140) {
+            @Override
+            protected int sizeOf(String key, Bitmap value) {
+                return 1;
+            }
+        };
+
+        bgPaint.setColor(Color.parseColor("#E6ECF2"));
+        gridPaint.setColor(Color.parseColor("#D0DAE5"));
+        gridPaint.setStrokeWidth(2.0f);
+        gridPaint.setStyle(Paint.Style.STROKE);
+
+        routeBorderPaint.setColor(Color.parseColor("#1E3A8A"));
+        routeBorderPaint.setStyle(Paint.Style.STROKE);
+        routeBorderPaint.setStrokeWidth(22.0f);
+        routeBorderPaint.setStrokeCap(Paint.Cap.ROUND);
+        routeBorderPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        routeInnerPaint.setColor(Color.parseColor("#00B0FF"));
+        routeInnerPaint.setStyle(Paint.Style.STROKE);
+        routeInnerPaint.setStrokeWidth(14.0f);
+        routeInnerPaint.setStrokeCap(Paint.Cap.ROUND);
+        routeInnerPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        routeTraveledPaint.setColor(Color.parseColor("#94A3B8"));
+        routeTraveledPaint.setStyle(Paint.Style.STROKE);
+        routeTraveledPaint.setStrokeWidth(10.0f);
+        routeTraveledPaint.setStrokeCap(Paint.Cap.ROUND);
+        routeTraveledPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        chevronPaint.setColor(Color.WHITE);
+        chevronPaint.setStyle(Paint.Style.FILL);
+
+        hudBgPaint.setColor(Color.parseColor("#E60F172A"));
+        hudBgPaint.setStyle(Paint.Style.FILL);
+
+        hudBorderPaint.setColor(Color.parseColor("#38BDF8"));
+        hudBorderPaint.setStyle(Paint.Style.STROKE);
+        hudBorderPaint.setStrokeWidth(2.5f);
+
+        textPaint.setColor(Color.WHITE);
+        textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+    }
+
+    public void attachToCarContext(CarContext ctx) {
+        this.carContext = ctx;
+        try {
+            ctx.getCarService(AppManager.class).setSurfaceCallback(this);
+        } catch (Exception ignored) {}
+    }
+
+    public void startNavigationSession(Location startLoc, double dLat, double dLng, String dName) {
+        this.navigationActive = true;
+        this.destLat = dLat;
+        this.destLng = dLng;
+        this.destName = dName != null ? dName : "";
+        this.panOffsetX = 0.0f;
+        this.panOffsetY = 0.0f;
+        if (startLoc != null && (startLoc.getLatitude() != 0.0 || startLoc.getLongitude() != 0.0)) {
+            this.currentLat = startLoc.getLatitude();
+            this.currentLng = startLoc.getLongitude();
+            this.displayLat = this.currentLat;
+            this.displayLng = this.currentLng;
+            this.hasInitialFix = true;
+            if (startLoc.hasBearing() && startLoc.getBearing() != 0.0f) {
+                this.targetBearing = startLoc.getBearing();
+                this.displayBearing = this.targetBearing;
+            } else if (dLat != 0.0 || dLng != 0.0) {
+                this.targetBearing = computeBearing(this.currentLat, this.currentLng, dLat, dLng);
+                this.displayBearing = this.targetBearing;
+            }
+        }
+        renderHandler.removeCallbacks(animationRunnable);
+        renderHandler.post(animationRunnable);
+    }
+
+    public void stopNavigationSession() {
+        this.navigationActive = false;
+        renderHandler.removeCallbacks(animationRunnable);
+    }
+
+    public void setRouteData(List<double[]> polyline, List<AutoDataBridge.RouteStepItem> steps, int stepIdx) {
+        this.routePolyline = (polyline != null) ? new ArrayList<>(polyline) : new ArrayList<>();
+        this.routeSteps = (steps != null) ? new ArrayList<>(steps) : new ArrayList<>();
+        this.currentStepIndex = stepIdx;
+
+        // Orienta subito la telecamera 3D lungo il primo tratto stradale davanti al camper!
+        float forwardBearing = computeForwardBearingAlongRoute(currentLat, currentLng);
+        if (!Float.isNaN(forwardBearing)) {
+            this.targetBearing = forwardBearing;
+            if (currentSpeedKmh < 2.0f) {
+                this.displayBearing = forwardBearing;
+            }
+        }
+        updateCurrentStepTexts();
+        requestRender();
+    }
+
+    public void updateNavigationState(Location loc, int stepIdx) {
+        this.currentStepIndex = stepIdx;
+        updateCurrentStepTexts();
+
+        if (loc != null && (loc.getLatitude() != 0.0 || loc.getLongitude() != 0.0)) {
+            double newLat = loc.getLatitude();
+            double newLng = loc.getLongitude();
+
+            float[] distRes = new float[2];
+            Location.distanceBetween(this.currentLat, this.currentLng, newLat, newLng, distRes);
+            float movedMeters = distRes[0];
+            float gpsCourse = (distRes[1] + 360.0f) % 360.0f;
+
+            this.currentLat = newLat;
+            this.currentLng = newLng;
+            if (!hasInitialFix || movedMeters > 800.0f) {
+                this.displayLat = newLat;
+                this.displayLng = newLng;
+                this.hasInitialFix = true;
+            }
+
+            if (loc.hasSpeed()) {
+                this.currentSpeedKmh = Math.max(0.0f, loc.getSpeed() * 3.6f);
+            }
+
+            if (loc.hasBearing() && loc.getBearing() != 0.0f && (!loc.hasSpeed() || loc.getSpeed() >= 1.0f)) {
+                this.targetBearing = (loc.getBearing() + 360.0f) % 360.0f;
+            } else if (movedMeters >= 2.0f) {
+                this.targetBearing = gpsCourse;
+            } else {
+                float routeBearing = computeForwardBearingAlongRoute(newLat, newLng);
+                if (!Float.isNaN(routeBearing)) {
+                    this.targetBearing = routeBearing;
+                }
+            }
+        }
+        requestRender();
+    }
+
+    private void updateCurrentStepTexts() {
+        if (routeSteps != null && !routeSteps.isEmpty() && currentStepIndex >= 0 && currentStepIndex < routeSteps.size()) {
+            AutoDataBridge.RouteStepItem st = routeSteps.get(currentStepIndex);
+            this.currentRoadName = (st.roadName != null && !st.roadName.isEmpty()) ? st.roadName : destName;
+            this.nextInstruction = st.instruction != null ? st.instruction : "";
+        } else {
+            this.currentRoadName = destName;
+        }
+    }
+
+    public boolean toggle3DPerspective() {
+        this.is3DPerspective = !this.is3DPerspective;
+        if (this.is3DPerspective && this.zoomLevel < 16) {
+            this.zoomLevel = 17;
+        }
+        this.panOffsetX = 0.0f;
+        this.panOffsetY = 0.0f;
+        requestRender();
+        return this.is3DPerspective;
+    }
+
+    public boolean is3DPerspective() {
+        return this.is3DPerspective;
+    }
+
+    public void zoomIn() {
+        if (this.zoomLevel < 18) {
+            this.zoomLevel++;
+            requestRender();
+        }
+    }
+
+    public void zoomOut() {
+        if (this.zoomLevel > 13) {
+            this.zoomLevel--;
+            requestRender();
+        }
+    }
+
+    public void recenter() {
+        this.panOffsetX = 0.0f;
+        this.panOffsetY = 0.0f;
+        this.displayLat = this.currentLat;
+        this.displayLng = this.currentLng;
+        requestRender();
+    }
+
+    public void requestRender() {
+        renderHandler.removeCallbacks(animationRunnable);
+        renderHandler.post(animationRunnable);
+    }
+
+    private boolean stepInterpolation() {
+        boolean animating = false;
+        double dLat = currentLat - displayLat;
+        double dLng = currentLng - displayLng;
+        if (Math.abs(dLat) > 0.000002 || Math.abs(dLng) > 0.000002) {
+            displayLat += dLat * 0.32;
+            displayLng += dLng * 0.32;
+            animating = true;
+        } else {
+            displayLat = currentLat;
+            displayLng = currentLng;
+        }
+
+        float diffAngle = ((targetBearing - displayBearing + 540.0f) % 360.0f) - 180.0f;
+        if (Math.abs(diffAngle) > 0.4f) {
+            displayBearing = (displayBearing + diffAngle * 0.25f + 360.0f) % 360.0f;
+            animating = true;
+        } else {
+            displayBearing = targetBearing;
+        }
+        return animating;
+    }
+
+    private float computeForwardBearingAlongRoute(double lat, double lng) {
+        if (routePolyline != null && routePolyline.size() >= 2) {
+            int closestIdx = 0;
+            double minDistSq = Double.MAX_VALUE;
+            for (int i = 0; i < routePolyline.size(); i++) {
+                double[] pt = routePolyline.get(i);
+                double dy = pt[0] - lat;
+                double dx = (pt[1] - lng) * Math.cos(Math.toRadians(lat));
+                double dSq = dx * dx + dy * dy;
+                if (dSq < minDistSq) {
+                    minDistSq = dSq;
+                    closestIdx = i;
+                }
+            }
+            for (int j = closestIdx + 1; j < routePolyline.size(); j++) {
+                double[] targetPt = routePolyline.get(j);
+                float[] dist = new float[2];
+                Location.distanceBetween(lat, lng, targetPt[0], targetPt[1], dist);
+                if (dist[0] >= 12.0f) {
+                    return (dist[1] + 360.0f) % 360.0f;
+                }
+            }
+        }
+        if (routeSteps != null && currentStepIndex < routeSteps.size()) {
+            AutoDataBridge.RouteStepItem st = routeSteps.get(currentStepIndex);
+            if (st.bearingAfter != 0.0f) return st.bearingAfter;
+            if (st.lat != 0.0 || st.lng != 0.0) {
+                return computeBearing(lat, lng, st.lat, st.lng);
+            }
+        }
+        if (destLat != 0.0 || destLng != 0.0) {
+            return computeBearing(lat, lng, destLat, destLng);
+        }
+        return Float.NaN;
+    }
+
+    private static float computeBearing(double lat1, double lng1, double lat2, double lng2) {
+        float[] res = new float[2];
+        Location.distanceBetween(lat1, lng1, lat2, lng2, res);
+        return (res[1] + 360.0f) % 360.0f;
+    }
+
+    private static double lonToTileX(double lon, int zoom) {
+        return ((lon + 180.0) / 360.0) * (1 << zoom);
+    }
+
+    private static double latToTileY(double lat, int zoom) {
+        double latRad = Math.toRadians(Math.max(-85.0511, Math.min(85.0511, lat)));
+        return (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 << zoom);
+    }
+
+    private Bitmap getOrFetchTile(final int z, final int x, final int y) {
+        int maxTile = 1 << z;
+        int wrappedX = ((x % maxTile) + maxTile) % maxTile;
+        if (y < 0 || y >= maxTile) return null;
+
+        final String key = z + "/" + wrappedX + "/" + y;
+        Bitmap cached = tileCache.get(key);
+        if (cached != null && !cached.isRecycled()) {
+            return cached;
+        }
+        if (downloadingTiles.contains(key)) {
+            return null;
+        }
+        downloadingTiles.add(key);
+        final int finalX = wrappedX;
+        tileExecutor.execute(() -> {
+            Bitmap bmp = downloadTileBitmap(z, finalX, y);
+            downloadingTiles.remove(key);
+            if (bmp != null) {
+                tileCache.put(key, bmp);
+                if (navigationActive) {
+                    renderHandler.post(this::renderFrame);
+                }
+            }
+        });
+        return null;
+    }
+
+    private Bitmap downloadTileBitmap(int z, int x, int y) {
+        String[] urls = new String[]{
+            String.format(Locale.US, "https://mt1.google.com/vt/lyrs=m&x=%d&y=%d&z=%d&hl=it", x, y, z),
+            String.format(Locale.US, "https://tile.openstreetmap.org/%d/%d/%d.png", z, x, y)
+        };
+        for (String urlStr : urls) {
+            HttpURLConnection conn = null;
+            try {
+                conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("User-Agent", "ViaCamperAuto/2.5 (Android Auto 3D Navigator)");
+                conn.setConnectTimeout(3500);
+                conn.setReadTimeout(3500);
+                if (conn.getResponseCode() == 200) {
+                    try (InputStream is = conn.getInputStream()) {
+                        Bitmap bmp = BitmapFactory.decodeStream(is);
+                        if (bmp != null) return bmp;
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }
+        return null;
+    }
+
+    public synchronized void renderFrame() {
+        if (surfaceContainer == null) return;
+        Surface surface = surfaceContainer.getSurface();
+        if (surface == null || !surface.isValid()) return;
+
+        int width = surfaceContainer.getWidth();
+        int height = surfaceContainer.getHeight();
+        if (width <= 0 || height <= 0) return;
+
+        Canvas canvas = null;
+        try {
+            canvas = surface.lockCanvas(null);
+            if (canvas == null) return;
+
+            // 1. Sfondo base stradale
+            canvas.drawColor(Color.parseColor("#DCE4EC"));
+
+            // Calcolo punto focale del camper sullo schermo dell'autoradio (spostato a destra della scheda manovra e in basso per vista 3D in avanti)
+            float pivotX = width * 0.58f;
+            float pivotY = is3DPerspective ? (height * 0.77f) : (height * 0.54f);
+            if (visibleArea != null && visibleArea.width() > 60 && visibleArea.height() > 60) {
+                pivotX = visibleArea.left + visibleArea.width() * 0.54f;
+                pivotY = is3DPerspective
+                        ? (visibleArea.top + visibleArea.height() * 0.78f)
+                        : (visibleArea.top + visibleArea.height() * 0.54f);
+            }
+            pivotX += panOffsetX;
+            pivotY += panOffsetY;
+
+            // 2. Matrice Telecamera 3D Prospettica (52° tilt + rotazione Heading-Up nella direzione di marcia)
+            canvas.save();
+            Matrix navMatrix = new Matrix();
+            float mapScale = is3DPerspective ? 1.72f : 1.35f;
+            if (is3DPerspective) {
+                Camera camera3D = new Camera();
+                camera3D.save();
+                camera3D.setLocation(0.0f, 0.0f, -20.0f);
+                camera3D.rotateX(52.0f);
+                camera3D.getMatrix(navMatrix);
+                camera3D.restore();
+                navMatrix.preTranslate(-pivotX, -pivotY);
+                navMatrix.postTranslate(pivotX, pivotY);
+                navMatrix.preRotate(-displayBearing, pivotX, pivotY);
+                navMatrix.preScale(mapScale, mapScale, pivotX, pivotY);
+            } else {
+                navMatrix.preScale(mapScale, mapScale, pivotX, pivotY);
+            }
+            canvas.concat(navMatrix);
+
+            double centerTileX = lonToTileX(displayLng, zoomLevel);
+            double centerTileY = latToTileY(displayLat, zoomLevel);
+            int baseTileX = (int) Math.floor(centerTileX);
+            int baseTileY = (int) Math.floor(centerTileY);
+
+            // 3. Disegna griglia 7x7 di Tile Mappa Stradale intorno al camper
+            int radius = 3;
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    int tx = baseTileX + dx;
+                    int ty = baseTileY + dy;
+                    float left = (float) ((tx - centerTileX) * 256.0) + pivotX;
+                    float top = (float) ((ty - centerTileY) * 256.0) + pivotY;
+                    RectF dstRect = new RectF(left, top, left + 256.5f, top + 256.5f);
+
+                    Bitmap tileBmp = getOrFetchTile(zoomLevel, tx, ty);
+                    if (tileBmp != null && !tileBmp.isRecycled()) {
+                        canvas.drawBitmap(tileBmp, null, dstRect, tilePaint);
+                    } else {
+                        canvas.drawRect(dstRect, bgPaint);
+                        canvas.drawRect(dstRect, gridPaint);
+                    }
+                }
+            }
+
+            // 4. Disegna il Tracciato Blu/Ciano del Percorso OSRM + Frecce Direzionali sulla strada
+            if (routePolyline != null && routePolyline.size() >= 2) {
+                int closestIdx = 0;
+                double minDistSq = Double.MAX_VALUE;
+                for (int i = 0; i < routePolyline.size(); i++) {
+                    double[] pt = routePolyline.get(i);
+                    double dLat = pt[0] - displayLat;
+                    double dLng = pt[1] - displayLng;
+                    double dSq = dLat * dLat + dLng * dLng;
+                    if (dSq < minDistSq) {
+                        minDistSq = dSq;
+                        closestIdx = i;
+                    }
+                }
+
+                Path activePath = new Path();
+                boolean firstActive = true;
+                float prevPx = pivotX;
+                float prevPy = pivotY;
+                activePath.moveTo(pivotX, pivotY);
+
+                List<float[]> chevronVectors = new ArrayList<>();
+                float accumDist = 0.0f;
+
+                for (int i = closestIdx; i < routePolyline.size(); i++) {
+                    double[] pt = routePolyline.get(i);
+                    float px = (float) ((lonToTileX(pt[1], zoomLevel) - centerTileX) * 256.0) + pivotX;
+                    float py = (float) ((latToTileY(pt[0], zoomLevel) - centerTileY) * 256.0) + pivotY;
+                    if (firstActive) {
+                        activePath.lineTo(px, py);
+                        firstActive = false;
+                    } else {
+                        activePath.lineTo(px, py);
+                        float segDx = px - prevPx;
+                        float segDy = py - prevPy;
+                        float segLen = (float) Math.hypot(segDx, segDy);
+                        if (segLen > 1.0f) {
+                            accumDist += segLen;
+                            if (accumDist >= 48.0f && chevronVectors.size() < 30) {
+                                accumDist = 0.0f;
+                                float midX = (prevPx + px) * 0.5f;
+                                float midY = (prevPy + py) * 0.5f;
+                                float angleDeg = (float) Math.toDegrees(Math.atan2(segDy, segDx)) + 90.0f;
+                                chevronVectors.add(new float[]{midX, midY, angleDeg});
+                            }
+                        }
+                    }
+                    prevPx = px;
+                    prevPy = py;
+                }
+
+                canvas.drawPath(activePath, routeBorderPaint);
+                canvas.drawPath(activePath, routeInnerPaint);
+
+                // Disegna i chevron direzionali bianchi lungo la corsia blu
+                for (float[] cv : chevronVectors) {
+                    canvas.save();
+                    canvas.translate(cv[0], cv[1]);
+                    canvas.rotate(cv[2]);
+                    Path ch = new Path();
+                    ch.moveTo(0.0f, -6.5f);
+                    ch.lineTo(5.5f, 5.0f);
+                    ch.lineTo(0.0f, 2.0f);
+                    ch.lineTo(-5.5f, 5.0f);
+                    ch.close();
+                    canvas.drawPath(ch, chevronPaint);
+                    canvas.restore();
+                }
+            }
+
+            // 5. Evidenziatore sulla prossima svolta (cerchio ambra/bianco sull'incrocio)
+            if (routeSteps != null && currentStepIndex >= 0 && currentStepIndex < routeSteps.size()) {
+                AutoDataBridge.RouteStepItem step = routeSteps.get(currentStepIndex);
+                if (step.lat != 0.0 || step.lng != 0.0) {
+                    float sx = (float) ((lonToTileX(step.lng, zoomLevel) - centerTileX) * 256.0) + pivotX;
+                    float sy = (float) ((latToTileY(step.lat, zoomLevel) - centerTileY) * 256.0) + pivotY;
+                    Paint turnSpotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    turnSpotPaint.setColor(Color.parseColor("#F59E0B"));
+                    turnSpotPaint.setStyle(Paint.Style.FILL);
+                    canvas.drawCircle(sx, sy, 14.0f, turnSpotPaint);
+                    turnSpotPaint.setColor(Color.WHITE);
+                    turnSpotPaint.setStyle(Paint.Style.STROKE);
+                    turnSpotPaint.setStrokeWidth(4.0f);
+                    canvas.drawCircle(sx, sy, 14.0f, turnSpotPaint);
+                }
+            }
+
+            // 6. Puntina Bandiera Destinazione
+            if (destLat != 0.0 || destLng != 0.0) {
+                float dx = (float) ((lonToTileX(destLng, zoomLevel) - centerTileX) * 256.0) + pivotX;
+                float dy = (float) ((latToTileY(destLat, zoomLevel) - centerTileY) * 256.0) + pivotY;
+                Paint destPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                destPaint.setColor(Color.parseColor("#10B981"));
+                destPaint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(dx, dy, 18.0f, destPaint);
+                destPaint.setColor(Color.WHITE);
+                destPaint.setStyle(Paint.Style.STROKE);
+                destPaint.setStrokeWidth(5.0f);
+                canvas.drawCircle(dx, dy, 18.0f, destPaint);
+            }
+
+            canvas.restore();
+
+            // 7. Orizzonte Cielo 3D Atmosferico nella fascia superiore (quando la vista 3D è attiva)
+            if (is3DPerspective) {
+                float horizonHeight = height * 0.17f;
+                Paint skyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                skyPaint.setShader(new LinearGradient(
+                        0.0f, 0.0f, 0.0f, horizonHeight,
+                        new int[]{
+                            Color.parseColor("#E60F172A"),
+                            Color.parseColor("#991E293B"),
+                            Color.TRANSPARENT
+                        },
+                        new float[]{0.0f, 0.55f, 1.0f},
+                        Shader.TileMode.CLAMP
+                ));
+                canvas.drawRect(0.0f, 0.0f, width, horizonHeight, skyPaint);
+            }
+
+            // 8. Cursore Navigatore 3D del Camper (sempre puntato dritto in avanti nella direzione di marcia!)
+            draw3DCamperCursor(canvas, pivotX, pivotY, is3DPerspective ? 0.0f : displayBearing);
+
+            // 9. Cruscotto Cockpit HUD (Tachimetro km/h, Bussola, Nome Strada e Sagoma Camper OK)
+            drawCockpitHud(canvas, width, height);
+
+        } catch (Exception ignored) {
+        } finally {
+            if (canvas != null) {
+                try {
+                    surface.unlockCanvasAndPost(canvas);
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private void draw3DCamperCursor(Canvas canvas, float cx, float cy, float arrowRotationDeg) {
+        canvas.save();
+        canvas.translate(cx, cy);
+        canvas.rotate(arrowRotationDeg);
+
+        // Alone GPS azzurro esterno
+        Paint haloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        haloPaint.setColor(Color.parseColor("#3800B0FF"));
+        haloPaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(0.0f, 0.0f, 44.0f, haloPaint);
+
+        // Ombra disco 3D
+        Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        shadowPaint.setColor(Color.parseColor("#55000000"));
+        shadowPaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(0.0f, 5.0f, 27.0f, shadowPaint);
+
+        // Disco bianco 3D del navigatore
+        Paint puckPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        puckPaint.setColor(Color.WHITE);
+        puckPaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(0.0f, 0.0f, 26.0f, puckPaint);
+
+        // Bordo blu brillante
+        Paint rimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        rimPaint.setColor(Color.parseColor("#0284C7"));
+        rimPaint.setStyle(Paint.Style.STROKE);
+        rimPaint.setStrokeWidth(4.5f);
+        canvas.drawCircle(0.0f, 0.0f, 26.0f, rimPaint);
+
+        // Freccia direzionale 3D bicolore (stile navigatore automotive)
+        Path leftWing = new Path();
+        leftWing.moveTo(0.0f, -17.0f);
+        leftWing.lineTo(-13.5f, 12.0f);
+        leftWing.lineTo(0.0f, 5.0f);
+        leftWing.close();
+        Paint leftWingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        leftWingPaint.setColor(Color.parseColor("#0284C7"));
+        leftWingPaint.setStyle(Paint.Style.FILL);
+        canvas.drawPath(leftWing, leftWingPaint);
+
+        Path rightWing = new Path();
+        rightWing.moveTo(0.0f, -17.0f);
+        rightWing.lineTo(13.5f, 12.0f);
+        rightWing.lineTo(0.0f, 5.0f);
+        rightWing.close();
+        Paint rightWingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        rightWingPaint.setColor(Color.parseColor("#0369A1"));
+        rightWingPaint.setStyle(Paint.Style.FILL);
+        canvas.drawPath(rightWing, rightWingPaint);
+
+        canvas.restore();
+    }
+
+    private void drawCockpitHud(Canvas canvas, int width, int height) {
+        // A. Pillola Strada Corrente + Bussola in basso a destra
+        String cardinal = getCardinalDirection(displayBearing);
+        String roadLabel = (currentRoadName != null && !currentRoadName.trim().isEmpty())
+                ? currentRoadName.trim()
+                : (destName != null && !destName.isEmpty() ? ("Verso " + destName) : "Navigazione Camper 3D");
+        if (roadLabel.length() > 28) {
+            roadLabel = roadLabel.substring(0, 26) + "...";
+        }
+        String modeTag = is3DPerspective ? "3D PROSPETTIVA" : "2D NORD";
+        String badgeText = "🧭 " + cardinal + " • " + roadLabel + " • 🛡️ " + modeTag;
+
+        textPaint.setTextSize(19.0f);
+        float textW = textPaint.measureText(badgeText);
+        float pillW = textW + 34.0f;
+        float pillH = 38.0f;
+        float pillRight = width - 20.0f;
+        float pillBottom = height - 18.0f;
+        RectF pillRect = new RectF(pillRight - pillW, pillBottom - pillH, pillRight, pillBottom);
+
+        canvas.drawRoundRect(pillRect, 19.0f, 19.0f, hudBgPaint);
+        canvas.drawRoundRect(pillRect, 19.0f, 19.0f, hudBorderPaint);
+        textPaint.setColor(Color.WHITE);
+        canvas.drawText(badgeText, pillRect.left + 17.0f, pillRect.bottom - 12.0f, textPaint);
+
+        // B. Tachimetro Circolare Velocità GPS (km/h) sopra la pillola stradale a destra
+        float speedCx = width - 58.0f;
+        float speedCy = pillRect.top - 48.0f;
+        float speedRadius = 36.0f;
+
+        canvas.drawCircle(speedCx, speedCy, speedRadius, hudBgPaint);
+        canvas.drawCircle(speedCx, speedCy, speedRadius, hudBorderPaint);
+
+        String speedVal = String.valueOf(Math.round(currentSpeedKmh));
+        textPaint.setTextSize(24.0f);
+        float sw = textPaint.measureText(speedVal);
+        canvas.drawText(speedVal, speedCx - sw * 0.5f, speedCy + 2.0f, textPaint);
+
+        textPaint.setTextSize(11.0f);
+        textPaint.setColor(Color.parseColor("#94A3B8"));
+        String unit = "km/h";
+        float uw = textPaint.measureText(unit);
+        canvas.drawText(unit, speedCx - uw * 0.5f, speedCy + 18.0f, textPaint);
+        textPaint.setColor(Color.WHITE);
+    }
+
+    private static String getCardinalDirection(float bearing) {
+        String[] dirs = new String[]{"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
+        int idx = Math.round(((bearing % 360.0f + 360.0f) % 360.0f) / 45.0f) % 8;
+        return dirs[idx];
+    }
+
+    @Override
+    public void onSurfaceAvailable(@NonNull SurfaceContainer surfaceContainer) {
+        this.surfaceContainer = surfaceContainer;
+        if (navigationActive) {
+            renderHandler.post(this::renderFrame);
+        }
+    }
+
+    @Override
+    public void onVisibleAreaChanged(@NonNull Rect visibleArea) {
+        this.visibleArea = visibleArea;
+        if (navigationActive) {
+            renderHandler.post(this::renderFrame);
+        }
+    }
+
+    @Override
+    public void onStableAreaChanged(@NonNull Rect stableArea) {
+        if (navigationActive) {
+            renderHandler.post(this::renderFrame);
+        }
+    }
+
+    @Override
+    public void onSurfaceDestroyed(@NonNull SurfaceContainer surfaceContainer) {
+        if (this.surfaceContainer == surfaceContainer) {
+            this.surfaceContainer = null;
+        }
+    }
+
+    @Override
+    public void onScroll(float distanceX, float distanceY) {
+        this.panOffsetX -= distanceX;
+        this.panOffsetY -= distanceY;
+        if (navigationActive) {
+            renderFrame();
+        }
+    }
+
+    @Override
+    public void onScale(float focusX, float focusY, float scaleFactor) {
+        if (scaleFactor > 1.15f) {
+            zoomIn();
+        } else if (scaleFactor < 0.85f) {
+            zoomOut();
+        }
+    }
+}
+`;
+  fs.writeFileSync(path.join(javaDir, 'CarSurfaceRenderer.java'), carSurfaceRendererJava, 'utf-8');
 
   // D. MainMapScreen.java (Mappa live con tutti e 4 i pulsanti dentro il pannello a sinistra, ZERO pulsanti in alto)
   const mainMapScreenJava = `package com.ViaCamper.myapp.auto;
@@ -1514,10 +2375,15 @@ public class NavigatorChooserScreen extends Screen {
 `;
   fs.writeFileSync(path.join(javaDir, 'NavigatorChooserScreen.java'), chooserJava, 'utf-8');
 
-  // E2. ActiveCarNavigationScreen.java (Navigatore Camper Interno turn-by-turn attivo direttamente sul display dell'autoradio!)
+  // E2. ActiveCarNavigationScreen.java (Vero Navigatore 3D Cockpit con NavigationTemplate + CarSurfaceRenderer + NavigationManager!)
   const activeNavJava = `package com.ViaCamper.myapp.auto;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -1530,44 +2396,51 @@ import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
-import android.text.SpannableString;
-import android.text.Spanned;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
 import androidx.car.app.CarToast;
 import androidx.car.app.Screen;
 import androidx.car.app.model.Action;
+import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarColor;
-import androidx.car.app.model.CarLocation;
+import androidx.car.app.model.CarIcon;
+import androidx.car.app.model.DateTimeWithZone;
 import androidx.car.app.model.Distance;
-import androidx.car.app.model.DistanceSpan;
-import androidx.car.app.model.ItemList;
-import androidx.car.app.model.Metadata;
-import androidx.car.app.model.Place;
-import androidx.car.app.model.PlaceListMapTemplate;
-import androidx.car.app.model.PlaceMarker;
-import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
+import androidx.car.app.navigation.NavigationManager;
+import androidx.car.app.navigation.NavigationManagerCallback;
+import androidx.car.app.navigation.model.Destination;
+import androidx.car.app.navigation.model.Maneuver;
+import androidx.car.app.navigation.model.NavigationTemplate;
+import androidx.car.app.navigation.model.RoutingInfo;
+import androidx.car.app.navigation.model.Step;
+import androidx.car.app.navigation.model.TravelEstimate;
+import androidx.car.app.navigation.model.Trip;
+import androidx.core.graphics.drawable.IconCompat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 /**
- * Navigatore Camper Interno attivo direttamente sullo schermo di Android Auto:
- * - Mostra la mappa in movimento centrata sul camper in tempo reale.
- * - Calcola il percorso reale tramite OSRM e aggiorna le manovre metro per metro.
+ * Navigatore Camper Interno 3D attivo direttamente sullo schermo di Android Auto:
+ * - Utilizza NavigationTemplate ufficiale Android Auto con scheda di svolta compatta in alto a sinistra e barra ETA in basso.
+ * - Disegna la mappa stradale in vera prospettiva 3D (52° inclinazione) e rotazione Heading-Up tramite CarSurfaceRenderer.
+ * - Mostra il tracciato blu/ciano reale del percorso OSRM con frecce direzionali e tachimetro km/h.
  * - Legge ad alta voce le indicazioni stradali sull'impianto audio dell'auto.
- * - Nessun pulsante sovrapposto in alto: tutte le info e i controlli sono nel pannello a sinistra.
  */
 public class ActiveCarNavigationScreen extends Screen implements LocationListener {
 
     private final AutoDataBridge.MovementItem destination;
     private Location currentLocation;
     private LocationManager locationManager;
+    private NavigationManager navigationManager;
+    private final CarSurfaceRenderer surfaceRenderer;
     private boolean isListening = false;
     private boolean isStopped = false;
 
     private List<AutoDataBridge.RouteStepItem> routeSteps = new ArrayList<>();
+    private List<double[]> routePolyline = new ArrayList<>();
     private int currentStepIndex = 0;
     private boolean isRouteLoading = true;
     private boolean announced300m = false;
@@ -1589,9 +2462,11 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 Location fresh = AutoDataBridge.getBestLiveLocation(getCarContext());
                 if (fresh != null) {
                     onLocationChanged(fresh);
+                } else {
+                    surfaceRenderer.requestRender();
                 }
             } catch (Exception ignored) {}
-            navHandler.postDelayed(this, 1200L);
+            navHandler.postDelayed(this, 1000L);
         }
     };
 
@@ -1599,10 +2474,38 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         super(carContext);
         this.destination = dest;
         this.currentLocation = (startLoc != null) ? startLoc : AutoDataBridge.getBestLiveLocation(carContext);
+        this.surfaceRenderer = CarSurfaceRenderer.getInstance(carContext);
+        this.surfaceRenderer.attachToCarContext(carContext);
+        this.surfaceRenderer.startNavigationSession(
+                this.currentLocation,
+                dest.lat,
+                dest.lng,
+                dest.location
+        );
+
+        initNavigationManager();
         initCarVoice();
         startGPSUpdates();
         loadRouteAsync();
-        navHandler.postDelayed(gpsPollRunnable, 1200L);
+        navHandler.postDelayed(gpsPollRunnable, 1000L);
+    }
+
+    private void initNavigationManager() {
+        try {
+            navigationManager = getCarContext().getCarService(NavigationManager.class);
+            if (navigationManager != null) {
+                navigationManager.setNavigationManagerCallback(new NavigationManagerCallback() {
+                    @Override
+                    public void onStopNavigation() {
+                        stopNavigationAndExit();
+                    }
+
+                    @Override
+                    public void onAutoDriveEnabled() {}
+                });
+                navigationManager.navigationStarted();
+            }
+        } catch (Exception ignored) {}
     }
 
     private void initCarVoice() {
@@ -1691,16 +2594,18 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             double eLat = destination.lat != 0.0 ? destination.lat : sLat + 0.01;
             double eLng = destination.lng != 0.0 ? destination.lng : sLng + 0.01;
 
-            List<AutoDataBridge.RouteStepItem> fetched = AutoDataBridge.fetchOsrmRouteSteps(sLat, sLng, eLat, eLng, destination.location);
+            AutoDataBridge.RouteData fetched = AutoDataBridge.fetchOsrmRouteData(sLat, sLng, eLat, eLng, destination.location);
             navHandler.post(() -> {
                 if (isStopped) return;
-                routeSteps = fetched;
+                routeSteps = fetched.steps;
+                routePolyline = fetched.polyline;
                 currentStepIndex = 0;
                 isRouteLoading = false;
                 announced300m = false;
                 announced50m = false;
+                surfaceRenderer.setRouteData(routePolyline, routeSteps, currentStepIndex);
                 String firstInstruction = !routeSteps.isEmpty() ? routeSteps.get(0).instruction : "";
-                speakGuidance("Avvio navigazione camper verso " + destination.location + ". " + firstInstruction);
+                speakGuidance("Avvio navigazione camper 3D verso " + destination.location + ". " + firstInstruction);
                 invalidate();
             });
         }).start();
@@ -1715,7 +2620,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.PASSIVE_PROVIDER, LocationManager.NETWORK_PROVIDER };
                 for (String provider : providers) {
                     try {
-                        locationManager.requestLocationUpdates(provider, 800L, 1.0f, this, mainLooper);
+                        locationManager.requestLocationUpdates(provider, 700L, 0.5f, this, mainLooper);
                     } catch (Exception ignored) {}
                 }
                 isListening = true;
@@ -1724,12 +2629,19 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     }
 
     private void stopNavigationAndExit() {
+        if (isStopped) return;
         isStopped = true;
+        surfaceRenderer.stopNavigationSession();
         navHandler.removeCallbacksAndMessages(null);
         if (locationManager != null && isListening) {
             try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
             isListening = false;
         }
+        try {
+            if (navigationManager != null) {
+                navigationManager.navigationEnded();
+            }
+        } catch (Exception ignored) {}
         try {
             if (carTts != null) {
                 carTts.stop();
@@ -1780,6 +2692,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             }
         }
 
+        surfaceRenderer.updateNavigationState(location, currentStepIndex);
         invalidate();
     }
 
@@ -1792,117 +2705,291 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     @Override
     public void onProviderDisabled(@NonNull String provider) {}
 
-    private SpannableString createDistanceSpanText(double distanceKm, String subtitle) {
-        double safeKm = Math.max(0.0, distanceKm);
-        Distance d = Distance.create(safeKm, Distance.UNIT_KILOMETERS);
-        String prefix = safeKm < 1.0
-            ? String.format(Locale.getDefault(), "%.0f m", safeKm * 1000.0)
-            : String.format(Locale.getDefault(), "%.1f km", safeKm);
-        String full = (subtitle != null && !subtitle.isEmpty()) ? (prefix + " • " + subtitle) : prefix;
-        SpannableString span = new SpannableString(full);
-        span.setSpan(DistanceSpan.create(d), 0, prefix.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-        return span;
+    private Maneuver buildCarManeuver(AutoDataBridge.RouteStepItem step) {
+        String type = step != null && step.maneuverType != null ? step.maneuverType : "";
+        String mod = step != null && step.maneuverModifier != null ? step.maneuverModifier : "";
+        int exit = step != null ? step.roundaboutExit : 0;
+
+        int mType = Maneuver.TYPE_STRAIGHT;
+        if ("depart".equals(type)) {
+            mType = Maneuver.TYPE_DEPART;
+        } else if ("arrive".equals(type)) {
+            mType = Maneuver.TYPE_DESTINATION;
+        } else if ("roundabout".equals(type) || "rotary".equals(type) || "exit roundabout".equals(type)) {
+            mType = Maneuver.TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW;
+        } else if ("on ramp".equals(type)) {
+            mType = mod.contains("left") ? Maneuver.TYPE_ON_RAMP_NORMAL_LEFT : Maneuver.TYPE_ON_RAMP_NORMAL_RIGHT;
+        } else if ("off ramp".equals(type)) {
+            mType = mod.contains("left") ? Maneuver.TYPE_OFF_RAMP_NORMAL_LEFT : Maneuver.TYPE_OFF_RAMP_NORMAL_RIGHT;
+        } else if ("fork".equals(type)) {
+            mType = mod.contains("left") ? Maneuver.TYPE_FORK_LEFT : Maneuver.TYPE_FORK_RIGHT;
+        } else if ("merge".equals(type)) {
+            mType = Maneuver.TYPE_MERGE_SIDE_UNSPECIFIED;
+        } else if ("uturn".equals(mod)) {
+            mType = Maneuver.TYPE_U_TURN_LEFT;
+        } else if ("slight left".equals(mod)) {
+            mType = Maneuver.TYPE_TURN_SLIGHT_LEFT;
+        } else if ("sharp left".equals(mod)) {
+            mType = Maneuver.TYPE_TURN_SHARP_LEFT;
+        } else if ("left".equals(mod)) {
+            mType = Maneuver.TYPE_TURN_NORMAL_LEFT;
+        } else if ("slight right".equals(mod)) {
+            mType = Maneuver.TYPE_TURN_SLIGHT_RIGHT;
+        } else if ("sharp right".equals(mod)) {
+            mType = Maneuver.TYPE_TURN_SHARP_RIGHT;
+        } else if ("right".equals(mod)) {
+            mType = Maneuver.TYPE_TURN_NORMAL_RIGHT;
+        }
+
+        Maneuver.Builder builder = new Maneuver.Builder(mType);
+        if (mType == Maneuver.TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW) {
+            builder.setRoundaboutExitNumber(Math.max(1, exit));
+        }
+        builder.setIcon(createManeuverIcon(type, mod));
+        return builder.build();
+    }
+
+    private CarIcon createManeuverIcon(String type, String mod) {
+        Bitmap bmp = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.WHITE);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(10.0f);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeJoin(Paint.Join.ROUND);
+
+        Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fillPaint.setColor(Color.WHITE);
+        fillPaint.setStyle(Paint.Style.FILL);
+
+        if ("roundabout".equals(type) || "rotary".equals(type) || "exit roundabout".equals(type)) {
+            c.drawCircle(48f, 52f, 22f, p);
+            Path head = new Path();
+            head.moveTo(48f, 8f);
+            head.lineTo(34f, 26f);
+            head.lineTo(62f, 26f);
+            head.close();
+            c.drawPath(head, fillPaint);
+        } else if (mod != null && mod.contains("left")) {
+            Path line = new Path();
+            line.moveTo(58f, 82f);
+            line.lineTo(58f, 44f);
+            line.lineTo(26f, 44f);
+            c.drawPath(line, p);
+            Path head = new Path();
+            head.moveTo(14f, 44f);
+            head.lineTo(34f, 28f);
+            head.lineTo(34f, 60f);
+            head.close();
+            c.drawPath(head, fillPaint);
+        } else if (mod != null && mod.contains("right")) {
+            Path line = new Path();
+            line.moveTo(38f, 82f);
+            line.lineTo(38f, 44f);
+            line.lineTo(70f, 44f);
+            c.drawPath(line, p);
+            Path head = new Path();
+            head.moveTo(82f, 44f);
+            head.lineTo(62f, 28f);
+            head.lineTo(62f, 60f);
+            head.close();
+            c.drawPath(head, fillPaint);
+        } else {
+            c.drawLine(48f, 82f, 48f, 28f, p);
+            Path head = new Path();
+            head.moveTo(48f, 12f);
+            head.lineTo(30f, 34f);
+            head.lineTo(66f, 34f);
+            head.close();
+            c.drawPath(head, fillPaint);
+        }
+        return new CarIcon.Builder(IconCompat.createWithBitmap(bmp)).build();
+    }
+
+    private CarIcon createActionBadgeIcon(String symbol, String bgHex) {
+        Bitmap bmp = Bitmap.createBitmap(72, 72, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
+        bg.setColor(Color.parseColor(bgHex));
+        bg.setStyle(Paint.Style.FILL);
+        c.drawCircle(36f, 36f, 32f, bg);
+
+        Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
+        tp.setColor(Color.WHITE);
+        tp.setTextSize(30f);
+        tp.setFakeBoldText(true);
+        float tw = tp.measureText(symbol);
+        c.drawText(symbol, 36f - tw * 0.5f, 47f, tp);
+        return new CarIcon.Builder(IconCompat.createWithBitmap(bmp)).build();
+    }
+
+    private Distance createAutoDistance(double meters) {
+        double safeMeters = Math.max(0.0, meters);
+        if (safeMeters < 1000.0) {
+            int roundedMeters = (int) (Math.round(safeMeters / 10.0) * 10);
+            return Distance.create(Math.max(10, roundedMeters), Distance.UNIT_METERS);
+        }
+        double km = safeMeters / 1000.0;
+        return Distance.create(Math.round(km * 10.0) / 10.0, Distance.UNIT_KILOMETERS);
     }
 
     @NonNull
     @Override
     public Template onGetTemplate() {
+        surfaceRenderer.attachToCarContext(getCarContext());
         Location activeLoc = (currentLocation != null) ? currentLocation : AutoDataBridge.getBestLiveLocation(getCarContext());
 
-        double computedDistKm = destination.distanceKm;
+        double computedDistMeters = destination.distanceKm * 1000.0;
         if (activeLoc != null && destination.lat != 0.0 && destination.lng != 0.0) {
             float[] res = new float[1];
             Location.distanceBetween(activeLoc.getLatitude(), activeLoc.getLongitude(), destination.lat, destination.lng, res);
-            computedDistKm = res[0] / 1000.0;
+            computedDistMeters = res[0];
         }
-        final double totalDistKm = computedDistKm;
-        final int etaMin = Math.max(1, (int) Math.round((totalDistKm / 70.0) * 60.0));
+        final double totalDistMeters = Math.max(50.0, computedDistMeters);
+        final long remainingSeconds = Math.max(60L, Math.round((totalDistMeters / 1000.0) / 68.0 * 3600.0));
 
         AutoDataBridge.RouteStepItem activeStep = (!routeSteps.isEmpty() && currentStepIndex < routeSteps.size())
                 ? routeSteps.get(currentStepIndex)
                 : null;
+        AutoDataBridge.RouteStepItem followingStep = (!routeSteps.isEmpty() && (currentStepIndex + 1) < routeSteps.size())
+                ? routeSteps.get(currentStepIndex + 1)
+                : null;
 
-        String stepTitle = isRouteLoading
-                ? "🧭 Calcolo percorso camper..."
-                : (activeStep != null ? ("➡️ " + activeStep.instruction) : ("➡️ Procedi verso " + destination.location));
+        String cueText = isRouteLoading
+                ? ("Calcolo percorso 3D verso " + destination.location)
+                : (activeStep != null && activeStep.instruction != null && !activeStep.instruction.isEmpty()
+                        ? activeStep.instruction
+                        : ("Procedi verso " + destination.location));
+        String roadName = (activeStep != null && activeStep.roadName != null && !activeStep.roadName.isEmpty())
+                ? activeStep.roadName
+                : destination.location;
+        double stepMeters = (activeStep != null && activeStep.distanceMeters > 0)
+                ? activeStep.distanceMeters
+                : totalDistMeters;
 
-        double stepDistKm = (activeStep != null && activeStep.distanceMeters > 0)
-                ? (activeStep.distanceMeters / 1000.0)
-                : totalDistKm;
+        Step.Builder currentStepBuilder = new Step.Builder(cueText)
+                .setRoad(roadName)
+                .setManeuver(buildCarManeuver(activeStep));
 
-        ItemList.Builder listBuilder = new ItemList.Builder();
+        RoutingInfo.Builder routingInfoBuilder = new RoutingInfo.Builder()
+                .setCurrentStep(currentStepBuilder.build(), createAutoDistance(stepMeters));
 
-        // 1. Prossima manovra in tempo reale (toccando ripete l'indicazione vocale)
-        Row.Builder maneuverRow = new Row.Builder()
-                .setTitle(stepTitle)
-                .addText(createDistanceSpanText(stepDistKm, "Tocca per ascoltare voce guida"))
-                .setBrowsable(true)
-                .setOnClickListener(() -> {
-                    if (activeStep != null) {
-                        speakGuidance(activeStep.instruction);
-                    } else {
-                        speakGuidance("Procedi verso " + destination.location);
-                    }
-                });
-
-        if (activeLoc != null) {
-            maneuverRow.setMetadata(
-                new Metadata.Builder()
-                    .setPlace(new Place.Builder(CarLocation.create(activeLoc.getLatitude(), activeLoc.getLongitude())).build())
-                    .build()
-            );
-        }
-        listBuilder.addItem(maneuverRow.build());
-
-        // 2. Riepilogo Destinazione, Distanza Totale e Tempo Stimato
-        Row.Builder destRow = new Row.Builder()
-                .setTitle("🏁 " + destination.location)
-                .addText(createDistanceSpanText(totalDistKm, "Arrivo ~" + etaMin + " min • 🛡️ Sagoma OK"))
-                .setBrowsable(true)
-                .setOnClickListener(() -> {
-                    speakGuidance("Destinazione " + destination.location + " a " + String.format(Locale.ITALIAN, "%.1f", totalDistKm) + " chilometri.");
-                });
-
-        if (destination.lat != 0.0 && destination.lng != 0.0) {
-            destRow.setMetadata(
-                new Metadata.Builder()
-                    .setPlace(
-                        new Place.Builder(CarLocation.create(destination.lat, destination.lng))
-                            .setMarker(new PlaceMarker.Builder().setColor(CarColor.GREEN).build())
-                            .build()
-                    )
-                    .build()
-            );
-        }
-        listBuilder.addItem(destRow.build());
-
-        // 3. Ricalcola percorso
-        Row.Builder recalcRow = new Row.Builder()
-                .setTitle("🔄 Ricalcola Percorso Camper")
-                .addText(createDistanceSpanText(0.0, "Aggiorna rotta dalla posizione attuale"))
-                .setBrowsable(true)
-                .setOnClickListener(this::loadRouteAsync);
-        listBuilder.addItem(recalcRow.build());
-
-        // 4. Termina Navigazione
-        Row.Builder stopRow = new Row.Builder()
-                .setTitle("⛔ Termina Navigazione")
-                .addText(createDistanceSpanText(0.0, "Torna al menu principale ViaCamper"))
-                .setBrowsable(true)
-                .setOnClickListener(this::stopNavigationAndExit);
-        listBuilder.addItem(stopRow.build());
-
-        PlaceListMapTemplate.Builder templateBuilder = new PlaceListMapTemplate.Builder()
-                .setTitle("Navigatore Camper")
-                .setHeaderAction(Action.BACK)
-                .setItemList(listBuilder.build())
-                .setCurrentLocationEnabled(true);
-
-        if (activeLoc != null) {
-            templateBuilder.setAnchor(new Place.Builder(CarLocation.create(activeLoc.getLatitude(), activeLoc.getLongitude())).build());
+        if (followingStep != null && followingStep.instruction != null && !followingStep.instruction.isEmpty()) {
+            Step.Builder nextStepBuilder = new Step.Builder(followingStep.instruction)
+                    .setManeuver(buildCarManeuver(followingStep));
+            if (followingStep.roadName != null && !followingStep.roadName.isEmpty()) {
+                nextStepBuilder.setRoad(followingStep.roadName);
+            }
+            routingInfoBuilder.setNextStep(nextStepBuilder.build());
         }
 
-        return templateBuilder.build();
+        DateTimeWithZone arrivalTime = DateTimeWithZone.create(
+                System.currentTimeMillis() + (remainingSeconds * 1000L),
+                TimeZone.getDefault()
+        );
+        TravelEstimate destEstimate = new TravelEstimate.Builder(
+                createAutoDistance(totalDistMeters),
+                arrivalTime
+        )
+                .setRemainingTimeSeconds(remainingSeconds)
+                .setRemainingTimeColor(CarColor.GREEN)
+                .setRemainingDistanceColor(CarColor.PRIMARY)
+                .build();
+
+        // Sincronizza anche il NavigationManager del cruscotto auto
+        try {
+            if (navigationManager != null && !isStopped) {
+                Destination carDest = new Destination.Builder()
+                        .setName(destination.location != null ? destination.location : "Destinazione Camper")
+                        .build();
+                TravelEstimate stepEstimate = new TravelEstimate.Builder(
+                        createAutoDistance(stepMeters),
+                        arrivalTime
+                ).setRemainingTimeSeconds(Math.min(remainingSeconds, Math.max(10L, (long) (stepMeters / 15.0)))).build();
+                Trip carTrip = new Trip.Builder()
+                        .addDestination(carDest, destEstimate)
+                        .addStep(currentStepBuilder.build(), stepEstimate)
+                        .setLoading(false)
+                        .build();
+                navigationManager.updateTrip(carTrip);
+            }
+        } catch (Exception ignored) {}
+
+        // ActionStrip principale: Voce, Toggle 3D/2D, Ricalcola, Termina
+        ActionStrip.Builder actionStripBuilder = new ActionStrip.Builder();
+        actionStripBuilder.addAction(
+                new Action.Builder()
+                        .setIcon(createActionBadgeIcon(surfaceRenderer.is3DPerspective() ? "3D" : "2D", "#0284C7"))
+                        .setOnClickListener(() -> {
+                            boolean now3D = surfaceRenderer.toggle3DPerspective();
+                            CarToast.makeText(
+                                    getCarContext(),
+                                    now3D ? "Vista Navigatore 3D Prospettica attiva" : "Vista Mappa 2D dall'alto attiva",
+                                    CarToast.LENGTH_SHORT
+                            ).show();
+                            invalidate();
+                        })
+                        .build()
+        );
+        actionStripBuilder.addAction(
+                new Action.Builder()
+                        .setIcon(createActionBadgeIcon("🔊", "#0F766E"))
+                        .setOnClickListener(() -> speakGuidance(cueText))
+                        .build()
+        );
+        actionStripBuilder.addAction(
+                new Action.Builder()
+                        .setIcon(createActionBadgeIcon("🔄", "#4F46E5"))
+                        .setOnClickListener(this::loadRouteAsync)
+                        .build()
+        );
+        actionStripBuilder.addAction(
+                new Action.Builder()
+                        .setTitle("Fine")
+                        .setOnClickListener(this::stopNavigationAndExit)
+                        .build()
+        );
+
+        // MapActionStrip laterale per Zoom +/-, Pan e Ricentra
+        ActionStrip.Builder mapActionStripBuilder = new ActionStrip.Builder()
+                .addAction(Action.PAN)
+                .addAction(
+                        new Action.Builder()
+                                .setIcon(createActionBadgeIcon("+", "#1E293B"))
+                                .setOnClickListener(surfaceRenderer::zoomIn)
+                                .build()
+                )
+                .addAction(
+                        new Action.Builder()
+                                .setIcon(createActionBadgeIcon("-", "#1E293B"))
+                                .setOnClickListener(surfaceRenderer::zoomOut)
+                                .build()
+                )
+                .addAction(
+                        new Action.Builder()
+                                .setIcon(createActionBadgeIcon("🎯", "#0284C7"))
+                                .setOnClickListener(surfaceRenderer::recenter)
+                                .build()
+                );
+
+        surfaceRenderer.requestRender();
+
+        try {
+            return new NavigationTemplate.Builder()
+                    .setNavigationInfo(routingInfoBuilder.build())
+                    .setDestinationTravelEstimate(destEstimate)
+                    .setActionStrip(actionStripBuilder.build())
+                    .setMapActionStrip(mapActionStripBuilder.build())
+                    .setBackgroundColor(CarColor.SECONDARY)
+                    .build();
+        } catch (Exception fallbackEx) {
+            return new NavigationTemplate.Builder()
+                    .setNavigationInfo(routingInfoBuilder.build())
+                    .setDestinationTravelEstimate(destEstimate)
+                    .setActionStrip(actionStripBuilder.build())
+                    .build();
+        }
     }
 }
 `;
