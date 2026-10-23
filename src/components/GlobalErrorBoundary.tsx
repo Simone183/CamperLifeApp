@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RefreshCw, Send, ShieldAlert } from "lucide-react";
+import { resolveApiUrl } from "../utils/resolveMediaUrl";
 
 interface Props {
   children: ReactNode;
@@ -27,10 +28,36 @@ export class GlobalErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
+    const msg = (error?.message || String(error || "")).toLowerCase();
+    const stack = (error?.stack || "").toLowerCase();
+    if (
+      msg.includes("getrootnode") ||
+      stack.includes("maps.googleapis.com") ||
+      stack.includes("marker.js")
+    ) {
+      try {
+        const raw = localStorage.getItem("camper_app_settings");
+        const parsed = raw ? JSON.parse(raw) : {};
+        parsed.mapEngine = "leaflet";
+        localStorage.setItem("camper_app_settings", JSON.stringify(parsed));
+        window.dispatchEvent(new Event("app-settings-changed"));
+      } catch (e) {}
+      return { hasError: false, error: null };
+    }
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    const msg = (error?.message || String(error || "")).toLowerCase();
+    const stack = (error?.stack || "").toLowerCase();
+    if (
+      msg.includes("getrootnode") ||
+      stack.includes("maps.googleapis.com") ||
+      stack.includes("marker.js")
+    ) {
+      this.setState({ hasError: false, error: null, errorInfo: null });
+      return;
+    }
     this.setState({ errorInfo });
     this.sendCrashReport(error, errorInfo?.componentStack || "");
   }
@@ -78,7 +105,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
     this.setState({ isReporting: true });
 
     try {
-      await fetch("/api/report-crash", {
+      await fetch(resolveApiUrl("/api/report-crash"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -88,7 +115,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
           userEmail: this.props.currentUserEmail || "Anonimo",
           url: window.location.href,
           userAgent: navigator.userAgent,
-          appVersion: "2.4.70",
+          appVersion: "2.5.13",
         }),
       });
       this.setState({ reported: true, isReporting: false });

@@ -61,8 +61,34 @@ export function loadGooglePlacesScript(apiKey: string): Promise<boolean> {
   if (scriptLoadPromise) return scriptLoadPromise;
 
   scriptLoadPromise = new Promise((resolve) => {
-    if (window.google?.maps || document.querySelector('script[src*="maps.googleapis.com"]')) {
+    if (window.google?.maps?.places) {
       resolve(true);
+      return;
+    }
+    if (typeof (window.google?.maps as any)?.importLibrary === 'function') {
+      (window.google.maps as any)
+        .importLibrary('places')
+        .then(() => resolve(true))
+        .catch(() => resolve(Boolean(window.google?.maps?.places)));
+      return;
+    }
+    if (window.google?.maps || document.querySelector('script[src*="maps.googleapis.com"]')) {
+      const check = setInterval(() => {
+        if (window.google?.maps?.places) {
+          clearInterval(check);
+          resolve(true);
+        } else if (typeof (window.google?.maps as any)?.importLibrary === 'function') {
+          clearInterval(check);
+          (window.google.maps as any)
+            .importLibrary('places')
+            .then(() => resolve(true))
+            .catch(() => resolve(Boolean(window.google?.maps?.places)));
+        }
+      }, 100);
+      setTimeout(() => {
+        clearInterval(check);
+        resolve(Boolean(window.google?.maps));
+      }, 4000);
       return;
     }
     const existingScript = document.getElementById('google-maps-places-sdk');
@@ -83,7 +109,7 @@ export function loadGooglePlacesScript(apiKey: string): Promise<boolean> {
     isScriptLoading = true;
     const script = document.createElement('script');
     script.id = 'google-maps-places-sdk';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,marker`;
     script.async = true;
     script.onload = () => {
       isScriptLoading = false;

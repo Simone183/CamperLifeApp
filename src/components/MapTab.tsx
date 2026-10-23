@@ -209,6 +209,44 @@ function MapEventsHelper({
   React.useEffect(() => {
     if (!map) return;
 
+    // Ensure map.getDiv() and google.maps.Map.prototype.getDiv() never return undefined
+    // Prevents TypeError: Cannot read properties of undefined (reading 'getRootNode') in AdvancedMarkerElement
+    const ensureValidDiv = (targetMap: any, origGetDiv?: Function) => {
+      try {
+        const div = origGetDiv ? origGetDiv.call(targetMap) : undefined;
+        if (div && typeof div.getRootNode === "function") return div;
+      } catch (e) {}
+      const gmDiv =
+        targetMap?.__gm?.div ||
+        targetMap?.__gm?.developerProvidedDiv ||
+        targetMap?.__gm?.Ir;
+      if (gmDiv && typeof gmDiv.getRootNode === "function") return gmDiv;
+      const domContainer =
+        typeof document !== "undefined"
+          ? document.getElementById("google-map-container")
+          : null;
+      if (domContainer) return domContainer;
+      if (!targetMap.__fallbackDiv && typeof document !== "undefined") {
+        targetMap.__fallbackDiv = document.createElement("div");
+      }
+      return targetMap.__fallbackDiv;
+    };
+
+    const gMapsProto = (window as any).google?.maps?.Map?.prototype;
+    if (gMapsProto && !gMapsProto.__patchedGetDiv) {
+      const protoOrigGetDiv = gMapsProto.getDiv;
+      gMapsProto.getDiv = function () {
+        return ensureValidDiv(this, protoOrigGetDiv);
+      };
+      gMapsProto.__patchedGetDiv = true;
+    }
+
+    if (!(map as any).__originalGetDiv && typeof map.getDiv === "function") {
+      (map as any).__originalGetDiv = map.getDiv;
+    }
+    const originalGetDiv = (map as any).__originalGetDiv;
+    (map as any).getDiv = () => ensureValidDiv(map, originalGetDiv);
+
     // Attach backwards-compatible custom helpers to google maps instance
     (map as any).setView = (coords: [any, any], zoom?: number) => {
       if (coords && coords[0] !== undefined && coords[1] !== undefined && !isNaN(Number(coords[0])) && !isNaN(Number(coords[1]))) {
@@ -240,7 +278,15 @@ function MapEventsHelper({
         lngFn.valueOf = () => fallbackLng;
         lngFn.toString = () => fallbackLng.toString();
         lngFn.toFixed = (digits?: number) => fallbackLng.toFixed(digits);
-        return { lat: latFn, lng: lngFn } as any;
+        return {
+          lat: latFn,
+          lng: lngFn,
+          toJSON: () => ({ lat: fallbackLat, lng: fallbackLng }),
+          equals: (other: any) =>
+            other &&
+            (typeof other.lat === "function" ? other.lat() : other.lat) === fallbackLat &&
+            (typeof other.lng === "function" ? other.lng() : other.lng) === fallbackLng,
+        } as any;
       }
       return new Proxy(c, {
         get(target, prop, receiver) {
@@ -458,7 +504,7 @@ function SmartRouteDisplay({
 
 
       {/* Bridge warnings indicator if height violated */}
-      {isBridgeObstacleExceeded && (
+      {isBridgeObstacleExceeded && !isNaN(Number(midCoord?.lat)) && !isNaN(Number(midCoord?.lng)) && (
         <AdvancedMarker
           position={{ lat: Number(midCoord.lat), lng: Number(midCoord.lng) }}
           title="Collisione Sagoma Imminente!"
@@ -476,6 +522,27 @@ function SmartRouteDisplay({
       )}
     </>
   );
+}
+
+class GoogleMapErrorBoundary extends React.Component<
+  { onCrash: (err: Error) => void; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { onCrash: (err: Error) => void; children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error) {
+    console.warn("GoogleMapErrorBoundary caught map error, switching to Leaflet engine:", error);
+    this.props.onCrash(error);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
 }
 
 interface MapTabProps {
@@ -626,7 +693,13 @@ export default function MapTab({
   }, [userLocation]);
   const mapMovedByUserRef = React.useRef<boolean>(false);
   const [googleMapInstance, setGoogleMapInstance] = React.useState<any>(null);
+  const [googleMapCrashed, setGoogleMapCrashed] = React.useState<boolean>(false);
   const [isIdle, setIsIdle] = React.useState<boolean>(true);
+  const isGoogleMapDomReady = Boolean(
+    googleMapInstance &&
+      typeof googleMapInstance.getDiv === "function" &&
+      googleMapInstance.getDiv()
+  );
 
   const activeTrip = trips?.find((t) => t.status === "Attivo");
 
@@ -4771,7 +4844,7 @@ out center;`;
           onPointerDown={handleMapUserActivity}
         >
           {/* Map canvas */}
-          {!hasValidKey || !isOnline || settings?.mapEngine === "leaflet" ? (
+          {!hasValidKey || !isOnline || settings?.mapEngine === "leaflet" || googleMapCrashed ? (
             <LeafletOfflineMap
               places={filteredPlaces}
               userLocation={userLocation}
@@ -4792,7 +4865,7 @@ out center;`;
               isImporting={isImporting}
               onCenterChange={handleMapCenterChange}
               indicatorTitle={
-                settings?.mapEngine === "leaflet" && hasValidKey && isOnline
+                (settings?.mapEngine === "leaflet" || googleMapCrashed) && hasValidKey && isOnline
                   ? "Mappa Leaflet Ultra-Rapida ⚡"
                   : !hasValidKey
                   ? isOnline
@@ -4803,7 +4876,8 @@ out center;`;
             />
           ) : (
             <div className="w-full h-full relative" id="google-map-container">
-              <APIProvider apiKey={googleMapsKey} version="weekly">
+              <GoogleMapErrorBoundary onCrash={() => setGoogleMapCrashed(true)}>
+              <APIProvider apiKey={googleMapsKey}>
                 <Map
                   defaultZoom={selectedPlace ? 13 : 6}
                   defaultCenter={
@@ -4928,7 +5002,7 @@ out center;`;
                   )}
 
                   {/* Places Markers */}
-                  {visiblePlaces
+                  {isGoogleMapDomReady && visiblePlaces
                     .filter((place) => {
                       if (showSmartRoute) {
                         if (selectedPlace && place.id === selectedPlace.id) {
@@ -4999,7 +5073,7 @@ out center;`;
                   })}
 
                   {/* User GPS Location Marker */}
-                  {userLocation && (
+                  {isGoogleMapDomReady && userLocation && (
                     <AdvancedMarker
                       position={{ lat: Number(userLocation.lat), lng: Number(userLocation.lng) }}
                       title="Il Mio Camper"
@@ -5046,7 +5120,7 @@ out center;`;
                   )}
 
                   {/* Clicked Location Marker */}
-                  {clickedCoords && (
+                  {isGoogleMapDomReady && clickedCoords && (
                     <AdvancedMarker
                       position={{ lat: Number(clickedCoords.lat), lng: Number(clickedCoords.lng) }}
                       title="Punto Selezionato"
@@ -5064,7 +5138,7 @@ out center;`;
                   )}
 
                   {/* Search Result Pins (Puntine Ricerca da barra di ricerca, esclusi risultati puramente comunali/cittadini) */}
-                  {searchResultPins
+                  {isGoogleMapDomReady && searchResultPins
                     .filter((sug) => !isCityOrLocality(sug) && !sug.isCity)
                     .map((sug, idx) => {
                     const pLat = typeof sug.lat === 'number' ? sug.lat : parseFloat(sug.lat || sug.lon);
@@ -5101,7 +5175,7 @@ out center;`;
                   })}
 
                   {/* OSM Obstacles (limitations overlay) */}
-                  {showOsmObstacles &&
+                  {isGoogleMapDomReady && showOsmObstacles &&
                     osmObstacles.map((obs) => {
                       const isCritical = obs.isViolation;
                       const sizeClass = isCritical
@@ -5139,7 +5213,7 @@ out center;`;
                     })}
 
                   {/* Smart Route Display (polylines and detour calculation overlays) */}
-                  {showSmartRoute && selectedPlace && userLocation && (
+                  {isGoogleMapDomReady && showSmartRoute && selectedPlace && userLocation && (
                     <SmartRouteDisplay
                       selectedPlace={selectedPlace}
                       userLocation={userLocation}
@@ -5150,6 +5224,7 @@ out center;`;
                   )}
                 </Map>
               </APIProvider>
+              </GoogleMapErrorBoundary>
             </div>
           )}
 
@@ -10153,6 +10228,7 @@ export function LeafletOfflineMap({
       attributionControl: true,
     });
 
+    (map as any).getDiv = () => map.getContainer();
     mapRef.current = map;
     setLeafletMapInstance(map);
     onMapInstanceRef.current?.(map);
