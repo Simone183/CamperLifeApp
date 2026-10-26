@@ -115,7 +115,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
           userEmail: this.props.currentUserEmail || "Anonimo",
           url: window.location.href,
           userAgent: navigator.userAgent,
-          appVersion: "2.5.15",
+          appVersion: "2.5.16",
         }),
       });
       this.setState({ reported: true, isReporting: false });

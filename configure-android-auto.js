@@ -250,36 +250,192 @@ public class AutoDataBridge {
 
     private static final String PREFS_NAME = "CapacitorStorage";
     private static volatile Location latestLiveLocation = null;
+    private static volatile boolean globalTrackerStarted = false;
+    private static volatile long lastGlobalFixRealtimeNanos = 0L;
 
     public static void updateLiveLocation(Location loc) {
         if (loc != null && (loc.getLatitude() != 0.0 || loc.getLongitude() != 0.0)) {
+            Location prev = latestLiveLocation;
+            if (prev != null && (!loc.hasSpeed() || loc.getSpeed() == 0.0f || !loc.hasBearing() || loc.getBearing() == 0.0f)) {
+                float[] res = new float[2];
+                Location.distanceBetween(prev.getLatitude(), prev.getLongitude(), loc.getLatitude(), loc.getLongitude(), res);
+                float distM = res[0];
+                long dtMs = Math.abs(loc.getTime() - prev.getTime());
+                if (dtMs <= 0L || dtMs > 60000L) {
+                    dtMs = 1000L;
+                }
+                if (distM >= 0.8f) {
+                    if (!loc.hasBearing() || loc.getBearing() == 0.0f) {
+                        loc.setBearing((res[1] + 360.0f) % 360.0f);
+                    }
+                    if (!loc.hasSpeed() || loc.getSpeed() == 0.0f) {
+                        float calcSpeedMs = distM / (dtMs / 1000.0f);
+                        if (calcSpeedMs > 0.3f && calcSpeedMs < 55.0f) {
+                            loc.setSpeed(calcSpeedMs);
+                        }
+                    }
+                }
+            }
             latestLiveLocation = loc;
+            lastGlobalFixRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos();
         }
     }
 
     /**
-     * Restituisce sempre la posizione GPS più fresca combinando fused, gps, passive e network.
+     * Riceve le coordinate live dal WebView/Capacitor del telefono (MainActivity) e aggiorna
+     * istantaneamente anche il motore di navigazione Android Auto.
+     */
+    public static void updateLiveLocationFromCoordinates(Context context, double lat, double lng) {
+        if (lat == 0.0 && lng == 0.0) return;
+        Location synth = new Location("webview_fused");
+        synth.setLatitude(lat);
+        synth.setLongitude(lng);
+        synth.setTime(System.currentTimeMillis());
+        synth.setElapsedRealtimeNanos(android.os.SystemClock.elapsedRealtimeNanos());
+        updateLiveLocation(synth);
+        try {
+            if (context != null) {
+                SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                Location cur = latestLiveLocation != null ? latestLiveLocation : synth;
+                prefs.edit()
+                    .putString("camper_live_auto_lat", String.valueOf(cur.getLatitude()))
+                    .putString("camper_live_auto_lng", String.valueOf(cur.getLongitude()))
+                    .putLong("camper_live_auto_time", System.currentTimeMillis())
+                    .putFloat("camper_live_auto_speed", cur.hasSpeed() ? cur.getSpeed() : 0.0f)
+                    .putFloat("camper_live_auto_bearing", cur.hasBearing() ? cur.getBearing() : 0.0f)
+                    .apply();
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Avvia un listener GPS globale continuo con distanza minima 0m (così riceve ogni singolo fix
+     * anche a bassa velocità o in partenza) + listener hardware dell'autoradio Android Auto.
+     */
+    public static synchronized void startGlobalGpsTracker(final Context context) {
+        if (context == null) return;
+        if (context instanceof androidx.car.app.CarContext) {
+            try {
+                androidx.car.app.CarContext carCtx = (androidx.car.app.CarContext) context;
+                androidx.car.app.hardware.CarHardwareManager hwMgr =
+                        carCtx.getCarService(androidx.car.app.hardware.CarHardwareManager.class);
+                if (hwMgr != null) {
+                    hwMgr.getCarSensors().addCarHardwareLocationListener(
+                            androidx.car.app.hardware.info.CarSensors.UPDATE_RATE_FASTEST,
+                            androidx.core.content.ContextCompat.getMainExecutor(carCtx),
+                            carHardwareLocation -> {
+                                try {
+                                    if (carHardwareLocation != null && carHardwareLocation.getLocation().getStatus() == androidx.car.app.hardware.common.CarValue.STATUS_SUCCESS) {
+                                        Location hwLoc = carHardwareLocation.getLocation().getValue();
+                                        if (hwLoc != null && (hwLoc.getLatitude() != 0.0 || hwLoc.getLongitude() != 0.0)) {
+                                            updateLiveLocation(hwLoc);
+                                        }
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                    );
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (globalTrackerStarted) return;
+        try {
+            final LocationManager lm = (LocationManager) context.getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
+            if (lm != null) {
+                android.os.Looper mainLooper = android.os.Looper.getMainLooper();
+                android.location.LocationListener globalListener = new android.location.LocationListener() {
+                    @Override
+                    public void onLocationChanged(Location location) {
+                        if (location != null && (location.getLatitude() != 0.0 || location.getLongitude() != 0.0)) {
+                            updateLiveLocation(location);
+                        }
+                    }
+                    @Override
+                    public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
+                    @Override
+                    public void onProviderEnabled(String provider) {}
+                    @Override
+                    public void onProviderDisabled(String provider) {}
+                };
+                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
+                for (String p : providers) {
+                    try {
+                        lm.requestLocationUpdates(p, 400L, 0.0f, globalListener, mainLooper);
+                    } catch (Exception ignored) {}
+                }
+                globalTrackerStarted = true;
+            }
+        } catch (SecurityException ignored) {}
+    }
+
+    /**
+     * Restituisce sempre la posizione GPS più fresca combinando listener live, hardware auto,
+     * fused, gps, network e le coordinate sincronizzate dal telefono.
      */
     public static Location getBestLiveLocation(Context context) {
+        startGlobalGpsTracker(context);
         Location best = latestLiveLocation;
         try {
             LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
             if (lm != null) {
-                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.PASSIVE_PROVIDER, LocationManager.NETWORK_PROVIDER };
+                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
                 for (String p : providers) {
                     try {
                         Location cand = lm.getLastKnownLocation(p);
                         if (cand != null && (cand.getLatitude() != 0.0 || cand.getLongitude() != 0.0)) {
-                            if (best == null || cand.getTime() > best.getTime()) {
+                            if (best == null || cand.getTime() > best.getTime() + 1500L) {
                                 best = cand;
                             }
                         }
                     } catch (Exception ignored) {}
                 }
+                // Su Android 11+ richiedi un fix attivo se non arrivano aggiornamenti da oltre 2 secondi
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    long ageNs = android.os.SystemClock.elapsedRealtimeNanos() - lastGlobalFixRealtimeNanos;
+                    if (ageNs > 2200000000L) {
+                        lastGlobalFixRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos();
+                        try {
+                            lm.getCurrentLocation(
+                                    LocationManager.GPS_PROVIDER,
+                                    null,
+                                    androidx.core.content.ContextCompat.getMainExecutor(context),
+                                    loc -> {
+                                        if (loc != null && (loc.getLatitude() != 0.0 || loc.getLongitude() != 0.0)) {
+                                            updateLiveLocation(loc);
+                                        }
+                                    }
+                            );
+                        } catch (Exception ignored) {}
+                    }
+                }
             }
         } catch (SecurityException ignored) {}
+
+        // Controlla anche la posizione live scritta dal telefono in SharedPreferences
+        try {
+            if (context != null) {
+                SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                long savedTime = prefs.getLong("camper_live_auto_time", 0L);
+                if (savedTime > 0L && (best == null || savedTime > best.getTime() + 1000L)) {
+                    double sLat = Double.parseDouble(prefs.getString("camper_live_auto_lat", "0"));
+                    double sLng = Double.parseDouble(prefs.getString("camper_live_auto_lng", "0"));
+                    if (sLat != 0.0 || sLng != 0.0) {
+                        Location spLoc = new Location("shared_prefs_live");
+                        spLoc.setLatitude(sLat);
+                        spLoc.setLongitude(sLng);
+                        spLoc.setTime(savedTime);
+                        float spSpeed = prefs.getFloat("camper_live_auto_speed", 0.0f);
+                        float spBearing = prefs.getFloat("camper_live_auto_bearing", 0.0f);
+                        if (spSpeed > 0.0f) spLoc.setSpeed(spSpeed);
+                        if (spBearing != 0.0f) spLoc.setBearing(spBearing);
+                        best = spLoc;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
         if (best != null) {
-            latestLiveLocation = best;
+            updateLiveLocation(best);
         }
         return best;
     }
@@ -971,15 +1127,62 @@ public class AutoDataBridge {
 `;
   fs.writeFileSync(path.join(javaDir, 'AutoDataBridge.java'), autoDataBridgeJava, 'utf-8');
 
-  // B. ViaCamperCarAppService.java
+  // B. ViaCamperCarAppService.java (Promosso a Foreground Service Location per impedire ad Android di bloccare il GPS a schermo del telefono spento!)
   const serviceJava = `package com.ViaCamper.myapp.auto;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.car.app.CarAppService;
 import androidx.car.app.Session;
 import androidx.car.app.validation.HostValidator;
+import androidx.core.app.NotificationCompat;
 
 public class ViaCamperCarAppService extends CarAppService {
+
+    private static final String NAV_CHANNEL_ID = "viacamper_auto_gps_foreground_v1";
+    private static final int NAV_NOTIFICATION_ID = 8801;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        promoteToForegroundLocationService();
+        AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
+    }
+
+    private void promoteToForegroundLocationService() {
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                        NAV_CHANNEL_ID,
+                        "Navigatore GPS Android Auto",
+                        NotificationManager.IMPORTANCE_LOW
+                );
+                channel.setDescription("Mantiene attivo il segnale GPS in tempo reale durante la guida su Android Auto");
+                channel.setShowBadge(false);
+                nm.createNotificationChannel(channel);
+            }
+
+            Notification notification = new NotificationCompat.Builder(this, NAV_CHANNEL_ID)
+                    .setContentTitle("ViaCamper • Android Auto attivo")
+                    .setContentText("Tracciamento GPS camper in tempo reale")
+                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setOngoing(true)
+                    .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .build();
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NAV_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            } else {
+                startForeground(NAV_NOTIFICATION_ID, notification);
+            }
+        } catch (Exception ignored) {}
+    }
 
     @NonNull
     @Override
@@ -990,6 +1193,8 @@ public class ViaCamperCarAppService extends CarAppService {
     @NonNull
     @Override
     public Session onCreateSession() {
+        promoteToForegroundLocationService();
+        AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
         return new ViaCamperCarSession();
     }
 }
@@ -1010,9 +1215,9 @@ public class ViaCamperCarSession extends Session {
     @NonNull
     @Override
     public Screen onCreateScreen(@NonNull Intent intent) {
+        AutoDataBridge.startGlobalGpsTracker(getCarContext());
         try {
-            getCarContext().getCarService(AppManager.class)
-                .setSurfaceCallback(CarSurfaceRenderer.getInstance(getCarContext()));
+            CarSurfaceRenderer.getInstance(getCarContext()).attachToCarContext(getCarContext());
         } catch (Exception ignored) {}
         return new MainMapScreen(getCarContext());
     }
@@ -1083,6 +1288,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
 
     private CarContext carContext;
     private SurfaceContainer surfaceContainer;
+    private boolean surfaceCallbackRegistered = false;
     private Rect visibleArea;
     private boolean navigationActive = false;
     private boolean is3DPerspective = true;
@@ -1093,6 +1299,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
     private double displayLat = 41.9028;
     private double displayLng = 12.4964;
     private boolean hasInitialFix = false;
+    private long lastFixMillis = 0L;
 
     private float targetBearing = 0.0f;
     private float displayBearing = 0.0f;
@@ -1160,7 +1367,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             if (!navigationActive) return;
             boolean needsMoreFrames = stepInterpolation();
             renderFrame();
-            renderHandler.postDelayed(this, needsMoreFrames ? 40L : 220L);
+            renderHandler.postDelayed(this, needsMoreFrames ? 40L : 200L);
         }
     };
 
@@ -1223,13 +1430,18 @@ public class CarSurfaceRenderer implements SurfaceCallback {
     }
 
     public void attachToCarContext(CarContext ctx) {
+        boolean contextChanged = (this.carContext != ctx);
         this.carContext = ctx;
         if (diskTileCacheDir == null) {
             initDiskCache(ctx);
         }
-        try {
-            ctx.getCarService(AppManager.class).setSurfaceCallback(this);
-        } catch (Exception ignored) {}
+        // Registra il SurfaceCallback solo se necessario per non resettare la Surface ad ogni frame!
+        if (!surfaceCallbackRegistered || contextChanged || surfaceContainer == null) {
+            try {
+                ctx.getCarService(AppManager.class).setSurfaceCallback(this);
+                surfaceCallbackRegistered = true;
+            } catch (Exception ignored) {}
+        }
     }
 
     /**
@@ -1269,6 +1481,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             this.displayLat = this.currentLat;
             this.displayLng = this.currentLng;
             this.hasInitialFix = true;
+            this.lastFixMillis = System.currentTimeMillis();
             prefetchTilesAround(this.currentLat, this.currentLng);
             if (startLoc.hasBearing() && startLoc.getBearing() != 0.0f) {
                 this.targetBearing = (startLoc.getBearing() + 360.0f) % 360.0f;
@@ -1292,23 +1505,23 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         this.routeSteps = (steps != null) ? new ArrayList<>(steps) : new ArrayList<>();
         this.currentStepIndex = stepIdx;
 
-        // Aggancia subito posizione e orientamento della telecamera 3D al primo segmento stradale!
+        // Orienta subito la telecamera 3D lungo il primo tratto stradale senza mai bloccare le coordinate reali del camper!
         RouteSnapResult snap = snapToRoute(currentLat, currentLng);
-        if (snap.distanceMeters <= 55.0f) {
-            this.displayLat = snap.snappedLat;
-            this.displayLng = snap.snappedLng;
-        }
         if (!Float.isNaN(snap.segmentBearing)) {
             this.targetBearing = snap.segmentBearing;
-            this.displayBearing = snap.segmentBearing;
+            if (this.currentSpeedKmh < 3.0f) {
+                this.displayBearing = snap.segmentBearing;
+            }
         } else {
             float forwardBearing = computeForwardBearingAlongRoute(currentLat, currentLng);
             if (!Float.isNaN(forwardBearing)) {
                 this.targetBearing = forwardBearing;
-                this.displayBearing = forwardBearing;
+                if (this.currentSpeedKmh < 3.0f) {
+                    this.displayBearing = forwardBearing;
+                }
             }
         }
-        prefetchTilesAround(this.displayLat, this.displayLng);
+        prefetchTilesAround(this.currentLat, this.currentLng);
         updateCurrentStepTexts();
         requestRender();
     }
@@ -1330,38 +1543,56 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             double rawLat = loc.getLatitude();
             double rawLng = loc.getLongitude();
 
-            RouteSnapResult snap = snapToRoute(rawLat, rawLng);
-            double effectiveLat = (snap.distanceMeters <= 50.0f) ? snap.snappedLat : rawLat;
-            double effectiveLng = (snap.distanceMeters <= 50.0f) ? snap.snappedLng : rawLng;
-
+            // Calcola SEMPRE lo spostamento reale dalle coordinate GPS vere (mai da coordinate bloccate sul vertice!)
             float[] distRes = new float[2];
-            Location.distanceBetween(this.currentLat, this.currentLng, effectiveLat, effectiveLng, distRes);
+            Location.distanceBetween(this.currentLat, this.currentLng, rawLat, rawLng, distRes);
             float movedMeters = distRes[0];
             float gpsCourse = (distRes[1] + 360.0f) % 360.0f;
 
-            this.currentLat = effectiveLat;
-            this.currentLng = effectiveLng;
+            long nowMs = System.currentTimeMillis();
+            long dtMs = (lastFixMillis > 0L) ? Math.max(200L, nowMs - lastFixMillis) : 1000L;
+
+            this.currentLat = rawLat;
+            this.currentLng = rawLng;
             if (!hasInitialFix || movedMeters > 800.0f) {
-                this.displayLat = effectiveLat;
-                this.displayLng = effectiveLng;
+                this.displayLat = rawLat;
+                this.displayLng = rawLng;
                 this.hasInitialFix = true;
-                prefetchTilesAround(effectiveLat, effectiveLng);
+                lastFixMillis = nowMs;
+                prefetchTilesAround(rawLat, rawLng);
+            } else if (movedMeters >= 0.4f) {
+                lastFixMillis = nowMs;
             }
 
-            if (loc.hasSpeed()) {
+            // Velocità in tempo reale: usa loc.getSpeed() oppure calcolala dai metri percorsi nel tempo!
+            if (loc.hasSpeed() && loc.getSpeed() > 0.25f) {
                 this.currentSpeedKmh = Math.max(0.0f, loc.getSpeed() * 3.6f);
+            } else if (movedMeters >= 1.2f && dtMs < 15000L) {
+                float calcKmh = (movedMeters / (dtMs / 1000.0f)) * 3.6f;
+                if (calcKmh <= 160.0f) {
+                    this.currentSpeedKmh = this.currentSpeedKmh * 0.45f + calcKmh * 0.55f;
+                }
+            } else if (nowMs - lastFixMillis > 4000L) {
+                this.currentSpeedKmh = 0.0f;
             }
 
-            // Se siamo agganciati alla strada (< 45m), segui l'orientamento esatto della corsia stradale
-            // per evitare che oscillazioni della bussola GPS ruotino la mappa al contrario!
-            if (snap.distanceMeters <= 45.0f && !Float.isNaN(snap.segmentBearing)) {
-                this.targetBearing = snap.segmentBearing;
-            } else if (loc.hasBearing() && loc.getBearing() != 0.0f && loc.hasSpeed() && loc.getSpeed() >= 2.5f) {
+            RouteSnapResult snap = snapToRoute(rawLat, rawLng);
+
+            // Direzione bussola/telecamera 3D:
+            // 1. Se il camper si sta muovendo con bussola GPS valida, segui il movimento reale o il tratto stradale
+            if (movedMeters >= 1.8f) {
+                if (snap.distanceMeters <= 35.0f && !Float.isNaN(snap.segmentBearing)) {
+                    float diff = Math.abs(((gpsCourse - snap.segmentBearing + 540.0f) % 360.0f) - 180.0f);
+                    this.targetBearing = (diff <= 45.0f) ? snap.segmentBearing : gpsCourse;
+                } else {
+                    this.targetBearing = gpsCourse;
+                }
+            } else if (loc.hasBearing() && loc.getBearing() != 0.0f && this.currentSpeedKmh >= 4.0f) {
                 this.targetBearing = (loc.getBearing() + 360.0f) % 360.0f;
-            } else if (movedMeters >= 3.5f) {
-                this.targetBearing = gpsCourse;
+            } else if (snap.distanceMeters <= 40.0f && !Float.isNaN(snap.segmentBearing)) {
+                this.targetBearing = snap.segmentBearing;
             } else {
-                float routeBearing = computeForwardBearingAlongRoute(effectiveLat, effectiveLng);
+                float routeBearing = computeForwardBearingAlongRoute(rawLat, rawLng);
                 if (!Float.isNaN(routeBearing)) {
                     this.targetBearing = routeBearing;
                 }
@@ -1921,40 +2152,41 @@ public class CarSurfaceRenderer implements SurfaceCallback {
     }
 
     private void drawCockpitHud(Canvas canvas, int width, int height) {
-        // A. Pillola Strada Corrente + Bussola in basso a destra
+        // A. Pillola Strada Corrente + Bussola in basso, spostata a sinistra della colonna pulsanti MapActionStrip!
         String cardinal = getCardinalDirection(displayBearing);
         String roadLabel = (currentRoadName != null && !currentRoadName.trim().isEmpty())
                 ? currentRoadName.trim()
                 : (destName != null && !destName.isEmpty() ? ("Verso " + destName) : "Navigazione Camper 3D");
-        if (roadLabel.length() > 28) {
-            roadLabel = roadLabel.substring(0, 26) + "...";
+        if (roadLabel.length() > 26) {
+            roadLabel = roadLabel.substring(0, 24) + "...";
         }
         String modeTag = is3DPerspective ? "3D PROSPETTIVA" : "2D NORD";
         String badgeText = "🧭 " + cardinal + " • " + roadLabel + " • 🛡️ " + modeTag;
 
-        textPaint.setTextSize(19.0f);
+        textPaint.setTextSize(18.0f);
         float textW = textPaint.measureText(badgeText);
-        float pillW = textW + 34.0f;
+        float pillW = textW + 32.0f;
         float pillH = 38.0f;
-        float pillRight = width - 20.0f;
+        // Lascia 108px liberi a destra per i pulsanti circolari della MapActionStrip (+, -, Ricentra)
+        float pillRight = width - 108.0f;
         float pillBottom = height - 18.0f;
         RectF pillRect = new RectF(pillRight - pillW, pillBottom - pillH, pillRight, pillBottom);
 
         canvas.drawRoundRect(pillRect, 19.0f, 19.0f, hudBgPaint);
         canvas.drawRoundRect(pillRect, 19.0f, 19.0f, hudBorderPaint);
         textPaint.setColor(Color.WHITE);
-        canvas.drawText(badgeText, pillRect.left + 17.0f, pillRect.bottom - 12.0f, textPaint);
+        canvas.drawText(badgeText, pillRect.left + 16.0f, pillRect.bottom - 12.0f, textPaint);
 
-        // B. Tachimetro Circolare Velocità GPS (km/h) sopra la pillola stradale a destra
-        float speedCx = width - 58.0f;
-        float speedCy = pillRect.top - 48.0f;
-        float speedRadius = 36.0f;
+        // B. Tachimetro Circolare Velocità GPS (km/h) sopra la pillola stradale, lontano dai pulsanti laterali!
+        float speedCx = pillRect.right - 40.0f;
+        float speedCy = pillRect.top - 44.0f;
+        float speedRadius = 35.0f;
 
         canvas.drawCircle(speedCx, speedCy, speedRadius, hudBgPaint);
         canvas.drawCircle(speedCx, speedCy, speedRadius, hudBorderPaint);
 
         String speedVal = String.valueOf(Math.round(currentSpeedKmh));
-        textPaint.setTextSize(24.0f);
+        textPaint.setTextSize(23.0f);
         float sw = textPaint.measureText(speedVal);
         canvas.drawText(speedVal, speedCx - sw * 0.5f, speedCy + 2.0f, textPaint);
 
@@ -1962,7 +2194,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         textPaint.setColor(Color.parseColor("#94A3B8"));
         String unit = "km/h";
         float uw = textPaint.measureText(unit);
-        canvas.drawText(unit, speedCx - uw * 0.5f, speedCy + 18.0f, textPaint);
+        canvas.drawText(unit, speedCx - uw * 0.5f, speedCy + 17.0f, textPaint);
         textPaint.setColor(Color.WHITE);
     }
 
@@ -2761,6 +2993,8 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     private boolean announced50m = false;
     private boolean announcedArrival = false;
     private long lastRouteCalcMillis = 0L;
+    private long lastTemplateInvalidateMillis = 0L;
+    private double lastTemplateStepMeters = -1.0;
 
     private TextToSpeech carTts;
     private boolean ttsReady = false;
@@ -2781,13 +3015,14 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                     surfaceRenderer.requestRender();
                 }
             } catch (Exception ignored) {}
-            navHandler.postDelayed(this, 1000L);
+            navHandler.postDelayed(this, 500L);
         }
     };
 
     public ActiveCarNavigationScreen(@NonNull CarContext carContext, AutoDataBridge.MovementItem dest, Location startLoc) {
         super(carContext);
         this.destination = dest;
+        AutoDataBridge.startGlobalGpsTracker(carContext);
         this.currentLocation = (startLoc != null) ? startLoc : AutoDataBridge.getBestLiveLocation(carContext);
         this.surfaceRenderer = CarSurfaceRenderer.getInstance(carContext);
         this.surfaceRenderer.attachToCarContext(carContext);
@@ -2802,7 +3037,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         initCarVoice();
         startGPSUpdates();
         loadRouteAsync();
-        navHandler.postDelayed(gpsPollRunnable, 1000L);
+        navHandler.postDelayed(gpsPollRunnable, 500L);
     }
 
     private void initNavigationManager() {
@@ -2930,6 +3165,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 } else if (!firstInstruction.isEmpty()) {
                     speakGuidance("Percorso aggiornato. " + firstInstruction);
                 }
+                lastTemplateInvalidateMillis = System.currentTimeMillis();
                 invalidate();
             });
         }).start();
@@ -2941,10 +3177,11 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             locationManager = (LocationManager) getCarContext().getSystemService(Context.LOCATION_SERVICE);
             if (locationManager != null) {
                 Looper mainLooper = Looper.getMainLooper();
-                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.PASSIVE_PROVIDER, LocationManager.NETWORK_PROVIDER };
+                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
                 for (String provider : providers) {
                     try {
-                        locationManager.requestLocationUpdates(provider, 700L, 0.5f, this, mainLooper);
+                        // minDistance = 0.0f per ricevere ogni singolo aggiornamento GPS anche a bassa velocità!
+                        locationManager.requestLocationUpdates(provider, 400L, 0.0f, this, mainLooper);
                     } catch (Exception ignored) {}
                 }
                 isListening = true;
@@ -2982,10 +3219,13 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         AutoDataBridge.updateLiveLocation(location);
         currentLocation = location;
 
+        long now = System.currentTimeMillis();
+        boolean stepChanged = false;
+        double currentMetersToStep = -1.0;
+
         // Se il camper devia di oltre 65 metri dal tracciato calcolato, ricalcola automaticamente il percorso stradale!
         if (!isRouteLoading && routePolyline != null && routePolyline.size() >= 2) {
             float offRouteMeters = surfaceRenderer.getDistanceFromRouteMeters(location.getLatitude(), location.getLongitude());
-            long now = System.currentTimeMillis();
             if (offRouteMeters > 65.0f && (now - lastRouteCalcMillis) > 12000L) {
                 loadRouteAsync(false);
             }
@@ -2997,6 +3237,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             Location.distanceBetween(location.getLatitude(), location.getLongitude(), step.lat, step.lng, distToStep);
             double metersToStep = distToStep[0];
             step.distanceMeters = metersToStep;
+            currentMetersToStep = metersToStep;
 
             if (metersToStep <= 320.0 && metersToStep > 70.0 && !announced300m) {
                 announced300m = true;
@@ -3008,6 +3249,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
 
             if (metersToStep <= 28.0 && currentStepIndex < routeSteps.size() - 1) {
                 currentStepIndex++;
+                stepChanged = true;
                 announced300m = false;
                 announced50m = false;
                 AutoDataBridge.RouteStepItem nextStep = routeSteps.get(currentStepIndex);
@@ -3020,13 +3262,23 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             Location.distanceBetween(location.getLatitude(), location.getLongitude(), destination.lat, destination.lng, distToDest);
             if (distToDest[0] <= 45.0f) {
                 announcedArrival = true;
+                stepChanged = true;
                 speakGuidance("Sei arrivato a destinazione: " + destination.location);
                 CarToast.makeText(getCarContext(), "Arrivato a " + destination.location + "!", CarToast.LENGTH_LONG).show();
             }
         }
 
+        // Aggiorna SEMPRE in tempo reale il motore grafico 3D della mappa ad ogni fix GPS!
         surfaceRenderer.updateNavigationState(location, currentStepIndex);
-        invalidate();
+
+        // Aggiorna il template testuale solo quando cambia la svolta o la distanza di almeno 20m (o ogni 2.5s)
+        // per non saturare la quota template di Android Auto!
+        boolean distChangedEnough = (lastTemplateStepMeters < 0.0) || (Math.abs(currentMetersToStep - lastTemplateStepMeters) >= 20.0);
+        if (stepChanged || (distChangedEnough && (now - lastTemplateInvalidateMillis) >= 1800L) || (now - lastTemplateInvalidateMillis) >= 3500L) {
+            lastTemplateStepMeters = currentMetersToStep;
+            lastTemplateInvalidateMillis = now;
+            invalidate();
+        }
     }
 
     @Override
@@ -3140,20 +3392,75 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         return new CarIcon.Builder(IconCompat.createWithBitmap(bmp)).build();
     }
 
-    private CarIcon createActionBadgeIcon(String symbol, String bgHex) {
+    /**
+     * Disegna icone vettoriali nitide su sfondo TRASPARENTE per i pulsanti di ActionStrip e MapActionStrip.
+     * Importante: Android Auto applica una tinta monocromatica bianca (SRC_IN) a tutti i pixel non trasparenti
+     * delle Action icon; perciò lo sfondo DEVE essere trasparente (nessun cerchio pieno di sfondo!).
+     */
+    private CarIcon createNavActionIcon(String kind) {
         Bitmap bmp = Bitmap.createBitmap(72, 72, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
-        bg.setColor(Color.parseColor(bgHex));
-        bg.setStyle(Paint.Style.FILL);
-        c.drawCircle(36f, 36f, 32f, bg);
 
-        Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
-        tp.setColor(Color.WHITE);
-        tp.setTextSize(30f);
-        tp.setFakeBoldText(true);
-        float tw = tp.measureText(symbol);
-        c.drawText(symbol, 36f - tw * 0.5f, 47f, tp);
+        Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        stroke.setColor(Color.WHITE);
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(6.5f);
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeJoin(Paint.Join.ROUND);
+
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.WHITE);
+        fill.setStyle(Paint.Style.FILL);
+
+        if ("PLUS".equals(kind)) {
+            stroke.setStrokeWidth(8.0f);
+            c.drawLine(18f, 36f, 54f, 36f, stroke);
+            c.drawLine(36f, 18f, 36f, 54f, stroke);
+        } else if ("MINUS".equals(kind)) {
+            stroke.setStrokeWidth(8.0f);
+            c.drawLine(18f, 36f, 54f, 36f, stroke);
+        } else if ("RECENTER".equals(kind)) {
+            stroke.setStrokeWidth(5.5f);
+            c.drawCircle(36f, 36f, 16f, stroke);
+            c.drawCircle(36f, 36f, 5.5f, fill);
+            c.drawLine(36f, 10f, 36f, 20f, stroke);
+            c.drawLine(36f, 52f, 36f, 62f, stroke);
+            c.drawLine(10f, 36f, 20f, 36f, stroke);
+            c.drawLine(52f, 36f, 62f, 36f, stroke);
+        } else if ("VOICE".equals(kind)) {
+            Path speaker = new Path();
+            speaker.moveTo(14f, 28f);
+            speaker.lineTo(25f, 28f);
+            speaker.lineTo(38f, 16f);
+            speaker.lineTo(38f, 56f);
+            speaker.lineTo(25f, 44f);
+            speaker.lineTo(14f, 44f);
+            speaker.close();
+            c.drawPath(speaker, fill);
+            stroke.setStrokeWidth(5.5f);
+            android.graphics.RectF arc1 = new android.graphics.RectF(32f, 23f, 49f, 49f);
+            c.drawArc(arc1, -45f, 90f, false, stroke);
+            android.graphics.RectF arc2 = new android.graphics.RectF(26f, 14f, 59f, 58f);
+            c.drawArc(arc2, -48f, 96f, false, stroke);
+        } else if ("RECALC".equals(kind)) {
+            stroke.setStrokeWidth(6.5f);
+            android.graphics.RectF arc = new android.graphics.RectF(16f, 16f, 56f, 56f);
+            c.drawArc(arc, 30f, 265f, false, stroke);
+            Path arrow = new Path();
+            arrow.moveTo(58f, 16f);
+            arrow.lineTo(41f, 18f);
+            arrow.lineTo(54f, 32f);
+            arrow.close();
+            c.drawPath(arrow, fill);
+        } else {
+            // "3D" o "2D"
+            Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
+            tp.setColor(Color.WHITE);
+            tp.setTextSize(34f);
+            tp.setFakeBoldText(true);
+            float tw = tp.measureText(kind);
+            c.drawText(kind, 36f - tw * 0.5f, 48f, tp);
+        }
         return new CarIcon.Builder(IconCompat.createWithBitmap(bmp)).build();
     }
 
@@ -3170,7 +3477,6 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     @NonNull
     @Override
     public Template onGetTemplate() {
-        surfaceRenderer.attachToCarContext(getCarContext());
         Location activeLoc = (currentLocation != null) ? currentLocation : AutoDataBridge.getBestLiveLocation(getCarContext());
 
         double computedDistMeters = destination.distanceKm * 1000.0;
@@ -3249,11 +3555,11 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             }
         } catch (Exception ignored) {}
 
-        // ActionStrip principale: Voce, Toggle 3D/2D, Ricalcola, Termina
+        // ActionStrip principale in alto a destra: Toggle 3D/2D, Voce, Ricalcola, Fine
         ActionStrip.Builder actionStripBuilder = new ActionStrip.Builder();
         actionStripBuilder.addAction(
                 new Action.Builder()
-                        .setIcon(createActionBadgeIcon(surfaceRenderer.is3DPerspective() ? "3D" : "2D", "#0284C7"))
+                        .setIcon(createNavActionIcon(surfaceRenderer.is3DPerspective() ? "3D" : "2D"))
                         .setOnClickListener(() -> {
                             boolean now3D = surfaceRenderer.toggle3DPerspective();
                             CarToast.makeText(
@@ -3267,13 +3573,13 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         );
         actionStripBuilder.addAction(
                 new Action.Builder()
-                        .setIcon(createActionBadgeIcon("🔊", "#0F766E"))
+                        .setIcon(createNavActionIcon("VOICE"))
                         .setOnClickListener(() -> speakGuidance(cueText))
                         .build()
         );
         actionStripBuilder.addAction(
                 new Action.Builder()
-                        .setIcon(createActionBadgeIcon("🔄", "#4F46E5"))
+                        .setIcon(createNavActionIcon("RECALC"))
                         .setOnClickListener(this::loadRouteAsync)
                         .build()
         );
@@ -3284,24 +3590,24 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                         .build()
         );
 
-        // MapActionStrip laterale per Zoom +/-, Pan e Ricentra
+        // MapActionStrip laterale a destra per Pan, Zoom +, Zoom - e Ricentra GPS
         ActionStrip.Builder mapActionStripBuilder = new ActionStrip.Builder()
                 .addAction(Action.PAN)
                 .addAction(
                         new Action.Builder()
-                                .setIcon(createActionBadgeIcon("+", "#1E293B"))
+                                .setIcon(createNavActionIcon("PLUS"))
                                 .setOnClickListener(surfaceRenderer::zoomIn)
                                 .build()
                 )
                 .addAction(
                         new Action.Builder()
-                                .setIcon(createActionBadgeIcon("-", "#1E293B"))
+                                .setIcon(createNavActionIcon("MINUS"))
                                 .setOnClickListener(surfaceRenderer::zoomOut)
                                 .build()
                 )
                 .addAction(
                         new Action.Builder()
-                                .setIcon(createActionBadgeIcon("🎯", "#0284C7"))
+                                .setIcon(createNavActionIcon("RECENTER"))
                                 .setOnClickListener(surfaceRenderer::recenter)
                                 .build()
                 );
@@ -4671,6 +4977,7 @@ public class MainActivity extends BridgeActivity {
 
         @JavascriptInterface
         public void updateCamperLocation(double lat, double lng) {
+            com.ViaCamper.myapp.auto.AutoDataBridge.updateLiveLocationFromCoordinates(getApplicationContext(), lat, lng);
             WeatherAlertMonitor.saveLastKnownLocation(getApplicationContext(), lat, lng);
             WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 25000L);
         }
