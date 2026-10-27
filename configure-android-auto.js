@@ -252,33 +252,87 @@ public class AutoDataBridge {
     private static volatile Location latestLiveLocation = null;
     private static volatile boolean globalTrackerStarted = false;
     private static volatile long lastGlobalFixRealtimeNanos = 0L;
+    private static volatile long liveLocationSeq = 0L;
 
-    public static void updateLiveLocation(Location loc) {
-        if (loc != null && (loc.getLatitude() != 0.0 || loc.getLongitude() != 0.0)) {
-            Location prev = latestLiveLocation;
-            if (prev != null && (!loc.hasSpeed() || loc.getSpeed() == 0.0f || !loc.hasBearing() || loc.getBearing() == 0.0f)) {
+    public static long getLiveLocationSeq() {
+        return liveLocationSeq;
+    }
+
+    private static boolean isCoarseProvider(String provider) {
+        if (provider == null) return true;
+        String p = provider.toLowerCase(Locale.US);
+        return p.contains("network") || p.contains("passive") || p.contains("shared_prefs");
+    }
+
+    /**
+     * Filtra rigorosamente gli aggiornamenti GPS scartando i fix imprecisi delle celle telefoniche (network/passive)
+     * quando è già attivo il segnale GPS/Fused/Auto ad alta precisione, evitando salti laterali o indietro.
+     */
+    public static synchronized boolean updateLiveLocation(Location loc) {
+        if (loc == null || (loc.getLatitude() == 0.0 && loc.getLongitude() == 0.0)) {
+            return false;
+        }
+        Location prev = latestLiveLocation;
+        long nowMs = System.currentTimeMillis();
+
+        if (prev != null) {
+            long prevTime = prev.getTime() > 0L ? prev.getTime() : nowMs;
+            long locTime = loc.getTime() > 0L ? loc.getTime() : nowMs;
+            long ageOfPrevMs = Math.abs(nowMs - prevTime);
+
+            // 1. Scarta fix vecchi fuori sequenza temporale
+            if (locTime < prevTime - 400L) {
+                return false;
+            }
+
+            // 2. Se abbiamo un fix GPS/Fused/Auto recente (< 12s), ignora SEMPRE i fix approssimativi di rete (network/passive)
+            if (ageOfPrevMs < 12000L && !isCoarseProvider(prev.getProvider()) && isCoarseProvider(loc.getProvider())) {
+                return false;
+            }
+
+            // 3. Scarta fix con errore di accuratezza elevato (> 30m) se abbiamo già un fix preciso
+            if (ageOfPrevMs < 12000L && loc.hasAccuracy() && loc.getAccuracy() > 30.0f) {
+                if (!prev.hasAccuracy() || prev.getAccuracy() <= 22.0f) {
+                    return false;
+                }
+            }
+
+            // 4. Se è lo stesso identico fix già registrato, non ricalcolare
+            if (locTime == prevTime
+                    && Double.compare(loc.getLatitude(), prev.getLatitude()) == 0
+                    && Double.compare(loc.getLongitude(), prev.getLongitude()) == 0) {
+                return false;
+            }
+
+            // Calcola velocità e direzione solo su spostamenti reali (>= 2.5m) da provider precisi
+            if (!isCoarseProvider(loc.getProvider())) {
                 float[] res = new float[2];
                 Location.distanceBetween(prev.getLatitude(), prev.getLongitude(), loc.getLatitude(), loc.getLongitude(), res);
                 float distM = res[0];
-                long dtMs = Math.abs(loc.getTime() - prev.getTime());
+                long dtMs = Math.abs(locTime - prevTime);
                 if (dtMs <= 0L || dtMs > 60000L) {
                     dtMs = 1000L;
                 }
-                if (distM >= 0.8f) {
+                if (distM >= 2.5f) {
                     if (!loc.hasBearing() || loc.getBearing() == 0.0f) {
                         loc.setBearing((res[1] + 360.0f) % 360.0f);
                     }
                     if (!loc.hasSpeed() || loc.getSpeed() == 0.0f) {
                         float calcSpeedMs = distM / (dtMs / 1000.0f);
-                        if (calcSpeedMs > 0.3f && calcSpeedMs < 55.0f) {
+                        if (calcSpeedMs > 0.4f && calcSpeedMs < 50.0f) {
                             loc.setSpeed(calcSpeedMs);
                         }
                     }
+                } else if (prev.hasBearing() && prev.getBearing() != 0.0f && (!loc.hasBearing() || loc.getBearing() == 0.0f)) {
+                    loc.setBearing(prev.getBearing());
                 }
             }
-            latestLiveLocation = loc;
-            lastGlobalFixRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos();
         }
+
+        latestLiveLocation = loc;
+        liveLocationSeq++;
+        lastGlobalFixRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos();
+        return true;
     }
 
     /**
@@ -309,8 +363,7 @@ public class AutoDataBridge {
     }
 
     /**
-     * Avvia un listener GPS globale continuo con distanza minima 0m (così riceve ogni singolo fix
-     * anche a bassa velocità o in partenza) + listener hardware dell'autoradio Android Auto.
+     * Avvia un listener GPS globale continuo ad alta precisione (Fused + GPS + Hardware Auto).
      */
     public static synchronized void startGlobalGpsTracker(final Context context) {
         if (context == null) return;
@@ -357,42 +410,58 @@ public class AutoDataBridge {
                     @Override
                     public void onProviderDisabled(String provider) {}
                 };
-                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
-                for (String p : providers) {
+                // Registra i provider satellitari/fused ad alta frequenza (400ms) senza inquinamento da celle telefoniche!
+                String[] highPrecisionProviders = new String[] { "fused", LocationManager.GPS_PROVIDER };
+                for (String p : highPrecisionProviders) {
                     try {
                         lm.requestLocationUpdates(p, 400L, 0.0f, globalListener, mainLooper);
                     } catch (Exception ignored) {}
                 }
+                // Network solo come fallback lento (5s) se il GPS è spento
+                try {
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 25.0f, globalListener, mainLooper);
+                } catch (Exception ignored) {}
                 globalTrackerStarted = true;
             }
         } catch (SecurityException ignored) {}
     }
 
     /**
-     * Restituisce sempre la posizione GPS più fresca combinando listener live, hardware auto,
-     * fused, gps, network e le coordinate sincronizzate dal telefono.
+     * Restituisce sempre la posizione GPS più fresca e precisa, senza mai sovrascrivere un fix GPS
+     * attivo con coordinate approssimative di rete o cache.
      */
     public static Location getBestLiveLocation(Context context) {
         startGlobalGpsTracker(context);
         Location best = latestLiveLocation;
+        long nowMs = System.currentTimeMillis();
+
+        // Se abbiamo già un fix GPS/Fused fresco (< 6 secondi), usalo direttamente senza interrogare provider lenti o imprecisi!
+        if (best != null && !isCoarseProvider(best.getProvider()) && Math.abs(nowMs - best.getTime()) < 6000L) {
+            return best;
+        }
+
         try {
             LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
             if (lm != null) {
-                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
+                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER };
                 for (String p : providers) {
                     try {
                         Location cand = lm.getLastKnownLocation(p);
                         if (cand != null && (cand.getLatitude() != 0.0 || cand.getLongitude() != 0.0)) {
-                            if (best == null || cand.getTime() > best.getTime() + 1500L) {
+                            if (best == null) {
+                                best = cand;
+                            } else if (!isCoarseProvider(p) && isCoarseProvider(best.getProvider())) {
+                                best = cand;
+                            } else if (!isCoarseProvider(p) && cand.getTime() > best.getTime() + 1500L) {
                                 best = cand;
                             }
                         }
                     } catch (Exception ignored) {}
                 }
-                // Su Android 11+ richiedi un fix attivo se non arrivano aggiornamenti da oltre 2 secondi
+                // Su Android 11+ richiedi un fix attivo se non arrivano aggiornamenti da oltre 3 secondi
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
                     long ageNs = android.os.SystemClock.elapsedRealtimeNanos() - lastGlobalFixRealtimeNanos;
-                    if (ageNs > 2200000000L) {
+                    if (ageNs > 3000000000L) {
                         lastGlobalFixRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos();
                         try {
                             lm.getCurrentLocation(
@@ -411,33 +480,31 @@ public class AutoDataBridge {
             }
         } catch (SecurityException ignored) {}
 
-        // Controlla anche la posizione live scritta dal telefono in SharedPreferences
-        try {
-            if (context != null) {
-                SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                long savedTime = prefs.getLong("camper_live_auto_time", 0L);
-                if (savedTime > 0L && (best == null || savedTime > best.getTime() + 1000L)) {
-                    double sLat = Double.parseDouble(prefs.getString("camper_live_auto_lat", "0"));
-                    double sLng = Double.parseDouble(prefs.getString("camper_live_auto_lng", "0"));
-                    if (sLat != 0.0 || sLng != 0.0) {
-                        Location spLoc = new Location("shared_prefs_live");
-                        spLoc.setLatitude(sLat);
-                        spLoc.setLongitude(sLng);
-                        spLoc.setTime(savedTime);
-                        float spSpeed = prefs.getFloat("camper_live_auto_speed", 0.0f);
-                        float spBearing = prefs.getFloat("camper_live_auto_bearing", 0.0f);
-                        if (spSpeed > 0.0f) spLoc.setSpeed(spSpeed);
-                        if (spBearing != 0.0f) spLoc.setBearing(spBearing);
-                        best = spLoc;
+        // Usa SharedPreferences solo come fallback iniziale se non c'è ancora nessun fix GPS nativo
+        if (best == null) {
+            try {
+                if (context != null) {
+                    SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                    long savedTime = prefs.getLong("camper_live_auto_time", 0L);
+                    if (savedTime > 0L) {
+                        double sLat = Double.parseDouble(prefs.getString("camper_live_auto_lat", "0"));
+                        double sLng = Double.parseDouble(prefs.getString("camper_live_auto_lng", "0"));
+                        if (sLat != 0.0 || sLng != 0.0) {
+                            Location spLoc = new Location("shared_prefs_live");
+                            spLoc.setLatitude(sLat);
+                            spLoc.setLongitude(sLng);
+                            spLoc.setTime(savedTime);
+                            best = spLoc;
+                        }
                     }
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        }
 
         if (best != null) {
             updateLiveLocation(best);
         }
-        return best;
+        return latestLiveLocation != null ? latestLiveLocation : best;
     }
 
     /**
@@ -1294,12 +1361,17 @@ public class CarSurfaceRenderer implements SurfaceCallback {
     private boolean is3DPerspective = true;
     private int zoomLevel = 17;
 
+    private double rawGpsLat = 41.9028;
+    private double rawGpsLng = 12.4964;
     private double currentLat = 41.9028;
     private double currentLng = 12.4964;
     private double displayLat = 41.9028;
     private double displayLng = 12.4964;
     private boolean hasInitialFix = false;
     private long lastFixMillis = 0L;
+
+    private int lastSnappedSegmentIndex = 0;
+    private double lastSnappedSegmentT = 0.0;
 
     private float targetBearing = 0.0f;
     private float displayBearing = 0.0f;
@@ -1344,6 +1416,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
 
     private static class RouteSnapResult {
         int segmentIndex = 0;
+        double segmentT = 0.0;
         double snappedLat;
         double snappedLng;
         float distanceMeters = Float.MAX_VALUE;
@@ -1475,9 +1548,13 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         this.destName = dName != null ? dName : "";
         this.panOffsetX = 0.0f;
         this.panOffsetY = 0.0f;
+        this.lastSnappedSegmentIndex = 0;
+        this.lastSnappedSegmentT = 0.0;
         if (startLoc != null && (startLoc.getLatitude() != 0.0 || startLoc.getLongitude() != 0.0)) {
-            this.currentLat = startLoc.getLatitude();
-            this.currentLng = startLoc.getLongitude();
+            this.rawGpsLat = startLoc.getLatitude();
+            this.rawGpsLng = startLoc.getLongitude();
+            this.currentLat = this.rawGpsLat;
+            this.currentLng = this.rawGpsLng;
             this.displayLat = this.currentLat;
             this.displayLng = this.currentLng;
             this.hasInitialFix = true;
@@ -1504,21 +1581,25 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         this.routePolyline = (polyline != null) ? new ArrayList<>(polyline) : new ArrayList<>();
         this.routeSteps = (steps != null) ? new ArrayList<>(steps) : new ArrayList<>();
         this.currentStepIndex = stepIdx;
+        this.lastSnappedSegmentIndex = 0;
+        this.lastSnappedSegmentT = 0.0;
 
-        // Orienta subito la telecamera 3D lungo il primo tratto stradale senza mai bloccare le coordinate reali del camper!
-        RouteSnapResult snap = snapToRoute(currentLat, currentLng);
+        // Aggancia immediatamente il cursore e l'orientamento 3D alla carreggiata calcolata!
+        RouteSnapResult snap = snapToRoute(this.rawGpsLat, this.rawGpsLng, true);
+        if (snap.distanceMeters <= 45.0f) {
+            this.currentLat = snap.snappedLat;
+            this.currentLng = snap.snappedLng;
+            this.displayLat = snap.snappedLat;
+            this.displayLng = snap.snappedLng;
+        }
         if (!Float.isNaN(snap.segmentBearing)) {
             this.targetBearing = snap.segmentBearing;
-            if (this.currentSpeedKmh < 3.0f) {
-                this.displayBearing = snap.segmentBearing;
-            }
+            this.displayBearing = snap.segmentBearing;
         } else {
-            float forwardBearing = computeForwardBearingAlongRoute(currentLat, currentLng);
+            float forwardBearing = computeForwardBearingAlongRoute(this.rawGpsLat, this.rawGpsLng);
             if (!Float.isNaN(forwardBearing)) {
                 this.targetBearing = forwardBearing;
-                if (this.currentSpeedKmh < 3.0f) {
-                    this.displayBearing = forwardBearing;
-                }
+                this.displayBearing = forwardBearing;
             }
         }
         prefetchTilesAround(this.currentLat, this.currentLng);
@@ -1531,8 +1612,16 @@ public class CarSurfaceRenderer implements SurfaceCallback {
      */
     public float getDistanceFromRouteMeters(double lat, double lng) {
         if (routePolyline == null || routePolyline.size() < 2) return 0.0f;
-        RouteSnapResult snap = snapToRoute(lat, lng);
+        RouteSnapResult snap = snapToRoute(lat, lng, false);
         return snap.distanceMeters;
+    }
+
+    public double getSnappedLat() {
+        return this.currentLat;
+    }
+
+    public double getSnappedLng() {
+        return this.currentLng;
     }
 
     public void updateNavigationState(Location loc, int stepIdx) {
@@ -1543,59 +1632,63 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             double rawLat = loc.getLatitude();
             double rawLng = loc.getLongitude();
 
-            // Calcola SEMPRE lo spostamento reale dalle coordinate GPS vere (mai da coordinate bloccate sul vertice!)
+            // 1. Calcola lo spostamento reale dalle coordinate GPS vere precedenti (rawGpsLat, rawGpsLng)
             float[] distRes = new float[2];
-            Location.distanceBetween(this.currentLat, this.currentLng, rawLat, rawLng, distRes);
+            Location.distanceBetween(this.rawGpsLat, this.rawGpsLng, rawLat, rawLng, distRes);
             float movedMeters = distRes[0];
             float gpsCourse = (distRes[1] + 360.0f) % 360.0f;
 
             long nowMs = System.currentTimeMillis();
             long dtMs = (lastFixMillis > 0L) ? Math.max(200L, nowMs - lastFixMillis) : 1000L;
 
-            this.currentLat = rawLat;
-            this.currentLng = rawLng;
-            if (!hasInitialFix || movedMeters > 800.0f) {
-                this.displayLat = rawLat;
-                this.displayLng = rawLng;
-                this.hasInitialFix = true;
-                lastFixMillis = nowMs;
-                prefetchTilesAround(rawLat, rawLng);
-            } else if (movedMeters >= 0.4f) {
-                lastFixMillis = nowMs;
-            }
+            this.rawGpsLat = rawLat;
+            this.rawGpsLng = rawLng;
 
-            // Velocità in tempo reale: usa loc.getSpeed() oppure calcolala dai metri percorsi nel tempo!
-            if (loc.hasSpeed() && loc.getSpeed() > 0.25f) {
+            // 2. Velocità in tempo reale: usa loc.getSpeed() oppure calcolala dallo spostamento reale
+            if (loc.hasSpeed() && loc.getSpeed() > 0.35f) {
                 this.currentSpeedKmh = Math.max(0.0f, loc.getSpeed() * 3.6f);
-            } else if (movedMeters >= 1.2f && dtMs < 15000L) {
+            } else if (movedMeters >= 1.8f && dtMs < 15000L) {
                 float calcKmh = (movedMeters / (dtMs / 1000.0f)) * 3.6f;
-                if (calcKmh <= 160.0f) {
-                    this.currentSpeedKmh = this.currentSpeedKmh * 0.45f + calcKmh * 0.55f;
+                if (calcKmh <= 150.0f) {
+                    this.currentSpeedKmh = this.currentSpeedKmh * 0.55f + calcKmh * 0.45f;
                 }
-            } else if (nowMs - lastFixMillis > 4000L) {
+            } else if (nowMs - lastFixMillis > 4500L) {
                 this.currentSpeedKmh = 0.0f;
             }
 
-            RouteSnapResult snap = snapToRoute(rawLat, rawLng);
+            if (movedMeters >= 0.5f) {
+                lastFixMillis = nowMs;
+            }
 
-            // Direzione bussola/telecamera 3D:
-            // 1. Se il camper si sta muovendo con bussola GPS valida, segui il movimento reale o il tratto stradale
-            if (movedMeters >= 1.8f) {
-                if (snap.distanceMeters <= 35.0f && !Float.isNaN(snap.segmentBearing)) {
-                    float diff = Math.abs(((gpsCourse - snap.segmentBearing + 540.0f) % 360.0f) - 180.0f);
-                    this.targetBearing = (diff <= 45.0f) ? snap.segmentBearing : gpsCourse;
-                } else {
+            // 3. Proietta le coordinate GPS sul centro della corsia stradale (Map-Matching continuo e monotono)
+            RouteSnapResult snap = snapToRoute(rawLat, rawLng, true);
+
+            // Se il camper è lungo il percorso (entro 45m dalla strada), blocca il cursore sul centro della strada blu
+            // e blocca l'orientamento della mappa nella direzione tangente della strada davanti al camper!
+            if (snap.distanceMeters <= 45.0f && routePolyline != null && routePolyline.size() >= 2) {
+                this.currentLat = snap.snappedLat;
+                this.currentLng = snap.snappedLng;
+                if (!Float.isNaN(snap.segmentBearing)) {
+                    this.targetBearing = snap.segmentBearing;
+                }
+            } else {
+                // Fuori percorso (> 45m): usa la posizione GPS libera e la bussola GPS
+                this.currentLat = rawLat;
+                this.currentLng = rawLng;
+                if (loc.hasBearing() && loc.getBearing() != 0.0f && this.currentSpeedKmh >= 5.0f) {
+                    this.targetBearing = (loc.getBearing() + 360.0f) % 360.0f;
+                } else if (movedMeters >= 3.5f) {
                     this.targetBearing = gpsCourse;
                 }
-            } else if (loc.hasBearing() && loc.getBearing() != 0.0f && this.currentSpeedKmh >= 4.0f) {
-                this.targetBearing = (loc.getBearing() + 360.0f) % 360.0f;
-            } else if (snap.distanceMeters <= 40.0f && !Float.isNaN(snap.segmentBearing)) {
-                this.targetBearing = snap.segmentBearing;
-            } else {
-                float routeBearing = computeForwardBearingAlongRoute(rawLat, rawLng);
-                if (!Float.isNaN(routeBearing)) {
-                    this.targetBearing = routeBearing;
-                }
+            }
+
+            if (!hasInitialFix || movedMeters > 800.0f) {
+                this.displayLat = this.currentLat;
+                this.displayLng = this.currentLng;
+                this.displayBearing = this.targetBearing;
+                this.hasInitialFix = true;
+                lastFixMillis = nowMs;
+                prefetchTilesAround(this.currentLat, this.currentLng);
             }
         }
         requestRender();
@@ -1647,6 +1740,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         this.panOffsetY = 0.0f;
         this.displayLat = this.currentLat;
         this.displayLng = this.currentLng;
+        this.displayBearing = this.targetBearing;
         requestRender();
     }
 
@@ -1659,9 +1753,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         boolean animating = false;
         double dLat = currentLat - displayLat;
         double dLng = currentLng - displayLng;
-        if (Math.abs(dLat) > 0.0000015 || Math.abs(dLng) > 0.0000015) {
-            displayLat += dLat * 0.38;
-            displayLng += dLng * 0.38;
+        if (Math.abs(dLat) > 0.0000010 || Math.abs(dLng) > 0.0000010) {
+            displayLat += dLat * 0.35;
+            displayLng += dLng * 0.35;
             animating = true;
         } else {
             displayLat = currentLat;
@@ -1669,8 +1763,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         }
 
         float diffAngle = ((targetBearing - displayBearing + 540.0f) % 360.0f) - 180.0f;
-        if (Math.abs(diffAngle) > 0.4f) {
-            displayBearing = (displayBearing + diffAngle * 0.28f + 360.0f) % 360.0f;
+        // Deadband di 0.8° e smorzamento fluido per eliminare qualsiasi micro-oscillazione della mappa in rettilineo!
+        if (Math.abs(diffAngle) > 0.8f) {
+            displayBearing = (displayBearing + diffAngle * 0.22f + 360.0f) % 360.0f;
             animating = true;
         } else {
             displayBearing = targetBearing;
@@ -1679,10 +1774,10 @@ public class CarSurfaceRenderer implements SurfaceCallback {
     }
 
     /**
-     * Proietta ortogonalmente le coordinate (lat, lng) sul segmento stradale più vicino di routePolyline.
-     * Garantisce che il cursore e il nastro blu seguano esattamente le curve della strada senza tagliare per i campi.
+     * Proietta ortogonalmente le coordinate (lat, lng) sul segmento stradale più vicino di routePolyline
+     * con avanzamento monotono (anti-rimbalzo indietro) e calcolo continuo della tangente stradale 28m avanti.
      */
-    private RouteSnapResult snapToRoute(double lat, double lng) {
+    private RouteSnapResult snapToRoute(double lat, double lng, boolean updateProgress) {
         RouteSnapResult best = new RouteSnapResult();
         best.snappedLat = lat;
         best.snappedLng = lng;
@@ -1690,10 +1785,99 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             return best;
         }
 
-        double cosLat = Math.cos(Math.toRadians(lat));
-        float[] distCheck = new float[2];
+        int totalSegs = routePolyline.size() - 1;
+        int searchStart = 0;
+        int searchEnd = totalSegs - 1;
 
-        for (int i = 0; i < routePolyline.size() - 1; i++) {
+        // Cerca prima nella finestra locale attorno al segmento corrente per evitare salti su incroci o corsie opposte
+        if (lastSnappedSegmentIndex > 0 && lastSnappedSegmentIndex < totalSegs) {
+            searchStart = Math.max(0, lastSnappedSegmentIndex - 1);
+            searchEnd = Math.min(totalSegs - 1, lastSnappedSegmentIndex + 25);
+        }
+
+        best = findBestSegmentInRange(lat, lng, searchStart, searchEnd, lastSnappedSegmentIndex);
+
+        // Se nella finestra locale siamo troppo lontani (> 38m), cerca sull'intero percorso
+        if (best.distanceMeters > 38.0f && (searchStart > 0 || searchEnd < totalSegs - 1)) {
+            best = findBestSegmentInRange(lat, lng, 0, totalSegs - 1, -1);
+        }
+
+        // Protezione anti-rinculo: mentre si guida sul percorso, impedisci che il rumore GPS faccia saltare il cursore indietro!
+        if (updateProgress && best.distanceMeters <= 45.0f) {
+            boolean wentBackwards = (best.segmentIndex < lastSnappedSegmentIndex)
+                    || (best.segmentIndex == lastSnappedSegmentIndex && best.segmentT < lastSnappedSegmentT);
+            if (wentBackwards && lastSnappedSegmentIndex < totalSegs) {
+                double[] aPrev = routePolyline.get(lastSnappedSegmentIndex);
+                double[] bPrev = routePolyline.get(lastSnappedSegmentIndex + 1);
+                double prevLat = aPrev[0] + (bPrev[0] - aPrev[0]) * lastSnappedSegmentT;
+                double prevLng = aPrev[1] + (bPrev[1] - aPrev[1]) * lastSnappedSegmentT;
+                float[] backDist = new float[1];
+                Location.distanceBetween(best.snappedLat, best.snappedLng, prevLat, prevLng, backDist);
+                // Se il rimbalzo indietro è < 22 metri (oscillazione GPS), mantieni ferma la posizione raggiunta!
+                if (backDist[0] < 22.0f) {
+                    best.segmentIndex = lastSnappedSegmentIndex;
+                    best.segmentT = lastSnappedSegmentT;
+                    best.snappedLat = prevLat;
+                    best.snappedLng = prevLng;
+                } else {
+                    lastSnappedSegmentIndex = best.segmentIndex;
+                    lastSnappedSegmentT = best.segmentT;
+                }
+            } else {
+                lastSnappedSegmentIndex = best.segmentIndex;
+                lastSnappedSegmentT = best.segmentT;
+            }
+        }
+
+        // Calcola l'angolo di direzione stradale interpolando in modo 100% CONTINUO un punto esattamente 28 metri avanti
+        // lungo la polilinea stradale: elimina qualsiasi scatto angolare al passaggio tra i vertici!
+        final float targetLookAheadMeters = 28.0f;
+        float accumMeters = 0.0f;
+        double curLat = best.snappedLat;
+        double curLng = best.snappedLng;
+        double aheadLat = curLat;
+        double aheadLng = curLng;
+        float[] segDist = new float[2];
+
+        for (int j = best.segmentIndex + 1; j < routePolyline.size(); j++) {
+            double[] nextPt = routePolyline.get(j);
+            Location.distanceBetween(curLat, curLng, nextPt[0], nextPt[1], segDist);
+            float d = segDist[0];
+            if (d > 0.05f) {
+                if (accumMeters + d >= targetLookAheadMeters) {
+                    double frac = (targetLookAheadMeters - accumMeters) / d;
+                    if (frac < 0.0) frac = 0.0;
+                    else if (frac > 1.0) frac = 1.0;
+                    aheadLat = curLat + (nextPt[0] - curLat) * frac;
+                    aheadLng = curLng + (nextPt[1] - curLng) * frac;
+                    accumMeters = targetLookAheadMeters;
+                    break;
+                } else {
+                    accumMeters += d;
+                    curLat = nextPt[0];
+                    curLng = nextPt[1];
+                    aheadLat = curLat;
+                    aheadLng = curLng;
+                }
+            }
+        }
+
+        Location.distanceBetween(best.snappedLat, best.snappedLng, aheadLat, aheadLng, segDist);
+        if (segDist[0] >= 0.8f) {
+            best.segmentBearing = (segDist[1] + 360.0f) % 360.0f;
+        }
+        return best;
+    }
+
+    private RouteSnapResult findBestSegmentInRange(double lat, double lng, int startIdx, int endIdx, int preferFromIdx) {
+        RouteSnapResult best = new RouteSnapResult();
+        best.snappedLat = lat;
+        best.snappedLng = lng;
+        double cosLat = Math.cos(Math.toRadians(lat));
+        float[] distCheck = new float[1];
+        float bestWeightedScore = Float.MAX_VALUE;
+
+        for (int i = startIdx; i <= endIdx; i++) {
             double[] a = routePolyline.get(i);
             double[] b = routePolyline.get(i + 1);
 
@@ -1717,30 +1901,25 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             double projLng = a[1] + (b[1] - a[1]) * t;
 
             Location.distanceBetween(lat, lng, projLat, projLng, distCheck);
-            if (distCheck[0] < best.distanceMeters) {
-                best.distanceMeters = distCheck[0];
+            float rawDist = distCheck[0];
+            float weightedScore = rawDist;
+            if (preferFromIdx >= 0 && i < preferFromIdx) {
+                weightedScore += 3.0f;
+            }
+            if (weightedScore < bestWeightedScore) {
+                bestWeightedScore = weightedScore;
+                best.distanceMeters = rawDist;
                 best.segmentIndex = i;
+                best.segmentT = t;
                 best.snappedLat = projLat;
                 best.snappedLng = projLng;
-            }
-        }
-
-        // Calcola l'angolo di direzione stradale guardando 20-35m avanti lungo la polilinea a partire dal punto proiettato
-        for (int j = best.segmentIndex + 1; j < routePolyline.size(); j++) {
-            double[] ahead = routePolyline.get(j);
-            Location.distanceBetween(best.snappedLat, best.snappedLng, ahead[0], ahead[1], distCheck);
-            if (distCheck[0] >= 12.0f || j == routePolyline.size() - 1) {
-                if (distCheck[0] > 0.5f) {
-                    best.segmentBearing = (distCheck[1] + 360.0f) % 360.0f;
-                    break;
-                }
             }
         }
         return best;
     }
 
     private float computeForwardBearingAlongRoute(double lat, double lng) {
-        RouteSnapResult snap = snapToRoute(lat, lng);
+        RouteSnapResult snap = snapToRoute(lat, lng, false);
         if (!Float.isNaN(snap.segmentBearing)) {
             return snap.segmentBearing;
         }
@@ -1959,9 +2138,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
 
             // 4. Disegna il Tracciato Blu/Ciano del Percorso OSRM agganciato esattamente alla carreggiata (Road-Snapping)
             if (routePolyline != null && routePolyline.size() >= 2) {
-                RouteSnapResult snap = snapToRoute(displayLat, displayLng);
+                RouteSnapResult snap = snapToRoute(displayLat, displayLng, false);
 
-                // Coordinate schermo del punto proiettato sulla strada
+                // Coordinate schermo del punto proiettato sulla strada (perfettamente centrato sotto il cursore camper!)
                 float startPx = (float) ((lonToTileX(snap.snappedLng, zoomLevel) - centerTileX) * 256.0) + pivotX;
                 float startPy = (float) ((latToTileY(snap.snappedLat, zoomLevel) - centerTileY) * 256.0) + pivotY;
 
@@ -2081,8 +2260,8 @@ public class CarSurfaceRenderer implements SurfaceCallback {
                 canvas.drawRect(0.0f, 0.0f, width, horizonHeight, skyPaint);
             }
 
-            // 8. Cursore Navigatore 3D del Camper (sempre puntato dritto in avanti nella direzione di marcia!)
-            draw3DCamperCursor(canvas, pivotX, pivotY, is3DPerspective ? 0.0f : displayBearing);
+            // 8. Cursore Navigatore 3D del Camper: SEMPRE fisso dritto in avanti (0.0f) al centro della corsia blu!
+            draw3DCamperCursor(canvas, pivotX, pivotY, 0.0f);
 
             // 9. Cruscotto Cockpit HUD (Tachimetro km/h, Bussola, Nome Strada e Sagoma Camper OK)
             drawCockpitHud(canvas, width, height);
@@ -2337,7 +2516,7 @@ public class MainMapScreen extends Screen implements LocationListener {
                     CarSurfaceRenderer.getInstance(getCarContext()).prefetchTilesAround(lastLocation.getLatitude(), lastLocation.getLongitude());
                 }
                 Looper mainLooper = Looper.getMainLooper();
-                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.PASSIVE_PROVIDER, LocationManager.NETWORK_PROVIDER };
+                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER };
                 for (String provider : providers) {
                     try {
                         locationManager.requestLocationUpdates(provider, 800L, 1.0f, this, mainLooper);
@@ -2351,7 +2530,9 @@ public class MainMapScreen extends Screen implements LocationListener {
     @Override
     public void onLocationChanged(@NonNull Location location) {
         if (location != null && (location.getLatitude() != 0.0 || location.getLongitude() != 0.0)) {
-            AutoDataBridge.updateLiveLocation(location);
+            if (!AutoDataBridge.updateLiveLocation(location)) {
+                return;
+            }
             boolean moved = (lastLocation == null);
             if (!moved) {
                 float[] res = new float[1];
@@ -2995,6 +3176,7 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     private long lastRouteCalcMillis = 0L;
     private long lastTemplateInvalidateMillis = 0L;
     private double lastTemplateStepMeters = -1.0;
+    private long lastProcessedLocationSeq = -1L;
 
     private TextToSpeech carTts;
     private boolean ttsReady = false;
@@ -3009,10 +3191,10 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             if (isStopped) return;
             try {
                 Location fresh = AutoDataBridge.getBestLiveLocation(getCarContext());
-                if (fresh != null) {
-                    onLocationChanged(fresh);
-                } else {
-                    surfaceRenderer.requestRender();
+                long curSeq = AutoDataBridge.getLiveLocationSeq();
+                if (fresh != null && curSeq != lastProcessedLocationSeq) {
+                    lastProcessedLocationSeq = curSeq;
+                    processFilteredLocation(fresh);
                 }
             } catch (Exception ignored) {}
             navHandler.postDelayed(this, 500L);
@@ -3177,10 +3359,10 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             locationManager = (LocationManager) getCarContext().getSystemService(Context.LOCATION_SERVICE);
             if (locationManager != null) {
                 Looper mainLooper = Looper.getMainLooper();
-                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
+                // Usa esclusivamente i provider ad alta precisione ("fused" e GPS satellitare) durante la navigazione 3D!
+                String[] providers = new String[] { "fused", LocationManager.GPS_PROVIDER };
                 for (String provider : providers) {
                     try {
-                        // minDistance = 0.0f per ricevere ogni singolo aggiornamento GPS anche a bassa velocità!
                         locationManager.requestLocationUpdates(provider, 400L, 0.0f, this, mainLooper);
                     } catch (Exception ignored) {}
                 }
@@ -3216,14 +3398,26 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     @Override
     public void onLocationChanged(@NonNull Location location) {
         if (isStopped || location == null || (location.getLatitude() == 0.0 && location.getLongitude() == 0.0)) return;
-        AutoDataBridge.updateLiveLocation(location);
-        currentLocation = location;
+        // Se updateLiveLocation scarta il fix perché impreciso o proveniente da cella telefonica (network), ignoralo!
+        if (!AutoDataBridge.updateLiveLocation(location)) {
+            return;
+        }
+        lastProcessedLocationSeq = AutoDataBridge.getLiveLocationSeq();
+        processFilteredLocation(location);
+    }
 
+    private void processFilteredLocation(@NonNull Location location) {
+        currentLocation = location;
         long now = System.currentTimeMillis();
         boolean stepChanged = false;
         double currentMetersToStep = -1.0;
 
-        // Se il camper devia di oltre 65 metri dal tracciato calcolato, ricalcola automaticamente il percorso stradale!
+        // 1. Aggiorna prima il motore 3D Road-Snapping così abbiamo la posizione esatta del camper sulla strada!
+        surfaceRenderer.updateNavigationState(location, currentStepIndex);
+        double snappedLat = surfaceRenderer.getSnappedLat();
+        double snappedLng = surfaceRenderer.getSnappedLng();
+
+        // 2. Se il camper devia di oltre 65 metri dal tracciato calcolato, ricalcola automaticamente il percorso stradale!
         if (!isRouteLoading && routePolyline != null && routePolyline.size() >= 2) {
             float offRouteMeters = surfaceRenderer.getDistanceFromRouteMeters(location.getLatitude(), location.getLongitude());
             if (offRouteMeters > 65.0f && (now - lastRouteCalcMillis) > 12000L) {
@@ -3231,11 +3425,15 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             }
         }
 
+        // 3. Calcola la distanza alla prossima svolta usando la posizione Road-Snapped (monotona, non torna mai indietro!)
         if (!routeSteps.isEmpty() && currentStepIndex < routeSteps.size()) {
             AutoDataBridge.RouteStepItem step = routeSteps.get(currentStepIndex);
             float[] distToStep = new float[1];
-            Location.distanceBetween(location.getLatitude(), location.getLongitude(), step.lat, step.lng, distToStep);
+            Location.distanceBetween(snappedLat, snappedLng, step.lat, step.lng, distToStep);
             double metersToStep = distToStep[0];
+            if (step.distanceMeters > 0.0 && metersToStep > step.distanceMeters && (metersToStep - step.distanceMeters) < 25.0) {
+                metersToStep = step.distanceMeters;
+            }
             step.distanceMeters = metersToStep;
             currentMetersToStep = metersToStep;
 
@@ -3253,13 +3451,14 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 announced300m = false;
                 announced50m = false;
                 AutoDataBridge.RouteStepItem nextStep = routeSteps.get(currentStepIndex);
+                surfaceRenderer.updateNavigationState(location, currentStepIndex);
                 speakGuidance(nextStep.instruction);
             }
         }
 
         if (destination.lat != 0.0 && destination.lng != 0.0 && !announcedArrival) {
             float[] distToDest = new float[1];
-            Location.distanceBetween(location.getLatitude(), location.getLongitude(), destination.lat, destination.lng, distToDest);
+            Location.distanceBetween(snappedLat, snappedLng, destination.lat, destination.lng, distToDest);
             if (distToDest[0] <= 45.0f) {
                 announcedArrival = true;
                 stepChanged = true;
@@ -3267,9 +3466,6 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 CarToast.makeText(getCarContext(), "Arrivato a " + destination.location + "!", CarToast.LENGTH_LONG).show();
             }
         }
-
-        // Aggiorna SEMPRE in tempo reale il motore grafico 3D della mappa ad ogni fix GPS!
-        surfaceRenderer.updateNavigationState(location, currentStepIndex);
 
         // Aggiorna il template testuale solo quando cambia la svolta o la distanza di almeno 20m (o ogni 2.5s)
         // per non saturare la quota template di Android Auto!
