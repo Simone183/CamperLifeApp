@@ -173,7 +173,7 @@ import { db } from "./lib/firebase";
 import firebaseConfig from "../firebase-applet-config.json";
 import { resolveMediaUrl } from "./utils/resolveMediaUrl";
 import { EXAMPLE_TRIP } from "./data/exampleTrip";
-import { RoadSignGraphic, OsmReportData } from "./components/OsmReportModal";
+import { RoadSignGraphic, OsmReportData, syncPendingLocalOsmReports } from "./components/OsmReportModal";
 const firestore = new ClientFirestoreAdapter(
   firebaseConfig,
   firebaseConfig.firestoreDatabaseId,
@@ -185,6 +185,8 @@ export default function App() {
     if (preShell) {
       preShell.remove();
     }
+    // Sincronizza automaticamente eventuali segnalazioni ostacoli salvate in locale
+    syncPendingLocalOsmReports();
   }, []);
 
   const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
@@ -2710,6 +2712,7 @@ export default function App() {
       fetchPendingPlaces();
       fetchAdminUsers();
       fetchAdminNotifications();
+      fetchOsmReports();
     } else {
       window.dispatchEvent(
         new CustomEvent("show-toast", {
@@ -2745,6 +2748,7 @@ export default function App() {
       fetchPendingPlaces();
       fetchAdminUsers();
       fetchAdminNotifications();
+      fetchOsmReports();
 
       // Set up real-time listener for users collection so pending user count is always live
       let unsubUsers: (() => void) | null = null;
@@ -2772,9 +2776,23 @@ export default function App() {
         console.warn("Could not attach real-time places listener:", e);
       }
 
+      // Set up real-time listener for osmMapReports collection so obstacle reports badge is always live
+      let unsubOsmReports: (() => void) | null = null;
+      try {
+        const osmReportsCol = collection(db, "osmMapReports");
+        unsubOsmReports = onSnapshot(osmReportsCol, () => {
+          fetchOsmReports();
+        }, (err) => {
+          console.warn("Real-time osmMapReports listener warning:", err);
+        });
+      } catch (e) {
+        console.warn("Could not attach real-time osmMapReports listener:", e);
+      }
+
       return () => {
         if (unsubUsers) unsubUsers();
         if (unsubPlaces) unsubPlaces();
+        if (unsubOsmReports) unsubOsmReports();
       };
     } else {
       setIsAdminLoggedIn((prev) => (!prev ? prev : false));
@@ -3024,28 +3042,59 @@ export default function App() {
   const fetchOsmReports = async () => {
     setOsmReportsLoading(true);
     const reportsList: OsmReportData[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Prima carica tramite API backend /api/osm-reports
+    try {
+      const apiRes = await fetch(resolveMediaUrl("/api/osm-reports"));
+      if (apiRes.ok) {
+        const apiData = await apiRes.json();
+        if (apiData && Array.isArray(apiData.reports)) {
+          apiData.reports.forEach((rep: any) => {
+            if (rep && rep.id && !seenIds.has(rep.id)) {
+              seenIds.add(rep.id);
+              reportsList.push(rep as OsmReportData);
+            }
+          });
+        }
+      }
+    } catch (apiErr) {
+      console.warn("Server /api/osm-reports fetch warning:", apiErr);
+    }
+
+    // 2. Integra anche da Firestore diretto
     if (firestore) {
       try {
         const snap = await firestore.collection("osmMapReports").get();
         snap.forEach((docSnap) => {
-          reportsList.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          if (!seenIds.has(docSnap.id)) {
+            seenIds.add(docSnap.id);
+            reportsList.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          }
         });
       } catch (err) {
         console.warn("Error fetching osmMapReports from Firestore:", err);
       }
     }
-    try {
-      const local = JSON.parse(localStorage.getItem("osm_map_reports_cache") || "[]");
-      if (Array.isArray(local) && local.length > 0) {
-        local.forEach((locItem: any) => {
-          if (!reportsList.find((r) => r.id === locItem.id)) {
-            reportsList.push(locItem);
-          }
-        });
+
+    // 3. Integra eventuali segnalazioni salvate in locale (sia camper_osm_reports che osm_map_reports_cache)
+    for (const storageKey of ["camper_osm_reports", "osm_map_reports_cache"]) {
+      try {
+        const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
+        if (Array.isArray(local) && local.length > 0) {
+          local.forEach((locItem: any) => {
+            const itemId = locItem?.id || `${locItem?.lat}_${locItem?.lng}_${locItem?.createdAt}`;
+            if (locItem && !seenIds.has(itemId)) {
+              seenIds.add(itemId);
+              reportsList.push(locItem);
+            }
+          });
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
+
     reportsList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     setOsmReports(reportsList);
     setOsmReportsLoading(false);
@@ -3056,23 +3105,38 @@ export default function App() {
     newStatus: "verified_on_osm" | "rejected" | "pending"
   ) => {
     try {
-      if (firestore) {
-        await firestore.collection("osmMapReports").doc(reportId).update({
-          status: newStatus,
-          reviewedAt: new Date().toISOString(),
-          reviewedBy: currentUser?.email || "admin",
+      try {
+        await fetch(resolveMediaUrl(`/api/osm-reports/${encodeURIComponent(reportId)}/status`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: newStatus,
+            reviewedBy: currentUser?.email || "admin",
+          }),
         });
+      } catch {}
+
+      if (firestore) {
+        try {
+          await firestore.collection("osmMapReports").doc(reportId).update({
+            status: newStatus,
+            reviewedAt: new Date().toISOString(),
+            reviewedBy: currentUser?.email || "admin",
+          });
+        } catch {}
       }
       setOsmReports((prev) =>
         prev.map((r) => (r.id === reportId ? { ...r, status: newStatus } : r))
       );
-      try {
-        const local = JSON.parse(localStorage.getItem("osm_map_reports_cache") || "[]");
-        const updatedLocal = local.map((r: any) =>
-          r.id === reportId ? { ...r, status: newStatus } : r
-        );
-        localStorage.setItem("osm_map_reports_cache", JSON.stringify(updatedLocal));
-      } catch {}
+      for (const storageKey of ["camper_osm_reports", "osm_map_reports_cache"]) {
+        try {
+          const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
+          const updatedLocal = local.map((r: any) =>
+            r.id === reportId ? { ...r, status: newStatus } : r
+          );
+          localStorage.setItem(storageKey, JSON.stringify(updatedLocal));
+        } catch {}
+      }
 
       window.dispatchEvent(
         new CustomEvent("show-toast", {
@@ -3092,15 +3156,25 @@ export default function App() {
   const handleDeleteOsmReport = async (reportId: string) => {
     if (!window.confirm("Vuoi davvero eliminare questa segnalazione?")) return;
     try {
+      try {
+        await fetch(resolveMediaUrl(`/api/osm-reports/${encodeURIComponent(reportId)}`), {
+          method: "DELETE",
+        });
+      } catch {}
+
       if (firestore) {
-        await firestore.collection("osmMapReports").doc(reportId).delete();
+        try {
+          await firestore.collection("osmMapReports").doc(reportId).delete();
+        } catch {}
       }
       setOsmReports((prev) => prev.filter((r) => r.id !== reportId));
-      try {
-        const local = JSON.parse(localStorage.getItem("osm_map_reports_cache") || "[]");
-        const updatedLocal = local.filter((r: any) => r.id !== reportId);
-        localStorage.setItem("osm_map_reports_cache", JSON.stringify(updatedLocal));
-      } catch {}
+      for (const storageKey of ["camper_osm_reports", "osm_map_reports_cache"]) {
+        try {
+          const local = JSON.parse(localStorage.getItem(storageKey) || "[]");
+          const updatedLocal = local.filter((r: any) => r.id !== reportId);
+          localStorage.setItem(storageKey, JSON.stringify(updatedLocal));
+        } catch {}
+      }
       window.dispatchEvent(
         new CustomEvent("show-toast", {
           detail: {
@@ -6790,6 +6864,7 @@ out center;`;
                           fetchAdminUsers();
                           fetchPendingCommunityItineraries();
                           fetchAdminNotifications();
+                          fetchOsmReports();
                           setShowAdminPanel(true);
                         }}
                         className="px-3 py-2.5 bg-slate-50 hover:bg-slate-200/60 text-slate-700 border border-slate-250/50 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1"

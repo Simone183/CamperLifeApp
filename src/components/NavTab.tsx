@@ -9,6 +9,7 @@ import { formatSpeed, parseDimToNumber, formatMeters } from '../unit-helpers';
 import { Place, VehicleDimensions } from '../types';
 import { applyTtsVoiceAndPitch, speakSampleTts } from '../utils/ttsHelper';
 import { Compass, Volume2, VolumeX, Play, Pause, AlertTriangle, ArrowUpRight, ArrowLeftRight, Navigation, RefreshCw, Eye, EyeOff, Search, Map, ShieldAlert, Check } from 'lucide-react';
+import { OsmReportModal } from './OsmReportModal';
 
 interface NavTabProps {
   activeDestination: Place | null;
@@ -51,6 +52,7 @@ export default function NavTab({
   const [simulatedSpeed, setSimulatedSpeed] = React.useState<number>(55); // km/h
   const [distanceTraveled, setDistanceTraveled] = React.useState<number>(0);
   const [customDestination, setCustomDestination] = React.useState<Place | null>(null);
+  const [isOsmReportOpen, setIsOsmReportOpen] = React.useState<boolean>(false);
 
   // Haversine formula to compute distance in meters
   const calculateDistanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -554,11 +556,7 @@ export default function NavTab({
           </button>
 
           <button
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('show-toast', {
-                detail: { message: "🚧 Grazie! Limite di sagoma segnalato alla community per verifica." }
-              }));
-            }}
+            onClick={() => setIsOsmReportOpen(true)}
             className="p-4 bg-[#A45C40]/10 hover:bg-[#A45C40]/15 text-[#A45C40] border border-[#A45C40]/25 rounded-2xl text-center space-y-1.5 cursor-pointer transition-colors"
           >
             <span className="text-xl">🚧</span>
@@ -593,6 +591,13 @@ export default function NavTab({
           </button>
         </div>
       </div>
+
+      <OsmReportModal
+        isOpen={isOsmReportOpen}
+        onClose={() => setIsOsmReportOpen(false)}
+        currentLat={userLocation?.lat ?? activeDestination?.lat ?? 41.9028}
+        currentLng={userLocation?.lng ?? activeDestination?.lng ?? 12.4964}
+      />
     </div>
   );
 }

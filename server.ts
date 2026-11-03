@@ -7692,6 +7692,228 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     }
   });
 
+  // --- OSM OBSTACLE & UNDERPASS REPORTS API ---
+
+  // Submit a new OSM obstacle / underpass report (saves to Firestore + sends FCM Push & Email to Admin)
+  app.post("/api/osm-reports", async (req, res) => {
+    try {
+      const {
+        id: clientId,
+        reportType = "height_limit",
+        reportTypeLabel = "Segnalazione Ostacolo OSM",
+        value,
+        unit,
+        lat,
+        lng,
+        address = "",
+        description = "",
+        photoUrl = "",
+        reporterEmail = "anonimo@viacamper.app",
+        reporterName = "Camperista Community",
+        createdAt
+      } = req.body || {};
+
+      const parsedLat = Number(lat);
+      const parsedLng = Number(lng);
+      if (isNaN(parsedLat) || isNaN(parsedLng)) {
+        return res.status(400).json({ error: "Coordinate GPS non valide." });
+      }
+
+      const timestamp = createdAt || new Date().toISOString();
+      const cleanReport: Record<string, any> = {
+        reportType: String(reportType || "height_limit"),
+        reportTypeLabel: String(reportTypeLabel || "Segnalazione Ostacolo OSM"),
+        lat: Number(parsedLat.toFixed(6)),
+        lng: Number(parsedLng.toFixed(6)),
+        description: String(description || "").trim(),
+        reporterEmail: String(reporterEmail || "anonimo@viacamper.app").trim(),
+        reporterName: String(reporterName || "Camperista Community").trim(),
+        status: "pending",
+        createdAt: timestamp
+      };
+
+      if (value !== undefined && value !== null && !isNaN(Number(value))) {
+        cleanReport.value = Number(value);
+      }
+      if (unit === "m" || unit === "t") {
+        cleanReport.unit = unit;
+      }
+      if (address && String(address).trim()) {
+        cleanReport.address = String(address).trim();
+      }
+      if (photoUrl && String(photoUrl).trim()) {
+        cleanReport.photoUrl = String(photoUrl).trim();
+      }
+
+      // 1. Save to Firestore osmMapReports collection (using removeUndefined so Firestore never rejects)
+      let reportId = clientId && String(clientId).trim() ? String(clientId).trim() : `osm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      try {
+        if (clientId && String(clientId).trim()) {
+          await firestoreDb.collection("osmMapReports").doc(reportId).set(removeUndefined({ ...cleanReport, id: reportId }), { merge: true });
+        } else {
+          const addedDoc = await firestoreDb.collection("osmMapReports").add(removeUndefined(cleanReport));
+          reportId = addedDoc.id;
+        }
+      } catch (fsErr) {
+        console.error("[OSM Reports API] Error writing to osmMapReports:", fsErr);
+      }
+
+      const locationText = cleanReport.address || `[${cleanReport.lat.toFixed(5)}, ${cleanReport.lng.toFixed(5)}]`;
+
+      // 2. Notify all admins & moderators (writes to notifications + adminNotifications + dispatches FCM Push!)
+      try {
+        await notifyModerators(
+          "places",
+          `🚧 Segnalazione Ostacolo: ${cleanReport.reportTypeLabel}`,
+          `${cleanReport.reporterName} ha segnalato ${cleanReport.reportTypeLabel} a ${locationText}.`,
+          {
+            type: "osm_report",
+            reportId,
+            reportType: cleanReport.reportType,
+            lat: String(cleanReport.lat),
+            lng: String(cleanReport.lng)
+          }
+        );
+      } catch (modErr) {
+        console.warn("[OSM Reports API] notifyModerators warning:", modErr);
+      }
+
+      // 3. Also store detailed entry in adminNotifications for the Admin Panel
+      try {
+        await firestoreDb.collection("adminNotifications").add(removeUndefined({
+          type: "osm_report",
+          title: `🚧 ${cleanReport.reportTypeLabel}`,
+          reason: `Nuova segnalazione OSM: ${cleanReport.reportTypeLabel} a ${locationText}`,
+          author: cleanReport.reporterName,
+          userEmail: cleanReport.reporterEmail,
+          content: cleanReport.description || `Segnalato limite di sagoma o strada: ${cleanReport.reportTypeLabel}`,
+          location: locationText,
+          imageUrl: cleanReport.photoUrl || "",
+          reportId,
+          timestamp: new Date().toISOString(),
+          read: false
+        }));
+      } catch (admErr) {
+        console.warn("[OSM Reports API] Error writing adminNotifications:", admErr);
+      }
+
+      // 4. Send HTML Email notification to Administrator via Resend
+      const osmEditUrl = `https://www.openstreetmap.org/edit?editor=id#map=19/${cleanReport.lat}/${cleanReport.lng}`;
+      const gmapsUrl = `https://www.google.com/maps?q=${cleanReport.lat},${cleanReport.lng}`;
+      const subject = `🚧 Nuova Segnalazione Ostacolo OSM [${cleanReport.reportTypeLabel}] da ${cleanReport.reporterName}`;
+      const photoHtml = cleanReport.photoUrl
+        ? `<div style="margin-top: 16px; text-align: center; background: #f8fafc; padding: 14px; border-radius: 12px; border: 1px solid #e2e8f0;">
+             <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #475569;">Foto allegata dall'utente:</p>
+             <img src="${cleanReport.photoUrl}" alt="Foto Ostacolo" style="max-width: 100%; max-height: 400px; border-radius: 10px; object-fit: cover;" />
+           </div>`
+        : "";
+
+      const htmlEmail = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background: #f8fafc; padding: 24px; border-radius: 16px;">
+          <div style="background: linear-gradient(135deg, #be123c 0%, #d97706 100%); padding: 20px 24px; border-radius: 12px; color: #ffffff;">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #fde68a; margin-bottom: 4px;">ViaCamperApp • Segnalazione Ostacolo & Sagoma</div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">🚧 ${cleanReport.reportTypeLabel}</h2>
+          </div>
+          <div style="background: #ffffff; padding: 24px; border-radius: 12px; margin-top: 16px; border: 1px solid #e2e8f0;">
+            <table style="width: 100%; font-size: 13.5px; color: #334155; border-collapse: collapse;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; width: 140px; color: #64748b;">Tipo Ostacolo:</td>
+                <td style="padding: 8px 0; font-weight: 800; color: #be123c;">${cleanReport.reportTypeLabel}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Segnalato da:</td>
+                <td style="padding: 8px 0;"><strong>${cleanReport.reporterName}</strong> (&lt;${cleanReport.reporterEmail}&gt;)</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Indirizzo / Luogo:</td>
+                <td style="padding: 8px 0;">${locationText}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Coordinate GPS:</td>
+                <td style="padding: 8px 0; font-family: monospace;">${cleanReport.lat}, ${cleanReport.lng}</td>
+              </tr>
+              ${cleanReport.description ? `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; font-weight: bold; color: #64748b;">Note Utente:</td>
+                <td style="padding: 8px 0; font-style: italic; color: #0f172a;">"${cleanReport.description}"</td>
+              </tr>` : ""}
+            </table>
+            ${photoHtml}
+            <div style="margin-top: 20px; display: flex; gap: 10px; text-align: center;">
+              <a href="${osmEditUrl}" target="_blank" style="display: inline-block; padding: 10px 16px; background: #e11d48; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: bold; margin-right: 8px;">Apri su OpenStreetMap Editor &rarr;</a>
+              <a href="${gmapsUrl}" target="_blank" style="display: inline-block; padding: 10px 16px; background: #0284c7; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: bold;">Vedi su Google Maps &rarr;</a>
+            </div>
+            <p style="margin-top: 16px; font-size: 12px; color: #64748b; text-align: center;">
+              Trovi questa segnalazione anche nel <strong>Pannello Moderatore &rarr; 🚩 Segnalazioni Mappa</strong> dentro ViaCamperApp.
+            </p>
+          </div>
+        </div>
+      `;
+
+      sendAdminNotificationEmail(subject, htmlEmail).catch(err =>
+        console.warn("[OSM Reports API] Warning sending email:", err)
+      );
+
+      return res.json({
+        success: true,
+        id: reportId,
+        report: { ...cleanReport, id: reportId }
+      });
+    } catch (err: any) {
+      console.error("[OSM Reports API] Error submitting report:", err);
+      return res.status(500).json({ error: err.message || "Errore durante il salvataggio della segnalazione." });
+    }
+  });
+
+  // Get all OSM obstacle reports for Admin Panel
+  app.get("/api/osm-reports", async (req, res) => {
+    try {
+      const snapshot = await firestoreDb.collection("osmMapReports").get();
+      const list: any[] = [];
+      snapshot.forEach((doc: any) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      return res.json({ success: true, reports: list });
+    } catch (err: any) {
+      console.error("[OSM Reports API] Error fetching reports:", err);
+      return res.status(500).json({ error: err.message || "Errore recupero segnalazioni OSM.", reports: [] });
+    }
+  });
+
+  // Update status of an OSM obstacle report
+  app.put("/api/osm-reports/:id/status", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, reviewedBy } = req.body || {};
+      if (!id || !status) {
+        return res.status(400).json({ error: "ID e stato obbligatori." });
+      }
+      await firestoreDb.collection("osmMapReports").doc(id).update({
+        status,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: reviewedBy || "admin"
+      });
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("[OSM Reports API] Error updating report status:", err);
+      return res.status(500).json({ error: err.message || "Errore aggiornamento stato segnalazione." });
+    }
+  });
+
+  // Delete an OSM obstacle report
+  app.delete("/api/osm-reports/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ error: "ID mancante." });
+      await firestoreDb.collection("osmMapReports").doc(id).delete();
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("[OSM Reports API] Error deleting report:", err);
+      return res.status(500).json({ error: err.message || "Errore eliminazione segnalazione." });
+    }
+  });
+
   // Self-correct files that are created with Windows backslashes by mistake at runtime
   try {
     const rootDir = process.cwd();

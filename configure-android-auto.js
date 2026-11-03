@@ -3344,8 +3344,9 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 String firstInstruction = !routeSteps.isEmpty() ? routeSteps.get(0).instruction : "";
                 if (announceStart) {
                     speakGuidance("Avvio navigazione camper 3D verso " + destination.location + ". " + firstInstruction);
-                } else if (!firstInstruction.isEmpty()) {
-                    speakGuidance("Percorso aggiornato. " + firstInstruction);
+                } else {
+                    speakGuidance("Percorso ricalcolato dalla posizione corrente. Prosegui nella direzione di marcia o cerca la prima rotatoria o deviazione per l'inversione. " + (firstInstruction.isEmpty() ? "" : firstInstruction));
+                    CarToast.makeText(getCarContext(), "🔄 Percorso ricalcolato", CarToast.LENGTH_SHORT).show();
                 }
                 lastTemplateInvalidateMillis = System.currentTimeMillis();
                 invalidate();
@@ -3417,10 +3418,10 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         double snappedLat = surfaceRenderer.getSnappedLat();
         double snappedLng = surfaceRenderer.getSnappedLng();
 
-        // 2. Se il camper devia di oltre 65 metri dal tracciato calcolato, ricalcola automaticamente il percorso stradale!
+        // 2. Se il camper devia di oltre 40 metri dal tracciato calcolato, ricalcola automaticamente il percorso stradale!
         if (!isRouteLoading && routePolyline != null && routePolyline.size() >= 2) {
             float offRouteMeters = surfaceRenderer.getDistanceFromRouteMeters(location.getLatitude(), location.getLongitude());
-            if (offRouteMeters > 65.0f && (now - lastRouteCalcMillis) > 12000L) {
+            if (offRouteMeters > 40.0f && (now - lastRouteCalcMillis) > 8000L) {
                 loadRouteAsync(false);
             }
         }

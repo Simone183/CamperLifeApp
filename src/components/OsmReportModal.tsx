@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { collection, addDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { resolveApiUrl } from "../utils/resolveMediaUrl";
 
 export type OsmReportType =
   | "height_limit"
@@ -45,6 +46,100 @@ export interface OsmReportData {
   status: "pending" | "verified_on_osm" | "rejected";
   osmNodeOrWayUrl?: string;
   createdAt: string;
+  syncedToCloud?: boolean;
+}
+
+/**
+ * Rimuove qualsiasi chiave con valore undefined per evitare il crash di Firestore addDoc()
+ */
+function buildCleanReportPayload(raw: OsmReportData): Record<string, any> {
+  const clean: Record<string, any> = {
+    reportType: raw.reportType || "height_limit",
+    reportTypeLabel: raw.reportTypeLabel || "Segnalazione Ostacolo OSM",
+    lat: Number(Number(raw.lat || 0).toFixed(6)),
+    lng: Number(Number(raw.lng || 0).toFixed(6)),
+    description: (raw.description || "").trim(),
+    reporterEmail: raw.reporterEmail || "anonimo@viacamper.app",
+    reporterName: raw.reporterName || "Camperista Community",
+    status: raw.status || "pending",
+    createdAt: raw.createdAt || new Date().toISOString(),
+  };
+  if (raw.value !== undefined && raw.value !== null && !isNaN(Number(raw.value))) {
+    clean.value = Number(raw.value);
+  }
+  if (raw.unit === "m" || raw.unit === "t") {
+    clean.unit = raw.unit;
+  }
+  if (raw.address && raw.address.trim()) {
+    clean.address = raw.address.trim();
+  }
+  if (raw.photoUrl && raw.photoUrl.trim()) {
+    clean.photoUrl = raw.photoUrl.trim();
+  }
+  return clean;
+}
+
+/**
+ * Sincronizza automaticamente in cloud (e invia la notifica Push/Email all'amministratore)
+ * eventuali segnalazioni rimaste salvate solo nel localStorage del dispositivo dell'utente.
+ */
+export async function syncPendingLocalOsmReports(): Promise<void> {
+  try {
+    const raw = localStorage.getItem("camper_osm_reports");
+    if (!raw) return;
+    const reports: OsmReportData[] = JSON.parse(raw);
+    if (!Array.isArray(reports) || reports.length === 0) return;
+
+    let changed = false;
+    for (let i = 0; i < reports.length; i++) {
+      const rep = reports[i];
+      if (!rep || rep.syncedToCloud) continue;
+
+      const cleanPayload = buildCleanReportPayload(rep);
+      try {
+        const res = await fetch(resolveApiUrl("/api/osm-reports"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cleanPayload),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          rep.id = data.id || rep.id;
+          rep.syncedToCloud = true;
+          changed = true;
+          continue;
+        }
+      } catch {
+        // Fallback diretto su Firestore
+      }
+
+      try {
+        const docRef = await addDoc(collection(db, "osmMapReports"), cleanPayload);
+        rep.id = docRef.id;
+        rep.syncedToCloud = true;
+        changed = true;
+        await addDoc(collection(db, "adminNotifications"), {
+          type: "osm_report",
+          title: `🚧 ${cleanPayload.reportTypeLabel}`,
+          reason: `Nuova segnalazione OSM: ${cleanPayload.reportTypeLabel} a ${cleanPayload.address || `[${cleanPayload.lat}, ${cleanPayload.lng}]`}`,
+          author: cleanPayload.reporterName,
+          userEmail: cleanPayload.reporterEmail,
+          content: cleanPayload.description || `Segnalato limite di sagoma o strada: ${cleanPayload.reportTypeLabel}`,
+          reportId: docRef.id,
+          timestamp: new Date().toISOString(),
+          read: false,
+        });
+      } catch {
+        // Verrà ritentato al prossimo avvio
+      }
+    }
+
+    if (changed) {
+      localStorage.setItem("camper_osm_reports", JSON.stringify(reports.slice(0, 50)));
+    }
+  } catch {
+    // Non bloccante
+  }
 }
 
 interface OsmReportModalProps {
@@ -380,8 +475,8 @@ export const OsmReportModal: React.FC<OsmReportModalProps> = ({
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Resize canvas to max 1280px for light firestore storage
-        const maxDim = 1280;
+        // Resize canvas to max 960px for fast upload and guaranteed < 1MB Firestore storage
+        const maxDim = 960;
         let width = img.width;
         let height = img.height;
 
@@ -399,7 +494,7 @@ export const OsmReportModal: React.FC<OsmReportModalProps> = ({
         const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.78);
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.72);
           setPhotoPreview(compressedDataUrl);
         } else {
           setPhotoPreview(event.target?.result as string);
@@ -463,32 +558,63 @@ export const OsmReportModal: React.FC<OsmReportModalProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    try {
-      // 1. Save in Firestore osmMapReports collection
-      const docRef = await addDoc(collection(db, "osmMapReports"), reportData);
-      reportData.id = docRef.id;
+    const cleanPayload = buildCleanReportPayload(reportData);
 
-      // 2. Also register in local storage backup so reports are never lost
+    try {
+      let savedDocId = "";
+      let savedViaServer = false;
+
+      // 1. Invia tramite API server /api/osm-reports (salva su Firestore + invia Push FCM + Email a sambucci.simone@gmail.com!)
+      try {
+        const apiRes = await fetch(resolveApiUrl("/api/osm-reports"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cleanPayload),
+        });
+        if (apiRes.ok) {
+          const apiData = await apiRes.json();
+          if (apiData && apiData.id) {
+            savedDocId = apiData.id;
+            savedViaServer = true;
+          }
+        }
+      } catch (serverErr) {
+        console.warn("Server /api/osm-reports fallback to direct Firestore:", serverErr);
+      }
+
+      // 2. Fallback diretto su Firestore (usando cleanPayload SENZA campi undefined!)
+      if (!savedViaServer) {
+        const docRef = await addDoc(collection(db, "osmMapReports"), cleanPayload);
+        savedDocId = docRef.id;
+
+        try {
+          await addDoc(collection(db, "adminNotifications"), {
+            type: "osm_report",
+            title: `🚧 ${label}`,
+            reason: `Nuova segnalazione OSM: ${label} a ${cleanPayload.address || `[${lat.toFixed(4)}, ${lng.toFixed(4)}]`}`,
+            author: cleanPayload.reporterName,
+            userEmail: cleanPayload.reporterEmail,
+            content: cleanPayload.description || `Segnalato limite di sagoma o strada: ${label}`,
+            reportId: docRef.id,
+            timestamp: new Date().toISOString(),
+            read: false,
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+
+      reportData.id = savedDocId || `osm_${Date.now()}`;
+      reportData.syncedToCloud = true;
+
+      // 3. Salva anche nel backup locale sincronizzato
       try {
         const existingReports = JSON.parse(localStorage.getItem("camper_osm_reports") || "[]");
         existingReports.unshift(reportData);
         localStorage.setItem("camper_osm_reports", JSON.stringify(existingReports.slice(0, 50)));
+        localStorage.setItem("osm_map_reports_cache", JSON.stringify(existingReports.slice(0, 50)));
       } catch {
         // Ignore local storage error
-      }
-
-      // 3. Notify Admin in adminNotifications collection for badge alert
-      try {
-        await addDoc(collection(db, "adminNotifications"), {
-          type: "osm_report",
-          reason: `Nuova segnalazione OSM: ${label} a ${address || `[${lat.toFixed(4)}, ${lng.toFixed(4)}]`}`,
-          author: reportData.reporterName,
-          content: description || `Segnalato limite di sagoma o strada: ${label}`,
-          reportId: docRef.id,
-          timestamp: new Date().toISOString(),
-        });
-      } catch {
-        // Non-blocking
       }
 
       setSubmitSuccess(true);
@@ -515,8 +641,10 @@ export const OsmReportModal: React.FC<OsmReportModalProps> = ({
       }, 1800);
     } catch (err) {
       console.error("Error submitting OSM report:", err);
-      // Fallback in local storage so user doesn't lose work
+      // Fallback in local storage con syncedToCloud: false così verrà sincronizzata al prossimo avvio
       try {
+        reportData.id = `local_${Date.now()}`;
+        reportData.syncedToCloud = false;
         const existingReports = JSON.parse(localStorage.getItem("camper_osm_reports") || "[]");
         existingReports.unshift(reportData);
         localStorage.setItem("camper_osm_reports", JSON.stringify(existingReports.slice(0, 50)));
@@ -524,7 +652,7 @@ export const OsmReportModal: React.FC<OsmReportModalProps> = ({
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: "💾 Segnalazione salvata in locale (in attesa di connessione)!",
+              message: "💾 Segnalazione salvata in locale (verrà inviata appena torna la rete)!",
               duration: 4500,
             },
           })
