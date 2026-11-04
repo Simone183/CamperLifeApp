@@ -13,7 +13,7 @@ import path from 'path';
  *    - ActiveCarNavigationScreen (Navigatore Camper Interno turn-by-turn direttamente sullo schermo dell'autoradio con guida vocale e ricalcolo dinamico)
  *    - SearchLocationScreen (Ricerca località/aree sosta con Geocoder + Nominatim OSM live)
  *    - MovementsListScreen, CamperPlacesScreen, NavigatorChooserScreen, AddFuelLogScreen, AddMovementScreen
- *    - AutoDataBridge (Gestione GPS live multi-provider, routing OSRM in italiano e sincronizzazione bidirezionale con il telefono)
+ *    - AutoDataBridge (Gestione GPS live multi-provider, routing OSRM in italiano e sincronizzazione bidirezionale con il telefono - v2.5.19)
  *    - MainActivity (Bridge nativo AndroidNativeTTS + sincronizzazione istantanea destinazioni Android Auto verso React)
  */
 
