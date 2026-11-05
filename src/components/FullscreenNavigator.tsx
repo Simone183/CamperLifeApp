@@ -1563,21 +1563,11 @@ out center;`;
     }
 
     if (priority === 'immediate') {
-      // For immediate turn warnings ("Ora, svolta a destra"), clear any low-priority background speech and speak immediately
-      if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-      if (activeCancelFnRef.current) {
-        try { activeCancelFnRef.current(); } catch (_) {}
-        activeCancelFnRef.current = null;
-      }
-      activeUtteranceRef.current = null;
-      try {
-        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-      } catch (_) {}
-      isSpeakingRef.current = false;
-      speechQueueRef.current = [{ text: cleanText, priority, timestamp: now }];
+      // Queue immediate turn warnings at the front of the queue so they play right after the current sentence finishes in full without cutting it off
+      speechQueueRef.current.unshift({ text: cleanText, priority, timestamp: now });
       processSpeechQueue();
     } else {
-      // For advance warnings, queue cleanly without interrupting active speech abruptly
+      // For advance warnings, queue cleanly without interrupting active speech
       if (!speechQueueRef.current.some(item => item.text === cleanText)) {
         speechQueueRef.current.push({ text: cleanText, priority, timestamp: now });
         processSpeechQueue();
@@ -2214,21 +2204,22 @@ out center;`;
   React.useEffect(() => {
     if (!isGPSEnabled || !userLocation) return;
     const now = Date.now();
-    const prev = lastGpsUpdateRef.current;
-    
-    // Check if new GPS coordinates have arrived
-    if (!prev || prev.lat !== userLocation.lat || prev.lng !== userLocation.lng) {
+    if (lastGpsUpdateRef.current) {
+      lastGpsUpdateRef.current.time = now;
+      lastGpsUpdateRef.current.lat = userLocation.lat;
+      lastGpsUpdateRef.current.lng = userLocation.lng;
+    } else {
       lastGpsUpdateRef.current = { lat: userLocation.lat, lng: userLocation.lng, time: now };
-      
-      if (isTunnelDeadReckoning) {
-        setIsTunnelDeadReckoning(false);
-        if (wasInTunnelRef.current) {
-          wasInTunnelRef.current = false;
-          speakInstruction("Segnale GPS ripristinato. Navigazione in tempo reale ripresa.");
-          window.dispatchEvent(new CustomEvent('show-toast', {
-            detail: { message: "📶 Segnale GPS ripristinato!" }
-          }));
-        }
+    }
+
+    if (isTunnelDeadReckoning) {
+      setIsTunnelDeadReckoning(false);
+      if (wasInTunnelRef.current) {
+        wasInTunnelRef.current = false;
+        speakInstruction("Segnale GPS ripristinato. Navigazione in tempo reale ripresa.");
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { message: "📶 Segnale GPS ripristinato!" }
+        }));
       }
     }
   }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, speakInstruction]);
@@ -2242,11 +2233,20 @@ out center;`;
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const lastTime = lastGpsUpdateRef.current?.time || 0;
+      // If vehicle is stopped (speed === 0 or null), keep refreshing lastGpsUpdateRef time so traffic lights never trigger tunnel mode!
+      if (currentDetectedSpeed === 0 || currentDetectedSpeed === null) {
+        if (lastGpsUpdateRef.current) {
+          lastGpsUpdateRef.current.time = now;
+        }
+        if (isTunnelDeadReckoning) setIsTunnelDeadReckoning(false);
+        return;
+      }
+
+      const lastTime = lastGpsUpdateRef.current?.time || now;
       const timeSinceLastFix = now - lastTime;
 
-      // If no fresh GPS fix received for > 30 seconds (tunnel or lost signal)
-      if (timeSinceLastFix > 30000) {
+      // If no fresh GPS fix received for > 180 seconds AND vehicle was moving
+      if (timeSinceLastFix > 180000 && currentDetectedSpeed > 5) {
         if (!isTunnelDeadReckoning) {
           setIsTunnelDeadReckoning(true);
           wasInTunnelRef.current = true;
@@ -2281,7 +2281,7 @@ out center;`;
     }, 800);
 
     return () => clearInterval(interval);
-  }, [isGPSEnabled, isPreview, routeCoordinates, isTunnelDeadReckoning, userLocation?.lat, userLocation?.lng, speakInstruction]);
+  }, [isGPSEnabled, isPreview, routeCoordinates, isTunnelDeadReckoning, userLocation?.lat, userLocation?.lng, currentDetectedSpeed, speakInstruction]);
 
   // Derive effective user location (real GPS fix or Dead Reckoning coordinate)
   const effectiveUserLocation = React.useMemo(() => {
