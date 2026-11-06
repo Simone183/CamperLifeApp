@@ -125,11 +125,22 @@ export default function FullscreenNavigator({
   const [currentDetectedSpeed, setCurrentDetectedSpeed] = React.useState<number | null>(null);
   const [showProminentDisclosure, setShowProminentDisclosure] = React.useState<boolean>(() => {
     try {
-      return localStorage.getItem('viacamper_bg_location_disclosed') !== 'true';
+      return localStorage.getItem('viacamper_bg_location_disclosed_v2') !== 'true';
     } catch (e) {
       return true;
     }
   });
+
+  // Attiva subito la notifica persistente in primo piano quando il navigatore è aperto e l'informativa è accettata
+  React.useEffect(() => {
+    if (showProminentDisclosure) return;
+    try {
+      const bridge = (window as any).AndroidNativeTTS;
+      if (bridge && typeof bridge.startForegroundNavigationNotification === 'function') {
+        bridge.startForegroundNavigationNotification(dest?.name || 'Destinazione Camper');
+      }
+    } catch (_) {}
+  }, [showProminentDisclosure, dest?.name]);
 
   // Tunnel / Dead Reckoning Mode state (cruise speed 90 km/h when GPS signal is lost inside tunnels)
   const [isTunnelDeadReckoning, setIsTunnelDeadReckoning] = React.useState<boolean>(false);
@@ -3592,6 +3603,15 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   <h4 className="text-slate-300 font-bold text-xs truncate">
                     {dest.name}
                   </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowProminentDisclosure(true)}
+                    className="ml-auto px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-extrabold flex items-center gap-1 hover:bg-emerald-500/30 cursor-pointer shrink-0"
+                    title="Mostra Informativa Posizione in Background (Prominent Disclosure)"
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Info GPS</span>
+                  </button>
                 </div>
                 <p className="text-slate-100 font-extrabold text-sm sm:text-base font-sans leading-snug line-clamp-2">
                   {currentStepObj?.desc || currentStepObj?.title || `Procedi verso ${dest.name}`}
@@ -4519,8 +4539,17 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           type="button"
           onClick={() => {
             try {
-              localStorage.setItem('viacamper_bg_location_disclosed', 'true');
+              localStorage.setItem('viacamper_bg_location_disclosed_v2', 'true');
+              localStorage.setItem('viacamper_perm_configured_v2', 'true');
             } catch (e) {}
+            try {
+              const bridge = (window as any).AndroidNativeTTS;
+              if (bridge && typeof bridge.requestLocationAndStartForegroundService === 'function') {
+                bridge.requestLocationAndStartForegroundService();
+              } else if (bridge && typeof bridge.startForegroundNavigationNotification === 'function') {
+                bridge.startForegroundNavigationNotification(dest?.name || 'Destinazione Camper');
+              }
+            } catch (_) {}
             setShowProminentDisclosure(false);
           }}
           className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"

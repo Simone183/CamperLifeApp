@@ -1200,6 +1200,10 @@ public class AutoDataBridge {
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import androidx.annotation.NonNull;
@@ -1207,48 +1211,120 @@ import androidx.car.app.CarAppService;
 import androidx.car.app.Session;
 import androidx.car.app.validation.HostValidator;
 import androidx.core.app.NotificationCompat;
+import com.ViaCamper.myapp.MainActivity;
 
 public class ViaCamperCarAppService extends CarAppService {
 
-    private static final String NAV_CHANNEL_ID = "viacamper_auto_gps_foreground_v1";
-    private static final int NAV_NOTIFICATION_ID = 8801;
+    public static final String NAV_CHANNEL_ID = "viacamper_auto_gps_foreground_v2";
+    public static final int NAV_NOTIFICATION_ID = 8801;
+
+    public static void ensureChannel(Context ctx) {
+        try {
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                        NAV_CHANNEL_ID,
+                        "Navigatore GPS & Android Auto",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                );
+                channel.setDescription("Mantiene attivo il segnale GPS in tempo reale durante la guida camper e su Android Auto");
+                channel.setSound(null, null);
+                channel.enableVibration(false);
+                channel.setShowBadge(true);
+                nm.createNotificationChannel(channel);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public static Notification buildPersistentGpsNotification(Context ctx, String customText) {
+        ensureChannel(ctx);
+        String bodyText = (customText != null && !customText.trim().isEmpty())
+                ? customText
+                : "Tracciamento GPS camper in tempo reale";
+
+        PendingIntent contentIntent = null;
+        try {
+            Intent openIntent = new Intent(ctx, MainActivity.class);
+            openIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            contentIntent = PendingIntent.getActivity(ctx, 8802, openIntent, flags);
+        } catch (Exception ignored) {}
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, NAV_CHANNEL_ID)
+                .setContentTitle("ViaCamper • Android Auto attivo")
+                .setContentText(bodyText)
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+
+        if (contentIntent != null) {
+            builder.setContentIntent(contentIntent);
+        }
+        return builder.build();
+    }
+
+    public static void showPersistentGpsNotification(Context ctx, String customText) {
+        try {
+            Notification notification = buildPersistentGpsNotification(ctx, customText);
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.notify(NAV_NOTIFICATION_ID, notification);
+            }
+            boolean hasLocationPerm = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                hasLocationPerm = ctx.checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") == PackageManager.PERMISSION_GRANTED
+                        || ctx.checkSelfPermission("android.permission.ACCESS_COARSE_LOCATION") == PackageManager.PERMISSION_GRANTED;
+            }
+            if (hasLocationPerm) {
+                Intent serviceIntent = new Intent(ctx, ViaCamperCarAppService.class);
+                serviceIntent.putExtra("EXTRA_SUBTITLE", customText);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ctx.startForegroundService(serviceIntent);
+                } else {
+                    ctx.startService(serviceIntent);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        promoteToForegroundLocationService();
+        promoteToForegroundLocationService("Tracciamento GPS camper in tempo reale");
         AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
     }
 
-    private void promoteToForegroundLocationService() {
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        String sub = intent != null ? intent.getStringExtra("EXTRA_SUBTITLE") : null;
+        promoteToForegroundLocationService(sub);
+        AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
+        return START_STICKY;
+    }
+
+    private void promoteToForegroundLocationService(String customText) {
         try {
-            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (nm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                NotificationChannel channel = new NotificationChannel(
-                        NAV_CHANNEL_ID,
-                        "Navigatore GPS Android Auto",
-                        NotificationManager.IMPORTANCE_LOW
-                );
-                channel.setDescription("Mantiene attivo il segnale GPS in tempo reale durante la guida su Android Auto");
-                channel.setShowBadge(false);
-                nm.createNotificationChannel(channel);
-            }
-
-            Notification notification = new NotificationCompat.Builder(this, NAV_CHANNEL_ID)
-                    .setContentTitle("ViaCamper • Android Auto attivo")
-                    .setContentText("Tracciamento GPS camper in tempo reale")
-                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-                    .setOngoing(true)
-                    .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .build();
-
+            Notification notification = buildPersistentGpsNotification(this, customText);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NAV_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
             } else {
                 startForeground(NAV_NOTIFICATION_ID, notification);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+            try {
+                Notification notification = buildPersistentGpsNotification(this, customText);
+                NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.notify(NAV_NOTIFICATION_ID, notification);
+                }
+            } catch (Exception ignored2) {}
+        }
     }
 
     @NonNull
@@ -1260,7 +1336,7 @@ public class ViaCamperCarAppService extends CarAppService {
     @NonNull
     @Override
     public Session onCreateSession() {
-        promoteToForegroundLocationService();
+        promoteToForegroundLocationService("Tracciamento GPS camper in tempo reale");
         AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
         return new ViaCamperCarSession();
     }
@@ -4958,10 +5034,13 @@ import android.speech.tts.UtteranceProgressListener;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import com.ViaCamper.myapp.auto.ViaCamperCarAppService;
 import com.ViaCamper.myapp.auto.WeatherAlertMonitor;
 import com.ViaCamper.myapp.auto.WeatherGuardService;
 import com.getcapacitor.BridgeActivity;
 import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends BridgeActivity {
@@ -4976,15 +5055,9 @@ public class MainActivity extends BridgeActivity {
 
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
-        // 1. Configura subito il canale notifiche ad alta priorità e richiedi il permesso POST_NOTIFICATIONS su Android 13+
+        // 1. Configura i canali di notifica (NON richiede permessi runtime qui per lasciare apparire prima il Prominent Disclosure in-app)
         WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
-        if (Build.VERSION.SDK_INT >= 33) {
-            try {
-                if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1001);
-                }
-            } catch (Exception ignored) {}
-        }
+        ViaCamperCarAppService.ensureChannel(getApplicationContext());
 
         // 2. Avvia il servizio e gli scheduler nativi per il monitoraggio meteo a schermo spento / app chiusa
         try {
@@ -5220,6 +5293,64 @@ public class MainActivity extends BridgeActivity {
                 prefs.edit().putBoolean("camper_weather_alerts_enabled", enabled).apply();
                 if (enabled) {
                     WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 15000L);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public void requestLocationAndStartForegroundService() {
+            runOnUiThread(() -> {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        List<String> permsToRequest = new ArrayList<>();
+                        if (checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") != PackageManager.PERMISSION_GRANTED) {
+                            permsToRequest.add("android.permission.ACCESS_FINE_LOCATION");
+                        }
+                        if (checkSelfPermission("android.permission.ACCESS_COARSE_LOCATION") != PackageManager.PERMISSION_GRANTED) {
+                            permsToRequest.add("android.permission.ACCESS_COARSE_LOCATION");
+                        }
+                        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                            permsToRequest.add("android.permission.POST_NOTIFICATIONS");
+                        }
+                        if (!permsToRequest.isEmpty()) {
+                            requestPermissions(permsToRequest.toArray(new String[0]), 2001);
+                            return;
+                        }
+                    }
+                    ViaCamperCarAppService.showPersistentGpsNotification(getApplicationContext(), "Tracciamento GPS camper in tempo reale");
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        if (checkSelfPermission("android.permission.ACCESS_BACKGROUND_LOCATION") != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(new String[]{"android.permission.ACCESS_BACKGROUND_LOCATION"}, 2002);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void startForegroundNavigationNotification(String destName) {
+            runOnUiThread(() -> {
+                try {
+                    ViaCamperCarAppService.showPersistentGpsNotification(
+                            getApplicationContext(),
+                            "Tracciamento GPS camper in tempo reale"
+                    );
+                } catch (Exception ignored) {}
+            });
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 2001) {
+            try {
+                ViaCamperCarAppService.showPersistentGpsNotification(getApplicationContext(), "Tracciamento GPS camper in tempo reale");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") == PackageManager.PERMISSION_GRANTED
+                            && checkSelfPermission("android.permission.ACCESS_BACKGROUND_LOCATION") != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{"android.permission.ACCESS_BACKGROUND_LOCATION"}, 2002);
+                    }
                 }
             } catch (Exception ignored) {}
         }

@@ -221,7 +221,7 @@ export default function App() {
   const [showFamilyCrewModal, setShowFamilyCrewModal] = React.useState<boolean>(false);
   const [showPermissionModal, setShowPermissionModal] = React.useState<boolean>(() => {
     try {
-      return localStorage.getItem("viacamper_perm_configured") !== "true";
+      return localStorage.getItem("viacamper_perm_configured_v3") !== "true";
     } catch (e) {
       return true;
     }
@@ -4549,12 +4549,13 @@ out center;`;
     }
   }, []);
 
-  // Aggancio automatico GPS all'avvio dell'app
+  // Aggancio automatico GPS all'avvio dell'app (solo DOPO che l'utente ha letto e accettato il Prominent Disclosure)
   React.useEffect(() => {
+    if (showPermissionModal) return;
     if (!hasDeniedGPS && typeof window !== "undefined" && navigator.geolocation) {
       handleRequestSingleGPS();
     }
-  }, [handleRequestSingleGPS, hasDeniedGPS]);
+  }, [handleRequestSingleGPS, hasDeniedGPS, showPermissionModal]);
 
   // Ascolto e avvio automatico della navigazione ricevuta da Android Auto
   const lastProcessedAutoDestRef = React.useRef<number>(0);
@@ -4661,6 +4662,7 @@ out center;`;
     let pollIntervalId: any = null;
 
     if (
+      !showPermissionModal &&
       isGPSEnabled &&
       typeof window !== "undefined" &&
       navigator.geolocation
@@ -4813,7 +4815,7 @@ out center;`;
         clearInterval(pollIntervalId);
       }
     };
-  }, [isGPSEnabled]);
+  }, [isGPSEnabled, showPermissionModal]);
 
   // Listen for simulated/manual camper location updates and GPS resets
   React.useEffect(() => {
