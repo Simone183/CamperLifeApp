@@ -157,7 +157,7 @@ jobs:
           echo "Determined Android Version: $VERSION"
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Sign Android Bundle (AAB) & APK with Keystore
+      - name: Sign Android Bundle (AAB) & APK with Keystore (v1 + v2 + v3 Signature Scheme)
         id: sign_aab
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -165,29 +165,59 @@ jobs:
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+          echo "Using build-tools from: $BUILD_TOOLS_DIR"
+
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
             echo "🔐 Firma dell'AAB e APK in corso con il Keystore configurato..."
             echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
             KEY_PASS="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+
+            # 1. Firma AAB per Google Play Console
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
               -keystore release.keystore \
               -storepass "$KEYSTORE_PASSWORD" \
               -keypass "$KEY_PASS" \
               "${{ steps.find_aab.outputs.aab_path }}" \
               "$KEY_ALIAS"
-            
+
+            # 2. Allinea (zipalign 4-byte) e Firma APK con apksigner (Schema v1 + v2 + v3 obbligatorio su Android 11/12/13/14/15)
             if [ -f "${{ steps.find_aab.outputs.apk_path }}" ]; then
-              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-                -keystore release.keystore \
-                -storepass "$KEYSTORE_PASSWORD" \
-                -keypass "$KEY_PASS" \
-                "${{ steps.find_aab.outputs.apk_path }}" \
-                "$KEY_ALIAS"
+              APK_FILE="${{ steps.find_aab.outputs.apk_path }}"
+              ALIGNED_APK="${APK_FILE%.apk}-aligned.apk"
+              "$ZIPALIGN" -p -f 4 "$APK_FILE" "$ALIGNED_APK"
+              mv "$ALIGNED_APK" "$APK_FILE"
+
+              "$APKSIGNER" sign \
+                --ks release.keystore \
+                --ks-key-alias "$KEY_ALIAS" \
+                --ks-pass pass:"$KEYSTORE_PASSWORD" \
+                --key-pass pass:"$KEY_PASS" \
+                --v1-signing-enabled true \
+                --v2-signing-enabled true \
+                --v3-signing-enabled true \
+                "$APK_FILE"
+
+              "$APKSIGNER" verify --verbose "$APK_FILE"
             fi
             rm -f release.keystore
-            echo "✅ AAB e APK firmati con successo!"
+            echo "✅ AAB e APK allineati e firmati (v1+v2+v3) con successo!"
           else
-            echo "⚠️ Secret di firma non trovati. Assicurati che RELEASE_KEYSTORE_BASE64 sia presente."
+            echo "⚠️ Secret di firma non trovati. Generazione keystore di fallback per rendere l'APK installabile..."
+            keytool -genkeypair -v -keystore fallback.keystore -alias viacamper -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android -dname "CN=ViaCamper, OU=App, O=ViaCamper, L=Rome, S=RM, C=IT"
+            if [ -f "${{ steps.find_aab.outputs.apk_path }}" ]; then
+              APK_FILE="${{ steps.find_aab.outputs.apk_path }}"
+              ALIGNED_APK="${APK_FILE%.apk}-aligned.apk"
+              "$ZIPALIGN" -p -f 4 "$APK_FILE" "$ALIGNED_APK"
+              mv "$ALIGNED_APK" "$APK_FILE"
+              "$APKSIGNER" sign --ks fallback.keystore --ks-key-alias viacamper --ks-pass pass:android --key-pass pass:android \
+                --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true "$APK_FILE"
+              "$APKSIGNER" verify --verbose "$APK_FILE"
+            fi
+            rm -f fallback.keystore
           fi
 
       - name: Prepare Named AAB and APK Release Files
