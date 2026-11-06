@@ -5706,9 +5706,8 @@ out center;`;
             : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
         }`}
       >
-        {/* Render Category 1: Mappa & Navigatore with sub segmentation */}
-        {activeTab === "map_nav" &&
-          (currentUser ? (
+        {/* Render Category 1: Mappa & Navigatore with sub segmentation (Available without login as Guest Navigator) */}
+        {activeTab === "map_nav" && (
             <div className="flex-1 min-h-0 space-y-2 md:space-y-3 h-full flex flex-col">
               {mapNavSubTab === "movement_log" ? (
                 <MovementLog
@@ -5772,7 +5771,7 @@ out center;`;
                   onToggleFavorite={handleToggleFavorite}
                   focusedPlaceId={focusedPlaceId}
                   onClearFocusedPlaceId={() => setFocusedPlaceId(null)}
-                  currentUser={currentUser}
+                  currentUser={currentUser || { nickname: "Ospite", email: "guest@viacamper.local", name: "Ospite Navigatore" }}
                   isOnline={isOnline}
                   onRedirectToLogin={() => {
                     setActiveTab("settings_tools");
@@ -5820,35 +5819,7 @@ out center;`;
                 />
               )}
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl shadow-lg mt-10">
-              <h2 className="text-2xl font-bold mb-4">Accesso Richiesto</h2>
-              <p className="mb-6 text-center text-slate-600">
-                Per consultare la mappa e navigare, effettua il login o
-                registrati.
-              </p>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => {
-                    setActiveTab("settings_tools");
-                    setSettingsSubTab("login");
-                  }}
-                  className="px-6 py-2 bg-[#3E4A35] text-white rounded-xl"
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab("settings_tools");
-                    setSettingsSubTab("registration");
-                  }}
-                  className="px-6 py-2 bg-slate-200 text-slate-800 rounded-xl"
-                >
-                  Registrazione
-                </button>
-              </div>
-            </div>
-          ))}
+          )}
 
         {/* Render Category 2: Diario di Viaggio */}
         {activeTab === "diary" &&
