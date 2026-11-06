@@ -123,6 +123,13 @@ export default function FullscreenNavigator({
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(false);
   const [speed, setSpeed] = React.useState<number>(80); // km/h
   const [currentDetectedSpeed, setCurrentDetectedSpeed] = React.useState<number | null>(null);
+  const [showProminentDisclosure, setShowProminentDisclosure] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem('viacamper_bg_location_disclosed') !== 'true';
+    } catch (e) {
+      return true;
+    }
+  });
 
   // Tunnel / Dead Reckoning Mode state (cruise speed 90 km/h when GPS signal is lost inside tunnels)
   const [isTunnelDeadReckoning, setIsTunnelDeadReckoning] = React.useState<boolean>(false);
@@ -4479,6 +4486,47 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
         <button onClick={() => setSelectedSostaModal(null)} className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer">
           Chiudi Scheda
+        </button>
+      </div>
+    </div>
+  )}
+
+  {/* Prominent Disclosure Modal for Background Location Access */}
+  {showProminentDisclosure && (
+    <div className="fixed inset-0 z-[9999999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 text-left">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 tracking-tight">
+              Informativa Posizione in Background
+            </h3>
+            <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-600 dark:text-emerald-400">
+              ViaCamper Navigazione & Android Auto
+            </span>
+          </div>
+        </div>
+        <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 leading-relaxed">
+          ViaCamper raccoglie i dati sulla posizione (anche in background quando l'app è ridotta a icona o lo schermo è spento) per abilitare la navigazione stradale turn-by-turn in tempo reale, calcolare i percorsi sicuri per camper ed eseguire la guida visiva e vocale su Android Auto e sull'autoradio.
+        </p>
+        <div className="p-3 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-[11px] font-medium text-slate-600 dark:text-slate-400">
+          Durante la navigazione attiva verrà mostrata una notifica persistente in primo piano: <br/>
+          <strong className="text-slate-900 dark:text-slate-200">"ViaCamper • Android Auto attivo - Tracciamento GPS camper in tempo reale"</strong>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              localStorage.setItem('viacamper_bg_location_disclosed', 'true');
+            } catch (e) {}
+            setShowProminentDisclosure(false);
+          }}
+          className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+        >
+          <Check className="w-4 h-4" />
+          <span>Ho capito e accetto</span>
         </button>
       </div>
     </div>
