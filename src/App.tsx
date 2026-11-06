@@ -5365,7 +5365,7 @@ out center;`;
       )}
 
       {/* Top Warning Banner if any safety checkpoints are uncompleted */}
-      {dashboardSettings.showTopNotifications !== false && incompleteChecklistCount > 0 && (
+      {currentUser && dashboardSettings.showTopNotifications !== false && incompleteChecklistCount > 0 && (
         <div className="bg-[#A45C40] text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-[#A45C40]/20 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
           <ShieldAlert className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
           <span className="leading-tight truncate sm:whitespace-normal">
@@ -5676,30 +5676,59 @@ out center;`;
         {activeTab === "map_nav" && (
             <div className="flex-1 min-h-0 space-y-2 md:space-y-3 h-full flex flex-col">
               {mapNavSubTab === "movement_log" ? (
-                <MovementLog
-                  trip={
-                    trips.find((t) => t.status === "Attivo") ||
-                    ({
-                      id: "no-trip",
-                      title: "No Trip",
-                      startDate: "",
-                      endDate: "",
-                      description: "",
-                      status: "Completato",
-                      expenses: [],
-                      photos: [],
-                      movements: [],
-                    } as any)
-                  }
-                  onUpdateTrip={(updatedTrip) => {
-                    setTrips(
-                      trips.map((t) =>
-                        t.id === updatedTrip.id ? updatedTrip : t,
-                      ),
-                    );
-                  }}
-                  onBack={() => setMapNavSubTab("map")}
-                />
+                currentUser ? (
+                  <MovementLog
+                    trip={
+                      trips.find((t) => t.status === "Attivo") ||
+                      ({
+                        id: "no-trip",
+                        title: "No Trip",
+                        startDate: "",
+                        endDate: "",
+                        description: "",
+                        status: "Completato",
+                        expenses: [],
+                        photos: [],
+                        movements: [],
+                      } as any)
+                    }
+                    onUpdateTrip={(updatedTrip) => {
+                      setTrips(
+                        trips.map((t) =>
+                          t.id === updatedTrip.id ? updatedTrip : t,
+                        ),
+                      );
+                    }}
+                    onBack={() => setMapNavSubTab("map")}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl shadow-lg mt-10 mx-4">
+                    <h2 className="text-2xl font-bold mb-4">Accesso Richiesto</h2>
+                    <p className="mb-6 text-center text-slate-600">
+                      Per registrare e consultare gli spostamenti, effettua il login o registrati.
+                    </p>
+                    <div className="flex gap-4">
+                      <button
+                        onClick={() => {
+                          setActiveTab("settings_tools");
+                          setSettingsSubTab("login");
+                        }}
+                        className="px-6 py-2 bg-[#3E4A35] text-white rounded-xl"
+                      >
+                        Login
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab("settings_tools");
+                          setSettingsSubTab("registration");
+                        }}
+                        className="px-6 py-2 bg-slate-200 text-slate-800 rounded-xl"
+                      >
+                        Registrazione
+                      </button>
+                    </div>
+                  </div>
+                )
               ) : (isFullscreenNav && !isNavMinimized) ? (
                 <div className="flex-1 bg-[#0b101d] flex flex-col items-center justify-center text-slate-400 text-xs p-6 rounded-3xl border border-slate-800/40">
                   <div className="flex items-center gap-2 mb-2">
@@ -5731,17 +5760,17 @@ out center;`;
                   onGPSEnabledChange={handleGPSEnabledChange}
                   isManualCamperLocation={isManualCamperLocation}
                   manualCamperPlaceId={manualCamperPlaceId}
-                  hasSafetyBanner={incompleteChecklistCount > 0}
+                  hasSafetyBanner={Boolean(currentUser) && incompleteChecklistCount > 0}
                   isAdmin={isAdminLoggedIn || isSuperAdminOrModerator}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={handleToggleFavorite}
                   focusedPlaceId={focusedPlaceId}
                   onClearFocusedPlaceId={() => setFocusedPlaceId(null)}
-                  currentUser={currentUser || { nickname: "Ospite", email: "guest@viacamper.local", name: "Ospite Navigatore" }}
+                  currentUser={currentUser}
                   isOnline={isOnline}
                   onRedirectToLogin={() => {
                     setActiveTab("settings_tools");
-                    setSettingsSubTab("login");
+                    setSettingsSubTab("hub");
                   }}
                   onNavigateToFuelCard={() => {
                     setActiveTab("settings_tools");
@@ -5753,6 +5782,11 @@ out center;`;
                   }}
                   hasActiveTrip={hasActiveTrip}
                   onNavigateToExpenses={() => {
+                    if (!currentUser) {
+                      setActiveTab("settings_tools");
+                      setSettingsSubTab("hub");
+                      return;
+                    }
                     const activeTrip = trips.find(
                       (t) => t.status === "Attivo",
                     );
@@ -5769,6 +5803,11 @@ out center;`;
                     }
                   }}
                   onNavigateToMovementLog={() => {
+                    if (!currentUser) {
+                      setActiveTab("settings_tools");
+                      setSettingsSubTab("hub");
+                      return;
+                    }
                     setMapNavSubTab("movement_log");
                   }}
                   onClose={returnTabAfterMap ? () => {
@@ -5836,6 +5875,39 @@ out center;`;
 
         {/* Render Category 3: Impostazioni holding vehicle dimensions, chat, checklist, deadlines */}
         {activeTab === "settings_tools" && (
+          !currentUser &&
+          settingsSubTab !== "login" &&
+          settingsSubTab !== "registration" &&
+          settingsSubTab !== "dimensions" ? (
+            <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl shadow-lg mt-10">
+              <h2 className="text-2xl font-bold mb-4">Accesso Richiesto</h2>
+              <p className="mb-6 text-center text-slate-600">
+                {settingsSubTab === "community"
+                  ? "Per accedere alla sezione Social e Community, effettua il login o registrati."
+                  : "Per utilizzare gli strumenti di bordo e le impostazioni, effettua il login o registrati."}
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setActiveTab("settings_tools");
+                    setSettingsSubTab("login");
+                  }}
+                  className="px-6 py-2 bg-[#3E4A35] text-white rounded-xl"
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("settings_tools");
+                    setSettingsSubTab("registration");
+                  }}
+                  className="px-6 py-2 bg-slate-200 text-slate-800 rounded-xl"
+                >
+                  Registrazione
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-6">
             {settingsSubTab === "hub" ? (
               <div className="space-y-6">
@@ -6818,6 +6890,20 @@ out center;`;
             ) : (
               <div className="space-y-4">
                 {/* Page Breadcrumb / Navigation back bar */}
+                {!currentUser && settingsSubTab === "dimensions" && (
+                  <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-3 shadow-xs">
+                    <button
+                      onClick={() => setActiveTab("map_nav")}
+                      className="flex items-center gap-2 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-xs transition-all py-2 px-3.5 bg-slate-50 rounded-xl border border-slate-200/60 cursor-pointer select-none active:scale-95"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
+                      <span>Torna alla Mappa</span>
+                    </button>
+                    <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 tracking-wider pr-2">
+                      Misure Mezzo (Salvato in locale)
+                    </span>
+                  </div>
+                )}
                 {currentUser && hasAcceptedTerms && (
                   <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-3 shadow-xs">
                     <button
@@ -7840,6 +7926,7 @@ out center;`;
               </div>
             )}
           </div>
+          )
         )}
       </main>
 

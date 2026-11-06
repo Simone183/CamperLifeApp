@@ -592,6 +592,8 @@ interface RollyOnboardingGuideProps {
   // Optional button trigger mode
   showHelpButton?: boolean;
   className?: string;
+  requireAuth?: boolean;
+  onRequireAuth?: () => void;
 }
 
 export function RollyOnboardingGuide({
@@ -599,7 +601,9 @@ export function RollyOnboardingGuide({
   autoShow = true,
   onClose,
   showHelpButton = true,
-  className = ''
+  className = '',
+  requireAuth = false,
+  onRequireAuth,
 }: RollyOnboardingGuideProps) {
   const guide = ROLLY_GUIDES[sectionKey] || ROLLY_GUIDES.general;
   const storageKey = `rolly_guide_seen_${sectionKey}`;
@@ -607,13 +611,13 @@ export function RollyOnboardingGuide({
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    if (autoShow) {
+    if (autoShow && !requireAuth) {
       const hasSeen = localStorage.getItem(storageKey);
       if (!hasSeen) {
         setIsOpen(true);
       }
     }
-  }, [sectionKey, autoShow, storageKey]);
+  }, [sectionKey, autoShow, storageKey, requireAuth]);
 
   const handleDismiss = (dontShowAgain: boolean = true) => {
     if (dontShowAgain) {
@@ -626,6 +630,18 @@ export function RollyOnboardingGuide({
   };
 
   const handleOpen = () => {
+    if (requireAuth) {
+      window.dispatchEvent(
+        new CustomEvent('show-toast', {
+          detail: {
+            message: '🔒 Effettua il login o registrati per utilizzare Rolly!',
+            duration: 4000,
+          },
+        }),
+      );
+      onRequireAuth?.();
+      return;
+    }
     setIsOpen(true);
   };
 

@@ -807,17 +807,17 @@ export default function MapTab({
     if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
     if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
 
-    if (!onNavigateToAI) return;
+    if (!onNavigateToAI || !currentUser) return;
 
     // Reset inactivity timer: show bubble only after 5 minutes (300,000 ms) of inactivity
     rollyTimerRef.current = setTimeout(() => {
       showRandomRollyPhrase();
     }, 300000);
-  }, [onNavigateToAI, showRandomRollyPhrase]);
+  }, [onNavigateToAI, currentUser, showRandomRollyPhrase]);
 
   // Initial welcome message 3.5s after load if inactive
   React.useEffect(() => {
-    if (!onNavigateToAI) return;
+    if (!onNavigateToAI || !currentUser) return;
 
     rollyTimerRef.current = setTimeout(() => {
       showRandomRollyPhrase();
@@ -827,7 +827,7 @@ export default function MapTab({
       if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
       if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
     };
-  }, [onNavigateToAI, showRandomRollyPhrase]);
+  }, [onNavigateToAI, currentUser, showRandomRollyPhrase]);
 
   // Tracks image error loads (so if /area_sosta.png etc. fails or is missing, we fallback)
   const [imageErrorUrls, setImageErrorUrls] = React.useState<
@@ -5233,7 +5233,12 @@ out center;`;
             addressSuggestions.length > 0 ? "z-[6000]" : "z-[3000]"
           }`}>
             {/* Rolly Onboarding Guide for Map */}
-            <RollyOnboardingGuide sectionKey="map_nav" className="!h-9 rounded-xl border-slate-200/90 shadow-md" />
+            <RollyOnboardingGuide
+              sectionKey="map_nav"
+              className="!h-9 rounded-xl border-slate-200/90 shadow-md"
+              requireAuth={!currentUser}
+              onRequireAuth={onRedirectToLogin}
+            />
 
             {/* Ingrandita Barra di Ricerca con stessa altezza h-9 */}
             <div className="flex-1 flex flex-col gap-1 min-w-0 relative">
@@ -5675,6 +5680,20 @@ out center;`;
                     {/* 2. Inserisci nuova sosta */}
                     <button
                       onClick={() => {
+                        if (!currentUser) {
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: {
+                                message:
+                                  "🔒 Registrati o effettua il login per proporre nuove aree sosta sul database!",
+                                duration: 4500,
+                              },
+                            }),
+                          );
+                          setShowClickedPopup(false);
+                          onRedirectToLogin?.();
+                          return;
+                        }
                         setNewPlaceForm({
                           name:
                             clickedPlaceName !== "Puntina Sulla Mappa"
@@ -5765,6 +5784,20 @@ out center;`;
                   {/* 4. Segnala Ostacolo per le coordinate cliccate */}
                   <button
                     onClick={() => {
+                      if (!currentUser) {
+                        window.dispatchEvent(
+                          new CustomEvent("show-toast", {
+                            detail: {
+                              message:
+                                "🔒 Registrati o effettua il login per segnalare un ostacolo sulla mappa!",
+                              duration: 4500,
+                            },
+                          }),
+                        );
+                        setShowClickedPopup(false);
+                        onRedirectToLogin?.();
+                        return;
+                      }
                       setOsmReportCoords({
                         lat: clickedCoords.lat,
                         lng: clickedCoords.lng,
@@ -5897,6 +5930,19 @@ out center;`;
                       return;
                     }
                     setShowRollyBubble(false);
+                    if (!currentUser) {
+                      window.dispatchEvent(
+                        new CustomEvent("show-toast", {
+                          detail: {
+                            message:
+                              "🔒 Effettua il login o registrati per utilizzare l'assistente Rolly!",
+                            duration: 4000,
+                          },
+                        }),
+                      );
+                      onRedirectToLogin?.();
+                      return;
+                    }
                     if (onNavigateToAI) onNavigateToAI();
                   }}
                   style={{
@@ -5957,6 +6003,19 @@ out center;`;
                   e.preventDefault();
                   e.stopPropagation();
                   setShowRollyBubble(false);
+                  if (!currentUser) {
+                    window.dispatchEvent(
+                      new CustomEvent("show-toast", {
+                        detail: {
+                          message:
+                            "🔒 Effettua il login o registrati per utilizzare l'assistente Rolly!",
+                          duration: 4000,
+                        },
+                      }),
+                    );
+                    onRedirectToLogin?.();
+                    return;
+                  }
                   if (onNavigateToAI) onNavigateToAI();
                 }}
                 className="bg-white dark:bg-slate-900 w-10 h-10 rounded-full shadow-md border border-slate-200 dark:border-slate-700 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95 cursor-pointer overflow-hidden p-1"
@@ -5968,7 +6027,22 @@ out center;`;
           )}
           {onNavigateToExpenses && (
             <button
-              onClick={onNavigateToExpenses}
+              onClick={() => {
+                if (!currentUser) {
+                  window.dispatchEvent(
+                    new CustomEvent("show-toast", {
+                      detail: {
+                        message:
+                          "🔒 Effettua il login o registrati per gestire le spese di viaggio!",
+                        duration: 4000,
+                      },
+                    }),
+                  );
+                  onRedirectToLogin?.();
+                  return;
+                }
+                onNavigateToExpenses();
+              }}
               className="absolute bottom-5 left-2 z-[1000] bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
               title="Spese di Viaggio (Viaggio Attivo)"
             >
@@ -5984,7 +6058,22 @@ out center;`;
           {/* Pulsante Carta Carburante posizionato in basso a destra sulla mappa */}
           {onNavigateToFuelCard && (
             <button
-              onClick={onNavigateToFuelCard}
+              onClick={() => {
+                if (!currentUser) {
+                  window.dispatchEvent(
+                    new CustomEvent("show-toast", {
+                      detail: {
+                        message:
+                          "🔒 Effettua il login o registrati per utilizzare la Carta Carburante!",
+                        duration: 4000,
+                      },
+                    }),
+                  );
+                  onRedirectToLogin?.();
+                  return;
+                }
+                onNavigateToFuelCard();
+              }}
               className="absolute bottom-5 right-2 z-[1000] bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
               title="Carta Carburante Sincronizzata"
             >
@@ -5995,7 +6084,22 @@ out center;`;
           {/* Pulsante Spostamenti posizionato in basso a destra (sopra carburante?) */}
           {onNavigateToMovementLog && (
             <button
-              onClick={onNavigateToMovementLog}
+              onClick={() => {
+                if (!currentUser) {
+                  window.dispatchEvent(
+                    new CustomEvent("show-toast", {
+                      detail: {
+                        message:
+                          "🔒 Effettua il login o registrati per registrare e consultare gli spostamenti!",
+                        duration: 4000,
+                      },
+                    }),
+                  );
+                  onRedirectToLogin?.();
+                  return;
+                }
+                onNavigateToMovementLog();
+              }}
               className="absolute bottom-16 right-2 z-[1000] bg-white w-10 h-10 rounded-full shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
               title="Spostamenti"
             >
@@ -6142,7 +6246,22 @@ out center;`;
 
           <button
             type="button"
-            onClick={() => setIsOsmReportOpen(true)}
+            onClick={() => {
+              if (!currentUser) {
+                window.dispatchEvent(
+                  new CustomEvent("show-toast", {
+                    detail: {
+                      message:
+                        "🔒 Registrati o effettua il login per segnalare un ostacolo sulla mappa!",
+                      duration: 4500,
+                    },
+                  }),
+                );
+                onRedirectToLogin?.();
+                return;
+              }
+              setIsOsmReportOpen(true);
+            }}
             className="w-9 h-9 rounded-xl shadow-xs flex items-center justify-center cursor-pointer transition-all bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white border border-red-500 shrink-0 active:scale-95"
             title="Segnala ostacolo, sottopasso o limiti altezza/larghezza per OpenStreetMap"
             aria-label="Segnala ostacolo per OpenStreetMap"
@@ -6422,6 +6541,19 @@ out center;`;
                   <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 w-full">
                     <button
                       onClick={() => {
+                        if (!currentUser) {
+                          window.dispatchEvent(
+                            new CustomEvent("show-toast", {
+                              detail: {
+                                message:
+                                  "🔒 Registrati o effettua il login per proporre nuove aree sosta sul database!",
+                                duration: 4500,
+                              },
+                            }),
+                          );
+                          onRedirectToLogin?.();
+                          return;
+                        }
                         setNewPlaceForm((prev) => ({
                           ...prev,
                           lat: selectedPlace.lat,
@@ -7493,6 +7625,20 @@ out center;`;
                 <div className="grid grid-cols-2 gap-2.5 w-full">
                   <button
                     onClick={() => {
+                      if (!currentUser) {
+                        window.dispatchEvent(
+                          new CustomEvent("show-toast", {
+                            detail: {
+                              message:
+                                "🔒 Registrati o effettua il login per proporre nuove aree sosta sul database!",
+                              duration: 4500,
+                            },
+                          }),
+                        );
+                        setIsMobileDetailsOpen(false);
+                        onRedirectToLogin?.();
+                        return;
+                      }
                       setNewPlaceForm((prev) => ({
                         ...prev,
                         lat: selectedPlace.lat,
