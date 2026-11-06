@@ -85,16 +85,13 @@ import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
 import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
-import { getStats, enablePersistentStorage } from "./utils/offlineMapCache";
+import { enablePersistentStorage } from "./utils/offlineMapCache";
 import { registerPushNotifications, updateUserLocationOnServer } from "./utils/pushNotifications";
 import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
 import { AppPermissionModal } from "./components/AppPermissionModal";
 import { AdminNotificationSchedulerWidget } from "./components/AdminNotificationSchedulerWidget";
-
-// Guard to prevent multiple welcome toast/speech invocations
-let welcomeSpeechTriggered = false;
 
 // Icons
 import {
@@ -640,13 +637,7 @@ export default function App() {
     }
   }, [favoriteIds, currentUser?.email]);
 
-  const [showTermsModal, setShowTermsModal] = React.useState<boolean>(() => {
-    try {
-      return localStorage.getItem("has_accepted_terms") !== "true";
-    } catch {
-      return false;
-    }
-  });
+  const [showTermsModal, setShowTermsModal] = React.useState<boolean>(false);
 
   const [showTour, setShowTour] = React.useState<boolean>(() => {
     try {
@@ -1563,31 +1554,6 @@ export default function App() {
       (navigator as any).standalone
     ) {
       setIsInstalled(true);
-    }
-
-    // Check offline maps status
-    if (!welcomeSpeechTriggered && !sessionStorage.getItem("camper_welcomed")) {
-      welcomeSpeechTriggered = true;
-      sessionStorage.setItem("camper_welcomed", "true");
-      getStats().then((stats) => {
-        if (stats.count === 0) {
-          if (
-            localStorage.getItem("camper_offline_maps_prompt_shown") !== "true"
-          ) {
-            setShowOfflinePromptModal(true);
-          } else {
-            window.dispatchEvent(
-              new CustomEvent("show-toast", {
-                detail: {
-                  message:
-                    "Benvenuto! Per usare l'app offline, vai in 'Impostazioni > Mappe Offline' e scarica le mappe della tua zona.",
-                  duration: 8000,
-                },
-              }),
-            );
-          }
-        }
-      });
     }
 
     return () => {
@@ -5507,7 +5473,7 @@ out center;`;
       )}
 
       {/* Main Bar Navigation Header - Scalable adaptive spacing across all devices */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-30 shadow-xs w-full overflow-hidden">
+      <header className="bg-white/80 backdrop-blur-md border-b border-[#3E4A35]/10 sticky top-0 z-40 shrink-0 shadow-xs w-full overflow-hidden">
         <div className="max-w-7xl mx-auto px-2 min-[360px]:px-3 sm:px-6 lg:px-8 py-1.5 sm:py-2 flex flex-row items-center justify-between gap-2 min-[360px]:gap-3 sm:gap-4 min-w-0">
           {/* Logo Brand */}
           <div
@@ -5700,7 +5666,7 @@ out center;`;
       {/* Main Work Area Container */}
       <main
         id="main-content"
-        className={`flex-1 min-h-0 flex flex-col max-w-7xl w-full mx-auto md:px-8 ${
+        className={`relative z-10 isolate flex-1 min-h-0 flex flex-col max-w-7xl w-full mx-auto md:px-8 ${
           activeTab === "map_nav"
             ? "p-0 md:pt-3 md:pb-2.5 overflow-hidden"
             : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
@@ -10974,7 +10940,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
         </div>
       )}
 
-      {showTour && (
+      {showTour && !showPermissionModal && !showTermsModal && (
         <OnboardingTour
           onComplete={() => {
             setShowTour(false);
