@@ -73,6 +73,18 @@ export const ReportWeatherModal: React.FC<ReportWeatherModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      window.dispatchEvent(
+        new CustomEvent('show-toast', {
+          detail: {
+            message: '🔒 Registrati o effettua il login per segnalare il maltempo alla community!',
+            duration: 4500,
+          },
+        }),
+      );
+      onClose();
+      return;
+    }
     if (!userLocation) {
       alert('Posizione GPS non disponibile. Attiva il GPS per inviare la segnalazione meteo.');
       return;

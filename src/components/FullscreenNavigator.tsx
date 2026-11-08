@@ -131,7 +131,7 @@ export default function FullscreenNavigator({
     }
   });
 
-  // Attiva subito la notifica persistente in primo piano quando il navigatore è aperto e l'informativa è accettata
+  // Attiva subito la notifica persistente in primo piano e il GPS hardware nativo quando il navigatore è aperto
   React.useEffect(() => {
     if (showProminentDisclosure) return;
     try {
@@ -219,6 +219,18 @@ export default function FullscreenNavigator({
     );
 
     const speedPollInterval = setInterval(() => {
+      try {
+        const bridge = (window as any).AndroidNativeTTS;
+        if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
+          const raw = bridge.getLatestNativeGpsJson();
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.speed === "number" && parsed.speed >= 0) {
+              setCurrentDetectedSpeed(Math.round(parsed.speed * 3.6));
+            }
+          }
+        }
+      } catch (_) {}
       if (typeof window !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -274,7 +286,15 @@ export default function FullscreenNavigator({
       setIsPreview(false);
       setIsDriving(true);
     }
-  }, [dest?.id]);
+    if (!showProminentDisclosure && !isPreview) {
+      try {
+        const bridge = (window as any).AndroidNativeTTS;
+        if (bridge && typeof bridge.startForegroundNavigationNotification === 'function') {
+          bridge.startForegroundNavigationNotification(dest?.name || 'Destinazione Camper');
+        }
+      } catch (_) {}
+    }
+  }, [dest?.id, dest?.name, isPreview, showProminentDisclosure]);
   const [isMinimized, setIsMinimized] = React.useState<boolean>(false);
   const handleSetMinimized = (val: boolean) => {
     setIsMinimized(val);

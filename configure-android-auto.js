@@ -115,9 +115,10 @@ export function configureAndroidAuto() {
             android:enabled="true"
             android:exported="true" />
 
-        <!-- Native Sticky Weather Guard Service (Riattiva l'allarme se l'app viene chiusa dalle app recenti) -->
+        <!-- Native Sticky Weather & Location Foreground Service -->
         <service
             android:name="com.ViaCamper.myapp.auto.WeatherGuardService"
+            android:foregroundServiceType="location"
             android:enabled="true"
             android:exported="false" />
 
@@ -145,6 +146,11 @@ export function configureAndroidAuto() {
 
     if (!manifest.includes('WeatherAlertReceiver')) {
       manifest = manifest.replace('</application>', carServiceDeclaration);
+    } else if (!manifest.includes('WeatherGuardService"\n            android:foregroundServiceType="location"')) {
+      manifest = manifest.replace(
+        'android:name="com.ViaCamper.myapp.auto.WeatherGuardService"',
+        'android:name="com.ViaCamper.myapp.auto.WeatherGuardService"\n            android:foregroundServiceType="location"'
+      );
     }
     fs.writeFileSync(manifestPath, manifest, 'utf-8');
     console.log('[Android Auto] AndroidManifest.xml aggiornato con ViaCamperCarAppService, WeatherAlertReceiver, WeatherAlertJobService e permessi background.');
@@ -362,6 +368,13 @@ public class AutoDataBridge {
         } catch (Exception ignored) {}
     }
 
+    private static android.location.LocationListener activeGlobalListener = null;
+
+    public static synchronized void forceStartGlobalGpsTracker(final Context context) {
+        globalTrackerStarted = false;
+        startGlobalGpsTracker(context);
+    }
+
     /**
      * Avvia un listener GPS globale continuo ad alta precisione (Fused + GPS + Hardware Auto).
      */
@@ -391,39 +404,56 @@ public class AutoDataBridge {
             } catch (Exception ignored) {}
         }
 
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            boolean hasFine = context.checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            boolean hasCoarse = context.checkSelfPermission("android.permission.ACCESS_COARSE_LOCATION") == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (!hasFine && !hasCoarse) {
+                globalTrackerStarted = false;
+                return;
+            }
+        }
+
         if (globalTrackerStarted) return;
         try {
             final LocationManager lm = (LocationManager) context.getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
             if (lm != null) {
                 android.os.Looper mainLooper = android.os.Looper.getMainLooper();
-                android.location.LocationListener globalListener = new android.location.LocationListener() {
-                    @Override
-                    public void onLocationChanged(Location location) {
-                        if (location != null && (location.getLatitude() != 0.0 || location.getLongitude() != 0.0)) {
-                            updateLiveLocation(location);
+                if (activeGlobalListener == null) {
+                    activeGlobalListener = new android.location.LocationListener() {
+                        @Override
+                        public void onLocationChanged(Location location) {
+                            if (location != null && (location.getLatitude() != 0.0 || location.getLongitude() != 0.0)) {
+                                updateLiveLocation(location);
+                            }
                         }
-                    }
-                    @Override
-                    public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
-                    @Override
-                    public void onProviderEnabled(String provider) {}
-                    @Override
-                    public void onProviderDisabled(String provider) {}
-                };
-                // Registra i provider satellitari/fused ad alta frequenza (400ms) senza inquinamento da celle telefoniche!
-                String[] highPrecisionProviders = new String[] { "fused", LocationManager.GPS_PROVIDER };
+                        @Override
+                        public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
+                        @Override
+                        public void onProviderEnabled(String provider) {}
+                        @Override
+                        public void onProviderDisabled(String provider) {}
+                    };
+                }
+                boolean registeredHighPrecision = false;
+                // Registra i provider satellitari/fused ad alta frequenza (500ms) per attivare il chip GPS hardware e l'icona GPS di sistema Android!
+                String[] highPrecisionProviders = new String[] { LocationManager.GPS_PROVIDER, "fused" };
                 for (String p : highPrecisionProviders) {
                     try {
-                        lm.requestLocationUpdates(p, 400L, 0.0f, globalListener, mainLooper);
+                        lm.requestLocationUpdates(p, 500L, 0.0f, activeGlobalListener, mainLooper);
+                        registeredHighPrecision = true;
                     } catch (Exception ignored) {}
                 }
                 // Network solo come fallback lento (5s) se il GPS è spento
                 try {
-                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 25.0f, globalListener, mainLooper);
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 25.0f, activeGlobalListener, mainLooper);
                 } catch (Exception ignored) {}
-                globalTrackerStarted = true;
+                if (registeredHighPrecision) {
+                    globalTrackerStarted = true;
+                }
             }
-        } catch (SecurityException ignored) {}
+        } catch (SecurityException ignored) {
+            globalTrackerStarted = false;
+        }
     }
 
     /**
@@ -1282,12 +1312,14 @@ public class ViaCamperCarAppService extends CarAppService {
                         || ctx.checkSelfPermission("android.permission.ACCESS_COARSE_LOCATION") == PackageManager.PERMISSION_GRANTED;
             }
             if (hasLocationPerm) {
-                Intent serviceIntent = new Intent(ctx, ViaCamperCarAppService.class);
-                serviceIntent.putExtra("EXTRA_SUBTITLE", customText);
+                AutoDataBridge.forceStartGlobalGpsTracker(ctx.getApplicationContext());
+                Intent guardIntent = new Intent(ctx, WeatherGuardService.class);
+                guardIntent.putExtra("START_FOREGROUND_GPS", true);
+                guardIntent.putExtra("EXTRA_SUBTITLE", customText);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ctx.startForegroundService(serviceIntent);
+                    ctx.startForegroundService(guardIntent);
                 } else {
-                    ctx.startService(serviceIntent);
+                    ctx.startService(guardIntent);
                 }
             }
         } catch (Exception ignored) {}
@@ -4954,12 +4986,17 @@ public class WeatherAlertJobService extends JobService {
 `;
   fs.writeFileSync(path.join(javaDir, 'WeatherAlertJobService.java'), weatherAlertJobServiceJava, 'utf-8');
 
-  // G4. WeatherGuardService.java (Service sticky con intercettazione chiusura app onTaskRemoved)
+  // G4. WeatherGuardService.java (Service sticky + Foreground Location Service per navigazione e Android Auto)
   const weatherGuardServiceJava = `package com.ViaCamper.myapp.auto;
 
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -4981,22 +5018,53 @@ public class WeatherGuardService extends Service {
         }
     };
 
+    private void promoteToForegroundIfPermitted(String subtitle) {
+        try {
+            boolean hasLoc = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                hasLoc = checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") == PackageManager.PERMISSION_GRANTED
+                        || checkSelfPermission("android.permission.ACCESS_COARSE_LOCATION") == PackageManager.PERMISSION_GRANTED;
+            }
+            if (!hasLoc) return;
+
+            Notification notification = ViaCamperCarAppService.buildPersistentGpsNotification(getApplicationContext(), subtitle);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(ViaCamperCarAppService.NAV_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            } else {
+                startForeground(ViaCamperCarAppService.NAV_NOTIFICATION_ID, notification);
+            }
+            AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
+        } catch (Exception ignored) {
+            try {
+                Notification notification = ViaCamperCarAppService.buildPersistentGpsNotification(getApplicationContext(), subtitle);
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.notify(ViaCamperCarAppService.NAV_NOTIFICATION_ID, notification);
+                }
+            } catch (Exception ignored2) {}
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
         WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
+        ViaCamperCarAppService.ensureChannel(getApplicationContext());
         guardHandler.postDelayed(checkLoopRunnable, 10000L);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && intent.getBooleanExtra("START_FOREGROUND_GPS", false)) {
+            String sub = intent.getStringExtra("EXTRA_SUBTITLE");
+            promoteToForegroundIfPermitted(sub);
+        }
         WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 30000L);
         return START_STICKY;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // Quando l'utente chiude l'app scorrendola via dalle app recenti, riattiva subito l'allarme in background!
         WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 5000L);
         super.onTaskRemoved(rootIntent);
     }
@@ -5317,6 +5385,7 @@ public class MainActivity extends BridgeActivity {
                             return;
                         }
                     }
+                    com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
                     ViaCamperCarAppService.showPersistentGpsNotification(getApplicationContext(), "Tracciamento GPS camper in tempo reale");
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         if (checkSelfPermission("android.permission.ACCESS_BACKGROUND_LOCATION") != PackageManager.PERMISSION_GRANTED) {
@@ -5331,12 +5400,41 @@ public class MainActivity extends BridgeActivity {
         public void startForegroundNavigationNotification(String destName) {
             runOnUiThread(() -> {
                 try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(new String[]{
+                                "android.permission.ACCESS_FINE_LOCATION",
+                                "android.permission.ACCESS_COARSE_LOCATION"
+                            }, 2001);
+                            return;
+                        }
+                    }
+                    com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
                     ViaCamperCarAppService.showPersistentGpsNotification(
                             getApplicationContext(),
                             "Tracciamento GPS camper in tempo reale"
                     );
                 } catch (Exception ignored) {}
             });
+        }
+
+        @JavascriptInterface
+        public String getLatestNativeGpsJson() {
+            try {
+                android.location.Location loc = com.ViaCamper.myapp.auto.AutoDataBridge.getBestLiveLocation(getApplicationContext());
+                if (loc != null && (loc.getLatitude() != 0.0 || loc.getLongitude() != 0.0)) {
+                    JSONObject obj = new JSONObject();
+                    obj.put("lat", loc.getLatitude());
+                    obj.put("lng", loc.getLongitude());
+                    obj.put("accuracy", loc.hasAccuracy() ? loc.getAccuracy() : 10.0);
+                    obj.put("speed", loc.hasSpeed() ? loc.getSpeed() : 0.0);
+                    obj.put("bearing", loc.hasBearing() ? loc.getBearing() : 0.0);
+                    obj.put("provider", loc.getProvider() != null ? loc.getProvider() : "gps");
+                    obj.put("timestamp", loc.getTime());
+                    return obj.toString();
+                }
+            } catch (Exception ignored) {}
+            return "";
         }
     }
 
@@ -5345,7 +5443,12 @@ public class MainActivity extends BridgeActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == 2001) {
             try {
+                com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
                 ViaCamperCarAppService.showPersistentGpsNotification(getApplicationContext(), "Tracciamento GPS camper in tempo reale");
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    WebView webView = getBridge().getWebView();
+                    webView.post(() -> webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('android-gps-permission-granted'));", null));
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     if (checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") == PackageManager.PERMISSION_GRANTED
                             && checkSelfPermission("android.permission.ACCESS_BACKGROUND_LOCATION") != PackageManager.PERMISSION_GRANTED) {

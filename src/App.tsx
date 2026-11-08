@@ -4518,9 +4518,24 @@ out center;`;
   // Aggancio automatico GPS all'avvio dell'app (solo DOPO che l'utente ha letto e accettato il Prominent Disclosure)
   React.useEffect(() => {
     if (showPermissionModal) return;
+    try {
+      const bridge = (window as any).AndroidNativeTTS;
+      if (bridge && typeof bridge.requestLocationAndStartForegroundService === "function") {
+        bridge.requestLocationAndStartForegroundService();
+      }
+    } catch (_) {}
     if (!hasDeniedGPS && typeof window !== "undefined" && navigator.geolocation) {
       handleRequestSingleGPS();
     }
+    const handleNativePermGranted = () => {
+      setHasDeniedGPS(false);
+      setIsGPSEnabled(true);
+      handleRequestSingleGPS();
+    };
+    window.addEventListener("android-gps-permission-granted", handleNativePermGranted);
+    return () => {
+      window.removeEventListener("android-gps-permission-granted", handleNativePermGranted);
+    };
   }, [handleRequestSingleGPS, hasDeniedGPS, showPermissionModal]);
 
   // Ascolto e avvio automatico della navigazione ricevuta da Android Auto
@@ -4760,6 +4775,27 @@ out center;`;
 
       // Active continuous GPS keep-alive polling interval (vital for Android Auto & background projection)
       pollIntervalId = setInterval(() => {
+        try {
+          const bridge = (window as any).AndroidNativeTTS;
+          if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
+            const raw = bridge.getLatestNativeGpsJson();
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
+                setIsGPSConnected(true);
+                setUserLocation((prev) => {
+                  if (prev && Math.abs(prev.lat - parsed.lat) < 0.000005 && Math.abs(prev.lng - parsed.lng) < 0.000005) {
+                    return prev;
+                  }
+                  return { lat: parsed.lat, lng: parsed.lng };
+                });
+                if (typeof parsed.accuracy === "number") {
+                  setUserAccuracy(parsed.accuracy);
+                }
+              }
+            }
+          }
+        } catch (_) {}
         if (typeof window !== "undefined" && navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
             handlePositionSuccess,
@@ -11155,6 +11191,20 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                 }}
                 onOpenReport={() => {
                   setShowGPSWeatherModal(false);
+                  if (!currentUser) {
+                    window.dispatchEvent(
+                      new CustomEvent("show-toast", {
+                        detail: {
+                          message:
+                            "🔒 Registrati o effettua il login per segnalare il maltempo alla community!",
+                          duration: 4500,
+                        },
+                      }),
+                    );
+                    setActiveTab("settings_tools");
+                    setSettingsSubTab("hub");
+                    return;
+                  }
                   setShowReportWeatherModal(true);
                 }}
               />
@@ -11179,6 +11229,20 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
             onClose={() => setShowWeatherRadarModal(false)}
             onOpenReportModal={() => {
               setShowWeatherRadarModal(false);
+              if (!currentUser) {
+                window.dispatchEvent(
+                  new CustomEvent("show-toast", {
+                    detail: {
+                      message:
+                        "🔒 Registrati o effettua il login per segnalare il maltempo alla community!",
+                      duration: 4500,
+                    },
+                  }),
+                );
+                setActiveTab("settings_tools");
+                setSettingsSubTab("hub");
+                return;
+              }
               setShowReportWeatherModal(true);
             }}
             onShowOnMap={() => {
