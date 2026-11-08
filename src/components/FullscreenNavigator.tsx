@@ -131,7 +131,17 @@ export default function FullscreenNavigator({
     }
   });
 
-  // Attiva subito la notifica persistente in primo piano e il GPS hardware nativo quando il navigatore è aperto
+  const handleCloseNavigator = React.useCallback(() => {
+    try {
+      const bridge = (window as any).AndroidNativeTTS;
+      if (bridge && typeof bridge.stopForegroundNavigationNotification === 'function') {
+        bridge.stopForegroundNavigationNotification();
+      }
+    } catch (_) {}
+    onClose();
+  }, [onClose]);
+
+  // Attiva la notifica persistente in primo piano e il GPS hardware nativo solo mentre il navigatore è aperto, e rimuovila subito alla chiusura
   React.useEffect(() => {
     if (showProminentDisclosure) return;
     try {
@@ -140,6 +150,14 @@ export default function FullscreenNavigator({
         bridge.startForegroundNavigationNotification(dest?.name || 'Destinazione Camper');
       }
     } catch (_) {}
+    return () => {
+      try {
+        const bridge = (window as any).AndroidNativeTTS;
+        if (bridge && typeof bridge.stopForegroundNavigationNotification === 'function') {
+          bridge.stopForegroundNavigationNotification();
+        }
+      } catch (_) {}
+    };
   }, [showProminentDisclosure, dest?.name]);
 
   // Tunnel / Dead Reckoning Mode state (cruise speed 90 km/h when GPS signal is lost inside tunnels)
@@ -3596,7 +3614,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
             {/* Close button */}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseNavigator}
               className="w-7 h-7 rounded-full bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 flex items-center justify-center shrink-0 transition-all cursor-pointer"
               title="Chiudi e termina navigazione"
             >
@@ -3727,7 +3745,7 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                 {/* Close button */}
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleCloseNavigator}
                   className="p-2.5 sm:p-3 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 hover:text-rose-300 font-bold rounded-xl transition-all flex justify-center items-center cursor-pointer shadow-md active:scale-95 shrink-0"
                   title="Chiudi e termina navigazione"
                 >

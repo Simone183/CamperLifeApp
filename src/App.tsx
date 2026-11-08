@@ -4773,37 +4773,39 @@ out center;`;
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
       );
 
-      // Active continuous GPS keep-alive polling interval (vital for Android Auto & background projection)
-      pollIntervalId = setInterval(() => {
-        try {
-          const bridge = (window as any).AndroidNativeTTS;
-          if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
-            const raw = bridge.getLatestNativeGpsJson();
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
-                setIsGPSConnected(true);
-                setUserLocation((prev) => {
-                  if (prev && Math.abs(prev.lat - parsed.lat) < 0.000005 && Math.abs(prev.lng - parsed.lng) < 0.000005) {
-                    return prev;
+      // Active continuous GPS keep-alive polling interval ONLY during active navigation
+      if (isFullscreenNav) {
+        pollIntervalId = setInterval(() => {
+          try {
+            const bridge = (window as any).AndroidNativeTTS;
+            if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
+              const raw = bridge.getLatestNativeGpsJson();
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
+                  setIsGPSConnected(true);
+                  setUserLocation((prev) => {
+                    if (prev && Math.abs(prev.lat - parsed.lat) < 0.000005 && Math.abs(prev.lng - parsed.lng) < 0.000005) {
+                      return prev;
+                    }
+                    return { lat: parsed.lat, lng: parsed.lng };
+                  });
+                  if (typeof parsed.accuracy === "number") {
+                    setUserAccuracy(parsed.accuracy);
                   }
-                  return { lat: parsed.lat, lng: parsed.lng };
-                });
-                if (typeof parsed.accuracy === "number") {
-                  setUserAccuracy(parsed.accuracy);
                 }
               }
             }
+          } catch (_) {}
+          if (typeof window !== "undefined" && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              handlePositionSuccess,
+              (err) => {},
+              { enableHighAccuracy: true, timeout: 4000, maximumAge: 0 }
+            );
           }
-        } catch (_) {}
-        if (typeof window !== "undefined" && navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            handlePositionSuccess,
-            (err) => {},
-            { enableHighAccuracy: true, timeout: 4000, maximumAge: 0 }
-          );
-        }
-      }, 1500);
+        }, 1500);
+      }
     }
 
     return () => {
@@ -4817,7 +4819,19 @@ out center;`;
         clearInterval(pollIntervalId);
       }
     };
-  }, [isGPSEnabled, showPermissionModal]);
+  }, [isGPSEnabled, showPermissionModal, isFullscreenNav]);
+
+  // Rimuove subito la notifica in primo piano e ferma il tracciamento GPS in background quando la navigazione non è attiva
+  React.useEffect(() => {
+    if (!isFullscreenNav) {
+      try {
+        const bridge = (window as any).AndroidNativeTTS;
+        if (bridge && typeof bridge.stopForegroundNavigationNotification === "function") {
+          bridge.stopForegroundNavigationNotification();
+        }
+      } catch (_) {}
+    }
+  }, [isFullscreenNav]);
 
   // Listen for simulated/manual camper location updates and GPS resets
   React.useEffect(() => {
@@ -8095,6 +8109,12 @@ out center;`;
           currentUser={currentUser}
           onMinimizeChange={setIsNavMinimized}
           onClose={() => {
+            try {
+              const bridge = (window as any).AndroidNativeTTS;
+              if (bridge && typeof bridge.stopForegroundNavigationNotification === "function") {
+                bridge.stopForegroundNavigationNotification();
+              }
+            } catch (_) {}
             setTimeout(() => {
               setIsFullscreenNav(false);
               setIsNavMinimized(false);

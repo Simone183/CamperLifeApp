@@ -375,6 +375,17 @@ public class AutoDataBridge {
         startGlobalGpsTracker(context);
     }
 
+    public static synchronized void stopGlobalGpsTracker(final Context context) {
+        globalTrackerStarted = false;
+        if (context == null) return;
+        try {
+            final LocationManager lm = (LocationManager) context.getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
+            if (lm != null && activeGlobalListener != null) {
+                lm.removeUpdates(activeGlobalListener);
+            }
+        } catch (Exception ignored) {}
+    }
+
     /**
      * Avvia un listener GPS globale continuo ad alta precisione (Fused + GPS + Hardware Auto).
      */
@@ -461,7 +472,9 @@ public class AutoDataBridge {
      * attivo con coordinate approssimative di rete o cache.
      */
     public static Location getBestLiveLocation(Context context) {
-        startGlobalGpsTracker(context);
+        if (ViaCamperCarAppService.isAnyNavigationActive()) {
+            startGlobalGpsTracker(context);
+        }
         Location best = latestLiveLocation;
         long nowMs = System.currentTimeMillis();
 
@@ -488,8 +501,8 @@ public class AutoDataBridge {
                         }
                     } catch (Exception ignored) {}
                 }
-                // Su Android 11+ richiedi un fix attivo se non arrivano aggiornamenti da oltre 3 secondi
-                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                // Su Android 11+ richiedi un fix attivo solo durante la navigazione attiva
+                if (ViaCamperCarAppService.isAnyNavigationActive() && android.os.Build.VERSION.SDK_INT >= 30) {
                     long ageNs = android.os.SystemClock.elapsedRealtimeNanos() - lastGlobalFixRealtimeNanos;
                     if (ageNs > 3000000000L) {
                         lastGlobalFixRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos();
@@ -1247,6 +1260,32 @@ public class ViaCamperCarAppService extends CarAppService {
 
     public static final String NAV_CHANNEL_ID = "viacamper_auto_gps_foreground_v2";
     public static final int NAV_NOTIFICATION_ID = 8801;
+    private static volatile boolean phoneNavigationActive = false;
+    private static volatile boolean carSessionActive = false;
+    private static volatile String currentNavSubtitle = "Tracciamento GPS camper in tempo reale";
+
+    public static boolean isAnyNavigationActive() {
+        return phoneNavigationActive || carSessionActive;
+    }
+
+    public static String getCurrentNavSubtitle() {
+        return currentNavSubtitle;
+    }
+
+    public static synchronized void setPhoneNavigationActive(Context ctx, boolean active, String destName) {
+        phoneNavigationActive = active;
+        if (active) {
+            String sub = (destName != null && !destName.trim().isEmpty())
+                    ? "Tracciamento GPS camper in tempo reale • " + destName.trim()
+                    : "Tracciamento GPS camper in tempo reale";
+            currentNavSubtitle = sub;
+            showPersistentGpsNotification(ctx, sub);
+        } else {
+            if (!carSessionActive) {
+                hidePersistentGpsNotification(ctx);
+            }
+        }
+    }
 
     public static void ensureChannel(Context ctx) {
         try {
@@ -1300,8 +1339,12 @@ public class ViaCamperCarAppService extends CarAppService {
     }
 
     public static void showPersistentGpsNotification(Context ctx, String customText) {
+        if (ctx == null) return;
         try {
-            Notification notification = buildPersistentGpsNotification(ctx, customText);
+            if (customText != null && !customText.trim().isEmpty()) {
+                currentNavSubtitle = customText;
+            }
+            Notification notification = buildPersistentGpsNotification(ctx, currentNavSubtitle);
             NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.notify(NAV_NOTIFICATION_ID, notification);
@@ -1315,7 +1358,7 @@ public class ViaCamperCarAppService extends CarAppService {
                 AutoDataBridge.forceStartGlobalGpsTracker(ctx.getApplicationContext());
                 Intent guardIntent = new Intent(ctx, WeatherGuardService.class);
                 guardIntent.putExtra("START_FOREGROUND_GPS", true);
-                guardIntent.putExtra("EXTRA_SUBTITLE", customText);
+                guardIntent.putExtra("EXTRA_SUBTITLE", currentNavSubtitle);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     ctx.startForegroundService(guardIntent);
                 } else {
@@ -1325,19 +1368,53 @@ public class ViaCamperCarAppService extends CarAppService {
         } catch (Exception ignored) {}
     }
 
+    public static void hidePersistentGpsNotification(Context ctx) {
+        if (ctx == null) return;
+        try {
+            WeatherGuardService.demoteFromForeground(ctx.getApplicationContext());
+        } catch (Exception ignored) {}
+        try {
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(NAV_NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
+        try {
+            AutoDataBridge.stopGlobalGpsTracker(ctx.getApplicationContext());
+        } catch (Exception ignored) {}
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
+        carSessionActive = true;
         promoteToForegroundLocationService("Tracciamento GPS camper in tempo reale");
         AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        carSessionActive = true;
         String sub = intent != null ? intent.getStringExtra("EXTRA_SUBTITLE") : null;
         promoteToForegroundLocationService(sub);
         AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
         return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        carSessionActive = false;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {}
+        if (!phoneNavigationActive) {
+            hidePersistentGpsNotification(getApplicationContext());
+        }
+        super.onDestroy();
     }
 
     private void promoteToForegroundLocationService(String customText) {
@@ -1368,6 +1445,7 @@ public class ViaCamperCarAppService extends CarAppService {
     @NonNull
     @Override
     public Session onCreateSession() {
+        carSessionActive = true;
         promoteToForegroundLocationService("Tracciamento GPS camper in tempo reale");
         AutoDataBridge.startGlobalGpsTracker(getApplicationContext());
         return new ViaCamperCarSession();
@@ -5003,6 +5081,8 @@ import android.os.Looper;
 
 public class WeatherGuardService extends Service {
 
+    private static volatile WeatherGuardService activeInstance = null;
+
     private final Handler guardHandler = new Handler(Looper.getMainLooper());
     private final Runnable checkLoopRunnable = new Runnable() {
         @Override
@@ -5017,6 +5097,38 @@ public class WeatherGuardService extends Service {
             guardHandler.postDelayed(this, 30000L);
         }
     };
+
+    public static void demoteFromForeground(Context ctx) {
+        try {
+            WeatherGuardService inst = activeInstance;
+            if (inst != null) {
+                inst.stopForegroundNow();
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (ctx != null) {
+                Intent stopIntent = new Intent(ctx, WeatherGuardService.class);
+                stopIntent.putExtra("STOP_FOREGROUND_GPS", true);
+                ctx.startService(stopIntent);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public void stopForegroundNow() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(Service.STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {}
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(ViaCamperCarAppService.NAV_NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
+    }
 
     private void promoteToForegroundIfPermitted(String subtitle) {
         try {
@@ -5048,6 +5160,7 @@ public class WeatherGuardService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        activeInstance = this;
         WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
         ViaCamperCarAppService.ensureChannel(getApplicationContext());
         guardHandler.postDelayed(checkLoopRunnable, 10000L);
@@ -5055,9 +5168,14 @@ public class WeatherGuardService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && intent.getBooleanExtra("START_FOREGROUND_GPS", false)) {
-            String sub = intent.getStringExtra("EXTRA_SUBTITLE");
-            promoteToForegroundIfPermitted(sub);
+        activeInstance = this;
+        if (intent != null) {
+            if (intent.getBooleanExtra("STOP_FOREGROUND_GPS", false)) {
+                stopForegroundNow();
+            } else if (intent.getBooleanExtra("START_FOREGROUND_GPS", false)) {
+                String sub = intent.getStringExtra("EXTRA_SUBTITLE");
+                promoteToForegroundIfPermitted(sub);
+            }
         }
         WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 30000L);
         return START_STICKY;
@@ -5065,12 +5183,19 @@ public class WeatherGuardService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        if (!ViaCamperCarAppService.isAnyNavigationActive()) {
+            stopForegroundNow();
+            AutoDataBridge.stopGlobalGpsTracker(getApplicationContext());
+        }
         WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 5000L);
         super.onTaskRemoved(rootIntent);
     }
 
     @Override
     public void onDestroy() {
+        if (activeInstance == this) {
+            activeInstance = null;
+        }
         guardHandler.removeCallbacksAndMessages(null);
         WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 10000L);
         super.onDestroy();
@@ -5126,6 +5251,11 @@ public class MainActivity extends BridgeActivity {
         // 1. Configura i canali di notifica (NON richiede permessi runtime qui per lasciare apparire prima il Prominent Disclosure in-app)
         WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
         ViaCamperCarAppService.ensureChannel(getApplicationContext());
+
+        // Assicura che all'avvio normale dell'app non rimangano notifiche GPS appese se non c'è navigazione attiva
+        if (!ViaCamperCarAppService.isAnyNavigationActive()) {
+            ViaCamperCarAppService.hidePersistentGpsNotification(getApplicationContext());
+        }
 
         // 2. Avvia il servizio e gli scheduler nativi per il monitoraggio meteo a schermo spento / app chiusa
         try {
@@ -5385,8 +5515,12 @@ public class MainActivity extends BridgeActivity {
                             return;
                         }
                     }
-                    com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
-                    ViaCamperCarAppService.showPersistentGpsNotification(getApplicationContext(), "Tracciamento GPS camper in tempo reale");
+                    if (ViaCamperCarAppService.isAnyNavigationActive()) {
+                        ViaCamperCarAppService.showPersistentGpsNotification(
+                                getApplicationContext(),
+                                ViaCamperCarAppService.getCurrentNavSubtitle()
+                        );
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         if (checkSelfPermission("android.permission.ACCESS_BACKGROUND_LOCATION") != PackageManager.PERMISSION_GRANTED) {
                             requestPermissions(new String[]{"android.permission.ACCESS_BACKGROUND_LOCATION"}, 2002);
@@ -5400,6 +5534,7 @@ public class MainActivity extends BridgeActivity {
         public void startForegroundNavigationNotification(String destName) {
             runOnUiThread(() -> {
                 try {
+                    ViaCamperCarAppService.setPhoneNavigationActive(getApplicationContext(), true, destName);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         if (checkSelfPermission("android.permission.ACCESS_FINE_LOCATION") != PackageManager.PERMISSION_GRANTED) {
                             requestPermissions(new String[]{
@@ -5409,11 +5544,15 @@ public class MainActivity extends BridgeActivity {
                             return;
                         }
                     }
-                    com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
-                    ViaCamperCarAppService.showPersistentGpsNotification(
-                            getApplicationContext(),
-                            "Tracciamento GPS camper in tempo reale"
-                    );
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void stopForegroundNavigationNotification() {
+            runOnUiThread(() -> {
+                try {
+                    ViaCamperCarAppService.setPhoneNavigationActive(getApplicationContext(), false, null);
                 } catch (Exception ignored) {}
             });
         }
@@ -5443,8 +5582,13 @@ public class MainActivity extends BridgeActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == 2001) {
             try {
-                com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
-                ViaCamperCarAppService.showPersistentGpsNotification(getApplicationContext(), "Tracciamento GPS camper in tempo reale");
+                if (ViaCamperCarAppService.isAnyNavigationActive()) {
+                    com.ViaCamper.myapp.auto.AutoDataBridge.forceStartGlobalGpsTracker(getApplicationContext());
+                    ViaCamperCarAppService.showPersistentGpsNotification(
+                            getApplicationContext(),
+                            ViaCamperCarAppService.getCurrentNavSubtitle()
+                    );
+                }
                 if (getBridge() != null && getBridge().getWebView() != null) {
                     WebView webView = getBridge().getWebView();
                     webView.post(() -> webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('android-gps-permission-granted'));", null));
@@ -5461,6 +5605,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        ViaCamperCarAppService.setPhoneNavigationActive(getApplicationContext(), false, null);
         WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 10000L);
         try {
             if (nativeTts != null) {
