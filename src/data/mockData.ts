@@ -8,6 +8,7 @@ import { FRANCE_RAW_PLACES } from './francePlaces.ts';
 import { ITALIA_RAW_PLACES } from './italiaPlaces.ts';
 import { USER_PROVIDED_PLACES } from './userPlacesDataset.ts';
 import { detectPlaceCategoryAndLabel } from '../utils/placeCategoryHelper.ts';
+import { SAGRE_PLACES } from './sagreData.ts';
 
 export const INITIAL_VEHICLE_DIMENSIONS: VehicleDimensions = {
   modelName: 'Mio Camper',
@@ -555,6 +556,11 @@ function processAllPlaces(): Place[] {
   // 3. Process User Provided Places
   USER_PROVIDED_PLACES.forEach((freshPlace) => {
     resultList.push(freshPlace);
+  });
+
+  // 4. Process Sagre Events (TrovaSagre Style)
+  SAGRE_PLACES.forEach((sagraPlace) => {
+    resultList.push(sagraPlace);
   });
   
   return resultList;

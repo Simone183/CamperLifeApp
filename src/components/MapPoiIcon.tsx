@@ -16,6 +16,8 @@ export type PoiCategoryType =
   | "lavanderia"
   | "solo_scarico"
   | "natura"
+  | "sagra"
+  | "distributore"
   | "poi";
 
 export interface PoiCategoryDetails {
@@ -280,6 +282,44 @@ export function getPoiCategoryDetails(
     borderBg = "border-emerald-200/90";
     glowColor = "rgba(4, 120, 87, 0.45)";
     bgHex = "#047857";
+  }
+  // 13. Sagra Gastronomica / Food Festival
+  else if (
+    normCat === "sagra" ||
+    normLabel.includes("sagra") ||
+    normLabel.includes("evento") ||
+    normLabel.includes("mercatin")
+  ) {
+    type = "sagra";
+    label = "Sagra Gastronomica";
+    gradientColors = ["#E11D48", "#9F1239"];
+    bgGradient = "from-rose-600 to-pink-800";
+    borderBg = "border-rose-200/90";
+    glowColor = "rgba(225, 29, 72, 0.45)";
+    bgHex = "#E11D48";
+  }
+  // 14. Distributore Carburante (MIMIT Osservaprezzi)
+  else if (
+    normCat === "distributore" ||
+    normLabel.includes("distributore") ||
+    normLabel.includes("carburante")
+  ) {
+    type = "distributore";
+    label = "Distributore Carburante";
+    if (feeStatus === "free") {
+      // Più economico della zona -> Verde brillante
+      gradientColors = ["#10B981", "#047857"];
+      bgGradient = "from-emerald-500 to-emerald-700";
+      borderBg = "border-emerald-200/90";
+      glowColor = "rgba(16, 185, 129, 0.55)";
+      bgHex = "#059669";
+    } else {
+      gradientColors = ["#F97316", "#C2410C"];
+      bgGradient = "from-orange-500 to-orange-700";
+      borderBg = "border-orange-200/90";
+      glowColor = "rgba(249, 115, 22, 0.45)";
+      bgHex = "#EA580C";
+    }
   }
   // 13. Fallback name-based matching ONLY when category is empty or undefined
   else {
@@ -700,6 +740,48 @@ function getGlyphForCategory(type: PoiCategoryType): { svgHtml: string; svgPath:
       return { svgHtml, svgPath };
     }
 
+    case "sagra": {
+      const svgHtml = `
+        <g transform="translate(19, 16.5)">
+          <path d="M 0 -8 L 9 5 L -9 5 Z" fill="#FFFFFF" />
+          <path d="M 0 -8 L 4 5 L -4 5 Z" fill="#E11D48" opacity="0.3" />
+          <line x1="0" y1="-8" x2="0" y2="5" stroke="#E11D48" stroke-width="1.2" stroke-linecap="round" />
+          <rect x="-10" y="5" width="20" height="2" rx="0.5" fill="#FFFFFF" />
+          <path d="M 0 -8 L 2.5 -10 L 0 -11 Z" fill="#FFFFFF" />
+        </g>
+      `;
+      const svgPath = (
+        <g transform="translate(19, 16.5)">
+          <path d="M 0 -8 L 9 5 L -9 5 Z" fill="#FFFFFF" />
+          <path d="M 0 -8 L 4 5 L -4 5 Z" fill="#E11D48" opacity={0.3} />
+          <line x1="0" y1="-8" x2="0" y2="5" stroke="#E11D48" strokeWidth={1.2} strokeLinecap="round" />
+          <rect x="-10" y="5" width="20" height="2" rx={0.5} fill="#FFFFFF" />
+          <path d="M 0 -8 L 2.5 -10 L 0 -11 Z" fill="#FFFFFF" />
+        </g>
+      );
+      return { svgHtml, svgPath };
+    }
+
+    case "distributore": {
+      const svgHtml = `
+        <g transform="translate(19, 16.5)">
+          <rect x="-6.5" y="-7.5" width="9.5" height="14" rx="1.5" fill="#FFFFFF" />
+          <rect x="-4.8" y="-5.8" width="6.1" height="4.2" rx="0.8" fill="#0f172a" fill-opacity="0.75" />
+          <line x1="-7.8" y1="6.5" x2="4.2" y2="6.5" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M 3 -4.5 L 5.8 -2 L 5.8 3.5 C 5.8 4.5 4.8 5.2 4 5.2 C 3.2 5.2 2.5 4.5 2.5 3.5 L 2.5 0 L 1 0" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+        </g>
+      `;
+      const svgPath = (
+        <g transform="translate(19, 16.5)">
+          <rect x="-6.5" y="-7.5" width="9.5" height="14" rx={1.5} fill="#FFFFFF" />
+          <rect x="-4.8" y="-5.8" width="6.1" height="4.2" rx={0.8} fill="#0f172a" fillOpacity={0.75} />
+          <line x1="-7.8" y1="6.5" x2="4.2" y2="6.5" stroke="#FFFFFF" strokeWidth={1.6} strokeLinecap="round" />
+          <path d="M 3 -4.5 L 5.8 -2 L 5.8 3.5 C 5.8 4.5 4.8 5.2 4 5.2 C 3.2 5.2 2.5 4.5 2.5 3.5 L 2.5 0 L 1 0" stroke="#FFFFFF" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </g>
+      );
+      return { svgHtml, svgPath };
+    }
+
     case "natura": {
       const svgHtml = `
         <g transform="translate(19, 16.5)">
@@ -771,6 +853,14 @@ export interface MapPoiIconProps {
   serviceSubtype?: CamperServiceSubtype;
   categoryLabel?: string;
   name?: string;
+  dateBadge?: string;
+}
+
+function extractSagraDateBadge(type: PoiCategoryType, categoryLabel?: string, dateBadge?: string): string | null {
+  if (dateBadge) return dateBadge;
+  if ((type !== "sagra" && type !== "distributore") || !categoryLabel) return null;
+  const match = categoryLabel.match(/\(([^)]+)\)$/);
+  return match ? match[1] : null;
 }
 
 /**
@@ -784,6 +874,7 @@ export const MapPoiIcon: React.FC<MapPoiIconProps> = ({
   serviceSubtype,
   categoryLabel,
   name,
+  dateBadge,
 }) => {
   const details = getPoiCategoryDetails(
     category,
@@ -794,6 +885,8 @@ export const MapPoiIcon: React.FC<MapPoiIconProps> = ({
     name
   );
   const gradId = React.useId().replace(/:/g, "_");
+  const sagraBadge = extractSagraDateBadge(details.type, categoryLabel, dateBadge);
+  const isCheapestFuel = details.type === "distributore" && feeStatus === "free";
 
   return (
     <div
@@ -843,6 +936,29 @@ export const MapPoiIcon: React.FC<MapPoiIconProps> = ({
           </g>
         )}
       </svg>
+      {sagraBadge && (
+        <div
+          style={{
+            position: "absolute",
+            top: 39,
+            left: "50%",
+            transform: "translateX(-50%)",
+            backgroundColor: isCheapestFuel ? "#059669" : "rgba(39, 39, 42, 0.92)",
+            color: "#FFFFFF",
+            fontSize: "9.5px",
+            fontWeight: 800,
+            padding: "1px 5px",
+            borderRadius: "5px",
+            whiteSpace: "nowrap",
+            lineHeight: "12px",
+            border: isCheapestFuel ? "1.5px solid #A7F3D0" : "1px solid rgba(255,255,255,0.35)",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+            pointerEvents: "none",
+          }}
+        >
+          {sagraBadge}
+        </div>
+      )}
     </div>
   );
 };
@@ -856,7 +972,8 @@ export function getMapPoiIconHtml(
   feeStatus?: 'free' | 'paid' | 'unknown',
   serviceSubtype?: CamperServiceSubtype,
   categoryLabel?: string,
-  name?: string
+  name?: string,
+  dateBadge?: string
 ): { html: string; iconSize: [number, number]; iconAnchor: [number, number] } {
   const details = getPoiCategoryDetails(
     category,
@@ -866,10 +983,19 @@ export function getMapPoiIconHtml(
     categoryLabel,
     name
   );
+  const sagraBadge = extractSagraDateBadge(details.type, categoryLabel, dateBadge);
+  const isCheapestFuel = details.type === "distributore" && feeStatus === "free";
+  const badgeBg = isCheapestFuel ? "#059669" : "rgba(39,39,42,0.92)";
+  const badgeBorder = isCheapestFuel ? "1.5px solid #A7F3D0" : "1px solid rgba(255,255,255,0.35)";
+
+  const badgeHtml = sagraBadge
+    ? `<div style="position:absolute;top:39px;left:50%;transform:translateX(-50%);background:${badgeBg};color:#FFFFFF;font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:5px;white-space:nowrap;line-height:12px;border:${badgeBorder};box-shadow:0 1px 3px rgba(0,0,0,0.4);pointer-events:none;">${sagraBadge}</div>`
+    : "";
 
   const html = `
-    <div class="custom-map-pin" style="width: 38px; height: 44px; cursor: pointer; transform-origin: 19px 43px;">
+    <div class="custom-map-pin" style="position: relative; width: 38px; height: 44px; cursor: pointer; transform-origin: 19px 43px;">
       ${details.fullSvgHtml}
+      ${badgeHtml}
     </div>
   `;
 
@@ -1003,6 +1129,13 @@ export const MapCategoryBadge: React.FC<{
     badgeStyle = "bg-zinc-100 text-zinc-950 border-zinc-400";
   } else if (details.type === "natura") {
     badgeStyle = "bg-emerald-50 text-emerald-950 border-emerald-200";
+  } else if (details.type === "sagra") {
+    badgeStyle = "bg-rose-50 text-rose-950 border-rose-300";
+  } else if (details.type === "distributore") {
+    badgeStyle =
+      feeStatus === "free"
+        ? "bg-emerald-50 text-emerald-950 border-emerald-400"
+        : "bg-orange-50 text-orange-950 border-orange-300";
   }
 
   const displayLabel = categoryLabel || details.label;

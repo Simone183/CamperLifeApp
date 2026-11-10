@@ -4,6 +4,7 @@
  */
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppSettings } from "../useAppSettings";
 import { getCurrencySymbol, getDistanceUnit, convertDistance, formatDistance, getTileUrl, getTileConfig, getFuelEfficiencyUnit, getFuelEfficiencyValue, parseDimToNumber } from "../unit-helpers";
@@ -83,6 +84,11 @@ import {
   getRating10Descriptor,
 } from "../utils/placeMergeUtils";
 import { fetchOsrmRoute, getCachedOsrmRoute } from "../utils/routing";
+import {
+  getAllSagrePlaces,
+  doesSagraMatchDateFilter,
+  saveLiveSagre,
+} from "../data/sagreData";
 import {
   APIProvider,
   Map,
@@ -1087,6 +1093,120 @@ export default function MapTab({
       setSelectedCategories([settings.defaultPOI as string]);
     }
   }, [settings?.defaultPOI]);
+
+  // Sagre Date & Vacation Period Filter States on Map
+  const [allSagrePlaces, setAllSagrePlaces] = React.useState<Place[]>(() => getAllSagrePlaces());
+  const [sagraPeriodMode, setSagraPeriodMode] = React.useState<
+    "all" | "weekend" | "estate" | "primavera" | "autunno" | "natale" | "custom"
+  >("all");
+  const [sagraSelectedMonth, setSagraSelectedMonth] = React.useState<number>(0);
+  const [sagraStartDate, setSagraStartDate] = React.useState<string>("");
+  const [sagraEndDate, setSagraEndDate] = React.useState<string>("");
+  const [isFetchingLiveSagreMap, setIsFetchingLiveSagreMap] = React.useState<boolean>(false);
+  const [showSagraDateInputs, setShowSagraDateInputs] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    const refreshSagrePlaces = () => setAllSagrePlaces(getAllSagrePlaces());
+    window.addEventListener("sagre-updated", refreshSagrePlaces);
+
+    // Automatic weekly search on Mondays (lunedì)
+    const today = new Date();
+    const isMonday = today.getDay() === 1;
+    const dateStr = today.toISOString().split("T")[0];
+    const lastFetch = localStorage.getItem("viacamper_last_monday_sagra_fetch");
+    if (isMonday && lastFetch !== dateStr) {
+      localStorage.setItem("viacamper_last_monday_sagra_fetch", dateStr);
+      handleFetchLiveSagreOnMap();
+    }
+
+    return () => window.removeEventListener("sagre-updated", refreshSagrePlaces);
+  }, []);
+
+  const handleFetchLiveSagreOnMap = async () => {
+    if (isFetchingLiveSagreMap) return;
+    setIsFetchingLiveSagreMap(true);
+    try {
+      const res = await fetch(resolveApiUrl("/api/sagre-live"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: searchQuery.trim() || "Italia",
+          startDate: sagraStartDate,
+          endDate: sagraEndDate,
+          month: sagraSelectedMonth,
+          season: sagraPeriodMode,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.sagre) && data.sagre.length > 0) {
+          saveLiveSagre(data.sagre);
+          setAllSagrePlaces(getAllSagrePlaces());
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: `🎪 Aggiunte ${data.sagre.length} nuove sagre sulla mappa per il periodo selezionato!`,
+              },
+            }),
+          );
+        }
+      }
+    } catch {
+      // handled silently via built-in national archive
+    } finally {
+      setIsFetchingLiveSagreMap(false);
+    }
+  };
+
+  // --- MIMIT OSSERVAPREZZI CARBURANTI LIVE STATES ---
+  const [liveFuelPlaces, setLiveFuelPlaces] = React.useState<Place[]>([]);
+  const [isFetchingFuelStations, setIsFetchingFuelStations] = React.useState<boolean>(false);
+  const [fuelTypeFilter, setFuelTypeFilter] = React.useState<"gasolio" | "benzina" | "gpl">("gasolio");
+  const [minFuelPriceInZone, setMinFuelPriceInZone] = React.useState<number | null>(null);
+
+  const handleFetchLiveFuelStations = React.useCallback(
+    async (customLat?: number, customLng?: number, customFuelType?: "gasolio" | "benzina" | "gpl") => {
+      setIsFetchingFuelStations(true);
+      try {
+        const targetLat = customLat ?? mapCenterCoords?.lat ?? userLocation?.lat ?? 41.9028;
+        const targetLng = customLng ?? mapCenterCoords?.lng ?? userLocation?.lng ?? 12.4964;
+        const activeFuel = customFuelType ?? fuelTypeFilter;
+
+        const res = await fetch(resolveApiUrl("/api/fuel-stations-live"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lat: targetLat,
+            lng: targetLng,
+            radius: 10,
+            fuelType: activeFuel,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.stations)) {
+            setLiveFuelPlaces(data.stations);
+            setMinFuelPriceInZone(typeof data.minPrice === "number" ? data.minPrice : null);
+            if (data.stations.length > 0) {
+              window.dispatchEvent(
+                new CustomEvent("show-toast", {
+                  detail: {
+                    message: `⛽ Trovati ${data.stations.length} distributori MIMIT in zona! Miglior prezzo: €${Number(data.minPrice || data.stations[0].priceEuro).toFixed(3)}/L`,
+                  },
+                }),
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[MIMIT Fuel Fetch] Error:", err);
+      } finally {
+        setIsFetchingFuelStations(false);
+      }
+    },
+    [mapCenterCoords?.lat, mapCenterCoords?.lng, userLocation?.lat, userLocation?.lng, fuelTypeFilter],
+  );
+
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedPlace, setSelectedPlace] = React.useState<Place | null>(null);
   const [mobileView, setMobileView] = React.useState<"map" | "list">("map");
@@ -1120,6 +1240,7 @@ export default function MapTab({
 
   // --- ADVANCED FILTER PANEL STATES ---
   const [showFilterPanel, setShowFilterPanel] = React.useState(false);
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = React.useState(false);
   const [filterMinRating, setFilterMinRating] = React.useState<number>(0);
   const [filterMaxPrice, setFilterMaxPrice] = React.useState<number>(100); // 100 is "No Limit"
   const [filterAvoidNarrow, setFilterAvoidNarrow] = React.useState(false);
@@ -1130,6 +1251,9 @@ export default function MapTab({
   const [showOsmObstacles, setShowOsmObstacles] = React.useState(true);
   const [osmObstacles, setOsmObstacles] = React.useState<OSMObstacle[]>([]);
   const [loadingOsmObstacles, setLoadingOsmObstacles] = React.useState(false);
+  const [showOrbisTrafficMode, setShowOrbisTrafficMode] = React.useState(false);
+  const [showTrafficFlowTiles, setShowTrafficFlowTiles] = React.useState(true);
+  const [orbisFilterType, setOrbisFilterType] = React.useState<"all" | "sagoma" | "traffic" | "incline">("all");
   const [isOsmReportOpen, setIsOsmReportOpen] = React.useState(false);
   const [osmReportCoords, setOsmReportCoords] = React.useState<{ lat: number; lng: number } | null>(null);
 
@@ -2504,9 +2628,42 @@ export default function MapTab({
     settings?.drivingStyle,
   ]);
 
-  // AI Itinerary Fly To handler
+  // AI Itinerary & EventsTab Sagre Fly To handler
   React.useEffect(() => {
+    const applyPendingSagreFilter = () => {
+      try {
+        const raw = sessionStorage.getItem("pending_sagre_map_filter");
+        if (!raw) return;
+        sessionStorage.removeItem("pending_sagre_map_filter");
+        const parsed = JSON.parse(raw);
+        setSelectedCategories(["sagra"]);
+        if (parsed.periodMode) setSagraPeriodMode(parsed.periodMode);
+        if (typeof parsed.selectedMonth === "number") setSagraSelectedMonth(parsed.selectedMonth);
+        if (typeof parsed.startDate === "string") setSagraStartDate(parsed.startDate);
+        if (typeof parsed.endDate === "string") setSagraEndDate(parsed.endDate);
+
+        const freshSagre = getAllSagrePlaces();
+        const target = freshSagre.find((p) => p.id === parsed.id);
+        if (target) {
+          setSelectedPlace(target);
+          setIsMobileDetailsOpen(true);
+        }
+        if (parsed.lat && parsed.lng) {
+          setTimeout(() => {
+            if (mapRef.current) {
+              mapRef.current.setView([Number(parsed.lat), Number(parsed.lng)], 10);
+            }
+          }, 250);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    applyPendingSagreFilter();
+
     const handleMapFlyTo = (e: Event) => {
+      applyPendingSagreFilter();
       const customEvent = e as CustomEvent<{
         lat: number;
         lng: number;
@@ -2514,11 +2671,11 @@ export default function MapTab({
       }>;
       const { lat, lng, label } = customEvent.detail;
       if (mapRef.current) {
-        mapRef.current.setView([lat, lng], 15);
+        mapRef.current.setView([lat, lng], 12);
         window.dispatchEvent(
           new CustomEvent("show-toast", {
             detail: {
-              message: `✨ Itinerario AI: ${label} selezionata sulla mappa!`,
+              message: `🎪 ${label} selezionata sulla mappa!`,
             },
           }),
         );
@@ -2535,13 +2692,16 @@ export default function MapTab({
   const clickedMarkerRef = React.useRef<any | null>(null);
 
   // Unify places within 100 meters across different datasets (OSM, Firestore, User custom, Catalogo)
+  // Keep sagre places distinct so they are never swallowed into adjacent camper stops
   const unifiedPlaces = React.useMemo(() => {
-    return mergeNearbyPlaces(places, PROXIMITY_MERGE_DISTANCE_KM);
-  }, [places]);
+    const nonSagre = places.filter((p) => p.category !== "sagra" && p.category !== "distributore");
+    const mergedNonSagre = mergeNearbyPlaces(nonSagre, PROXIMITY_MERGE_DISTANCE_KM);
+    return [...allSagrePlaces, ...liveFuelPlaces, ...mergedNonSagre];
+  }, [places, allSagrePlaces, liveFuelPlaces]);
 
   // --- ADVANCED FILTER COUPLING ENGINE (MEMOIZED FOR PERFORMANCE) ---
   const filteredPlaces = React.useMemo(() => {
-    return unifiedPlaces.filter((p) => {
+    const result = unifiedPlaces.filter((p) => {
       // 1. Category
       let matchesCat = false;
       if (selectedCategories.includes("all") || selectedCategories.length === 0) {
@@ -2569,6 +2729,25 @@ export default function MapTab({
       }
       if (!matchesCat) return false;
 
+      // 1b. If place is a Sagra, check Sagra Period / Month / Vacation Date Range Filter
+      if (p.category === "sagra") {
+        const matchesSagraDate = doesSagraMatchDateFilter(
+          {
+            startDate: p.eventStartDate,
+            endDate: p.eventEndDate,
+            month: p.eventMonth,
+            season: p.eventSeason,
+          },
+          {
+            periodMode: sagraPeriodMode,
+            selectedMonth: sagraSelectedMonth,
+            startDate: sagraStartDate,
+            endDate: sagraEndDate,
+          },
+        );
+        if (!matchesSagraDate) return false;
+      }
+
       // Filter by favorites if toggled
       if (showFavoritesOnly && !favoriteIds.includes(p.id)) {
         return false;
@@ -2577,15 +2756,16 @@ export default function MapTab({
       // 2. Search query (Matches name, description or address)
       const matchesSearch =
         (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
-        (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase());
+        (p.address || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+        (p.description || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       if (!matchesSearch) return false;
 
-      // 3. Proximity Radius (Mostra solo le aree sosta entro 5 km di raggio / 10 km di circonferenza-diametro dal centro visualizzato)
+      // 3. Proximity Radius (Mostra le aree sosta entro 5 km di raggio, ma mostra TUTTE le sagre regionali/nazionali quando il filtro sagre è attivo)
       let matchesDistance = true;
       const hasSearchQuery = Boolean((searchQuery || "").trim());
       const isSelectedPlace = Boolean(selectedPlace && selectedPlace.id === p.id);
 
-      if (hasSearchQuery || isSelectedPlace) {
+      if (hasSearchQuery || isSelectedPlace || p.category === "sagra" || p.category === "distributore") {
         matchesDistance = true;
       } else {
         let centerLat = mapCenterCoords?.lat ?? (userLocation?.lat || 41.9);
@@ -2661,6 +2841,17 @@ export default function MapTab({
 
       return true;
     });
+    if (selectedCategories.includes("distributore")) {
+      return [...result].sort((a, b) => {
+        if (a.category === "distributore" && b.category === "distributore") {
+          return (a.priceEuro || 99) - (b.priceEuro || 99);
+        }
+        if (a.category === "distributore") return -1;
+        if (b.category === "distributore") return 1;
+        return 0;
+      });
+    }
+    return result;
   }, [
     unifiedPlaces,
     selectedCategories,
@@ -2682,7 +2873,11 @@ export default function MapTab({
     vehicleDimensions.height,
     vehicleDimensions.weight,
     filterSelectedFacilities,
-    selectedPlace?.id
+    selectedPlace?.id,
+    sagraPeriodMode,
+    sagraSelectedMonth,
+    sagraStartDate,
+    sagraEndDate,
   ]);
 
   const [visiblePlaces, setVisiblePlaces] = React.useState<Place[]>([]);
@@ -2787,165 +2982,108 @@ export default function MapTab({
     }
   }, [userLocation, googleMapInstance, isGPSEnabled, selectedPlace, isMobileDetailsOpen, showClickedPopup]);
 
-  const loadOsmObstaclesOnMap = React.useCallback(async (lat: number, lng: number) => {
-    if (!showOsmObstacles) return;
+  const loadOsmObstaclesOnMap = React.useCallback(async (lat: number, lng: number, notifyToast: boolean = false) => {
+    if (!showOsmObstacles && !showOrbisTrafficMode) return;
     setLoadingOsmObstacles(true);
     try {
-      const radiusMeters = 2500;
-      const dLat = radiusMeters / 111000;
-      const dLng = radiusMeters / (111000 * Math.cos((lat * Math.PI) / 180));
-      const bbox = `${lat - dLat},${lng - dLng},${lat + dLat},${lng + dLng}`;
-      const query = `[out:json][timeout:15];
-(
-  node["maxheight"](${bbox});
-  node["maxwidth"](${bbox});
-  node["maxweight"](${bbox});
-  way["maxheight"](${bbox});
-  way["maxwidth"](${bbox});
-  way["maxweight"](${bbox});
-);
-out center;`;
-
-      let res: Response;
-      try {
-        res = await fetch("/api/map-data-proxy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: query }),
-        });
-      } catch (err: any) {
-        console.warn(
-          "Fetch /api/map-data-proxy fallita, riprovo dopo 1.5s per possibile riavvio o cold start del server...",
-          err,
-        );
-        await new Promise((r) => setTimeout(r, 1500));
-        try {
-          res = await fetch("/api/map-data-proxy", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: query }),
-          });
-        } catch (retryErr: any) {
-          console.warn(
-            "Fetch request for /api/map-data-proxy failed again on retry:",
-            retryErr,
-          );
-          throw retryErr;
-        }
-      }
-      if (!res.ok) {
-        const errorText = await res.text();
-        // Silently handle rate limits or proxy errors without throwing console errors
-        // to avoid triggering false positive bug reports in the monitoring system
-        if (res.status === 429 || errorText.includes("Rate exceeded")) {
-          console.warn("OSM proxy rate limited (429). Retrying later.");
-        } else {
-          console.warn("OSM API returned non-ok status:", res.status);
-        }
-        return;
-      }
-
-      const contentType = res.headers.get("content-type");
-      if (contentType && !contentType.includes("application/json")) {
-        console.warn("OSM proxy returned non-JSON content-type:", contentType);
-        return;
-      }
-
-      const responseText = await res.text();
-      if (responseText.trim().startsWith("<")) {
-        console.warn("OSM proxy returned HTML/XML instead of JSON");
-        return;
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseErr) {
-        console.warn("Failed to parse OSM response JSON:", parseErr);
-        return;
-      }
-
-      if (data && data.elements) {
-        const obstacles: OSMObstacle[] = [];
-        data.elements.forEach((el: any) => {
-          const oLat =
-            el.lat !== undefined ? el.lat : el.center ? el.center.lat : null;
-          const oLng =
-            el.lon !== undefined ? el.lon : el.center ? el.center.lon : null;
-          if (oLat === null || oLng === null) return;
-
-          const tags = el.tags || {};
-          let type: "height" | "width" | "weight" | "barrier" = "height";
-          let val = 0;
-          let label = "";
-
-          if (tags.maxheight) {
-            type = "height";
-            val = parseMetricValue(tags.maxheight) || 0;
-            label = `Sottopasso: ${tags.maxheight}`;
-          } else if (tags.maxwidth) {
-            type = "width";
-            val = parseMetricValue(tags.maxwidth) || 0;
-            label = `Strettoia: ${tags.maxwidth}`;
-          } else if (tags.maxweight) {
-            type = "weight";
-            val = parseMetricValue(tags.maxweight) || 0;
-            label = `Portata Ponte: ${tags.maxweight}`;
-          } else {
-            return;
+      // 1) Call unified /api/tomtom-orbis-live endpoint (TomTom Orbis Traffic v5 + Orbis OSM Camper Obstacles)
+      const orbisRes = await fetch(resolveApiUrl("/api/tomtom-orbis-live"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat,
+          lng,
+          radiusKm: 8,
+          vehicleHeight: parseDimToNumber(vehicleDimensions.height) || 3.1,
+          vehicleWidth: parseDimToNumber(vehicleDimensions.width) || 2.35,
+          vehicleWeight: parseDimToNumber(vehicleDimensions.weight) || 3.5,
+        }),
+      });
+      if (orbisRes.ok) {
+        const orbisData = await orbisRes.json();
+        if (Array.isArray(orbisData?.obstacles)) {
+          setOsmObstacles(orbisData.obstacles);
+          if (notifyToast) {
+            const vCount = Number(orbisData.violationsCount) || 0;
+            window.dispatchEvent(
+              new CustomEvent("show-toast", {
+                detail: {
+                  message:
+                    vCount > 0
+                      ? `🚦 TomTom Orbis Live: rilevati ${orbisData.obstacles.length} ostacoli/cantieri (${vCount} ⛔ violazioni sagoma camper!)`
+                      : `🚦 TomTom Orbis Live attivo: traffico in tempo reale e ${orbisData.obstacles.length} avvisi stradali caricati.`,
+                },
+              }),
+            );
           }
-
-          if (val === 0) return;
-
-          let isViolation = false;
-          if (type === "height" && parseDimToNumber(vehicleDimensions.height) > val)
-            isViolation = true;
-          if (type === "width" && parseDimToNumber(vehicleDimensions.width) > val)
-            isViolation = true;
-          if (type === "weight" && parseDimToNumber(vehicleDimensions.weight) > val)
-            isViolation = true;
-
-          obstacles.push({
-            id: el.id,
-            lat: oLat,
-            lng: oLng,
-            type,
-            value: val,
-            name: label,
-            roadName: tags.name || tags.ref || "Strada Locale",
-            isViolation,
-          });
-        });
-
-        setOsmObstacles(obstacles);
+          return;
+        }
       }
     } catch (e) {
-      console.warn("OSM warning in MapTab - Details:", e);
-      // Silently log and handle map details/obstacles fetch issues to avoid popping up disruptive warning cards to the user
+      console.warn("TomTom Orbis Live fetch warning:", e);
     } finally {
       setLoadingOsmObstacles(false);
     }
-  }, [showOsmObstacles, vehicleDimensions.height, vehicleDimensions.width, vehicleDimensions.weight]);
+  }, [showOsmObstacles, showOrbisTrafficMode, vehicleDimensions.height, vehicleDimensions.width, vehicleDimensions.weight]);
+
+  const filteredOrbisObstacles = React.useMemo(() => {
+    if (orbisFilterType === "all") return osmObstacles;
+    return osmObstacles.filter((o) => {
+      if (orbisFilterType === "sagoma") {
+        return o.type === "height" || o.type === "width" || o.type === "weight";
+      }
+      if (orbisFilterType === "traffic") {
+        return o.type === "roadworks" || o.type === "accident" || o.type === "jam" || o.type === "closure";
+      }
+      if (orbisFilterType === "incline") {
+        return o.type === "incline";
+      }
+      return true;
+    });
+  }, [osmObstacles, orbisFilterType]);
+
+  // Manage Google Maps TrafficLayer when showOrbisTrafficMode & showTrafficFlowTiles are active
+  const googleTrafficLayerRef = React.useRef<any>(null);
+  React.useEffect(() => {
+    const gMap = googleMapInstance && typeof (googleMapInstance as any).setTilt === "function" ? googleMapInstance : null;
+    if (!gMap || !(window as any).google?.maps?.TrafficLayer) return;
+
+    if (showOrbisTrafficMode && showTrafficFlowTiles) {
+      if (!googleTrafficLayerRef.current) {
+        googleTrafficLayerRef.current = new (window as any).google.maps.TrafficLayer();
+      }
+      googleTrafficLayerRef.current.setMap(gMap);
+    } else if (googleTrafficLayerRef.current) {
+      googleTrafficLayerRef.current.setMap(null);
+    }
+    return () => {
+      if (googleTrafficLayerRef.current) {
+        try {
+          googleTrafficLayerRef.current.setMap(null);
+        } catch {}
+      }
+    };
+  }, [googleMapInstance, showOrbisTrafficMode, showTrafficFlowTiles]);
 
   const osmObstaclesRef = React.useRef<any[]>([]);
 
   const lastLoadedObstaclesCenterRef = React.useRef<{ lat: number; lng: number } | null>(null);
   React.useEffect(() => {
-    if (showOsmObstacles) {
+    if (showOsmObstacles || showOrbisTrafficMode) {
       const lat = mapCenterCoords?.lat;
       const lng = mapCenterCoords?.lng;
       if (typeof lat === "number" && typeof lng === "number") {
         const last = lastLoadedObstaclesCenterRef.current;
         if (!last || Math.abs(last.lat - lat) > 0.02 || Math.abs(last.lng - lng) > 0.02) {
           lastLoadedObstaclesCenterRef.current = { lat, lng };
-          loadOsmObstaclesOnMap(lat, lng);
+          loadOsmObstaclesOnMap(lat, lng, false);
         }
       }
     } else {
       lastLoadedObstaclesCenterRef.current = null;
       setOsmObstacles([]);
     }
-  }, [showOsmObstacles, mapCenterCoords?.lat, mapCenterCoords?.lng, loadOsmObstaclesOnMap]);
+  }, [showOsmObstacles, showOrbisTrafficMode, mapCenterCoords?.lat, mapCenterCoords?.lng, loadOsmObstaclesOnMap]);
 
   // NOTE: Automated OSM loading at startup and on GPS tracking has been removed on user request.
   // OSM elements will now ONLY load when user explicitly clicks "Intorno a me", "Intorno a questo luogo" or from the popup.
@@ -4195,21 +4333,35 @@ out center;`;
         }`}
       >
         {/* Filters Top rail */}
-        <div className="p-4 border-b border-slate-50 space-y-3 bg-slate-50/50">
+        {isFiltersCollapsed ? (
+          <div className="p-1.5 border-b border-slate-100 bg-slate-50/90 shrink-0 flex items-center justify-between">
+            <span className="text-[10px] font-black text-slate-700">
+              {filteredPlaces.length} luoghi trovati
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsFiltersCollapsed(false)}
+              className="px-2 py-1 bg-[#3E4A35] text-white rounded-lg text-[10px] font-black cursor-pointer shadow-xs flex items-center gap-1"
+            >
+              <span>🔽 Mostra filtri</span>
+            </button>
+          </div>
+        ) : (
+          <div className="p-2 border-b border-slate-100 space-y-1 bg-slate-50/90 shrink-0">
           {/* Mobile close (X) header to return to main map */}
           {mobileView === "list" && (
-            <div className="lg:hidden flex items-center justify-between pb-2 border-b border-slate-200/50">
+            <div className="lg:hidden flex items-center justify-between pb-1 border-b border-slate-200/50">
+              <span className="text-[9.5px] font-black uppercase tracking-widest text-[#2D2926]/70">
+                Filtri ed Elenco
+              </span>
               <button
                 type="button"
                 onClick={() => setMobileView("map")}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-black text-sm cursor-pointer transition-all border border-slate-200/40 animate-scale-up-sm"
+                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-black text-xs cursor-pointer transition-all border border-slate-200/40"
                 title="Torna alla mappa"
               >
                 ✕
               </button>
-              <span className="text-[10px] font-black uppercase tracking-widest text-[#2D2926]/60 pr-8">
-                Filtri ed Elenco
-              </span>
             </div>
           )}
           <div className="flex gap-2">
@@ -4674,12 +4826,293 @@ out center;`;
               <MapCategoryPinMini category="hidden_gem" size={15} />
               <span>Spot Natura</span>
             </button>
+
+            <button
+              onClick={() => {
+                toggleCategory("sagra");
+                if (!selectedCategories.includes("sagra") && mapRef.current) {
+                  mapRef.current.setView([41.9, 12.6], 9);
+                }
+              }}
+              className={`py-1 px-1 rounded-lg text-[9px] sm:text-[9.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-0.5 leading-none w-full ${
+                selectedCategories.includes("sagra")
+                  ? "bg-gradient-to-r from-rose-600 to-pink-700 text-white shadow-xs border border-rose-400 ring-1 ring-rose-300/50"
+                  : "bg-white text-rose-950 border border-rose-300 hover:bg-rose-50"
+              }`}
+              title="Sagre ed Eventi Gastronomici (TrovaSagre)"
+            >
+              <MapCategoryPinMini category="sagra" size={12} />
+              <span className="truncate">Sagre 🎪</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const willSelect = !selectedCategories.includes("distributore");
+                toggleCategory("distributore");
+                if (willSelect) {
+                  handleFetchLiveFuelStations();
+                }
+              }}
+              className={`py-1 px-1 rounded-lg text-[9px] sm:text-[9.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-0.5 leading-none w-full ${
+                selectedCategories.includes("distributore")
+                  ? "bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-xs border border-orange-400 ring-1 ring-orange-300/50"
+                  : "bg-white text-orange-950 border border-orange-300 hover:bg-orange-50"
+              }`}
+              title="Distributori e Prezzi Carburante Ufficiali MIMIT (Osservaprezzi)"
+            >
+              <MapCategoryPinMini category="distributore" size={12} />
+              <span className="truncate">Carburante ⛽</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const next = !showOrbisTrafficMode;
+                setShowOrbisTrafficMode(next);
+                if (next) {
+                  setShowOsmObstacles(true);
+                  const targetLat = mapCenterCoords?.lat ?? userLocation?.lat ?? 41.9028;
+                  const targetLng = mapCenterCoords?.lng ?? userLocation?.lng ?? 12.4964;
+                  loadOsmObstaclesOnMap(targetLat, targetLng, true);
+                }
+              }}
+              className={`py-1 px-1 rounded-lg text-[9px] sm:text-[9.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-0.5 leading-none w-full ${
+                showOrbisTrafficMode
+                  ? "bg-gradient-to-r from-red-600 via-amber-600 to-emerald-600 text-white shadow-xs border border-amber-400 ring-1 ring-amber-300/50"
+                  : "bg-white text-slate-900 border border-amber-400 hover:bg-amber-50"
+              }`}
+              title="TomTom Orbis Traffico Live, Cantieri, Ponti Bassi e Limiti Sagoma"
+            >
+              <span>🚦</span>
+              <span className="truncate">Traffico & Ostacoli</span>
+            </button>
+
+            <button
+              onClick={() => setIsFiltersCollapsed(true)}
+              className="py-1 px-1 rounded-lg text-[9px] sm:text-[9.5px] font-black transition-all cursor-pointer select-none flex items-center justify-center gap-0.5 leading-none w-full bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300"
+              title="Riduci/Nascondi tutti i filtri per vedere i risultati"
+            >
+              <span>🔼 Riduci</span>
+            </button>
           </div>
+
+          {/* Sagra Date & Vacation Period Filter Box inside Filter Panel */}
+          {selectedCategories.includes("sagra") && (
+            <div className="mt-1 p-2 rounded-2xl bg-rose-50/90 border border-rose-200 space-y-1">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none flex-1">
+                  {[
+                    { id: "all", label: "🔥 Tutte" },
+                    { id: "weekend", label: "📅 Nov / Wknd" },
+                    { id: "estate", label: "☀️ Estate" },
+                    { id: "primavera", label: "🌸 Primavera" },
+                    { id: "natale", label: "🎄 Natale" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setSagraPeriodMode(tab.id as any);
+                        setSagraSelectedMonth(0);
+                        setSagraStartDate("");
+                        setSagraEndDate("");
+                      }}
+                      className={`px-2 py-0.5 rounded-lg text-[9.5px] font-extrabold whitespace-nowrap cursor-pointer transition-all ${
+                        sagraPeriodMode === tab.id && !sagraSelectedMonth && !sagraStartDate
+                          ? "bg-rose-600 text-white shadow-2xs"
+                          : "bg-white text-rose-900 border border-rose-200 hover:bg-rose-100"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowSagraDateInputs(!showSagraDateInputs)}
+                    className="px-1.5 py-1 bg-white hover:bg-rose-100 text-rose-900 border border-rose-200 rounded-lg text-[9px] font-black cursor-pointer"
+                    title="Filtra per mese o date"
+                  >
+                    📆 {showSagraDateInputs ? "Nascondi" : "Date"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFetchLiveSagreOnMap}
+                    disabled={isFetchingLiveSagreMap}
+                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-lg text-[9.5px] font-black flex items-center gap-1 cursor-pointer shadow-2xs"
+                  >
+                    <RefreshCw className={`w-2.5 h-2.5 ${isFetchingLiveSagreMap ? "animate-spin" : ""}`} />
+                    <span>{isFetchingLiveSagreMap ? "..." : "Cerca altre"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {showSagraDateInputs && (
+                <div className="grid grid-cols-3 gap-1 pt-1 border-t border-rose-200/60">
+                  <div>
+                    <label className="block text-[8px] font-bold text-rose-900 mb-0.5">Mese</label>
+                    <select
+                      value={sagraSelectedMonth}
+                      onChange={(e) => {
+                        const m = Number(e.target.value);
+                        setSagraSelectedMonth(m);
+                        if (m > 0) setSagraPeriodMode("custom");
+                      }}
+                      className="w-full px-1 py-0.5 rounded bg-white border border-rose-200 text-[9.5px] font-bold text-slate-800 outline-none"
+                    >
+                      <option value={0}>Tutti i mesi</option>
+                      <option value={1}>Gennaio</option>
+                      <option value={2}>Febbraio</option>
+                      <option value={3}>Marzo</option>
+                      <option value={4}>Aprile</option>
+                      <option value={5}>Maggio</option>
+                      <option value={6}>Giugno</option>
+                      <option value={7}>Luglio</option>
+                      <option value={8}>Agosto</option>
+                      <option value={9}>Settembre</option>
+                      <option value={10}>Ottobre</option>
+                      <option value={11}>Novembre</option>
+                      <option value={12}>Dicembre</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-bold text-rose-900 mb-0.5">Dal</label>
+                    <input
+                      type="date"
+                      value={sagraStartDate}
+                      onChange={(e) => {
+                        setSagraStartDate(e.target.value);
+                        if (e.target.value) setSagraPeriodMode("custom");
+                      }}
+                      className="w-full px-1 py-0.5 rounded bg-white border border-rose-200 text-[9.5px] font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-bold text-rose-900 mb-0.5">Al</label>
+                    <input
+                      type="date"
+                      value={sagraEndDate}
+                      onChange={(e) => {
+                        setSagraEndDate(e.target.value);
+                        if (e.target.value) setSagraPeriodMode("custom");
+                      }}
+                      className="w-full px-1 py-0.5 rounded bg-white border border-rose-200 text-[9.5px] font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MIMIT Osservaprezzi Carburanti Box inside Filter Panel */}
+          {selectedCategories.includes("distributore") && (
+            <div className="mt-1 p-1.5 rounded-xl bg-orange-50/90 border border-orange-200 flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center gap-1">
+                {[
+                  { id: "gasolio", label: "🛢️ Diesel" },
+                  { id: "benzina", label: "⛽ Benzina" },
+                  { id: "gpl", label: "🔵 GPL" },
+                ].map((ft) => (
+                  <button
+                    key={ft.id}
+                    type="button"
+                    onClick={() => {
+                      setFuelTypeFilter(ft.id as any);
+                      handleFetchLiveFuelStations(undefined, undefined, ft.id as any);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-[9.5px] font-black cursor-pointer transition-all ${
+                      fuelTypeFilter === ft.id
+                        ? "bg-orange-600 text-white shadow-2xs"
+                        : "bg-white text-orange-950 border border-orange-200 hover:bg-orange-100"
+                    }`}
+                  >
+                    {ft.label}
+                  </button>
+                ))}
+                {minFuelPriceInZone !== null && (
+                  <span className="px-1.5 py-0.5 rounded-lg bg-emerald-600 text-white text-[9px] font-black whitespace-nowrap">
+                    🏆 Min: €{minFuelPriceInZone.toFixed(3)}/L
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleFetchLiveFuelStations()}
+                disabled={isFetchingFuelStations}
+                className="px-2 py-0.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-400 text-white rounded-lg text-[9px] font-black flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-2.5 h-2.5 ${isFetchingFuelStations ? "animate-spin" : ""}`} />
+                <span>{isFetchingFuelStations ? "Carico..." : "Cerca qui"}</span>
+              </button>
+            </div>
+          )}
+
+          {/* TomTom Orbis Traffico & Ostacoli Live Box inside Filter Panel */}
+          {showOrbisTrafficMode && (
+            <div className="mt-1 p-1.5 rounded-xl bg-amber-50/95 border border-amber-300 flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center gap-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowTrafficFlowTiles(!showTrafficFlowTiles)}
+                  className={`px-2 py-0.5 rounded-lg text-[9px] font-black cursor-pointer transition-all ${
+                    showTrafficFlowTiles
+                      ? "bg-emerald-600 text-white shadow-2xs"
+                      : "bg-white text-slate-700 border border-slate-300"
+                  }`}
+                >
+                  {showTrafficFlowTiles ? "🟢 Flusso Traffico ON" : "⚪ Flusso OFF"}
+                </button>
+                {[
+                  { id: "all", label: `Tutti (${osmObstacles.length})` },
+                  { id: "sagoma", label: "⛔ Ponti/Sagoma" },
+                  { id: "traffic", label: "🚧 Cantieri/Code" },
+                  { id: "incline", label: "⛰️ Pendenze" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setOrbisFilterType(tab.id as any)}
+                    className={`px-1.5 py-0.5 rounded-lg text-[9px] font-black cursor-pointer transition-all ${
+                      orbisFilterType === tab.id
+                        ? "bg-slate-900 text-white"
+                        : "bg-white text-slate-800 border border-amber-200 hover:bg-amber-100"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setIsOsmReportOpen(true)}
+                  className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[9px] font-black cursor-pointer"
+                  title="Segnala nuovo ponte basso, cantiere o ostacolo"
+                >
+                  🚩 Segnala
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetLat = mapCenterCoords?.lat ?? userLocation?.lat ?? 41.9028;
+                    const targetLng = mapCenterCoords?.lng ?? userLocation?.lng ?? 12.4964;
+                    loadOsmObstaclesOnMap(targetLat, targetLng, true);
+                  }}
+                  disabled={loadingOsmObstacles}
+                  className="px-2 py-0.5 bg-amber-700 hover:bg-amber-800 disabled:bg-slate-400 text-white rounded-lg text-[9px] font-black flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className={`w-2.5 h-2.5 ${loadingOsmObstacles ? "animate-spin" : ""}`} />
+                  <span>{loadingOsmObstacles ? "..." : "Scansiona"}</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+        )}
 
         {/* List scroll */}
-        {!showFilterPanel && (
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs min-h-0 bg-white">
             {filteredPlaces.length === 0 ? (
               <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
                 <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
@@ -4828,8 +5261,7 @@ out center;`;
                 );
               })
             )}
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Map visualization and Details wrapper */}
@@ -4864,6 +5296,8 @@ out center;`;
               onImportOSM={() => handleImportFromOSM("viewport")}
               isImporting={isImporting}
               onCenterChange={handleMapCenterChange}
+              showTrafficFlow={showOrbisTrafficMode && showTrafficFlowTiles}
+              orbisObstacles={showOsmObstacles || showOrbisTrafficMode ? filteredOrbisObstacles : []}
               indicatorTitle={
                 (settings?.mapEngine === "leaflet" || googleMapCrashed) && hasValidKey && isOnline
                   ? "Mappa Leaflet Ultra-Rapida ⚡"
@@ -5174,38 +5608,77 @@ out center;`;
                     );
                   })}
 
-                  {/* OSM Obstacles (limitations overlay) */}
-                  {isGoogleMapDomReady && showOsmObstacles &&
-                    osmObstacles.map((obs) => {
+                  {/* TomTom Orbis & OSM Obstacles (limitations, roadworks, incidents, inclines overlay) */}
+                  {isGoogleMapDomReady && (showOsmObstacles || showOrbisTrafficMode) &&
+                    filteredOrbisObstacles.map((obs) => {
                       const isCritical = obs.isViolation;
                       const sizeClass = isCritical
                         ? "w-8 h-8 text-xs"
-                        : "w-6 h-6 text-[9px]";
+                        : "w-6 h-6 text-[10px]";
                       const bgClass = isCritical
                         ? "bg-rose-600 animate-pulse border-white text-white font-black"
-                        : "bg-amber-500 border-white text-slate-800 font-bold";
+                        : obs.type === "roadworks" || obs.type === "accident" || obs.type === "jam"
+                        ? "bg-orange-600 border-white text-white font-bold"
+                        : obs.type === "incline"
+                        ? "bg-purple-700 border-white text-white font-bold"
+                        : "bg-amber-500 border-white text-slate-900 font-bold";
 
                       let symbol = "📐";
-                      if (obs.type === "height")
+                      let badgeUnit = "m";
+                      if (obs.type === "height") {
                         symbol = isCritical ? "⛔" : "📐";
-                      else if (obs.type === "width") symbol = "↔️";
-                      else if (obs.type === "weight") symbol = "⚖️";
+                        badgeUnit = "m";
+                      } else if (obs.type === "width") {
+                        symbol = "↔️";
+                        badgeUnit = "m";
+                      } else if (obs.type === "weight") {
+                        symbol = "⚖️";
+                        badgeUnit = "t";
+                      } else if (obs.type === "roadworks") {
+                        symbol = "🚧";
+                        badgeUnit = "LAVORI";
+                      } else if (obs.type === "accident") {
+                        symbol = "🚨";
+                        badgeUnit = "INCID.";
+                      } else if (obs.type === "jam") {
+                        symbol = "🚗";
+                        badgeUnit = obs.delayMinutes ? `+${obs.delayMinutes}m` : "CODA";
+                      } else if (obs.type === "closure") {
+                        symbol = "⛔";
+                        badgeUnit = "CHIUSA";
+                      } else if (obs.type === "incline") {
+                        symbol = "⛰️";
+                        badgeUnit = `${obs.value}%`;
+                      }
+
+                      const badgeLabel =
+                        obs.type === "height" || obs.type === "width" || obs.type === "weight"
+                          ? `${obs.value}${badgeUnit}`
+                          : badgeUnit;
 
                       return (
                         <AdvancedMarker
                           key={obs.id}
                           position={{ lat: Number(obs.lat), lng: Number(obs.lng) }}
-                          title={`${obs.name}: ${obs.value}${obs.type === "weight" ? "t" : "m"}`}
+                          title={`${obs.name} (${obs.roadName})`}
+                          onClick={() => {
+                            window.dispatchEvent(
+                              new CustomEvent("show-toast", {
+                                detail: {
+                                  message: `${obs.name} · 📍 ${obs.roadName}${obs.description ? ` — ${obs.description}` : ""}`,
+                                },
+                              }),
+                            );
+                          }}
                         >
-                          <div className="flex flex-col items-center justify-center w-12 h-14">
+                          <div className="flex flex-col items-center justify-center w-14 h-14 cursor-pointer">
                             <div
                               className={`${sizeClass} rounded-full ${bgClass} border-2 flex items-center justify-center shadow-md relative`}
                             >
                               <span className="select-none">{symbol}</span>
                             </div>
                             <div className="text-[8px] font-black bg-slate-900 text-white rounded px-1 py-0.5 mt-0.5 border border-slate-700 whitespace-nowrap">
-                              {obs.value}
-                              {obs.type === "weight" ? "t" : "m"}
+                              {badgeLabel}
                             </div>
                           </div>
                         </AdvancedMarker>
@@ -5228,382 +5701,600 @@ out center;`;
             </div>
           )}
 
-          {/* Top Control Bar containing Rolly Guide, Search Bar, and GPS Button (Uniform Height h-9) */}
-          <div className={`absolute top-2 left-2 right-2 md:top-3 md:left-3 md:right-3 flex gap-2 items-center transition-all ${
-            addressSuggestions.length > 0 ? "z-[6000]" : "z-[3000]"
-          }`}>
-            {/* Rolly Onboarding Guide for Map */}
-            <RollyOnboardingGuide
-              sectionKey="map_nav"
-              className="!h-9 rounded-xl border-slate-200/90 shadow-md"
-              requireAuth={!currentUser}
-              onRequireAuth={onRedirectToLogin}
-            />
+          {/* Unified Top HUD Stack: Search Bar + Wrap-Enabled Sub-Filter Bars + Zoom/GPS Controls */}
+          <div
+            className={`absolute top-2 left-2 right-2 md:top-3 md:left-3 md:right-3 flex flex-col gap-1.5 pointer-events-none transition-all ${
+              addressSuggestions.length > 0 ? "z-[6000]" : "z-[3000]"
+            }`}
+          >
+            {/* Row 1: Top Control Bar containing Rolly Guide, Search Bar, and GPS Button (Uniform Height h-9) */}
+            <div className="flex gap-2 items-center pointer-events-auto w-full">
+              {/* Rolly Onboarding Guide for Map */}
+              <RollyOnboardingGuide
+                sectionKey="map_nav"
+                className="!h-9 rounded-xl border-slate-200/90 shadow-md"
+                requireAuth={!currentUser}
+                onRequireAuth={onRedirectToLogin}
+              />
 
-            {/* Ingrandita Barra di Ricerca con stessa altezza h-9 */}
-            <div className="flex-1 flex flex-col gap-1 min-w-0 relative">
-              <form
-                onSubmit={handleAddressSearch}
-                className="flex gap-1.5 shadow-md bg-white/95 backdrop-blur-md p-1 rounded-xl border border-slate-200/90 w-full h-9 items-center transition-all focus-within:ring-2 focus-within:ring-emerald-500/40"
-              >
-                <div className="pl-1.5 text-slate-400 shrink-0">
-                  <Search className="w-3.5 h-3.5 text-[#3E4A35]" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Cerca su Google Places (es. Garda, Area Roma...)"
-                  value={addressSearchQuery}
-                  onChange={(e) => setAddressSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent px-1 text-xs font-semibold outline-none text-[#2D2926] placeholder:text-slate-400 min-w-0"
-                />
-                {addressSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddressSearchQuery("");
-                      setAddressSuggestions([]);
-                      setSearchResultPins([]);
-                      setAddressSearchError("");
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-600 rounded-full shrink-0"
-                    title="Cancella ricerca"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={isSearchingAddress}
-                  className="h-7 px-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-xs gap-1"
+              {/* Ingrandita Barra di Ricerca con stessa altezza h-9 */}
+              <div className="flex-1 flex flex-col gap-1 min-w-0 relative">
+                <form
+                  onSubmit={handleAddressSearch}
+                  className="flex gap-1.5 shadow-md bg-white/95 backdrop-blur-md p-1 rounded-xl border border-slate-200/90 w-full h-9 items-center transition-all focus-within:ring-2 focus-within:ring-emerald-500/40"
                 >
-                  {isSearchingAddress ? (
-                    <span className="animate-pulse">...</span>
-                  ) : (
-                    <>
-                      <Search className="w-3 h-3 hidden sm:inline" />
-                      <span>Cerca</span>
-                    </>
+                  <div className="pl-1.5 text-slate-400 shrink-0">
+                    <Search className="w-3.5 h-3.5 text-[#3E4A35]" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Cerca su Google Places (es. Garda, Area Roma...)"
+                    value={addressSearchQuery}
+                    onChange={(e) => setAddressSearchQuery(e.target.value)}
+                    className="flex-1 bg-transparent px-1 text-xs font-semibold outline-none text-[#2D2926] placeholder:text-slate-400 min-w-0"
+                  />
+                  {addressSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddressSearchQuery("");
+                        setAddressSuggestions([]);
+                        setSearchResultPins([]);
+                        setAddressSearchError("");
+                      }}
+                      className="p-1 text-slate-400 hover:text-slate-600 rounded-full shrink-0"
+                      title="Cancella ricerca"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   )}
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    disabled={isSearchingAddress}
+                    className="h-7 px-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-xs gap-1"
+                  >
+                    {isSearchingAddress ? (
+                      <span className="animate-pulse">...</span>
+                    ) : (
+                      <>
+                        <Search className="w-3 h-3 hidden sm:inline" />
+                        <span>Cerca</span>
+                      </>
+                    )}
+                  </button>
+                </form>
 
-              {/* Suggestions list dropdown - Large overlay positioned above all map buttons */}
-              {addressSuggestions.length > 0 && (
-                <div className="fixed inset-x-2 top-12 sm:absolute sm:top-full sm:left-0 sm:right-auto sm:w-[560px] bg-white rounded-2xl border border-slate-200/90 shadow-2xl overflow-hidden text-xs font-semibold max-h-[75vh] sm:max-h-[540px] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150 mt-1 z-[9999]">
-                  <div className="px-3.5 py-2.5 bg-slate-50 text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center justify-between border-b border-slate-100 sticky top-0 bg-white z-10">
-                    <div className="flex items-center gap-1.5">
-                      <span>Risultati per distanza ({addressSuggestions.length})</span>
-                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold">Più vicini prima</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          fitBoundsToSearchResults(addressSuggestions);
-                          setAddressSuggestions([]);
-                        }}
-                        className="px-2.5 py-1 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg transition-all text-[11px] font-extrabold flex items-center gap-1 cursor-pointer shadow-xs"
-                        title="Inquadra tutte le puntine sulla mappa e chiudi l'elenco"
-                      >
-                        <span>📍 Mostra in mappa</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAddressSuggestions([])}
-                        className="px-2.5 py-1 hover:bg-slate-100 rounded-lg text-slate-600 hover:text-slate-900 transition-all text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
-                        title="Chiudi risultati"
-                      >
-                        <span>Chiudi</span>
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {addressSuggestions.map((sug, idx) => {
-                      const isGoogle = sug.source === "google_places" || sug.source === "google";
-                      const isCity = isCityOrLocality(sug) || sug.isCity;
-                      const isCamp = !isCity && (sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp"));
-                      const title = sug.name || sug.display_name?.split(",")[0];
-                      const fullAddr = sug.address || sug.display_name;
-                      const hasDist = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm);
-                      
-                      return (
+                {/* Suggestions list dropdown - Large overlay positioned above all map buttons */}
+                {addressSuggestions.length > 0 && (
+                  <div className="fixed inset-x-2 top-12 sm:absolute sm:top-full sm:left-0 sm:right-auto sm:w-[560px] bg-white rounded-2xl border border-slate-200/90 shadow-2xl overflow-hidden text-xs font-semibold max-h-[75vh] sm:max-h-[540px] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150 mt-1 z-[9999]">
+                    <div className="px-3.5 py-2.5 bg-slate-50 text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center justify-between border-b border-slate-100 sticky top-0 bg-white z-10">
+                      <div className="flex items-center gap-1.5">
+                        <span>Risultati per distanza ({addressSuggestions.length})</span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold">Più vicini prima</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
                         <button
-                          key={sug.id || idx}
                           type="button"
-                          onClick={() => handleSelectSuggestion(sug)}
-                          className="w-full text-left p-3.5 hover:bg-emerald-50/70 active:bg-emerald-100/70 transition-all flex items-start gap-3 group text-slate-800 cursor-pointer"
+                          onClick={() => {
+                            fitBoundsToSearchResults(addressSuggestions);
+                            setAddressSuggestions([]);
+                          }}
+                          className="px-2.5 py-1 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-lg transition-all text-[11px] font-extrabold flex items-center gap-1 cursor-pointer shadow-xs"
+                          title="Inquadra tutte le puntine sulla mappa e chiudi l'elenco"
                         >
-                          {sug.photoUrl ? (
-                            <img
-                              src={sug.photoUrl}
-                              alt={title}
-                              className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200 shadow-xs group-hover:scale-105 transition-transform mt-0.5"
-                            />
-                          ) : (
-                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-bold text-base shadow-xs mt-0.5 ${
-                              isCity
-                                ? "bg-sky-100 text-sky-800"
-                                : isCamp
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-amber-100 text-amber-800"
-                            }`}>
-                              {isCity ? "🏙️" : isCamp ? "🚐" : "📍"}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0 pr-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="font-extrabold text-xs sm:text-sm text-slate-900 group-hover:text-emerald-800 leading-snug line-clamp-2">
-                                {title}
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {hasDist && (
-                                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-extrabold text-[10px] border border-emerald-200/80 flex items-center gap-0.5" title="Distanza dalla tua posizione">
-                                    📍 {sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)} m` : `${sug.distanceKm.toFixed(1)} km`}
-                                  </span>
-                                )}
-                                {sug.rating && (
-                                  <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] border border-amber-200/80 flex items-center gap-0.5">
-                                    ⭐ {normalizeRatingTo10(sug.rating)}/10
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-medium leading-normal mt-1 line-clamp-2">
-                              {fullAddr}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-                                isCity
-                                  ? "bg-sky-50 text-sky-700 border border-sky-200/80"
-                                  : isGoogle
-                                  ? "bg-blue-50 text-blue-700 border border-blue-200/80"
-                                  : "bg-slate-100 text-slate-600"
-                              }`}>
-                                {isCity ? "Città / Comune" : isGoogle ? "Google Places" : "Mappa"}
-                              </span>
-                              {(() => {
-                                const detected = detectPlaceCategoryAndLabel(sug);
-                                if (detected.categoryLabel) {
-                                  return (
-                                    <span className={`text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded border truncate ${
-                                      detected.isCity || isCity
-                                        ? "text-sky-800 bg-sky-100/80 border-sky-200/60"
-                                        : "text-emerald-800 bg-emerald-100/80 border-emerald-200/60"
-                                    }`}>
-                                      • {detected.categoryLabel}
-                                    </span>
-                                  );
-                                }
-                                if (sug.types && sug.types.length > 0) {
-                                  return (
-                                    <span className="text-[9.5px] text-slate-400 font-semibold truncate capitalize">
-                                      • {sug.types[0].replace(/_/g, " ")}
-                                    </span>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-                          </div>
+                          <span>📍 Mostra in mappa</span>
                         </button>
-                      );
-                    })}
+                        <button
+                          type="button"
+                          onClick={() => setAddressSuggestions([])}
+                          className="px-2.5 py-1 hover:bg-slate-100 rounded-lg text-slate-600 hover:text-slate-900 transition-all text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
+                          title="Chiudi risultati"
+                        >
+                          <span>Chiudi</span>
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {addressSuggestions.map((sug, idx) => {
+                        const isGoogle = sug.source === "google_places" || sug.source === "google";
+                        const isCity = isCityOrLocality(sug) || sug.isCity;
+                        const isCamp = !isCity && (sug.types?.includes("campground") || sug.types?.includes("rv_park") || sug.name?.toLowerCase().includes("camp"));
+                        const title = sug.name || sug.display_name?.split(",")[0];
+                        const fullAddr = sug.address || sug.display_name;
+                        const hasDist = typeof sug.distanceKm === "number" && !isNaN(sug.distanceKm);
+                        
+                        return (
+                          <button
+                            key={sug.id || idx}
+                            type="button"
+                            onClick={() => handleSelectSuggestion(sug)}
+                            className="w-full text-left p-3.5 hover:bg-emerald-50/70 active:bg-emerald-100/70 transition-all flex items-start gap-3 group text-slate-800 cursor-pointer"
+                          >
+                            {sug.photoUrl ? (
+                              <img
+                                src={sug.photoUrl}
+                                alt={title}
+                                className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200 shadow-xs group-hover:scale-105 transition-transform mt-0.5"
+                              />
+                            ) : (
+                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-bold text-base shadow-xs mt-0.5 ${
+                                isCity
+                                  ? "bg-sky-100 text-sky-800"
+                                  : isCamp
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-amber-100 text-amber-800"
+                              }`}>
+                                {isCity ? "🏙️" : isCamp ? "🚐" : "📍"}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0 pr-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="font-extrabold text-xs sm:text-sm text-slate-900 group-hover:text-emerald-800 leading-snug line-clamp-2">
+                                  {title}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {hasDist && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-extrabold text-[10px] border border-emerald-200/80 flex items-center gap-0.5" title="Distanza dalla tua posizione">
+                                      📍 {sug.distanceKm < 1 ? `${Math.round(sug.distanceKm * 1000)} m` : `${sug.distanceKm.toFixed(1)} km`}
+                                    </span>
+                                  )}
+                                  {sug.rating && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] border border-amber-200/80 flex items-center gap-0.5">
+                                      ⭐ {normalizeRatingTo10(sug.rating)}/10
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-slate-500 font-medium leading-normal mt-1 line-clamp-2">
+                                {fullAddr}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                  isCity
+                                    ? "bg-sky-50 text-sky-700 border border-sky-200/80"
+                                    : isGoogle
+                                    ? "bg-blue-50 text-blue-700 border border-blue-200/80"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}>
+                                  {isCity ? "Città / Comune" : isGoogle ? "Google Places" : "Mappa"}
+                                </span>
+                                {(() => {
+                                  const detected = detectPlaceCategoryAndLabel(sug);
+                                  if (detected.categoryLabel) {
+                                    return (
+                                      <span className={`text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded border truncate ${
+                                        detected.isCity || isCity
+                                          ? "text-sky-800 bg-sky-100/80 border-sky-200/60"
+                                          : "text-emerald-800 bg-emerald-100/80 border-emerald-200/60"
+                                      }`}>
+                                        • {detected.categoryLabel}
+                                      </span>
+                                    );
+                                  }
+                                  if (sug.types && sug.types.length > 0) {
+                                    return (
+                                      <span className="text-[9.5px] text-slate-400 font-semibold truncate capitalize">
+                                        • {sug.types[0].replace(/_/g, " ")}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-              {addressSearchError && (
-                <div className="bg-white/95 px-3 py-1.5 rounded-xl text-[10px] text-red-600 font-bold border border-red-200 shadow-sm mt-1 flex items-center gap-1">
-                  <span>❌ {addressSearchError}</span>
-                </div>
+                )}
+                {addressSearchError && (
+                  <div className="bg-white/95 px-3 py-1.5 rounded-xl text-[10px] text-red-600 font-bold border border-red-200 shadow-sm mt-1 flex items-center gap-1">
+                    <span>❌ {addressSearchError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Pulsante Attiva GPS Tutto a Destra con stessa altezza h-9 */}
+              <button
+                type="button"
+                onClick={() => onGPSEnabledChange(!isGPSEnabled)}
+                className={`h-9 px-3 rounded-xl shadow-md font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
+                  isGPSEnabled
+                    ? "bg-blue-600 text-white border-white animate-pulse"
+                    : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-50 border-slate-200"
+                }`}
+                title={isGPSEnabled ? "Disattiva GPS" : "Attiva GPS"}
+              >
+                <Compass
+                  className={`w-3.5 h-3.5 ${isGPSEnabled ? "text-white" : "text-[#3E4A35]"}`}
+                />
+                <span className="hidden sm:inline">{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
+              </button>
+
+              {/* Pulsante Chiusura Mappa (X) */}
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="h-9 px-2.5 sm:px-3.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black rounded-xl shadow-lg border-2 border-white transition-all flex items-center justify-center gap-1 shrink-0 cursor-pointer text-xs"
+                  title="Chiudi Mappa e torna indietro"
+                >
+                  <X className="w-4 h-4 text-white" />
+                  <span className="hidden sm:inline">Chiudi</span>
+                </button>
               )}
             </div>
 
-            {/* Pulsante Attiva GPS Tutto a Destra con stessa altezza h-9 */}
-            <button
-              type="button"
-              onClick={() => onGPSEnabledChange(!isGPSEnabled)}
-              className={`h-9 px-3 rounded-xl shadow-md font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
-                isGPSEnabled
-                  ? "bg-blue-600 text-white border-white animate-pulse"
-                  : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-50 border-slate-200"
-              }`}
-              title={isGPSEnabled ? "Disattiva GPS" : "Attiva GPS"}
-            >
-              <Compass
-                className={`w-3.5 h-3.5 ${isGPSEnabled ? "text-white" : "text-[#3E4A35]"}`}
-              />
-              <span className="hidden sm:inline">{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
-            </button>
-
-            {/* Pulsante Chiusura Mappa (X) */}
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-9 px-2.5 sm:px-3.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black rounded-xl shadow-lg border-2 border-white transition-all flex items-center justify-center gap-1 shrink-0 cursor-pointer text-xs"
-                title="Chiudi Mappa e torna indietro"
-              >
-                <X className="w-4 h-4 text-white" />
-                <span className="hidden sm:inline">Chiudi</span>
-              </button>
-            )}
-          </div>
-
-          {/* Pulsante di Ricentramento GPS SUBITO SOTTO al pulsante GPS (in alto a destra) */}
-          <div className="absolute top-[52px] sm:top-14 md:top-16 right-2 md:right-3 z-[500] flex flex-col items-end gap-1.5">
-            {isGPSEnabled && userLocation && (
-              <button
-                type="button"
-                onClick={handleCenterOnUser}
-                className="h-9 px-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl shadow-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20 shrink-0"
-                title="Ricentra Mappa sul Camper"
-              >
-                <Navigation className="w-3.5 h-3.5 text-white fill-white" />
-                <span className="hidden sm:inline">Centra Camper</span>
-              </button>
-            )}
-
-            {!userLocation && (
-              <button
-                type="button"
-                onClick={() => {
-                  const map = mapRef.current;
-                  if (map) {
-                    const center = map.getCenter();
-                    let lat = 42.5;
-                    let lng = 12.5;
-                    if (center) {
-                      if (typeof center.lat === "function") {
-                        lat = center.lat();
-                      } else {
-                        lat = Number(center.lat);
+            {/* Row 2: Active Sub-Filter Bars (Sagre, MIMIT Carburante, TomTom Orbis) - Flex-wrap so everything fits 100% inside mobile viewport without cutoff or overlapping */}
+            {(selectedCategories.includes("sagra") ||
+              selectedCategories.includes("distributore") ||
+              showOrbisTrafficMode) && (
+              <div className="flex flex-col gap-1 w-full pointer-events-auto">
+                {/* 1. Barra Sagre (Compatta e a tutto schermo con flex-wrap) */}
+                {selectedCategories.includes("sagra") && (
+                  <div className="flex flex-wrap items-center justify-between gap-1 py-1 px-2 bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-rose-200 w-full">
+                    <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+                      <span className="text-[9.5px] font-black text-rose-700 whitespace-nowrap mr-0.5">
+                        🎪 Sagre:
+                      </span>
+                      {[
+                        { id: "all", label: "Tutte" },
+                        { id: "weekend", label: "📅 Weekend" },
+                        { id: "estate", label: "☀️ Estate" },
+                        { id: "primavera", label: "🌸 Primavera" },
+                        { id: "natale", label: "🎄 Natale" },
+                      ].map((pill) => (
+                        <button
+                          key={pill.id}
+                          type="button"
+                          onClick={() => {
+                            setSagraPeriodMode(pill.id as any);
+                            setSagraSelectedMonth(0);
+                            setSagraStartDate("");
+                            setSagraEndDate("");
+                          }}
+                          className={`px-1.5 py-0.5 rounded-lg text-[9.5px] font-black whitespace-nowrap cursor-pointer transition-all ${
+                            sagraPeriodMode === pill.id && !sagraSelectedMonth && !sagraStartDate
+                              ? "bg-rose-600 text-white shadow-2xs"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {pill.label}
+                        </button>
+                      ))}
+                      <select
+                        value={sagraSelectedMonth}
+                        onChange={(e) => {
+                          const m = Number(e.target.value);
+                          setSagraSelectedMonth(m);
+                          if (m > 0) setSagraPeriodMode("custom");
+                        }}
+                        className="px-1.5 py-0.5 rounded-lg bg-amber-50 border border-amber-300 text-[9.5px] font-black text-amber-950 outline-none cursor-pointer shrink-0"
+                      >
+                        <option value={0}>📆 Mese</option>
+                        <option value={4}>Aprile</option>
+                        <option value={5}>Maggio</option>
+                        <option value={6}>Giugno</option>
+                        <option value={7}>Luglio</option>
+                        <option value={8}>Agosto</option>
+                        <option value={9}>Settembre</option>
+                        <option value={10}>Ottobre</option>
+                        <option value={11}>Novembre</option>
+                        <option value={12}>Dicembre</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleFetchLiveSagreOnMap}
+                        disabled={isFetchingLiveSagreMap}
+                        className="px-1.5 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[9.5px] font-black whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 ${isFetchingLiveSagreMap ? "animate-spin" : ""}`} />
+                        <span>Live</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedCategories((prev) => prev.filter((c) => c !== "sagra"))
                       }
-                      if (typeof center.lng === "function") {
-                        lng = center.lng();
-                      } else {
-                        lng = Number(center.lng);
+                      className="w-5 h-5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 cursor-pointer ml-0.5"
+                      title="Nascondi filtro Sagre"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {/* 2. Barra MIMIT Osservaprezzi Carburanti (Compatta e a tutto schermo con flex-wrap) */}
+                {selectedCategories.includes("distributore") && (
+                  <div className="flex flex-wrap items-center justify-between gap-1 py-1 px-2 bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-orange-300 w-full">
+                    <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+                      <span className="text-[9.5px] font-black text-orange-800 whitespace-nowrap mr-0.5">
+                        ⛽ MIMIT:
+                      </span>
+                      {[
+                        { id: "gasolio", label: "🛢️ Gasolio" },
+                        { id: "benzina", label: "⛽ Benzina" },
+                        { id: "gpl", label: "🔵 GPL" },
+                      ].map((ft) => (
+                        <button
+                          key={ft.id}
+                          type="button"
+                          onClick={() => {
+                            setFuelTypeFilter(ft.id as any);
+                            handleFetchLiveFuelStations(undefined, undefined, ft.id as any);
+                          }}
+                          className={`px-1.5 py-0.5 rounded-lg text-[9.5px] font-black whitespace-nowrap cursor-pointer transition-all ${
+                            fuelTypeFilter === ft.id
+                              ? "bg-orange-600 text-white shadow-2xs"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {ft.label}
+                        </button>
+                      ))}
+                      {minFuelPriceInZone !== null && (
+                        <span className="px-1.5 py-0.5 rounded-lg bg-emerald-600 text-white text-[9.5px] font-black whitespace-nowrap shadow-2xs">
+                          🏆 €{minFuelPriceInZone.toFixed(3)}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleFetchLiveFuelStations()}
+                        disabled={isFetchingFuelStations}
+                        className="px-1.5 py-0.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[9.5px] font-black whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 ${isFetchingFuelStations ? "animate-spin" : ""}`} />
+                        <span>{isFetchingFuelStations ? "..." : "Aggiorna"}</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedCategories((prev) => prev.filter((c) => c !== "distributore"))
                       }
-                    }
-                    window.dispatchEvent(
-                      new CustomEvent("simulate-camper-location", {
-                        detail: { lat, lng },
-                      }),
-                    );
-                  }
-                }}
-                className="h-8 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md font-extrabold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border border-amber-500 shrink-0"
-                title="Posiziona il camper manualmente al centro attuale della mappa"
-              >
-                📍 Posiziona Camper Qui
-              </button>
-            )}
-          </div>
+                      className="w-5 h-5 rounded-full bg-orange-50 hover:bg-orange-100 text-orange-700 flex items-center justify-center shrink-0 cursor-pointer ml-0.5"
+                      title="Nascondi filtro Distributori"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
 
-          {/* Pulsanti + e - (Zoom) con Pulsante dei Livelli SUBITO SOTTO (Floating a sinistra) */}
-          <div className="absolute top-[52px] sm:top-14 md:top-16 left-2 md:left-3 z-[500] flex flex-col items-center gap-1.5">
-            {/* Zoom In (+) */}
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              className="w-9 h-9 bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 rounded-xl shadow-md border border-slate-200/90 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
-              title="Ingrandisci Zoom (+)"
-            >
-              <Plus className="w-4 h-4 text-slate-700" />
-            </button>
-
-            {/* Zoom Out (-) */}
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              className="w-9 h-9 bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 rounded-xl shadow-md border border-slate-200/90 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
-              title="Riduci Zoom (-)"
-            >
-              <Minus className="w-4 h-4 text-slate-700" />
-            </button>
-
-            {/* Pulsante dei Livelli Subito Sotto ai Pulsanti + e - (Visibile solo con Google Maps attivo) */}
-            {settings?.mapEngine === "google" && hasValidKey && isOnline && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowMapTypeMenu(!showMapTypeMenu)}
-                  className={`w-9 h-9 rounded-xl shadow-md flex items-center justify-center transition-all cursor-pointer border ${
-                    showMapTypeMenu || mapTypeId !== "roadmap"
-                      ? "bg-[#3E4A35] text-white border-transparent"
-                      : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-100 border-slate-200/90"
-                  }`}
-                  title="Cambia visualizzazione mappa (Livelli)"
-                >
-                  <Layers className="w-4 h-4" />
-                </button>
-
-                {/* Menu dei Livelli */}
-                {showMapTypeMenu && (
-                  <div className="absolute top-0 left-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-1.5 w-36 z-[1100] animate-in fade-in slide-in-from-left-2 duration-150">
-                    <div className="px-2 py-1 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100 mb-1">
-                      Tipo Mappa
+                {/* 3. Barra TomTom Orbis Traffico & Ostacoli Live (Compatta e a tutto schermo con flex-wrap) */}
+                {showOrbisTrafficMode && (
+                  <div className="flex flex-wrap items-center justify-between gap-1 py-1 px-2 bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-amber-300 w-full">
+                    <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+                      <span className="text-[9.5px] font-black text-slate-900 whitespace-nowrap mr-0.5">
+                        🚦 Orbis:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowTrafficFlowTiles(!showTrafficFlowTiles)}
+                        className={`px-1.5 py-0.5 rounded-lg text-[9.5px] font-black whitespace-nowrap cursor-pointer transition-all ${
+                          showTrafficFlowTiles
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {showTrafficFlowTiles ? "🟢 Flusso ON" : "⚪ Flusso OFF"}
+                      </button>
+                      {[
+                        { id: "all", label: `Tutti (${osmObstacles.length})` },
+                        { id: "sagoma", label: "⛔ Sagoma" },
+                        { id: "traffic", label: "🚧 Cantieri/Code" },
+                        { id: "incline", label: "⛰️ Pendenze" },
+                      ].map((pill) => (
+                        <button
+                          key={pill.id}
+                          type="button"
+                          onClick={() => setOrbisFilterType(pill.id as any)}
+                          className={`px-1.5 py-0.5 rounded-lg text-[9.5px] font-black whitespace-nowrap cursor-pointer transition-all ${
+                            orbisFilterType === pill.id
+                              ? "bg-slate-900 text-white shadow-2xs"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {pill.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setIsOsmReportOpen(true)}
+                        className="px-1.5 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[9.5px] font-black whitespace-nowrap cursor-pointer"
+                      >
+                        🚩 Segnala
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetLat = mapCenterCoords?.lat ?? userLocation?.lat ?? 41.9028;
+                          const targetLng = mapCenterCoords?.lng ?? userLocation?.lng ?? 12.4964;
+                          loadOsmObstaclesOnMap(targetLat, targetLng, true);
+                        }}
+                        disabled={loadingOsmObstacles}
+                        className="px-1.5 py-0.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-[9.5px] font-black whitespace-nowrap flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 ${loadingOsmObstacles ? "animate-spin" : ""}`} />
+                        <span>{loadingOsmObstacles ? "..." : "Aggiorna"}</span>
+                      </button>
                     </div>
                     <button
                       type="button"
                       onClick={() => {
-                        setMapTypeId("roadmap");
-                        setShowMapTypeMenu(false);
+                        setShowOrbisTrafficMode(false);
+                        setShowOsmObstacles(false);
                       }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                        mapTypeId === "roadmap"
-                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                          : "text-slate-700 hover:bg-slate-50"
-                      }`}
+                      className="w-5 h-5 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 cursor-pointer ml-0.5"
+                      title="Nascondi barra Traffico & Ostacoli"
                     >
-                      🗺️ Stradale
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMapTypeId("satellite");
-                        setShowMapTypeMenu(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                        mapTypeId === "satellite"
-                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                          : "text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      🛰️ Satellitare
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMapTypeId("hybrid");
-                        setShowMapTypeMenu(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                        mapTypeId === "hybrid"
-                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                          : "text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      🛣️ Ibrido
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMapTypeId("terrain");
-                        setShowMapTypeMenu(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
-                        mapTypeId === "terrain"
-                          ? "bg-[#3E4A35]/10 text-[#3E4A35]"
-                          : "text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      ⛰️ Terreno
+                      <X className="w-3 h-3" />
                     </button>
                   </div>
                 )}
               </div>
             )}
+
+            {/* Row 3: Pulsanti + / - (Zoom a sinistra) e Ricentramento GPS (a destra) che scorrono automaticamente sotto le barre attive senza mai essere coperti */}
+            <div className="flex items-start justify-between w-full pointer-events-none">
+              {/* Left: Pulsanti + e - (Zoom) con Pulsante dei Livelli SUBITO SOTTO */}
+              <div className="pointer-events-auto flex flex-col items-center gap-1.5">
+                {/* Zoom In (+) */}
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  className="w-9 h-9 bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 rounded-xl shadow-md border border-slate-200/90 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
+                  title="Ingrandisci Zoom (+)"
+                >
+                  <Plus className="w-4 h-4 text-slate-700" />
+                </button>
+
+                {/* Zoom Out (-) */}
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  className="w-9 h-9 bg-white/95 backdrop-blur-md hover:bg-slate-100 text-slate-800 rounded-xl shadow-md border border-slate-200/90 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
+                  title="Riduci Zoom (-)"
+                >
+                  <Minus className="w-4 h-4 text-slate-700" />
+                </button>
+
+                {/* Pulsante dei Livelli Subito Sotto ai Pulsanti + e - (Visibile solo con Google Maps attivo) */}
+                {settings?.mapEngine === "google" && hasValidKey && isOnline && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowMapTypeMenu(!showMapTypeMenu)}
+                      className={`w-9 h-9 rounded-xl shadow-md flex items-center justify-center transition-all cursor-pointer border ${
+                        showMapTypeMenu || mapTypeId !== "roadmap"
+                          ? "bg-[#3E4A35] text-white border-transparent"
+                          : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-100 border-slate-200/90"
+                      }`}
+                      title="Cambia visualizzazione mappa (Livelli)"
+                    >
+                      <Layers className="w-4 h-4" />
+                    </button>
+
+                    {/* Menu dei Livelli */}
+                    {showMapTypeMenu && (
+                      <div className="absolute top-0 left-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 p-1.5 w-36 z-[1100] animate-in fade-in slide-in-from-left-2 duration-150">
+                        <div className="px-2 py-1 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100 mb-1">
+                          Tipo Mappa
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMapTypeId("roadmap");
+                            setShowMapTypeMenu(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                            mapTypeId === "roadmap"
+                              ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          🗺️ Stradale
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMapTypeId("satellite");
+                            setShowMapTypeMenu(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                            mapTypeId === "satellite"
+                              ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          🛰️ Satellitare
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMapTypeId("hybrid");
+                            setShowMapTypeMenu(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                            mapTypeId === "hybrid"
+                              ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          🛣️ Ibrido
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMapTypeId("terrain");
+                            setShowMapTypeMenu(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all flex items-center gap-1.5 ${
+                            mapTypeId === "terrain"
+                              ? "bg-[#3E4A35]/10 text-[#3E4A35]"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          ⛰️ Terreno
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Pulsante di Ricentramento GPS */}
+              <div className="pointer-events-auto flex flex-col items-end gap-1.5">
+                {isGPSEnabled && userLocation && (
+                  <button
+                    type="button"
+                    onClick={handleCenterOnUser}
+                    className="h-9 px-3 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl shadow-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-white/20 shrink-0"
+                    title="Ricentra Mappa sul Camper"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-white fill-white" />
+                    <span className="hidden sm:inline">Centra Camper</span>
+                  </button>
+                )}
+
+                {!userLocation && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const map = mapRef.current;
+                      if (map) {
+                        const center = map.getCenter();
+                        let lat = 42.5;
+                        let lng = 12.5;
+                        if (center) {
+                          if (typeof center.lat === "function") {
+                            lat = center.lat();
+                          } else {
+                            lat = Number(center.lat);
+                          }
+                          if (typeof center.lng === "function") {
+                            lng = center.lng();
+                          } else {
+                            lng = Number(center.lng);
+                          }
+                        }
+                        window.dispatchEvent(
+                          new CustomEvent("simulate-camper-location", {
+                            detail: { lat, lng },
+                          }),
+                        );
+                      }
+                    }}
+                    className="h-8 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md font-extrabold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer border border-amber-500 shrink-0"
+                    title="Posiziona il camper manualmente al centro attuale della mappa"
+                  >
+                    📍 Posiziona Camper Qui
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Scheda informativa per la puntina temporanea personalizzata */}
@@ -7265,77 +7956,92 @@ out center;`;
         )}
       </div>
 
-      {/* Mobile Fullscreen Details Page */}
-      {isMobileDetailsOpen && selectedPlace && (
-        <div className="fixed inset-0 bg-white z-[9999] flex flex-col animate-slide-up md:hidden">
-          {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100 bg-[#3E4A35] text-white shrink-0 shadow-sm">
-            <button
-              onClick={() => {
-                setIsMobileDetailsOpen(false);
-                setShowSmartRoute(false);
-              }}
-              className="p-1.5 hover:bg-white/10 rounded-lg transition-all"
-            >
-              <ArrowLeft className="w-5 h-5 text-white" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-extrabold text-sm truncate">
-                {selectedPlace.name}
-              </h3>
-              <p className="text-[10px] text-white/80 truncate">
-                {selectedPlace.address}
-              </p>
+      {/* Mobile Fullscreen Details Page (Portaled to document.body to escape main z-10 isolate and keep 58px bottom nav visible) */}
+      {isMobileDetailsOpen &&
+        selectedPlace &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed top-0 left-0 right-0 bottom-[58px] bg-white z-[45] flex flex-col animate-slide-up md:hidden">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-[#3E4A35] text-white shrink-0 shadow-md z-30">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileDetailsOpen(false);
+                  setShowSmartRoute(false);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl transition-all text-xs font-black cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4 text-white" />
+                <span>Mappa</span>
+              </button>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-extrabold text-sm truncate">
+                  {selectedPlace.name}
+                </h3>
+                <p className="text-[10px] text-white/80 truncate">
+                  {selectedPlace.address}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileDetailsOpen(false);
+                  setSelectedPlace(null);
+                  setShowSmartRoute(false);
+                }}
+                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all text-white cursor-pointer shrink-0"
+                title="Chiudi e torna alla mappa"
+                aria-label="Chiudi e torna alla mappa"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsMobileDetailsOpen(false);
-                setSelectedPlace(null);
-                setShowSmartRoute(false);
-              }}
-              className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-white/90 hover:text-white"
-              title="Chiudi e torna alla mappa"
-              aria-label="Chiudi e torna alla mappa"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
 
-          {/* Scrolling Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-8">
-            {/* Image & Main Info Card */}
-            <div className="space-y-3">
-              {selectedPlace.id !== "current_location" && (
-                <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 aspect-video bg-slate-100 group/img">
-                {allAlbumPhotos.length > 0 ? (
-                  <img
-                    src={allAlbumPhotos[0]}
-                    alt={selectedPlace.name}
-                    className="w-full h-full object-cover animate-fade-in"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : isImageFallback(
-                  selectedPlace.category,
-                  selectedPlace.imageUrl,
-                ) ? (
-                  <CategoryIllustration
-                    category={selectedPlace.category}
-                    feeStatus={selectedPlace.feeStatus as any}
-                    serviceSubtype={selectedPlace.serviceSubtype}
-                    categoryLabel={selectedPlace.categoryLabel}
-                    name={selectedPlace.name}
-                    size="hero"
-                    className="w-full h-full object-cover animate-fade-in"
-                  />
-                ) : (
-                  <img
-                    src={resolveImage(
-                      selectedPlace.category,
-                      selectedPlace.imageUrl,
-                    )}
-                    alt={selectedPlace.name}
-                    className="w-full h-full object-cover animate-fade-in"
+            {/* Scrolling Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-8 min-h-0">
+              {/* Image & Main Info Card */}
+              <div className="space-y-3">
+                {selectedPlace.id !== "current_location" && (
+                  <div
+                    className={`relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 ${
+                      selectedPlace.category === "sagra"
+                        ? "h-64 bg-slate-950"
+                        : "aspect-video bg-slate-100"
+                    } group/img`}
+                  >
+                  {allAlbumPhotos.length > 0 ? (
+                    <img
+                      src={allAlbumPhotos[0]}
+                      alt={selectedPlace.name}
+                      className={`w-full h-full ${
+                        selectedPlace.category === "sagra" ? "object-contain" : "object-cover"
+                      } animate-fade-in`}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : isImageFallback(
+                    selectedPlace.category,
+                    selectedPlace.imageUrl,
+                  ) ? (
+                    <CategoryIllustration
+                      category={selectedPlace.category}
+                      feeStatus={selectedPlace.feeStatus as any}
+                      serviceSubtype={selectedPlace.serviceSubtype}
+                      categoryLabel={selectedPlace.categoryLabel}
+                      name={selectedPlace.name}
+                      size="hero"
+                      className="w-full h-full object-cover animate-fade-in"
+                    />
+                  ) : (
+                    <img
+                      src={resolveImage(
+                        selectedPlace.category,
+                        selectedPlace.imageUrl,
+                      )}
+                      alt={selectedPlace.name}
+                      className={`w-full h-full ${
+                        selectedPlace.category === "sagra" ? "object-contain" : "object-cover"
+                      } animate-fade-in`}
                     referrerPolicy={
                       resolveImage(
                         selectedPlace.category,
@@ -8310,7 +9016,8 @@ out center;`;
             </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- NAVIGATOR SELECTOR MODAL --- */}
@@ -10259,6 +10966,8 @@ export function LeafletOfflineMap({
   onImportOSM,
   isImporting = false,
   onCenterChange,
+  showTrafficFlow = false,
+  orbisObstacles = [],
 }: {
   places: Place[];
   userLocation: { lat: number; lng: number } | null;
@@ -10279,6 +10988,8 @@ export function LeafletOfflineMap({
   onImportOSM?: () => void;
   isImporting?: boolean;
   onCenterChange?: (lat: number, lng: number) => void;
+  showTrafficFlow?: boolean;
+  orbisObstacles?: OSMObstacle[];
 }) {
   const settings = useAppSettings();
   const mapRef = React.useRef<L.Map | null>(null);
@@ -10286,6 +10997,7 @@ export function LeafletOfflineMap({
   const [leafletMapInstance, setLeafletMapInstance] = React.useState<L.Map | null>(null);
   const [boundsTick, setBoundsTick] = React.useState<number>(0);
   const circleLayerRef = React.useRef<L.Circle | null>(null);
+  const trafficTileLayerRef = React.useRef<L.TileLayer | null>(null);
 
   const onCenterChangeRef = React.useRef(onCenterChange);
   React.useEffect(() => {
@@ -10518,6 +11230,42 @@ export function LeafletOfflineMap({
     };
   }, []); // Run ONCE on mount
 
+  // 1b) Toggle Live Traffic Flow Overlay Tile Layer (TomTom Orbis / Live Traffic)
+  React.useEffect(() => {
+    if (!leafletMapInstance) return;
+    if (trafficTileLayerRef.current) {
+      try {
+        trafficTileLayerRef.current.remove();
+      } catch {}
+      trafficTileLayerRef.current = null;
+    }
+    if (showTrafficFlow && isOnline) {
+      const tLayer = L.tileLayer(resolveApiUrl("/api/tomtom-traffic-tile/{z}/{x}/{y}.png"), {
+        maxZoom: 19,
+        opacity: 0.92,
+        zIndex: 450,
+      });
+      tLayer.on("tileerror", (errEvent: any) => {
+        const tile = errEvent?.tile;
+        const coords = errEvent?.coords;
+        if (tile && coords && !tile._directTrafficFallback) {
+          tile._directTrafficFallback = true;
+          tile.src = `https://mt0.google.com/vt?lyrs=traffic&x=${coords.x}&y=${coords.y}&z=${coords.z}`;
+        }
+      });
+      tLayer.addTo(leafletMapInstance);
+      trafficTileLayerRef.current = tLayer;
+    }
+    return () => {
+      if (trafficTileLayerRef.current) {
+        try {
+          trafficTileLayerRef.current.remove();
+        } catch {}
+        trafficTileLayerRef.current = null;
+      }
+    };
+  }, [leafletMapInstance, showTrafficFlow, isOnline]);
+
   // 2) Update Markers when data changes
   React.useEffect(() => {
     if (!mapRef.current) return;
@@ -10719,6 +11467,80 @@ export function LeafletOfflineMap({
 
       markersRef.current.push(marker);
     });
+
+    // Add TomTom Orbis & OSM Obstacles / Traffic Incidents Markers on Leaflet Map
+    if (Array.isArray(orbisObstacles) && orbisObstacles.length > 0) {
+      orbisObstacles.slice(0, 80).forEach((obs) => {
+        const isCritical = obs.isViolation;
+        let symbol = "📐";
+        let badgeLabel = `${obs.value}m`;
+        let bgHex = isCritical ? "#DC2626" : "#F59E0B";
+
+        if (obs.type === "height") {
+          symbol = isCritical ? "⛔" : "📐";
+          badgeLabel = `${obs.value}m`;
+        } else if (obs.type === "width") {
+          symbol = "↔️";
+          badgeLabel = `${obs.value}m`;
+        } else if (obs.type === "weight") {
+          symbol = "⚖️";
+          badgeLabel = `${obs.value}t`;
+        } else if (obs.type === "roadworks") {
+          symbol = "🚧";
+          badgeLabel = "LAVORI";
+          bgHex = "#EA580C";
+        } else if (obs.type === "accident") {
+          symbol = "🚨";
+          badgeLabel = "INCID.";
+          bgHex = "#DC2626";
+        } else if (obs.type === "jam") {
+          symbol = "🚗";
+          badgeLabel = obs.delayMinutes ? `+${obs.delayMinutes}m` : "CODA";
+          bgHex = "#D97706";
+        } else if (obs.type === "closure") {
+          symbol = "⛔";
+          badgeLabel = "CHIUSA";
+          bgHex = "#991B1B";
+        } else if (obs.type === "incline") {
+          symbol = "⛰️";
+          badgeLabel = `${obs.value}%`;
+          bgHex = "#7C3AED";
+        }
+
+        const obsIcon = L.divIcon({
+          className: "custom-div-icon",
+          html: `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:44px;cursor:pointer;">
+              <div style="width:${isCritical ? 30 : 26}px;height:${isCritical ? 30 : 26}px;border-radius:9999px;background:${bgHex};border:2px solid #FFFFFF;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);font-size:${isCritical ? 13 : 11}px;">
+                <span>${symbol}</span>
+              </div>
+              <div style="font-size:8.5px;font-weight:900;background:#0f172a;color:#FFFFFF;border-radius:4px;padding:1px 4px;margin-top:1px;border:1px solid #334155;white-space:nowrap;">
+                ${badgeLabel}
+              </div>
+            </div>
+          `,
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+        });
+
+        const obsMarker = L.marker([Number(obs.lat), Number(obs.lng)], {
+          icon: obsIcon,
+          zIndexOffset: isCritical ? 1400 : 950,
+        }).addTo(map);
+
+        obsMarker.on("click", () => {
+          window.dispatchEvent(
+            new CustomEvent("show-toast", {
+              detail: {
+                message: `${obs.name} · 📍 ${obs.roadName}${obs.description ? ` — ${obs.description}` : ""}`,
+              },
+            }),
+          );
+        });
+
+        markersRef.current.push(obsMarker);
+      });
+    }
   }, [
     places,
     boundsTick,
@@ -10731,6 +11553,7 @@ export function LeafletOfflineMap({
     settings?.shareLocation,
     searchResultPins,
     onSelectSuggestion,
+    orbisObstacles,
   ]);
 
   // Draw search radius circles for "Intorno a me" and "Intorno a sosta"
@@ -10777,18 +11600,6 @@ export function LeafletOfflineMap({
 
   return (
     <div className="w-full h-full relative">
-      {/* Visual top indicator showing total places and fast OSM viewport scan */}
-      <div className="absolute top-[52px] sm:top-14 md:top-16 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-1.5 select-none pointer-events-auto max-w-[calc(100vw-180px)]">
-        <div className="bg-[#3E4A35] text-white px-3 py-1 rounded-full text-[9.5px] sm:text-[10.5px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg border border-white/20 whitespace-nowrap overflow-hidden max-w-full">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          <span className="truncate">
-            {indicatorTitle ||
-              (isOnline
-                ? `📍 ${places.length.toLocaleString()} SOSTE NEL DIAMETRO DI 10 KM 🗺️`
-                : `📍 ${places.length.toLocaleString()} SOSTE OFFLINE NEL DIAMETRO DI 10 KM 🗺️`)}
-          </span>
-        </div>
-      </div>
       <div
         ref={containerRef}
         className="w-full h-full animate-fade-in"

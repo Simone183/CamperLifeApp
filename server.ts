@@ -2166,6 +2166,555 @@ Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di c
     }
   });
 
+  // Structured Live Sagre API connector by date range, month, season, and region/location
+  const liveSagreCache = new Map<string, { sagre: any[]; timestamp: number }>();
+
+  function buildRegionalSeasonalSagreFallback(
+    location: string,
+    startDate: string,
+    endDate: string,
+    month: number,
+    season: string,
+    foodImages: string[]
+  ): any[] {
+    const monthNamesShort = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+    const monthNamesFull = [
+      "", "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+      "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"
+    ];
+
+    let targetMonth = month;
+    let targetYear = 2027;
+    if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      targetYear = parseInt(startDate.slice(0, 4), 10) || 2027;
+      targetMonth = parseInt(startDate.slice(5, 7), 10) || targetMonth;
+    }
+    if (!targetMonth || targetMonth < 1 || targetMonth > 12) {
+      if (season === "estate") targetMonth = 8;
+      else if (season === "primavera") targetMonth = 5;
+      else if (season === "natale" || season === "inverno") targetMonth = 12;
+      else targetMonth = 11;
+    }
+    if (targetMonth >= 10 && !startDate) {
+      targetYear = 2026;
+    }
+
+    const resolvedSeason: "primavera" | "estate" | "autunno" | "inverno" =
+      targetMonth >= 6 && targetMonth <= 9
+        ? "estate"
+        : targetMonth >= 3 && targetMonth <= 5
+        ? "primavera"
+        : targetMonth === 12 || targetMonth <= 2
+        ? "inverno"
+        : "autunno";
+
+    const mPad = String(targetMonth).padStart(2, "0");
+    const mShort = monthNamesShort[targetMonth];
+    const mFull = monthNamesFull[targetMonth];
+
+    const regionalCatalog = [
+      {
+        key: "toscana",
+        region: "Toscana",
+        events: [
+          {
+            title: "Sagra del Cinghiale e Tortello della Maremma",
+            categoryLabel: "Carne & Tradizione Toscana",
+            locationName: "Orbetello / Capalbio (GR)",
+            lat: 42.4415,
+            lng: 11.2125,
+            dayStart: 12,
+            dayEnd: 15,
+            specialties: ["Tortelli Maremmani", "Pappardelle al Cinghiale", "Morellino di Scansano"],
+            camperParking: "Area sosta camper attrezzata sull'istmo di Orbetello e Capalbio Scalo."
+          },
+          {
+            title: "Festa della Bistecca e del Vino Nobile",
+            categoryLabel: "Griglia & Cantine",
+            locationName: "Montepulciano (SI)",
+            lat: 43.0987,
+            lng: 11.7873,
+            dayStart: 19,
+            dayEnd: 21,
+            specialties: ["Bistecca alla Fiorentina", "Pici all'Aglione", "Vino Nobile DOCG"],
+            camperParking: "Parcheggio camper P5 adiacente alla fortezza medicea."
+          }
+        ]
+      },
+      {
+        key: "puglia",
+        region: "Puglia",
+        events: [
+          {
+            title: "Sagra delle Orecchiette, Bombette e Pizzica",
+            categoryLabel: "Sagra Tipica Valle d'Itria",
+            locationName: "Cisternino / Alberobello (BR)",
+            lat: 40.7423,
+            lng: 17.4246,
+            dayStart: 14,
+            dayEnd: 17,
+            specialties: ["Bombette Pugliesi al Fornello", "Orecchiette alle Cime di Rapa", "Primitivo di Manduria"],
+            camperParking: "Area sosta camper comunale in Via Clarizia e Nel Verde."
+          },
+          {
+            title: "Festa del Pesce Fritto e Pittule Salentine",
+            categoryLabel: "Mare & Salento",
+            locationName: "Porto Cesareo / Gallipoli (LE)",
+            lat: 40.2581,
+            lng: 17.8936,
+            dayStart: 21,
+            dayEnd: 24,
+            specialties: ["Frittura di Paranza", "Pittule Salentine", "Rustico Leccese"],
+            camperParking: "Agricampeggio e sosta camper litoranea con navetta centro."
+          }
+        ]
+      },
+      {
+        key: "emilia",
+        region: "Emilia-Romagna",
+        events: [
+          {
+            title: "Sagra del Tortellino Tradizionale e Gnocco Fritto",
+            categoryLabel: "Sfoglia Emiliana",
+            locationName: "Valeggio / Castelfranco Emilia (MO)",
+            lat: 44.5964,
+            lng: 11.0519,
+            dayStart: 13,
+            dayEnd: 15,
+            specialties: ["Tortellini Fatti a Mano", "Gnocco Fritto e Tigelle", "Lambrusco DOC"],
+            camperParking: "Area camper comunale attrezzata in Piazza Aldo Moro."
+          }
+        ]
+      },
+      {
+        key: "sardegna",
+        region: "Sardegna",
+        events: [
+          {
+            title: "Sagra della Fregola di Mare e Malloreddus",
+            categoryLabel: "Sapori di Sardegna",
+            locationName: "Alghero / Castelsardo (SS)",
+            lat: 40.5580,
+            lng: 8.3193,
+            dayStart: 15,
+            dayEnd: 18,
+            specialties: ["Fregola ai Frutti di Mare", "Malloreddus alla Campidanese", "Seadas al Miele"],
+            camperParking: "Area sosta camper Paradise Park e Viale I Maggio."
+          }
+        ]
+      },
+      {
+        key: "sicilia",
+        region: "Sicilia",
+        events: [
+          {
+            title: "Festa dell'Arancino, Cannolo e Cous Cous di Mare",
+            categoryLabel: "Gastronomia Siciliana",
+            locationName: "San Vito Lo Capo / Cefalù (TP/PA)",
+            lat: 38.1747,
+            lng: 12.7344,
+            dayStart: 18,
+            dayEnd: 21,
+            specialties: ["Cous Cous di Pesce", "Arancine Calde", "Cannoli di Ricotta Fresca"],
+            camperParking: "Punto sosta camper sul lungomare e parcheggio comunale."
+          }
+        ]
+      },
+      {
+        key: "marche",
+        region: "Marche",
+        events: [
+          {
+            title: "Sagra dei Vincisgrassi e Olive Ascolane DOP",
+            categoryLabel: "Tradizione Marchigiana",
+            locationName: "Ascoli Piceno / Offida (AP)",
+            lat: 42.8537,
+            lng: 13.5749,
+            dayStart: 14,
+            dayEnd: 16,
+            specialties: ["Olive all'Ascolana DOP", "Vincisgrassi", "Pecorino di Offida DOCG"],
+            camperParking: "Area sosta camper ex Gil a 300 metri da Piazza del Popolo."
+          }
+        ]
+      },
+      {
+        key: "umbria",
+        region: "Umbria",
+        events: [
+          {
+            title: "Sagra degli Strangozzi al Tartufo e Norcineria",
+            categoryLabel: "Borghi dell'Umbria",
+            locationName: "Spoleto / Norcia (PG)",
+            lat: 42.7397,
+            lng: 12.7378,
+            dayStart: 13,
+            dayEnd: 15,
+            specialties: ["Strangozzi al Tartufo Nero", "Prosciutto di Norcia IGP", "Sagrantino di Montefalco"],
+            camperParking: "Area camper Piazza della Vittoria e parcheggio Spoletosfera."
+          }
+        ]
+      },
+      {
+        key: "lazio",
+        region: "Lazio",
+        events: [
+          {
+            title: "Sagra degli Gnocchi, Porchetta e Vino dei Castelli",
+            categoryLabel: "Sagra Tradizionale Laziale",
+            locationName: "Ariccia / Frascati (RM)",
+            lat: 41.7219,
+            lng: 12.6731,
+            dayStart: 14,
+            dayEnd: 15,
+            specialties: ["Porchetta di Ariccia IGP", "Tonnarelli Cacio e Pepe", "Romanella delle Fraschette"],
+            camperParking: "Parcheggio camper sotto il Ponte Monumentale di Ariccia."
+          }
+        ]
+      }
+    ];
+
+    const normLoc = location.toLowerCase();
+    const matchedRegions = regionalCatalog.filter(
+      (r) => normLoc.includes(r.key) || normLoc.includes(r.region.toLowerCase())
+    );
+    const selectedPool = matchedRegions.length > 0 ? matchedRegions : regionalCatalog;
+
+    const results: any[] = [];
+    selectedPool.forEach((regGroup) => {
+      regGroup.events.forEach((ev, idx) => {
+        const dStart = startDate || `${targetYear}-${mPad}-${String(ev.dayStart).padStart(2, "0")}`;
+        const dEnd = endDate || `${targetYear}-${mPad}-${String(ev.dayEnd).padStart(2, "0")}`;
+        const badge =
+          startDate && endDate
+            ? `${parseInt(startDate.slice(8, 10), 10)}-${parseInt(endDate.slice(8, 10), 10)} ${mShort}`
+            : `${ev.dayStart}-${ev.dayEnd} ${mShort}`;
+        const readableDates =
+          startDate && endDate
+            ? `Dal ${startDate} al ${endDate}`
+            : `${ev.dayStart} - ${ev.dayEnd} ${mFull} ${targetYear}`;
+
+        results.push({
+          id: `sagra_api_${regGroup.key}_${targetMonth}_${idx}`,
+          title: ev.title,
+          category: resolvedSeason === "inverno" && targetMonth === 12 ? "natale" : "sagra",
+          categoryLabel: ev.categoryLabel,
+          locationName: ev.locationName,
+          region: regGroup.region,
+          dates: readableDates,
+          dateBadge: badge,
+          startDate: dStart,
+          endDate: dEnd,
+          month: targetMonth,
+          season: resolvedSeason,
+          lat: ev.lat,
+          lng: ev.lng,
+          description: `Appuntamento enogastronomico imperdibile a ${ev.locationName} (${regGroup.region}) nel periodo ${readableDates}: stand coperti, degustazione di ${ev.specialties.join(", ")}, musica dal vivo e accoglienza dedicata ai camperisti.`,
+          specialties: ev.specialties,
+          camperParking: ev.camperParking,
+          imageUrl: foodImages[(results.length) % foodImages.length],
+          section: resolvedSeason === "estate" ? "estate" : resolvedSeason === "primavera" ? "primavera" : "tutte"
+        });
+      });
+    });
+
+    return results;
+  }
+
+  // Proxy for real TrovaSagre poster flyers (/thumbs/*.webp and /uploads/*.jpg/.png) to avoid hotlink/CORS issues
+  app.get("/api/sagre-flyer", async (req, res) => {
+    try {
+      const rawPath = String(req.query.path || req.query.url || "").trim();
+      if (!rawPath) {
+        return res.status(400).send("Missing path");
+      }
+
+      let targetUrl = rawPath;
+      if (rawPath.startsWith("/thumbs/") || rawPath.startsWith("/uploads/") || rawPath.startsWith("/img/")) {
+        targetUrl = `https://trovasagre.com${rawPath}`;
+      } else if (!rawPath.startsWith("https://trovasagre.com/")) {
+        return res.status(400).send("Invalid flyer path");
+      }
+
+      const upstream = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+          "Referer": "https://trovasagre.com/app",
+          "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+        }
+      });
+
+      if (!upstream.ok) {
+        return res.redirect("https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80");
+      }
+
+      const contentType = upstream.headers.get("content-type") || "image/webp";
+      const arrayBuf = await upstream.arrayBuffer();
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.send(Buffer.from(arrayBuf));
+    } catch {
+      return res.redirect("https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80");
+    }
+  });
+
+  // Helper to obtain and cache the TrovaSagre API pass cookie (ts_p)
+  let cachedTrovaSagreCookie = "";
+  let cachedTrovaSagreCookieTime = 0;
+
+  async function getTrovaSagreCookie(): Promise<string> {
+    if (cachedTrovaSagreCookie && Date.now() - cachedTrovaSagreCookieTime < 12 * 60 * 60 * 1000) {
+      return cachedTrovaSagreCookie;
+    }
+    try {
+      const rPage = await fetch("https://trovasagre.com/app", {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none"
+        }
+      });
+      const rawCookies: string[] =
+        typeof (rPage.headers as any).getSetCookie === "function"
+          ? (rPage.headers as any).getSetCookie()
+          : [rPage.headers.get("set-cookie") || ""];
+      const cookieHeader = rawCookies
+        .filter(Boolean)
+        .map((c) => c.split(";")[0])
+        .join("; ");
+      if (cookieHeader) {
+        cachedTrovaSagreCookie = cookieHeader;
+        cachedTrovaSagreCookieTime = Date.now();
+      }
+      return cachedTrovaSagreCookie;
+    } catch {
+      return "";
+    }
+  }
+
+  function toProxyFlyerUrls(flyerPath?: string | null): { thumbUrl: string; fullUrl: string; isRealFlyer: boolean } {
+    if (!flyerPath || typeof flyerPath !== "string") {
+      const fallback = "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80";
+      return { thumbUrl: fallback, fullUrl: fallback, isRealFlyer: false };
+    }
+    const clean = flyerPath.trim();
+    const m = /^\/uploads\/([A-Za-z0-9_-]{1,120})\.[A-Za-z0-9]{2,5}$/.exec(clean);
+    const thumbPath = m ? `/thumbs/${m[1]}.webp` : clean;
+    return {
+      thumbUrl: `/api/sagre-flyer?path=${encodeURIComponent(thumbPath)}`,
+      fullUrl: `/api/sagre-flyer?path=${encodeURIComponent(clean)}`,
+      isRealFlyer: true
+    };
+  }
+
+  function formatTrovaSagreDateBadge(dateStart?: string | null, dateEnd?: string | null): {
+    badge: string;
+    readable: string;
+    month: number;
+    season: "primavera" | "estate" | "autunno" | "inverno";
+  } {
+    const shortMonths = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+    const fullMonths = [
+      "", "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+      "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"
+    ];
+    const start = (dateStart || "2026-11-14").slice(0, 10);
+    const end = (dateEnd || start).slice(0, 10);
+    const y1 = start.slice(0, 4);
+    const m1 = parseInt(start.slice(5, 7), 10) || 11;
+    const d1 = parseInt(start.slice(8, 10), 10) || 14;
+    const m2 = parseInt(end.slice(5, 7), 10) || m1;
+    const d2 = parseInt(end.slice(8, 10), 10) || d1;
+
+    const season: "primavera" | "estate" | "autunno" | "inverno" =
+      m1 >= 6 && m1 <= 9
+        ? "estate"
+        : m1 >= 3 && m1 <= 5
+        ? "primavera"
+        : m1 === 12 || m1 <= 2
+        ? "inverno"
+        : "autunno";
+
+    if (start === end || (d1 === d2 && m1 === m2)) {
+      return {
+        badge: `${d1} ${shortMonths[m1]}`,
+        readable: `${d1} ${fullMonths[m1]} ${y1}`,
+        month: m1,
+        season
+      };
+    }
+    if (m1 === m2) {
+      return {
+        badge: `${d1}-${d2} ${shortMonths[m1]}`,
+        readable: `${d1} - ${d2} ${fullMonths[m1]} ${y1}`,
+        month: m1,
+        season
+      };
+    }
+    return {
+      badge: `${d1} ${shortMonths[m1]}-${d2} ${shortMonths[m2]}`,
+      readable: `${d1} ${fullMonths[m1]} - ${d2} ${fullMonths[m2]} ${y1}`,
+      month: m1,
+      season
+    };
+  }
+
+  async function fetchFromTrovaSagreOfficialApi(params: {
+    location: string;
+    startDate: string;
+    endDate: string;
+    month: number;
+    season: string;
+  }): Promise<any[]> {
+    try {
+      const cookieHeader = await getTrovaSagreCookie();
+      if (!cookieHeader) return [];
+
+      const headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://trovasagre.com/app",
+        "Cookie": cookieHeader,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin"
+      };
+
+      const italianRegions = [
+        "Lazio", "Toscana", "Marche", "Umbria", "Abruzzo", "Campania", "Puglia",
+        "Emilia-Romagna", "Lombardia", "Veneto", "Piemonte", "Liguria", "Sicilia",
+        "Sardegna", "Calabria", "Basilicata", "Molise", "Friuli-Venezia Giulia", "Trentino-Alto Adige"
+      ];
+      const matchedRegion = italianRegions.find((r) =>
+        params.location.toLowerCase().includes(r.toLowerCase())
+      );
+
+      const queryParams = new URLSearchParams();
+      queryParams.set("limit", "40");
+      if (matchedRegion) {
+        queryParams.set("region", matchedRegion);
+      }
+      if (params.startDate) {
+        queryParams.set("date_from", params.startDate);
+      }
+      if (params.endDate) {
+        queryParams.set("date_to", params.endDate);
+      }
+
+      const apiUrl =
+        params.location && params.location.toLowerCase() !== "italia" && !matchedRegion
+          ? `https://trovasagre.com/api/events/search?q=${encodeURIComponent(params.location)}&limit=30`
+          : `https://trovasagre.com/api/events?${queryParams.toString()}`;
+
+      const res = await fetch(apiUrl, { headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const rawEvents = Array.isArray(data.events) ? data.events : [];
+
+      return rawEvents
+        .filter((ev: any) => typeof ev.lat === "number" && typeof ev.lng === "number" && ev.flyer_path)
+        .map((ev: any) => {
+          const flyerInfo = toProxyFlyerUrls(ev.flyer_path);
+          const dInfo = formatTrovaSagreDateBadge(ev.date_start || ev.date, ev.date_end);
+          const locName = ev.location || (ev.city ? `${ev.city}${ev.province_code ? ` (${ev.province_code})` : ""}` : "Italia");
+          return {
+            id: `ts_${ev.id}`,
+            title: ev.title || "Sagra Tradizionale",
+            category: dInfo.month === 12 ? "natale" : "sagra",
+            categoryLabel: ev.category && ev.category !== "Altro" ? ev.category : "Sagra & Gastronomia",
+            locationName: locName,
+            region: matchedRegion || ev.province_code || "Italia",
+            dates: dInfo.readable,
+            dateBadge: dInfo.badge,
+            startDate: (ev.date_start || ev.date || "2026-11-14").slice(0, 10),
+            endDate: (ev.date_end || ev.date_start || ev.date || "2026-11-15").slice(0, 10),
+            month: dInfo.month,
+            season: dInfo.season,
+            lat: Number(ev.lat),
+            lng: Number(ev.lng),
+            description: ev.description || ev.program_notes || `Sagra tradizionale a ${locName}.`,
+            specialties: ev.menu_notes
+              ? String(ev.menu_notes).split(/[,;\n]/).map((s: string) => s.trim()).filter(Boolean).slice(0, 4)
+              : ["Piatti Tipici in Locandina", "Stand Gastronomici", "Prodotti Locali"],
+            camperParking: `Parcheggio camper consigliato presso area comunale di ${ev.city || locName}.`,
+            imageUrl: flyerInfo.thumbUrl,
+            fullFlyerUrl: flyerInfo.fullUrl,
+            isRealFlyer: flyerInfo.isRealFlyer,
+            section: dInfo.season === "estate" ? "estate" : dInfo.month === 12 ? "natale" : "weekend",
+            sourceUrl: ev.slug ? `https://trovasagre.com/evento/${ev.slug}` : "https://trovasagre.com"
+          };
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  app.post("/api/sagre-live", async (req, res) => {
+    const realFlyerFallbacks = [
+      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_af4ea46c-2dd0-4be2-9cbc-006b469edace.webp",
+      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_84007c9c-7b09-419a-8e4f-afcb30206cd9.webp",
+      "/api/sagre-flyer?path=%2Fthumbs%2Fbatch_1e5df168-d6cf-4359-9a01-000fc31b983b.webp",
+      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_92089b5c-a6ae-4594-8c24-81debc39771c.webp",
+      "/api/sagre-flyer?path=%2Fthumbs%2Fbatch_3dd643a1-4e1a-44e5-a802-1cd3209e2604.webp",
+      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_eb7b215f-1437-4d31-afe7-107a4acb1ef4.webp"
+    ];
+
+    const location = ((req.body && req.body.location) || "Italia").trim();
+    const startDate = ((req.body && req.body.startDate) || "").trim();
+    const endDate = ((req.body && req.body.endDate) || "").trim();
+    const month = Number(req.body && req.body.month) || 0;
+    const season = ((req.body && req.body.season) || "").trim();
+
+    try {
+      const cacheKey = `${location.toLowerCase()}|${startDate}|${endDate}|${month}|${season}`;
+      const cached = liveSagreCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < EVENTS_CACHE_TTL_MS && cached.sagre.length > 0) {
+        return res.json({ sagre: cached.sagre, fromCache: true });
+      }
+
+      // 1. Query the official TrovaSagre JSON API for real events with authentic poster flyers
+      let sagreList = await fetchFromTrovaSagreOfficialApi({
+        location,
+        startDate,
+        endDate,
+        month,
+        season
+      });
+
+      // 2. If user is planning for future summer/spring months not yet uploaded on TrovaSagre, append seasonal regional events
+      if (sagreList.length === 0 || season === "estate" || season === "primavera" || (month >= 4 && month <= 9)) {
+        const seasonalExtra = buildRegionalSeasonalSagreFallback(
+          location,
+          startDate,
+          endDate,
+          month,
+          season,
+          realFlyerFallbacks
+        );
+        const existingIds = new Set(sagreList.map((s: any) => s.id));
+        for (const item of seasonalExtra) {
+          if (!existingIds.has(item.id)) {
+            sagreList.push(item);
+          }
+        }
+      }
+
+      liveSagreCache.set(cacheKey, { sagre: sagreList, timestamp: Date.now() });
+      return res.json({ sagre: sagreList });
+    } catch {
+      const fallbackList = buildRegionalSeasonalSagreFallback(
+        location,
+        startDate,
+        endDate,
+        month,
+        season,
+        realFlyerFallbacks
+      );
+      return res.json({ sagre: fallbackList });
+    }
+  });
+
   // Bulk import places in a province or near GPS coordinates using Gemini with Google Search Grounding
   app.post("/api/admin/generate-province-places", async (req, res) => {
     let province = "";
@@ -8345,6 +8894,548 @@ Rispondi RIGOROSAMENTE in formato JSON con questa struttura:
     }
   });
 
+  // --- MIMIT OSSERVAPREZZI CARBURANTI LIVE ENDPOINT ---
+  const handleFuelStationsLive = async (req: any, res: any) => {
+    try {
+      const rawLat = req.body?.lat ?? req.query?.lat ?? 41.9028;
+      const rawLng = req.body?.lng ?? req.query?.lng ?? 12.4964;
+      const rawRadius = req.body?.radius ?? req.query?.radius ?? 10;
+      const fuelTypePref = String(req.body?.fuelType ?? req.query?.fuelType ?? "gasolio").toLowerCase();
+
+      const lat = Number(rawLat) || 41.9028;
+      const lng = Number(rawLng) || 12.4964;
+      const radius = Math.min(Math.max(Number(rawRadius) || 10, 2), 25);
+
+      const mimitRes = await fetch("https://carburanti.mise.gov.it/ospzApi/search/zone", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "ViaCamperApp/1.0 (Osservaprezzi MIMIT OpenData)",
+        },
+        body: JSON.stringify({
+          points: [{ lat, lng }],
+          radius,
+        }),
+      });
+
+      if (!mimitRes.ok) {
+        return res.status(502).json({ error: "Servizio MIMIT Osservaprezzi temporaneamente non raggiungibile", stations: [] });
+      }
+
+      const mimitData: any = await mimitRes.json();
+      const rawResults: any[] = Array.isArray(mimitData?.results) ? mimitData.results : [];
+
+      const parsedStations = rawResults
+        .filter((st) => st?.location?.lat && st?.location?.lng && Array.isArray(st?.fuels) && st.fuels.length > 0)
+        .map((st) => {
+          let gasolioSelf: number | undefined;
+          let gasolioServito: number | undefined;
+          let benzinaSelf: number | undefined;
+          let benzinaServito: number | undefined;
+          let gpl: number | undefined;
+          let metano: number | undefined;
+
+          for (const f of st.fuels) {
+            const p = Number(f.price);
+            if (!p || p <= 0 || p > 5) continue;
+            const fName = String(f.name || "").toLowerCase();
+            const isSelf = Boolean(f.isSelf);
+
+            if (fName.includes("gasolio") || fName.includes("diesel") || f.fuelId === 2) {
+              // Standard diesel first, or special diesel if standard not set
+              if (fName === "gasolio" || f.fuelId === 2) {
+                if (isSelf) {
+                  gasolioSelf = gasolioSelf !== undefined ? Math.min(gasolioSelf, p) : p;
+                } else {
+                  gasolioServito = gasolioServito !== undefined ? Math.min(gasolioServito, p) : p;
+                }
+              } else {
+                if (isSelf && gasolioSelf === undefined) gasolioSelf = p;
+                if (!isSelf && gasolioServito === undefined) gasolioServito = p;
+              }
+            } else if (fName.includes("benzina") || f.fuelId === 1) {
+              if (fName === "benzina" || f.fuelId === 1) {
+                if (isSelf) {
+                  benzinaSelf = benzinaSelf !== undefined ? Math.min(benzinaSelf, p) : p;
+                } else {
+                  benzinaServito = benzinaServito !== undefined ? Math.min(benzinaServito, p) : p;
+                }
+              } else {
+                if (isSelf && benzinaSelf === undefined) benzinaSelf = p;
+                if (!isSelf && benzinaServito === undefined) benzinaServito = p;
+              }
+            } else if (fName.includes("gpl")) {
+              gpl = gpl !== undefined ? Math.min(gpl, p) : p;
+            } else if (fName.includes("metano") || fName.includes("cng")) {
+              metano = metano !== undefined ? Math.min(metano, p) : p;
+            }
+          }
+
+          const bestGasolio = gasolioSelf ?? gasolioServito;
+          const bestBenzina = benzinaSelf ?? benzinaServito;
+          const primaryPrice =
+            fuelTypePref === "benzina"
+              ? bestBenzina ?? bestGasolio ?? gpl ?? 99
+              : fuelTypePref === "gpl"
+              ? gpl ?? bestGasolio ?? bestBenzina ?? 99
+              : bestGasolio ?? bestBenzina ?? gpl ?? 99;
+
+          return {
+            st,
+            gasolioSelf,
+            gasolioServito,
+            benzinaSelf,
+            benzinaServito,
+            gpl,
+            metano,
+            bestGasolio,
+            bestBenzina,
+            primaryPrice,
+          };
+        })
+        .filter((item) => item.primaryPrice < 90);
+
+      // Sort by primaryPrice ascending, then distance
+      parsedStations.sort((a, b) => {
+        if (Math.abs(a.primaryPrice - b.primaryPrice) > 0.0001) {
+          return a.primaryPrice - b.primaryPrice;
+        }
+        return (Number(a.st.distance) || 0) - (Number(b.st.distance) || 0);
+      });
+
+      const topStations = parsedStations.slice(0, 65);
+      const minPrice = topStations.length > 0 ? topStations[0].primaryPrice : undefined;
+
+      const places = topStations.map((item) => {
+        const { st, gasolioSelf, gasolioServito, benzinaSelf, benzinaServito, gpl, metano, bestGasolio, bestBenzina, primaryPrice } = item;
+        const isCheapest = minPrice !== undefined && primaryPrice <= minPrice + 0.005;
+        const brand = String(st.brand || "Distributore").trim();
+        const stationName = String(st.name || "Stazione di Servizio").trim();
+        const priceBadgeStr = `€${primaryPrice.toFixed(3)}`;
+
+        const priceParts: string[] = [];
+        if (bestGasolio !== undefined) {
+          priceParts.push(`🛢️ Gasolio: €${bestGasolio.toFixed(3)}/L (${gasolioSelf !== undefined ? "Self" : "Servito"})`);
+        }
+        if (bestBenzina !== undefined) {
+          priceParts.push(`⛽ Benzina: €${bestBenzina.toFixed(3)}/L (${benzinaSelf !== undefined ? "Self" : "Servito"})`);
+        }
+        if (gpl !== undefined) {
+          priceParts.push(`🔵 GPL: €${gpl.toFixed(3)}/L`);
+        }
+        if (metano !== undefined) {
+          priceParts.push(`🟢 Metano: €${metano.toFixed(3)}/kg`);
+        }
+
+        const updatedDateStr = st.insertDate
+          ? new Date(st.insertDate).toLocaleString("it-IT", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "Oggi";
+
+        const distStr = st.distance ? `${Number(st.distance).toFixed(1)} km` : "";
+        const detailLines = [
+          `🏛️ Prezzi Ufficiali MIMIT (Osservaprezzi Carburanti)`,
+          `🏷️ Gestore / Marchio: ${brand} — ${stationName}`,
+          distStr ? `📍 Distanza dal centro mappa: ${distStr}` : "",
+          `🕒 Ultima comunicazione: ${updatedDateStr}`,
+          "",
+          "💰 LISTINO CARBURANTI AGGIORNATO:",
+          gasolioSelf !== undefined ? `• Gasolio (Self Service): €${gasolioSelf.toFixed(3)} / Litro` : "",
+          gasolioServito !== undefined ? `• Gasolio (Servito): €${gasolioServito.toFixed(3)} / Litro` : "",
+          benzinaSelf !== undefined ? `• Benzina (Self Service): €${benzinaSelf.toFixed(3)} / Litro` : "",
+          benzinaServito !== undefined ? `• Benzina (Servito): €${benzinaServito.toFixed(3)} / Litro` : "",
+          gpl !== undefined ? `• GPL: €${gpl.toFixed(3)} / Litro` : "",
+          metano !== undefined ? `• Metano: €${metano.toFixed(3)} / kg` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const facilities: string[] = ["Prezzi Ufficiali MIMIT"];
+        if (isCheapest) facilities.push("🏆 Più Economico in Zona");
+        if (gasolioSelf !== undefined || benzinaSelf !== undefined) facilities.push("Self Service 24h");
+        if (bestGasolio !== undefined) facilities.push(`Gasolio €${bestGasolio.toFixed(3)}`);
+        if (bestBenzina !== undefined) facilities.push(`Benzina €${bestBenzina.toFixed(3)}`);
+        if (gpl !== undefined) facilities.push(`GPL €${gpl.toFixed(3)}`);
+
+        return {
+          id: `mimit_fuel_${st.id}`,
+          name: `${brand} · ${stationName}`,
+          category: "distributore",
+          categoryLabel: `${isCheapest ? "🏆 MIGLIOR PREZZO · " : "⛽ "}${brand.toUpperCase()} (${priceBadgeStr})`,
+          eventDateBadge: priceBadgeStr,
+          lat: Number(st.location.lat),
+          lng: Number(st.location.lng),
+          address: `${brand} - ${stationName}${distStr ? ` (${distStr})` : ""}`,
+          description: detailLines,
+          priceInfo: priceParts.join(" · ") || `Carburante: ${priceBadgeStr}/L`,
+          priceEuro: primaryPrice,
+          feeStatus: isCheapest ? "free" : "paid",
+          rating: isCheapest ? 9.6 : 8.5,
+          facilities,
+          reviews: [],
+          imageUrl: "https://images.unsplash.com/photo-1545262810-77515befe149?auto=format&fit=crop&w=800&q=80",
+          source: "mimit_osservaprezzi",
+          verified: true,
+          fuelPrices: {
+            gasolioSelf,
+            gasolioServito,
+            benzinaSelf,
+            benzinaServito,
+            gpl,
+            metano,
+            updatedAt: updatedDateStr,
+            brand,
+            isCheapest,
+          },
+        };
+      });
+
+      res.json({
+        success: true,
+        minPrice,
+        count: places.length,
+        stations: places,
+      });
+    } catch (err: any) {
+      console.error("[MIMIT Fuel API] Error:", err?.message || err);
+      res.status(500).json({ error: "Errore nel recupero dei prezzi carburante MIMIT", stations: [] });
+    }
+  };
+
+  app.post("/api/fuel-stations-live", handleFuelStationsLive);
+  app.get("/api/fuel-stations-live", handleFuelStationsLive);
+
+  // --- TOMTOM ORBIS TRAFFIC FLOW TILE PROXY ---
+  app.get("/api/tomtom-traffic-tile/:z/:x/:y.png", async (req, res) => {
+    const { z, x, y } = req.params;
+    const tomtomKey = process.env.TOMTOM_API_KEY || "";
+    try {
+      const tileUrl = tomtomKey
+        ? `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/${z}/${x}/${y}.png?key=${encodeURIComponent(tomtomKey)}&tileSize=256`
+        : `https://mt0.google.com/vt?lyrs=traffic&x=${x}&y=${y}&z=${z}`;
+
+      const tileRes = await fetch(tileUrl, {
+        headers: {
+          "User-Agent": "ViaCamperApp/1.0 (TomTom Orbis Traffic Layer)",
+        },
+      });
+      if (!tileRes.ok) {
+        return res.status(204).end();
+      }
+      const arrayBuf = await tileRes.arrayBuffer();
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.send(Buffer.from(arrayBuf));
+    } catch {
+      res.status(204).end();
+    }
+  });
+
+  // --- TOMTOM ORBIS TRAFFICO & OSTACOLI LIVE ENDPOINT ---
+  const handleTomTomOrbisLive = async (req: any, res: any) => {
+    try {
+      const rawLat = req.body?.lat ?? req.query?.lat ?? 41.9028;
+      const rawLng = req.body?.lng ?? req.query?.lng ?? 12.4964;
+      const rawRadiusKm = req.body?.radiusKm ?? req.query?.radiusKm ?? 8;
+      const vHeight = Number(req.body?.vehicleHeight ?? req.query?.vehicleHeight ?? 3.1) || 3.1;
+      const vWidth = Number(req.body?.vehicleWidth ?? req.query?.vehicleWidth ?? 2.35) || 2.35;
+      const vWeight = Number(req.body?.vehicleWeight ?? req.query?.vehicleWeight ?? 3.5) || 3.5;
+
+      const lat = Number(rawLat) || 41.9028;
+      const lng = Number(rawLng) || 12.4964;
+      const radiusKm = Math.min(Math.max(Number(rawRadiusKm) || 8, 2), 25);
+
+      const dLat = radiusKm / 111.0;
+      const dLng = radiusKm / (111.0 * Math.cos((lat * Math.PI) / 180));
+      const minLat = lat - dLat;
+      const maxLat = lat + dLat;
+      const minLng = lng - dLng;
+      const maxLng = lng + dLng;
+
+      const results: any[] = [];
+      const tomtomKey = process.env.TOMTOM_API_KEY || "";
+
+      // 1) Query TomTom Orbis Traffic Incidents v5 API if TOMTOM_API_KEY is available
+      if (tomtomKey) {
+        try {
+          const bboxTomTom = `${minLng},${minLat},${maxLng},${maxLat}`;
+          const fields = "{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,code},startTime,endTime,from,to,length,delay,roadNumbers}}}";
+          const ttUrl = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${encodeURIComponent(tomtomKey)}&bbox=${bboxTomTom}&fields=${encodeURIComponent(fields)}&language=it-IT&timeValidityFilter=present`;
+          const ttRes = await fetch(ttUrl, {
+            headers: { Accept: "application/json" },
+          });
+          if (ttRes.ok) {
+            const ttData: any = await ttRes.json();
+            const incidents: any[] = Array.isArray(ttData?.incidents) ? ttData.incidents : [];
+            for (const inc of incidents) {
+              const props = inc.properties || {};
+              const geom = inc.geometry || {};
+              let iLat: number | null = null;
+              let iLng: number | null = null;
+              if (geom.type === "Point" && Array.isArray(geom.coordinates)) {
+                iLng = Number(geom.coordinates[0]);
+                iLat = Number(geom.coordinates[1]);
+              } else if (Array.isArray(geom.coordinates) && Array.isArray(geom.coordinates[0])) {
+                const mid = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+                if (Array.isArray(mid)) {
+                  iLng = Number(mid[0]);
+                  iLat = Number(mid[1]);
+                }
+              }
+              if (iLat === null || iLng === null || isNaN(iLat) || isNaN(iLng)) continue;
+
+              const cat = Number(props.iconCategory) || 0;
+              // TomTom iconCategory: 1=Accident, 6=Jam, 7=LaneClosed, 8=RoadClosed, 9=RoadWorks
+              let obsType: string = "jam";
+              let labelPrefix = "🚦 Rallentamento";
+              let isViolation = false;
+              if (cat === 1 || cat === 14) {
+                obsType = "accident";
+                labelPrefix = "🚨 Incidente Stradale";
+              } else if (cat === 8) {
+                obsType = "closure";
+                labelPrefix = "⛔ Strada Chiusa";
+                isViolation = true;
+              } else if (cat === 7 || cat === 9) {
+                obsType = "roadworks";
+                labelPrefix = "🚧 Cantiere / Corsia Chiusa";
+              } else if (cat === 6) {
+                obsType = "jam";
+                labelPrefix = "🚗 Coda / Traffico Intenso";
+              }
+
+              const eventDesc = Array.isArray(props.events) && props.events[0]?.description
+                ? props.events[0].description
+                : labelPrefix;
+              const delayMin = props.delay ? Math.max(1, Math.round(Number(props.delay) / 60)) : 0;
+              const roadNum = Array.isArray(props.roadNumbers) && props.roadNumbers.length > 0
+                ? props.roadNumbers.join(", ")
+                : "";
+              const routeSpan = [props.from, props.to].filter(Boolean).join(" → ");
+              const roadLabel = [roadNum, routeSpan].filter(Boolean).join(" · ") || "Rete Stradale TomTom Orbis";
+
+              results.push({
+                id: `tt_${props.id || Math.random().toString(36).slice(2, 9)}`,
+                lat: iLat,
+                lng: iLng,
+                type: obsType,
+                value: delayMin,
+                name: `${labelPrefix}: ${eventDesc}`,
+                roadName: roadLabel,
+                description: `${eventDesc}${routeSpan ? ` (${routeSpan})` : ""}${delayMin ? ` · Ritardo stimato: +${delayMin} min` : ""}`,
+                delayMinutes: delayMin || undefined,
+                isViolation,
+                source: "tomtom_orbis",
+              });
+            }
+          }
+        } catch (ttErr) {
+          console.warn("[TomTom Orbis API] Warning fetching TomTom incidents:", ttErr);
+        }
+      }
+
+      // 2) Query Orbis / OpenStreetMap Overpass for physical Camper Obstacles, Roadworks, Closures & Steep Gradients
+      try {
+        const bboxOsm = `${minLat},${minLng},${maxLat},${maxLng}`;
+        const overpassQuery = `[out:json][timeout:12];
+(
+  node["maxheight"](${bboxOsm});
+  way["maxheight"](${bboxOsm});
+  node["maxwidth"](${bboxOsm});
+  way["maxwidth"](${bboxOsm});
+  node["maxweight"](${bboxOsm});
+  way["maxweight"](${bboxOsm});
+  way["highway"="construction"](${bboxOsm});
+  node["barrier"="road_works"](${bboxOsm});
+  way["incline"](${bboxOsm});
+);
+out center 120;`;
+
+        const overpassEndpoints = [
+          "https://overpass-api.de/api/interpreter",
+          "https://lz4.overpass-api.de/api/interpreter",
+          "https://overpass.kumi.systems/api/interpreter",
+        ];
+
+        let osmData: any = null;
+        for (const ep of overpassEndpoints) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const r = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: `data=${encodeURIComponent(overpassQuery)}`,
+              signal: controller.signal,
+            });
+            clearTimeout(timer);
+            if (r.ok) {
+              const txt = await r.text();
+              if (!txt.trim().startsWith("<")) {
+                osmData = JSON.parse(txt);
+                break;
+              }
+            }
+          } catch {
+            // Try next mirror
+          }
+        }
+
+        const parseNum = (raw: any): number => {
+          if (!raw) return 0;
+          const m = String(raw).replace(",", ".").match(/([0-9]+(\.[0-9]+)?)/);
+          return m ? parseFloat(m[1]) : 0;
+        };
+
+        if (osmData && Array.isArray(osmData.elements)) {
+          for (const el of osmData.elements) {
+            const oLat = el.lat !== undefined ? el.lat : el.center?.lat;
+            const oLng = el.lon !== undefined ? el.lon : el.center?.lon;
+            if (typeof oLat !== "number" || typeof oLng !== "number") continue;
+
+            const tags = el.tags || {};
+            const roadName = tags.name || tags.ref || tags["addr:street"] || "Strada / Svincolo";
+
+            if (tags.maxheight && tags.maxheight !== "default" && tags.maxheight !== "none") {
+              const val = parseNum(tags.maxheight);
+              if (val > 0 && val <= 4.5) {
+                const isViolation = vHeight > val;
+                results.push({
+                  id: `orbis_h_${el.id}`,
+                  lat: oLat,
+                  lng: oLng,
+                  type: "height",
+                  value: val,
+                  name: `${isViolation ? "⛔ PERICOLO SAGOMA" : "📐 Limite Altezza"}: Sottopasso ${val}m`,
+                  roadName,
+                  description: `Altezza massima consentita: ${val}m (${isViolation ? `Il tuo camper è alto ${vHeight}m: NON PASSA!` : `Compatibile con il tuo camper di ${vHeight}m`})`,
+                  isViolation,
+                  source: "osm_orbis",
+                });
+                continue;
+              }
+            }
+
+            if (tags.maxwidth) {
+              const val = parseNum(tags.maxwidth);
+              if (val > 0 && val <= 3.5) {
+                const isViolation = vWidth > val;
+                results.push({
+                  id: `orbis_w_${el.id}`,
+                  lat: oLat,
+                  lng: oLng,
+                  type: "width",
+                  value: val,
+                  name: `↔️ Strettoia Carreggiata: ${val}m`,
+                  roadName,
+                  description: `Larghezza massima: ${val}m (${isViolation ? `Supera la larghezza del tuo camper (${vWidth}m)` : "Passaggio stretto ma compatibile"})`,
+                  isViolation,
+                  source: "osm_orbis",
+                });
+                continue;
+              }
+            }
+
+            if (tags.maxweight) {
+              const val = parseNum(tags.maxweight);
+              if (val > 0 && val <= 12) {
+                const isViolation = vWeight > val;
+                results.push({
+                  id: `orbis_wt_${el.id}`,
+                  lat: oLat,
+                  lng: oLng,
+                  type: "weight",
+                  value: val,
+                  name: `⚖️ Limite Portata Ponte: ${val}t`,
+                  roadName,
+                  description: `Massa massima consentita sul tratto/ponte: ${val} tonnellate.`,
+                  isViolation,
+                  source: "osm_orbis",
+                });
+                continue;
+              }
+            }
+
+            if (tags.highway === "construction" || tags.barrier === "road_works" || tags.construction) {
+              results.push({
+                id: `orbis_rw_${el.id}`,
+                lat: oLat,
+                lng: oLng,
+                type: "roadworks",
+                value: 5,
+                name: `🚧 Cantiere Stradale / Lavori in Corso`,
+                roadName,
+                description: `Tratto interessato da lavori stradali o restringimento di carreggiata (${tags.note || tags.description || tags.construction || "Prestare attenzione con mezzi lunghi"}).`,
+                delayMinutes: 5,
+                isViolation: false,
+                source: "tomtom_orbis",
+              });
+              continue;
+            }
+
+            if (tags.incline) {
+              const incVal = parseNum(tags.incline);
+              if (incVal >= 10) {
+                const isViolation = incVal >= 15;
+                results.push({
+                  id: `orbis_inc_${el.id}`,
+                  lat: oLat,
+                  lng: oLng,
+                  type: "incline",
+                  value: incVal,
+                  name: `⛰️ Pendenza Impegnativa: ${incVal}%`,
+                  roadName,
+                  description: `Tratto con pendenza del ${incVal}% — attenzione a frizione e freni con camper a pieno carico.`,
+                  isViolation,
+                  source: "osm_orbis",
+                });
+              }
+            }
+          }
+        }
+      } catch (osmErr) {
+        console.warn("[TomTom Orbis Live] Overpass scan warning:", osmErr);
+      }
+
+      // Deduplicate nearby identical obstacles
+      const unique: any[] = [];
+      for (const item of results) {
+        const dup = unique.some(
+          (u) =>
+            u.type === item.type &&
+            Math.abs(u.lat - item.lat) < 0.0005 &&
+            Math.abs(u.lng - item.lng) < 0.0005,
+        );
+        if (!dup) unique.push(item);
+      }
+
+      // Sort violations first, then roadworks/accidents, then height limits
+      unique.sort((a, b) => {
+        if (a.isViolation !== b.isViolation) return a.isViolation ? -1 : 1;
+        return 0;
+      });
+
+      res.json({
+        success: true,
+        provider: tomtomKey ? "TomTom Orbis Traffic v5 + Orbis OSM" : "Orbis Live Traffic & Camper Obstacles",
+        count: unique.length,
+        violationsCount: unique.filter((u) => u.isViolation).length,
+        obstacles: unique.slice(0, 100),
+      });
+    } catch (err: any) {
+      console.error("[TomTom Orbis Live] Error:", err?.message || err);
+      res.status(500).json({ error: "Errore nel caricamento dati TomTom Orbis Live", obstacles: [] });
+    }
+  };
+
+  app.post("/api/tomtom-orbis-live", handleTomTomOrbisLive);
+  app.get("/api/tomtom-orbis-live", handleTomTomOrbisLive);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);

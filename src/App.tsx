@@ -7930,6 +7930,15 @@ out center;`;
                         setIsFullscreenNav(true);
                         setIsNavMinimized(false);
                       }}
+                      onShowOnMap={(lat, lng, label) => {
+                        setActiveTab("map_nav");
+                        setMapNavSubTab("map");
+                        window.dispatchEvent(
+                          new CustomEvent("map-fly-to", {
+                            detail: { lat, lng, label },
+                          }),
+                        );
+                      }}
                     />
                   )}
 

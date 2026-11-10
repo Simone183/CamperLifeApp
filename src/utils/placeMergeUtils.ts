@@ -119,6 +119,8 @@ const CATEGORY_PRIORITY: Record<PlaceCategory, number> = {
   lavanderia: 4,
   hidden_gem: 3,
   area_sosta: 2,
+  sagra: 2,
+  distributore: 2,
   parcheggio_pagamento: 1,
   parcheggio_diurno: 1,
   parcheggio_gratuito: 1,

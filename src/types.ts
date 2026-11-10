@@ -16,7 +16,9 @@ export type PlaceCategory =
   | 'fontanella' 
   | 'lavanderia' 
   | 'solo_scarico' 
-  | 'carico_scarico';
+  | 'carico_scarico'
+  | 'sagra'
+  | 'distributore';
 export type CamperServiceSubtype = 'carico_scarico' | 'fontanella' | 'lavanderia' | 'solo_scarico';
 
 export interface Review {
@@ -179,6 +181,24 @@ export interface Place {
   nearestCity?: string;
   isOfflineDraft?: boolean;
   createdBy?: string;
+  verified?: boolean;
+  eventStartDate?: string;
+  eventEndDate?: string;
+  eventDateBadge?: string;
+  eventSeason?: 'inverno' | 'primavera' | 'estate' | 'autunno';
+  eventMonth?: number;
+  eventSpecialties?: string[];
+  fuelPrices?: {
+    gasolioSelf?: number;
+    gasolioServito?: number;
+    benzinaSelf?: number;
+    benzinaServito?: number;
+    gpl?: number;
+    metano?: number;
+    updatedAt?: string;
+    brand?: string;
+    isCheapest?: boolean;
+  };
 }
 
 export interface CommunityMessage {
@@ -346,14 +366,17 @@ export interface VehicleDimensions {
 }
 
 export interface OSMObstacle {
-  id: number;
+  id: number | string;
   lat: number;
   lng: number;
-  type: 'height' | 'width' | 'weight' | 'barrier';
-  value: number; // e.g. 2.8 (m or t)
+  type: 'height' | 'width' | 'weight' | 'barrier' | 'roadworks' | 'accident' | 'jam' | 'incline' | 'closure';
+  value: number; // e.g. 2.8 (m or t or % incline or delay min)
   name: string;
   roadName: string;
   isViolation: boolean;
+  description?: string;
+  delayMinutes?: number;
+  source?: 'tomtom_orbis' | 'osm_orbis' | 'community';
 }
 
 export interface Deadline {

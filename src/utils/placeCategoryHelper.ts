@@ -577,6 +577,7 @@ export function detectPlaceCategoryAndLabel(sug: {
   if (sug.category === "fontanella") return { category: "fontanella", serviceSubtype: "fontanella", categoryLabel: "FONTANELLA ACQUA" };
   if (sug.category === "lavanderia") return { category: "lavanderia", serviceSubtype: "lavanderia", categoryLabel: "LAVANDERIA SELF-SERVICE" };
   if (sug.category === "hidden_gem") return { category: "hidden_gem", categoryLabel: "GEMMA NASCOSTA" };
+  if (sug.category === "distributore") return { category: "distributore", categoryLabel: "DISTRIBUTORE CARBURANTE" };
 
   // 4. Fallback for unclassified search places:
   // Return undefined for categoryLabel so no false "AREA SOSTA" is displayed
@@ -626,6 +627,7 @@ export function getPlaceBadgeText(place: {
   if (place.category === "lavanderia") return "🧺 LAVANDERIA SELF-SERVICE";
   if (place.category === "campeggio") return "⛺ CAMPEGGIO";
   if (place.category === "hidden_gem") return "💎 GEMMA NASCOSTA";
+  if (place.category === "distributore") return "⛽ DISTRIBUTORE PREZZI LIVE";
 
   // If search place without specific category label
   if (place.source && (place.source.includes("google") || place.source === "osm")) {
