@@ -118,6 +118,7 @@ export default function FullscreenNavigator({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState<boolean>(true);
   const [showStopsOnRoute, setShowStopsOnRoute] = React.useState<boolean>(false);
   const [showOsmObstacles, setShowOsmObstacles] = React.useState<boolean>(true);
+  const [showTrafficFlow, setShowTrafficFlow] = React.useState<boolean>(true);
   const [autoCenter, setAutoCenter] = React.useState<boolean>(true);
 
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(false);
@@ -347,6 +348,14 @@ export default function FullscreenNavigator({
           tileSize: 256,
           attribution: 'Dati cartografici © Google Maps & OpenStreetMap',
           maxzoom: 19
+        },
+        'tomtom-traffic-tiles': {
+          type: 'raster',
+          tiles: [
+            resolveApiUrl('/api/tomtom-traffic-tile/{z}/{x}/{y}.png')
+          ],
+          tileSize: 256,
+          maxzoom: 19
         }
       },
       layers: [
@@ -356,6 +365,19 @@ export default function FullscreenNavigator({
           source: 'raster-tiles',
           minzoom: 0,
           maxzoom: 22
+        },
+        {
+          id: 'tomtom-traffic-layer',
+          type: 'raster',
+          source: 'tomtom-traffic-tiles',
+          minzoom: 5,
+          maxzoom: 22,
+          layout: {
+            visibility: 'visible'
+          },
+          paint: {
+            'raster-opacity': 0.85
+          }
         }
       ]
     };
@@ -1169,6 +1191,48 @@ out center;`;
             isViolation
           });
         });
+
+        // Also query TomTom Orbis Live along the route (start, midpoint, end) for cantieri, incidenti, code & pendenze
+        try {
+          const samplePoints = [
+            coords[0],
+            coords[Math.floor(coords.length / 2)],
+            coords[coords.length - 1]
+          ];
+          const vH = parseDimToNumber(vehicleDimensions.height) || 3.1;
+          const vW = parseDimToNumber(vehicleDimensions.width) || 2.35;
+          const vWt = parseDimToNumber(vehicleDimensions.weight) || 3.5;
+
+          const orbisResponses = await Promise.allSettled(
+            samplePoints.map((pt) =>
+              fetch(resolveApiUrl('/api/tomtom-orbis-live'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  lat: pt[0],
+                  lng: pt[1],
+                  radiusKm: 8,
+                  vehicleHeight: vH,
+                  vehicleWidth: vW,
+                  vehicleWeight: vWt
+                }),
+                signal
+              }).then((r) => (r.ok ? r.json() : null))
+            )
+          );
+
+          orbisResponses.forEach((resItem) => {
+            if (resItem.status === 'fulfilled' && Array.isArray(resItem.value?.obstacles)) {
+              resItem.value.obstacles.forEach((o: OSMObstacle) => {
+                if (isNearRoute(o.lat, o.lng, coords, 250)) {
+                  obstacles.push(o);
+                }
+              });
+            }
+          });
+        } catch (orbisErr) {
+          console.warn('TomTom Orbis route scan warning:', orbisErr);
+        }
 
         // Deduplicate obstacles by ID just in case
         const uniqueObstacles = obstacles.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
@@ -3062,7 +3126,29 @@ out center;`;
     setNearbyPlaces(detected);
   }, [routeCoordinates, places, dest.id, showStopsOnRoute]);
 
-  // Synchronize OSM Obstacle Markers on FullscreenNavigator's MapLibre GL Map
+  // Synchronize TomTom Orbis Live Traffic Flow Layer visibility on MapLibre GL Map
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const applyVisibility = () => {
+      try {
+        if (map.getLayer('tomtom-traffic-layer')) {
+          map.setLayoutProperty(
+            'tomtom-traffic-layer',
+            'visibility',
+            showTrafficFlow ? 'visible' : 'none'
+          );
+        }
+      } catch (e) {}
+    };
+    if (map.isStyleLoaded()) {
+      applyVisibility();
+    } else {
+      map.once('load', applyVisibility);
+    }
+  }, [showTrafficFlow]);
+
+  // Synchronize OSM & TomTom Orbis Obstacle Markers on FullscreenNavigator's MapLibre GL Map
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3076,14 +3162,35 @@ out center;`;
     if (!showOsmObstacles) return;
 
     osmObstacles.forEach(obs => {
-      const isCritical = obs.isViolation;
+      const isCritical = obs.isViolation || obs.type === 'closure' || obs.type === 'accident';
       const sizeClass = isCritical ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[9px]';
-      const bgClass = isCritical ? 'bg-rose-600 animate-pulse border-white text-white font-black' : 'bg-amber-500 border-white text-slate-900 font-bold';
+      const bgClass = isCritical
+        ? 'bg-rose-600 animate-pulse border-white text-white font-black'
+        : obs.type === 'incline'
+          ? 'bg-purple-600 border-white text-white font-bold'
+          : 'bg-amber-500 border-white text-slate-900 font-bold';
       
       let symbol = "📐";
+      let badgeLabel = `${obs.value}${obs.type === 'weight' ? 't' : 'm'}`;
       if (obs.type === 'height') symbol = isCritical ? "⛔" : "📐";
       else if (obs.type === 'width') symbol = "↔️";
       else if (obs.type === 'weight') symbol = "⚖️";
+      else if (obs.type === 'incline') {
+        symbol = "⛰️";
+        badgeLabel = `${obs.value || 10}%`;
+      } else if (obs.type === 'roadworks') {
+        symbol = "🚧";
+        badgeLabel = "LAVORI";
+      } else if (obs.type === 'accident') {
+        symbol = "💥";
+        badgeLabel = "INCIDENTE";
+      } else if (obs.type === 'jam') {
+        symbol = "🚗";
+        badgeLabel = obs.delayMinutes ? `+${obs.delayMinutes}m` : "CODA";
+      } else if (obs.type === 'closure') {
+        symbol = "⛔";
+        badgeLabel = "CHIUSA";
+      }
 
       const obsEl = document.createElement('div');
       obsEl.className = 'osm-obstacle-marker cursor-pointer';
@@ -3093,25 +3200,36 @@ out center;`;
             <span class="select-none">${symbol}</span>
           </div>
           <div style="font-size: 8px; font-weight: 900;" class="bg-black/90 text-white rounded px-1 py-0.5 mt-0.5 whitespace-nowrap border border-white/20">
-            ${obs.value}${obs.type === 'weight' ? 't' : 'm'}
+            ${badgeLabel}
           </div>
         </div>
       `;
 
+      const isSagomaType = obs.type === 'height' || obs.type === 'width' || obs.type === 'weight';
+      const popupTitle = isSagomaType
+        ? (obs.isViolation ? 'Ostacolo Sagoma Bloccante' : 'Avviso Limite Sagoma')
+        : obs.type === 'incline'
+          ? 'Pendenza Impegnativa Camper'
+          : 'Avviso Traffico Live TomTom Orbis';
+
+      const popupFooter = isSagomaType
+        ? (obs.isViolation
+            ? `Rilevamento Sagoma: Il tuo mezzo (${vehicleDimensions.height}m) NON PASSA!`
+            : `Rilevamento Sagoma: Grado di passaggio idoneo.`)
+        : (obs.description || `Segnalazione stradale rilevata lungo l'itinerario.`);
+
       const popupContent = `
-        <div style="font-family: system-ui, sans-serif; font-size: 11px; max-width: 190px; padding: 4px;">
+        <div style="font-family: system-ui, sans-serif; font-size: 11px; max-width: 200px; padding: 4px;">
           <div style="display: flex; align-items: center; gap: 4px; margin-bottom: 2px;">
-            <span style="font-size: 14px;">${isCritical ? '🚨' : '⚠️'}</span>
+            <span style="font-size: 14px;">${isCritical ? '🚨' : symbol}</span>
             <strong style="color: ${isCritical ? '#e11d48' : '#d97706'}; font-weight: 800; text-transform: uppercase; font-size: 9.5px; tracking-wider;">
-              ${isCritical ? 'Ostacolo Sagoma Bloccante' : 'Avviso Transito OSM'}
+              ${popupTitle}
             </strong>
           </div>
           <h4 style="margin: 0; font-size: 12px; font-weight: bold; color: #0f172a;">${obs.name}</h4>
           <p style="margin: 2px 0; color: #475569; font-size: 10px;">Rilevato su: <strong>${obs.roadName}</strong></p>
           <div style="margin-top: 6px; padding: 5px; border-radius: 6px; background: ${isCritical ? '#fff1f2' : '#fef3c7'}; color: ${isCritical ? '#9f1239' : '#92400e'}; font-size: 10px; font-weight: 700; border: 1px solid ${isCritical ? '#fecdd3' : '#fde68a'};">
-            ${isCritical 
-               ? `Rilevamento Sagoma: Il tuo mezzo (${vehicleDimensions.height}m) NON PASSA!` 
-               : `Rilevamento Sagoma: Grado di passaggio idoneo.`}
+            ${popupFooter}
           </div>
         </div>
       `;
@@ -3729,9 +3847,44 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               </div>
             )}
 
-            {/* Vertical Stack: Minimize & Close Buttons right under top HUD bar on right side */}
-            <div className="flex justify-end pointer-events-auto pt-0.5">
-              <div className="flex flex-col gap-2 bg-[#0b101d]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800/90 shadow-2xl">
+            {/* Barra Rapida Traffico & Ostacoli (Attivi di Default nel Navigatore Interno) */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
+              <div className="flex flex-wrap items-center gap-1.5 bg-[#0b101d]/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border border-slate-800/90 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => setShowTrafficFlow((v) => !v)}
+                  className={`px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1.5 transition-all cursor-pointer ${
+                    showTrafficFlow
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                  title="Attiva/Disattiva flusso traffico live TomTom Orbis"
+                >
+                  <span>🚦 Traffico Live: {showTrafficFlow ? 'ON' : 'OFF'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOsmObstacles((v) => !v)}
+                  className={`px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1.5 transition-all cursor-pointer ${
+                    showOsmObstacles
+                      ? osmObstacles.some((o) => o.isViolation)
+                        ? 'bg-rose-600 text-white animate-pulse shadow-sm'
+                        : 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                  title="Attiva/Disattiva rilevamento ostacoli sagoma, cantieri e pendenze lungo la rotta"
+                >
+                  <span>
+                    {showOsmObstacles
+                      ? scanningObstacles
+                        ? '🔍 Scansione Ostacoli...'
+                        : `⚠️ Ostacoli & Sagoma: ON (${osmObstacles.length})`
+                      : '⚠️ Ostacoli & Sagoma: OFF'}
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 bg-[#0b101d]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800/90 shadow-2xl ml-auto">
                 {/* Minimize button */}
                 <button
                   type="button"
@@ -4092,14 +4245,35 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   </label>
                 </div>
 
-                {/* Switch per mostrare ostacoli e limiti OSM */}
+                {/* Switch per mostrare Traffico Live TomTom Orbis (Attivo di default) */}
                 <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
                   <div className="flex flex-col text-left">
                     <span className="text-[10px] font-bold text-slate-200">
-                      Ostacoli e limiti OSM
+                      🚦 Traffico Live TomTom Orbis
                     </span>
                     <span className="text-[8px] text-slate-400 font-medium">
-                      Mostra limiti altezza/larghezza/peso
+                      Flusso stradale e rallentamenti in tempo reale
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showTrafficFlow}
+                      onChange={(e) => setShowTrafficFlow(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
+                  </label>
+                </div>
+
+                {/* Switch per mostrare ostacoli, sagoma, cantieri e pendenze (Attivo di default) */}
+                <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between shadow-sm select-none">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] font-bold text-slate-200">
+                      ⚠️ Ostacoli, Sagoma & Pendenze
+                    </span>
+                    <span className="text-[8px] text-slate-400 font-medium">
+                      Ponti bassi, larghezza, peso, cantieri e salite
                     </span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

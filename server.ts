@@ -8654,22 +8654,6 @@ async function fetchBRouter(s: string, e: string, avoidHighways: string = 'false
     res.json(latestPromoPushInMemory);
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.use(express.static(path.join(process.cwd(), 'public')));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
   // Startup cleanup for fake places
   async function cleanupFakePlaces() {
     try {
@@ -9436,6 +9420,22 @@ out center 120;`;
 
   app.post("/api/tomtom-orbis-live", handleTomTomOrbisLive);
   app.get("/api/tomtom-orbis-live", handleTomTomOrbisLive);
+
+  // Vite middleware for development / static catch-all for production (MUST be after all /api routes)
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.use(express.static(path.join(process.cwd(), "public")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);

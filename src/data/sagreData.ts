@@ -1,4 +1,4 @@
-import { Place, PlaceCategory } from '../types';
+import type { Place, PlaceCategory } from '../types.ts';
 
 export interface SagraEvent {
   id: string;

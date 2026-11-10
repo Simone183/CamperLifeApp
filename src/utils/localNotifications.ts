@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PROMO_MESSAGES } from '../data/promoMessages';
 
-const CURRENT_APP_VERSION = '2.4.73';
+const CURRENT_APP_VERSION = '2.5.20';
 
 /**
  * Schedule local notifications to arrive every 2 days on native mobile devices.

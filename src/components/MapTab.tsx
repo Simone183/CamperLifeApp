@@ -1059,20 +1059,11 @@ export default function MapTab({
     }
   };
 
-  const [selectedCategories, setSelectedCategories] = React.useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem("camper_app_settings");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.defaultPOI) return [parsed.defaultPOI];
-      }
-    } catch (e) {}
-    return ["all"];
-  });
+  const [selectedCategories, setSelectedCategories] = React.useState<string[]>([]);
 
   const toggleCategory = (cat: string) => {
     if (cat === "all") {
-      setSelectedCategories(["all"]);
+      setSelectedCategories((prev) => (prev.includes("all") ? [] : ["all"]));
       return;
     }
     setSelectedCategories((prev) => {
@@ -1080,19 +1071,12 @@ export default function MapTab({
         return [cat];
       }
       if (prev.includes(cat)) {
-        const next = prev.filter((c) => c !== cat);
-        return next.length === 0 ? ["all"] : next;
+        return prev.filter((c) => c !== cat);
       } else {
         return [...prev, cat];
       }
     });
   };
-
-  React.useEffect(() => {
-    if (settings?.defaultPOI) {
-      setSelectedCategories([settings.defaultPOI as string]);
-    }
-  }, [settings?.defaultPOI]);
 
   // Sagre Date & Vacation Period Filter States on Map
   const [allSagrePlaces, setAllSagrePlaces] = React.useState<Place[]>(() => getAllSagrePlaces());
@@ -2703,9 +2687,12 @@ export default function MapTab({
   const filteredPlaces = React.useMemo(() => {
     const result = unifiedPlaces.filter((p) => {
       // 1. Category
+      const hasSearchQueryForCat = Boolean((searchQuery || "").trim());
       let matchesCat = false;
-      if (selectedCategories.includes("all") || selectedCategories.length === 0) {
-        matchesCat = true;
+      if (selectedCategories.includes("all")) {
+        matchesCat = p.category !== "sagra" && p.category !== "distributore";
+      } else if (selectedCategories.length === 0) {
+        matchesCat = hasSearchQueryForCat || showFavoritesOnly;
       } else {
         matchesCat = selectedCategories.some((cat) => {
           if (cat === "camper_service") {
@@ -4099,10 +4086,16 @@ out center;`;
             type="button"
             onClick={() => {
               setShowSmartRoute(true);
+              setShowOrbisTrafficMode(true);
+              setShowTrafficFlowTiles(true);
+              setShowOsmObstacles(true);
+              const centerLat = selectedPlace.lat || mapCenterCoords?.lat || 41.9028;
+              const centerLng = selectedPlace.lng || mapCenterCoords?.lng || 12.4964;
+              loadOsmObstaclesOnMap(Number(centerLat), Number(centerLng), false);
               window.dispatchEvent(
                 new CustomEvent("show-toast", {
                   detail: {
-                    message: `🧭 Calcolata rotta camper sicura verso ${selectedPlace.name}! Controllo collisioni attivo.`,
+                    message: `🧭 Calcolata rotta camper sicura verso ${selectedPlace.name}! Traffico Live & Controllo Ostacoli attivi.`,
                   },
                 }),
               );
@@ -5115,24 +5108,38 @@ out center;`;
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs min-h-0 bg-white">
             {filteredPlaces.length === 0 ? (
               <div className="p-6 text-center text-slate-600 dark:text-slate-300 space-y-3 mt-4">
-                <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
-                <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
-                  Nessuna sosta trovata entro 5 km di raggio (10 km circonferenza)
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
-                  Trascina la mappa per esplorare un'altra zona (le soste si caricano automaticamente), oppure cerca una città specifica nella barra di ricerca.
-                </p>
-                {userLocation && (
-                  <div className="flex gap-2 justify-center pt-2">
-                    <button
-                      type="button"
-                      onClick={handleCenterOnUser}
-                      className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#2F3828] text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Navigation className="w-3.5 h-3.5 text-white" />
-                      <span>Torna alla mia posizione</span>
-                    </button>
-                  </div>
+                {selectedCategories.length === 0 && !(searchQuery || "").trim() && !showFavoritesOnly ? (
+                  <>
+                    <Filter className="w-10 h-10 mx-auto text-[#3E4A35] opacity-40" />
+                    <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
+                      Nessun filtro selezionato
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+                      Tocca una o più categorie qui sopra (es. <b>Area Sosta</b>, <b>Park Free</b>, <b>Sagre 🎪</b>, <b>Carburante ⛽</b> o <b>Tutti</b>) per visualizzare i risultati nell'elenco e sulla mappa.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Compass className="w-10 h-10 mx-auto text-[#3E4A35] opacity-50 animate-pulse" />
+                    <p className="font-extrabold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
+                      Nessuna sosta trovata entro 5 km di raggio (10 km circonferenza)
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+                      Trascina la mappa per esplorare un'altra zona (le soste si caricano automaticamente), oppure cerca una città specifica nella barra di ricerca.
+                    </p>
+                    {userLocation && (
+                      <div className="flex gap-2 justify-center pt-2">
+                        <button
+                          type="button"
+                          onClick={handleCenterOnUser}
+                          className="px-3.5 py-2 bg-[#3E4A35] hover:bg-[#2F3828] text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-white" />
+                          <span>Torna alla mia posizione</span>
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : (
@@ -5153,8 +5160,30 @@ out center;`;
                         : "hover:bg-slate-50"
                     }`}
                   >
-                    <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 group/img shadow-xs">
-                      {getCoverPhotoForPlace(place) ? (
+                    <div
+                      onClick={(e) => {
+                        if (
+                          place.category === "sagra" &&
+                          place.imageUrl &&
+                          !isImageFallback(place.category, place.imageUrl)
+                        ) {
+                          e.stopPropagation();
+                          setActiveLightboxPhoto(resolveImage(place.category, place.imageUrl));
+                        }
+                      }}
+                      title={place.category === "sagra" ? "Tocca per aprire la locandina a tutto schermo" : undefined}
+                      className={`relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 group/img shadow-xs ${
+                        place.category === "sagra" ? "cursor-zoom-in" : ""
+                      }`}
+                    >
+                      {place.category === "distributore" ? (
+                        <div className="w-full h-full bg-gradient-to-br from-orange-500 to-amber-600 text-white flex flex-col items-center justify-center p-1 text-center">
+                          <span className="text-lg leading-none">⛽</span>
+                          <span className="text-[9.5px] font-black font-mono mt-0.5 leading-tight">
+                            {place.eventDateBadge || `€${(place.priceEuro || 0).toFixed(3)}`}
+                          </span>
+                        </div>
+                      ) : getCoverPhotoForPlace(place) ? (
                         <img
                           src={getCoverPhotoForPlace(place)!}
                           alt={place.name}
@@ -5208,7 +5237,6 @@ out center;`;
                           }}
                         />
                       )}
-                        {/* Upload functionality disabled */}
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex justify-between items-start gap-1">
@@ -5220,10 +5248,12 @@ out center;`;
                           categoryLabel={place.categoryLabel}
                           name={place.name}
                         />
-                        <span className="flex items-center gap-1 font-bold text-[#2D2926] text-xs">
-                          <Star className="w-3 h-3 text-amber-500 fill-current" />
-                          {normalizeRatingTo10(place.rating) > 0 ? `${normalizeRatingTo10(place.rating).toFixed(1)}/10` : "—"}
-                        </span>
+                        {place.category !== "sagra" && place.category !== "distributore" && (
+                          <span className="flex items-center gap-1 font-bold text-[#2D2926] text-xs">
+                            <Star className="w-3 h-3 text-amber-500 fill-current" />
+                            {normalizeRatingTo10(place.rating) > 0 ? `${normalizeRatingTo10(place.rating).toFixed(1)}/10` : "—"}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5">
@@ -5247,9 +5277,16 @@ out center;`;
                       </div>
                       <div className="flex justify-between items-center pt-1">
                         <span className="font-bold text-slate-700 font-mono text-[10px]">
-                          {place.priceInfo} {place.feeStatus === 'free' ? '✅' : place.feeStatus === 'paid' ? '💰' : ''}
+                          {place.priceInfo}{" "}
+                          {place.category !== "sagra" && place.category !== "distributore"
+                            ? place.feeStatus === "free"
+                              ? "✅"
+                              : place.feeStatus === "paid"
+                              ? "💰"
+                              : ""
+                            : ""}
                         </span>
-                        {hasLimit && (
+                        {hasLimit && place.category !== "sagra" && place.category !== "distributore" && (
                           <span className="bg-[#A45C40]/10 text-[#A45C40] font-extrabold text-[9px] px-1.5 py-0.5 rounded animate-pulse inline-flex items-center gap-1">
                             <AlertTriangle className="w-2.5 h-2.5" />
                             Limiti Sagoma!
@@ -6971,7 +7008,11 @@ out center;`;
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-[#3E4A35] flex items-center gap-1.5">
                   <MapPin className="w-4 h-4 text-[#3E4A35]" />
-                  Scheda Dettagli Sosta
+                  {selectedPlace.category === "distributore"
+                    ? "Dettagli Distributore Carburante"
+                    : selectedPlace.category === "sagra"
+                    ? "Dettagli Sagra / Evento"
+                    : "Scheda Dettagli Sosta"}
                 </span>
               </div>
               <button
@@ -6990,6 +7031,70 @@ out center;`;
               </button>
             </div>
 
+            {selectedPlace.category === "distributore" || selectedPlace.category === "sagra" ? (
+              <div className="space-y-4">
+                {selectedPlace.category === "sagra" &&
+                  selectedPlace.imageUrl &&
+                  !isImageFallback(selectedPlace.category, selectedPlace.imageUrl) && (
+                    <div
+                      onClick={() =>
+                        setActiveLightboxPhoto(
+                          resolveImage(selectedPlace.category, selectedPlace.imageUrl)
+                        )
+                      }
+                      title="Clicca per aprire la locandina a tutto schermo"
+                      className="relative h-64 rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 cursor-zoom-in group"
+                    >
+                      <img
+                        src={resolveImage(selectedPlace.category, selectedPlace.imageUrl)}
+                        alt={selectedPlace.name}
+                        className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute bottom-2.5 right-2.5 bg-black/75 group-hover:bg-black text-white px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 shadow-md pointer-events-none">
+                        <span>🔍 Tocca per locandina a tutto schermo</span>
+                      </div>
+                    </div>
+                  )}
+                <div>
+                  <span
+                    className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                      selectedPlace.category === "distributore"
+                        ? "bg-orange-100 text-orange-900 border border-orange-300"
+                        : "bg-rose-100 text-rose-900 border border-rose-300"
+                    }`}
+                  >
+                    {selectedPlace.categoryLabel ||
+                      (selectedPlace.category === "distributore" ? "⛽ DISTRIBUTORE MIMIT" : "🎪 SAGRA & EVENTO")}
+                  </span>
+                  <h3 className="font-black text-slate-900 text-base mt-2">{selectedPlace.name}</h3>
+                  <p className="text-slate-600 font-medium text-xs mt-0.5">📍 {selectedPlace.address}</p>
+                  {selectedPlace.priceInfo && (
+                    <p className="mt-2 font-black text-slate-800 font-mono text-xs bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 inline-block">
+                      {selectedPlace.category === "sagra" ? `📅 ${selectedPlace.priceInfo}` : `⛽ ${selectedPlace.priceInfo}`}
+                    </p>
+                  )}
+                </div>
+
+                {selectedPlace.description && (
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 text-xs leading-relaxed whitespace-pre-line">
+                    {selectedPlace.description}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenNavigatorSelector(selectedPlace)}
+                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer uppercase text-xs tracking-wider"
+                >
+                  <Compass className="w-4 h-4 text-white" />
+                  <span>
+                    {selectedPlace.category === "distributore" ? "Naviga al Distributore" : "Naviga alla Sagra"}
+                  </span>
+                </button>
+              </div>
+            ) : (
+            <>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex gap-4">
                 {selectedPlace.id !== "current_location" && (
@@ -7952,6 +8057,8 @@ out center;`;
               </form>
             </div>
             )}
+            </>
+            )}
           </div>
         )}
       </div>
@@ -7999,24 +8106,182 @@ out center;`;
             </div>
 
             {/* Scrolling Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-8 min-h-0">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8 min-h-0">
+              {selectedPlace.category === "distributore" || selectedPlace.category === "sagra" ? (
+                <div className="space-y-4">
+                  {/* Per le Sagre mostra la locandina reale se presente (cliccabile a tutto schermo) */}
+                  {selectedPlace.category === "sagra" &&
+                    selectedPlace.imageUrl &&
+                    !isImageFallback(selectedPlace.category, selectedPlace.imageUrl) && (
+                      <div
+                        onClick={() =>
+                          setActiveLightboxPhoto(
+                            resolveImage(selectedPlace.category, selectedPlace.imageUrl)
+                          )
+                        }
+                        title="Tocca per aprire la locandina a tutto schermo"
+                        className="relative h-72 rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 shadow-xs cursor-zoom-in group"
+                      >
+                        <img
+                          src={resolveImage(selectedPlace.category, selectedPlace.imageUrl)}
+                          alt={selectedPlace.name}
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute bottom-2.5 right-2.5 bg-black/75 text-white px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 shadow-md pointer-events-none">
+                          <span>🔍 Tocca per tutto schermo</span>
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Intestazione pulita Distributore o Sagra (senza stelle, votazioni o segnalazioni) */}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                          selectedPlace.category === "distributore"
+                            ? selectedPlace.fuelPrices?.isCheapest
+                              ? "bg-emerald-600 text-white"
+                              : "bg-orange-600 text-white"
+                            : "bg-rose-600 text-white"
+                        }`}
+                      >
+                        {selectedPlace.categoryLabel ||
+                          (selectedPlace.category === "distributore"
+                            ? "⛽ DISTRIBUTORE CARBURANTE"
+                            : "🎪 SAGRA & EVENTO")}
+                      </span>
+                    </div>
+
+                    <h2 className="text-lg font-black text-slate-900 leading-snug">
+                      {selectedPlace.name}
+                    </h2>
+
+                    <p className="text-slate-600 font-semibold text-xs flex items-center gap-1">
+                      <span>📍</span>
+                      <span>{selectedPlace.address}</span>
+                    </p>
+
+                    {selectedPlace.priceInfo && (
+                      <div
+                        className={`p-3 rounded-xl border font-bold text-xs ${
+                          selectedPlace.category === "sagra"
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+                            : "bg-orange-50 border-orange-200 text-orange-950 font-mono"
+                        }`}
+                      >
+                        {selectedPlace.category === "sagra"
+                          ? `📅 Date: ${selectedPlace.priceInfo}`
+                          : `⛽ ${selectedPlace.priceInfo}`}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Scheda Prezzi Carburante MIMIT dedicata se è un distributore */}
+                  {selectedPlace.category === "distributore" && selectedPlace.fuelPrices && (
+                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                        <span className="font-black text-[11px] uppercase tracking-wider text-slate-800">
+                          ⛽ Listino Prezzi Ufficiali MIMIT
+                        </span>
+                        {selectedPlace.fuelPrices.updatedAt && (
+                          <span className="text-[10px] font-bold text-slate-500">
+                            Agg.: {selectedPlace.fuelPrices.updatedAt}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {selectedPlace.fuelPrices.gasolioSelf !== undefined && (
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">🛢️ Gasolio Self</div>
+                            <div className="text-base font-black text-slate-900 font-mono mt-0.5">
+                              €{selectedPlace.fuelPrices.gasolioSelf.toFixed(3)}/L
+                            </div>
+                          </div>
+                        )}
+                        {selectedPlace.fuelPrices.gasolioServito !== undefined && (
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">🛢️ Gasolio Servito</div>
+                            <div className="text-base font-black text-slate-700 font-mono mt-0.5">
+                              €{selectedPlace.fuelPrices.gasolioServito.toFixed(3)}/L
+                            </div>
+                          </div>
+                        )}
+                        {selectedPlace.fuelPrices.benzinaSelf !== undefined && (
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">⛽ Benzina Self</div>
+                            <div className="text-base font-black text-slate-900 font-mono mt-0.5">
+                              €{selectedPlace.fuelPrices.benzinaSelf.toFixed(3)}/L
+                            </div>
+                          </div>
+                        )}
+                        {selectedPlace.fuelPrices.benzinaServito !== undefined && (
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">⛽ Benzina Servito</div>
+                            <div className="text-base font-black text-slate-700 font-mono mt-0.5">
+                              €{selectedPlace.fuelPrices.benzinaServito.toFixed(3)}/L
+                            </div>
+                          </div>
+                        )}
+                        {selectedPlace.fuelPrices.gpl !== undefined && (
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">🔵 GPL</div>
+                            <div className="text-base font-black text-slate-900 font-mono mt-0.5">
+                              €{selectedPlace.fuelPrices.gpl.toFixed(3)}/L
+                            </div>
+                          </div>
+                        )}
+                        {selectedPlace.fuelPrices.metano !== undefined && (
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">🟢 Metano</div>
+                            <div className="text-base font-black text-slate-900 font-mono mt-0.5">
+                              €{selectedPlace.fuelPrices.metano.toFixed(3)}/kg
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Descrizione / Programma Sagra (o info aggiuntive distributore se non c'è fuelPrices) */}
+                  {selectedPlace.description &&
+                    (selectedPlace.category === "sagra" || !selectedPlace.fuelPrices) && (
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 text-xs leading-relaxed">
+                        <p className="font-black text-[10px] uppercase text-slate-400 mb-1.5 tracking-wider">
+                          {selectedPlace.category === "sagra"
+                            ? "📝 Programma, Menù & Dettagli Evento"
+                            : "📝 Dettagli Distributore"}
+                        </p>
+                        <p className="whitespace-pre-line text-xs">{selectedPlace.description}</p>
+                      </div>
+                    )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenNavigatorSelector(selectedPlace)}
+                    className="w-full py-4 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs sm:text-sm tracking-wider cursor-pointer"
+                  >
+                    <Compass className="w-4 h-4 text-white" />
+                    <span>
+                      {selectedPlace.category === "distributore"
+                        ? "Naviga al Distributore"
+                        : "Naviga alla Sagra"}
+                    </span>
+                  </button>
+                </div>
+              ) : (
+              <>
               {/* Image & Main Info Card */}
               <div className="space-y-3">
                 {selectedPlace.id !== "current_location" && (
                   <div
-                    className={`relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 ${
-                      selectedPlace.category === "sagra"
-                        ? "h-64 bg-slate-950"
-                        : "aspect-video bg-slate-100"
-                    } group/img`}
+                    className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 aspect-video bg-slate-100 group/img"
                   >
                   {allAlbumPhotos.length > 0 ? (
                     <img
                       src={allAlbumPhotos[0]}
                       alt={selectedPlace.name}
-                      className={`w-full h-full ${
-                        selectedPlace.category === "sagra" ? "object-contain" : "object-cover"
-                      } animate-fade-in`}
+                      className="w-full h-full object-cover animate-fade-in"
                       referrerPolicy="no-referrer"
                     />
                   ) : isImageFallback(
@@ -8039,9 +8304,7 @@ out center;`;
                         selectedPlace.imageUrl,
                       )}
                       alt={selectedPlace.name}
-                      className={`w-full h-full ${
-                        selectedPlace.category === "sagra" ? "object-contain" : "object-cover"
-                      } animate-fade-in`}
+                      className="w-full h-full object-cover animate-fade-in"
                     referrerPolicy={
                       resolveImage(
                         selectedPlace.category,
@@ -9014,6 +9277,8 @@ out center;`;
                 </div>
               </div>
             </div>
+            )}
+            </>
             )}
           </div>
         </div>,
@@ -10699,92 +10964,121 @@ out center;`;
         </div>
       )}
 
-      {/* --- LIGHTBOX PHOTO VIEW OVERLAY --- */}
-      {activeLightboxPhoto && (
-        <div className="fixed inset-0 bg-slate-950/95 z-[10020] flex flex-col items-center justify-center p-4 animate-fade-in font-sans">
-          {/* Top buttons row */}
-          <div className="absolute top-4 right-4 flex items-center gap-3 z-10">
-            {isUserAdmin && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (deleteConfirmPhotoUrl === activeLightboxPhoto) {
-                    handleDeletePhoto(activeLightboxPhoto);
-                    setDeleteConfirmPhotoUrl(null);
-                  } else {
-                    setDeleteConfirmPhotoUrl(activeLightboxPhoto);
-                    setTimeout(() => setDeleteConfirmPhotoUrl(prev => prev === activeLightboxPhoto ? null : prev), 4000);
-                  }
-                }}
-                className={`p-2 rounded-full text-white border border-rose-500/20 transition-all cursor-pointer shadow-lg flex items-center gap-1.5 px-3.5 text-xs font-bold ${
-                  deleteConfirmPhotoUrl === activeLightboxPhoto
-                    ? "bg-rose-700 hover:bg-rose-800"
-                    : "bg-rose-600 hover:bg-rose-700 hover:scale-105"
-                }`}
-                title={deleteConfirmPhotoUrl === activeLightboxPhoto ? "Clicca di nuovo per eliminare definitivamente" : "Elimina questa foto"}
-              >
-                {deleteConfirmPhotoUrl === activeLightboxPhoto ? (
-                  <>
-                    <Check className="w-5 h-5 text-white animate-pulse" />
-                    <span>Conferma?</span>
-                  </>
-                ) : (
-                  <Trash2 className="w-5 h-5" />
-                )}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setActiveLightboxPhoto(null)}
-              className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs"
+      {/* --- LIGHTBOX PHOTO / LOCANDINA FULLSCREEN OVERLAY (Portaled to document.body) --- */}
+      {activeLightboxPhoto &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            onClick={() => setActiveLightboxPhoto(null)}
+            className="fixed inset-0 bg-black/95 z-[100020] flex flex-col items-center justify-center p-2 sm:p-4 animate-fade-in font-sans cursor-zoom-out"
+          >
+            {/* Top buttons row */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-4 right-4 flex items-center gap-3 z-20"
             >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          {/* Main Image container with Prev/Next buttons */}
-          <div className="relative max-w-5xl w-full max-h-[80vh] flex items-center justify-center px-12">
-            {allAlbumPhotos.length > 1 && (
+              {isUserAdmin && allAlbumPhotos.includes(activeLightboxPhoto) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deleteConfirmPhotoUrl === activeLightboxPhoto) {
+                      handleDeletePhoto(activeLightboxPhoto);
+                      setDeleteConfirmPhotoUrl(null);
+                    } else {
+                      setDeleteConfirmPhotoUrl(activeLightboxPhoto);
+                      setTimeout(
+                        () =>
+                          setDeleteConfirmPhotoUrl((prev) =>
+                            prev === activeLightboxPhoto ? null : prev
+                          ),
+                        4000
+                      );
+                    }
+                  }}
+                  className={`p-2 rounded-full text-white border border-rose-500/20 transition-all cursor-pointer shadow-lg flex items-center gap-1.5 px-3.5 text-xs font-bold ${
+                    deleteConfirmPhotoUrl === activeLightboxPhoto
+                      ? "bg-rose-700 hover:bg-rose-800"
+                      : "bg-rose-600 hover:bg-rose-700 hover:scale-105"
+                  }`}
+                  title={
+                    deleteConfirmPhotoUrl === activeLightboxPhoto
+                      ? "Clicca di nuovo per eliminare definitivamente"
+                      : "Elimina questa foto"
+                  }
+                >
+                  {deleteConfirmPhotoUrl === activeLightboxPhoto ? (
+                    <>
+                      <Check className="w-5 h-5 text-white animate-pulse" />
+                      <span>Conferma?</span>
+                    </>
+                  ) : (
+                    <Trash2 className="w-5 h-5" />
+                  )}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  const idx = allAlbumPhotos.indexOf(activeLightboxPhoto);
-                  const prevIdx = idx === 0 ? allAlbumPhotos.length - 1 : idx - 1;
-                  setActiveLightboxPhoto(allAlbumPhotos[prevIdx]);
-                }}
-                className="absolute left-0 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs focus:outline-none"
+                onClick={() => setActiveLightboxPhoto(null)}
+                className="px-3.5 py-2 bg-white/20 hover:bg-white/30 rounded-full text-white border border-white/20 transition-all cursor-pointer shadow-lg backdrop-blur-xs flex items-center gap-1.5 text-xs font-black"
+                aria-label="Chiudi schermo intero"
               >
-                <ArrowLeft className="w-6 h-6" />
+                <span>Chiudi</span>
+                <X className="w-5 h-5" />
               </button>
-            )}
+            </div>
 
-            <img
-              src={activeLightboxPhoto}
-              alt="Immagine ingrandita"
-              className="max-w-full max-h-[80vh] rounded-xl object-contain border border-white/10 shadow-2xl"
-            />
+            {/* Main Image container with Prev/Next buttons */}
+            <div className="relative w-full h-full flex items-center justify-center">
+              {allAlbumPhotos.includes(activeLightboxPhoto) && allAlbumPhotos.length > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const idx = allAlbumPhotos.indexOf(activeLightboxPhoto);
+                    const prevIdx = idx === 0 ? allAlbumPhotos.length - 1 : idx - 1;
+                    setActiveLightboxPhoto(allAlbumPhotos[prevIdx]);
+                  }}
+                  className="absolute left-2 sm:left-4 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs focus:outline-none z-20"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </button>
+              )}
 
-            {allAlbumPhotos.length > 1 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const idx = allAlbumPhotos.indexOf(activeLightboxPhoto);
-                  const nextIdx = idx === allAlbumPhotos.length - 1 ? 0 : idx + 1;
-                  setActiveLightboxPhoto(allAlbumPhotos[nextIdx]);
-                }}
-                className="absolute right-0 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs focus:outline-none rotate-180"
+              <img
+                src={activeLightboxPhoto}
+                alt="Locandina a tutto schermo"
+                className="max-w-full max-h-[92vh] rounded-lg object-contain shadow-2xl select-none"
+                referrerPolicy="no-referrer"
+              />
+
+              {allAlbumPhotos.includes(activeLightboxPhoto) && allAlbumPhotos.length > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const idx = allAlbumPhotos.indexOf(activeLightboxPhoto);
+                    const nextIdx = idx === allAlbumPhotos.length - 1 ? 0 : idx + 1;
+                    setActiveLightboxPhoto(allAlbumPhotos[nextIdx]);
+                  }}
+                  className="absolute right-2 sm:right-4 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white border border-white/10 transition-all cursor-pointer shadow-lg backdrop-blur-xs focus:outline-none rotate-180 z-20"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+
+            {/* Lightbox Footer indicator (only for multi-photo albums) */}
+            {allAlbumPhotos.includes(activeLightboxPhoto) && allAlbumPhotos.length > 0 && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute bottom-6 bg-black/60 px-4 py-1.5 rounded-full border border-white/10 text-[11px] font-bold text-white tracking-widest font-mono shrink-0 backdrop-blur-xs"
               >
-                <ArrowLeft className="w-6 h-6" />
-              </button>
+                {allAlbumPhotos.indexOf(activeLightboxPhoto) + 1} / {allAlbumPhotos.length}
+              </div>
             )}
-          </div>
-
-          {/* Lightbox Footer indicator */}
-          <div className="absolute bottom-6 bg-black/60 px-4 py-1.5 rounded-full border border-white/10 text-[11px] font-bold text-white tracking-widest font-mono shrink-0 backdrop-blur-xs">
-            {allAlbumPhotos.indexOf(activeLightboxPhoto) + 1} / {allAlbumPhotos.length}
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Google Maps API Key Modal */}
       {isAdmin && (currentUser?.isModerator || currentUser?.email === "viacamperapp@gmail.com" || currentUser?.email === "sambucci.simone@gmail.com") && showKeyModal && (
@@ -11455,7 +11749,8 @@ export function LeafletOfflineMap({
         icon: customDivIcon,
       }).addTo(map);
 
-      marker.on("click", () => {
+      marker.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
         setSelectedPlace(place);
         setIsMobileDetailsOpen(true);
         if (movedRef) movedRef.current = true;
