@@ -352,7 +352,8 @@ export default function FullscreenNavigator({
         'tomtom-traffic-tiles': {
           type: 'raster',
           tiles: [
-            resolveApiUrl('/api/tomtom-traffic-tile/{z}/{x}/{y}.png')
+            "https://mt0.google.com/vt?lyrs=h,traffic&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt?lyrs=h,traffic&x={x}&y={y}&z={z}"
           ],
           tileSize: 256,
           maxzoom: 19
@@ -376,7 +377,7 @@ export default function FullscreenNavigator({
             visibility: 'visible'
           },
           paint: {
-            'raster-opacity': 0.85
+            'raster-opacity': 0.95
           }
         }
       ]
@@ -2729,13 +2730,112 @@ out center;`;
     if (!mapInstance) return;
     if (!coords || coords.length === 0) return;
 
-    const geojson: any = {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: coords.map(c => [c[1], c[0]]) // MapLibre expects [lng, lat]
+    // Build per-segment traffic-colored FeatureCollection when showTrafficFlow is ON
+    const features: any[] = [];
+    if (!showTrafficFlow || coords.length < 2) {
+      features.push({
+        type: 'Feature',
+        properties: { color: '#3B82F6' },
+        geometry: {
+          type: 'LineString',
+          coordinates: coords.map(c => [c[1], c[0]])
+        }
+      });
+    } else {
+      // Pre-compute step indices where traffic lights, roundabouts, or tight urban turns cause slowdowns
+      const orangeIndices = new Set<number>();
+      const redIndices = new Set<number>();
+
+      directionsSequence.forEach((step) => {
+        const idx = step.coordinateIndex ?? -1;
+        if (idx < 0 || idx >= coords.length) return;
+        const isLight = Boolean(step.hasTrafficLight || /semaforo/i.test(step.title || '') || /semaforo/i.test(step.desc || ''));
+        const isRound = /rotonda|rotatoria/i.test(step.title || '') || /rotonda|rotatoria/i.test(step.desc || '');
+        const isSharpTurn = /svolta/i.test(step.title || '') || /svolta/i.test(step.desc || '');
+
+        if (isLight) {
+          // Red right before traffic light, orange approaching it
+          for (let k = Math.max(0, idx - 2); k <= Math.min(coords.length - 1, idx + 1); k++) {
+            redIndices.add(k);
+          }
+          for (let k = Math.max(0, idx - 5); k < Math.max(0, idx - 2); k++) {
+            orangeIndices.add(k);
+          }
+        } else if (isRound) {
+          for (let k = Math.max(0, idx - 3); k <= Math.min(coords.length - 1, idx + 2); k++) {
+            orangeIndices.add(k);
+          }
+        } else if (isSharpTurn) {
+          for (let k = Math.max(0, idx - 2); k <= Math.min(coords.length - 1, idx + 1); k++) {
+            orangeIndices.add(k);
+          }
+        }
+      });
+
+      // Also mark segments near any TomTom Orbis / OSM traffic incidents or obstacles
+      osmObstacles.forEach((obs) => {
+        const closestIdx = findClosestCoordinateIndex([obs.lat, obs.lng], coords);
+        const distMeters = calculateHaversineDistance([obs.lat, obs.lng], coords[closestIdx]) * 1000;
+        if (distMeters <= 300) {
+          const isSevere =
+            obs.isViolation ||
+            obs.type === 'jam' ||
+            obs.type === 'accident' ||
+            obs.type === 'closure' ||
+            obs.type === 'roadworks';
+          for (let k = Math.max(0, closestIdx - 3); k <= Math.min(coords.length - 1, closestIdx + 3); k++) {
+            if (isSevere) redIndices.add(k);
+            else orangeIndices.add(k);
+          }
+        }
+      });
+
+      let currentColor = '#3B82F6';
+      let currentChunk: [number, number][] = [[coords[0][1], coords[0][0]]];
+
+      for (let i = 0; i < coords.length - 1; i++) {
+        let segColor = '#3B82F6';
+        if (redIndices.has(i) || redIndices.has(i + 1)) {
+          segColor = '#EF4444'; // Rosso Traffico Intenso / Coda / Semaforo
+        } else if (orangeIndices.has(i) || orangeIndices.has(i + 1)) {
+          segColor = '#F97316'; // Arancione Rallentamento Moderato
+        }
+
+        const nextPt: [number, number] = [coords[i + 1][1], coords[i + 1][0]];
+        if (i === 0) {
+          currentColor = segColor;
+          currentChunk.push(nextPt);
+        } else if (segColor === currentColor) {
+          currentChunk.push(nextPt);
+        } else {
+          features.push({
+            type: 'Feature',
+            properties: { color: currentColor },
+            geometry: {
+              type: 'LineString',
+              coordinates: currentChunk
+            }
+          });
+          currentColor = segColor;
+          currentChunk = [[coords[i][1], coords[i][0]], nextPt];
+        }
       }
+
+      if (currentChunk.length >= 2) {
+        features.push({
+          type: 'Feature',
+          properties: { color: currentColor },
+          geometry: {
+            type: 'LineString',
+            coordinates: currentChunk
+          }
+        });
+      }
+    }
+
+    const geojson: any = {
+      type: 'FeatureCollection',
+      features
     };
 
     try {
@@ -2751,6 +2851,21 @@ out center;`;
         });
 
         mapInstance.addLayer({
+          id: 'route-casing',
+          type: 'line',
+          source: 'route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          paint: {
+            'line-color': '#0f172a',
+            'line-width': 9,
+            'line-opacity': 0.55
+          }
+        });
+
+        mapInstance.addLayer({
           id: 'route',
           type: 'line',
           source: 'route',
@@ -2759,9 +2874,9 @@ out center;`;
             'line-cap': 'round'
           },
           paint: {
-            'line-color': '#3B82F6',
-            'line-width': 7,
-            'line-opacity': 0.9
+            'line-color': ['coalesce', ['get', 'color'], '#3B82F6'],
+            'line-width': 6.5,
+            'line-opacity': 0.95
           }
         });
       }
@@ -3126,7 +3241,7 @@ out center;`;
     setNearbyPlaces(detected);
   }, [routeCoordinates, places, dest.id, showStopsOnRoute]);
 
-  // Synchronize TomTom Orbis Live Traffic Flow Layer visibility on MapLibre GL Map
+  // Synchronize TomTom Orbis Live Traffic Flow Layer visibility & Route Segment Traffic Colors on MapLibre GL Map
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3139,6 +3254,9 @@ out center;`;
             showTrafficFlow ? 'visible' : 'none'
           );
         }
+        if (displayedRouteCoordsRef.current && displayedRouteCoordsRef.current.length > 0) {
+          addRouteLayer(map, displayedRouteCoordsRef.current);
+        }
       } catch (e) {}
     };
     if (map.isStyleLoaded()) {
@@ -3146,7 +3264,7 @@ out center;`;
     } else {
       map.once('load', applyVisibility);
     }
-  }, [showTrafficFlow]);
+  }, [showTrafficFlow, osmObstacles, directionsSequence]);
 
   // Synchronize OSM & TomTom Orbis Obstacle Markers on FullscreenNavigator's MapLibre GL Map
   React.useEffect(() => {
@@ -3847,44 +3965,9 @@ const newCenter = [targetCoords[1], targetCoords[0]];
               </div>
             )}
 
-            {/* Barra Rapida Traffico & Ostacoli (Attivi di Default nel Navigatore Interno) */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
-              <div className="flex flex-wrap items-center gap-1.5 bg-[#0b101d]/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border border-slate-800/90 shadow-xl">
-                <button
-                  type="button"
-                  onClick={() => setShowTrafficFlow((v) => !v)}
-                  className={`px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-                    showTrafficFlow
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  }`}
-                  title="Attiva/Disattiva flusso traffico live TomTom Orbis"
-                >
-                  <span>🚦 Traffico Live: {showTrafficFlow ? 'ON' : 'OFF'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowOsmObstacles((v) => !v)}
-                  className={`px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-                    showOsmObstacles
-                      ? osmObstacles.some((o) => o.isViolation)
-                        ? 'bg-rose-600 text-white animate-pulse shadow-sm'
-                        : 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  }`}
-                  title="Attiva/Disattiva rilevamento ostacoli sagoma, cantieri e pendenze lungo la rotta"
-                >
-                  <span>
-                    {showOsmObstacles
-                      ? scanningObstacles
-                        ? '🔍 Scansione Ostacoli...'
-                        : `⚠️ Ostacoli & Sagoma: ON (${osmObstacles.length})`
-                      : '⚠️ Ostacoli & Sagoma: OFF'}
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 bg-[#0b101d]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800/90 shadow-2xl ml-auto">
+            {/* Vertical Stack: Minimize & Close Buttons right under top HUD bar on right side */}
+            <div className="flex justify-end pointer-events-auto pt-0.5">
+              <div className="flex flex-col gap-2 bg-[#0b101d]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800/90 shadow-2xl">
                 {/* Minimize button */}
                 <button
                   type="button"

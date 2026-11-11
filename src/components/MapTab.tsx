@@ -11536,7 +11536,7 @@ export function LeafletOfflineMap({
     if (showTrafficFlow && isOnline) {
       const tLayer = L.tileLayer(resolveApiUrl("/api/tomtom-traffic-tile/{z}/{x}/{y}.png"), {
         maxZoom: 19,
-        opacity: 0.92,
+        opacity: 0.95,
         zIndex: 450,
       });
       tLayer.on("tileerror", (errEvent: any) => {
@@ -11544,7 +11544,7 @@ export function LeafletOfflineMap({
         const coords = errEvent?.coords;
         if (tile && coords && !tile._directTrafficFallback) {
           tile._directTrafficFallback = true;
-          tile.src = `https://mt0.google.com/vt?lyrs=traffic&x=${coords.x}&y=${coords.y}&z=${coords.z}`;
+          tile.src = `https://mt0.google.com/vt?lyrs=h,traffic&x=${coords.x}&y=${coords.y}&z=${coords.z}`;
         }
       });
       tLayer.addTo(leafletMapInstance);

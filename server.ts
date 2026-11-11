@@ -9100,13 +9100,29 @@ Rispondi RIGOROSAMENTE in formato JSON con questa struttura:
     const { z, x, y } = req.params;
     const tomtomKey = process.env.TOMTOM_API_KEY || "";
     try {
-      const tileUrl = tomtomKey
-        ? `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/${z}/${x}/${y}.png?key=${encodeURIComponent(tomtomKey)}&tileSize=256`
-        : `https://mt0.google.com/vt?lyrs=traffic&x=${x}&y=${y}&z=${z}`;
+      if (tomtomKey) {
+        const ttUrl = `https://api.tomtom.com/traffic/map/4/tile/flow/absolute/${z}/${x}/${y}.png?key=${encodeURIComponent(tomtomKey)}&tileSize=256&thickness=6`;
+        const ttRes = await fetch(ttUrl, {
+          headers: {
+            "User-Agent": "ViaCamperApp/1.0 (TomTom Orbis Traffic Layer)",
+          },
+        });
+        if (ttRes.ok) {
+          const ttBuf = await ttRes.arrayBuffer();
+          // If TomTom returns a non-empty tile (>150 bytes), serve it directly
+          if (ttBuf.byteLength > 150) {
+            res.setHeader("Content-Type", "image/png");
+            res.setHeader("Cache-Control", "public, max-age=60");
+            return res.send(Buffer.from(ttBuf));
+          }
+        }
+      }
 
-      const tileRes = await fetch(tileUrl, {
+      // High-coverage fallback: transparent live traffic overlay (green/orange/red roads)
+      const fallbackUrl = `https://mt0.google.com/vt?lyrs=h,traffic&x=${x}&y=${y}&z=${z}`;
+      const tileRes = await fetch(fallbackUrl, {
         headers: {
-          "User-Agent": "ViaCamperApp/1.0 (TomTom Orbis Traffic Layer)",
+          "User-Agent": "ViaCamperApp/1.0 (Live Traffic Overlay)",
         },
       });
       if (!tileRes.ok) {
