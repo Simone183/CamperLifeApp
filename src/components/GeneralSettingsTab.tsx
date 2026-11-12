@@ -107,7 +107,7 @@ export default function GeneralSettingsTab({
   React.useEffect(() => {
     getScheduledNotificationsCount().then((count) => setScheduledNotifsCount(count));
   }, []);
-  const [mapEngine, setMapEngine] = React.useState(initialSettings.mapEngine ?? "google");
+  const [mapEngine, setMapEngine] = React.useState(initialSettings.mapEngine ?? "leaflet");
   const [shareLocation, setShareLocation] = React.useState(initialSettings.shareLocation ?? false);
   const [weatherAlerts, setWeatherAlerts] = React.useState(initialSettings.weatherAlerts ?? true);
   const [drivingStyle, setDrivingStyle] = React.useState(initialSettings.drivingStyle ?? "relax");

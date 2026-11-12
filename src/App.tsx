@@ -488,6 +488,8 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
+    if (showPermissionModal) return;
+
     const initNotifications = async () => {
       const emailToRegister =
         currentUser?.email ||
@@ -529,7 +531,7 @@ export default function App() {
         appStateSub.remove();
       }
     };
-  }, [currentUser?.email]);
+  }, [currentUser?.email, showPermissionModal]);
 
   const [checklistItems, setChecklistItems] = React.useState<ChecklistItem[]>(() => {
     try {
@@ -639,13 +641,7 @@ export default function App() {
 
   const [showTermsModal, setShowTermsModal] = React.useState<boolean>(false);
 
-  const [showTour, setShowTour] = React.useState<boolean>(() => {
-    try {
-      return localStorage.getItem("has_seen_onboarding_tour") !== "true";
-    } catch {
-      return false;
-    }
-  });
+  const [showTour, setShowTour] = React.useState<boolean>(false);
 
   const [showOfflinePromptModal, setShowOfflinePromptModal] =
     React.useState<boolean>(false);

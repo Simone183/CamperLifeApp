@@ -5,7 +5,13 @@ export function useAppSettings(): AppSettings {
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem("camper_app_settings");
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!localStorage.getItem("user_google_maps_key")) {
+          parsed.mapEngine = "leaflet";
+        }
+        return parsed;
+      }
     } catch (e) {}
     
     return {
@@ -33,7 +39,7 @@ export function useAppSettings(): AppSettings {
       wifiOnlySync: true,
       photoQuality: "medium",
       pinEnabled: false,
-      mapEngine: "google",
+      mapEngine: "leaflet",
       ttsEnabled: true,
       ttsGender: "auto"
     } as AppSettings;

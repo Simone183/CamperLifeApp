@@ -713,16 +713,22 @@ export default function MapTab({
   const [googleMapsKey, setGoogleMapsKey] = React.useState<string>(() => {
     try {
       const saved = localStorage.getItem("user_google_maps_key");
-      if (saved) return saved;
+      if (saved && saved.trim().length > 0) return saved.trim();
     } catch (e) {}
-    // Fall back to default key
-    return API_KEY;
+    return "";
   });
 
   const hasValidKey =
     Boolean(googleMapsKey) &&
     googleMapsKey !== "YOUR_API_KEY" &&
     googleMapsKey.trim().length > 0;
+
+  React.useEffect(() => {
+    (window as any).gm_authFailure = () => {
+      console.warn("[MapTab] Google Maps JS SDK auth failure detected, switching to Leaflet engine.");
+      setGoogleMapCrashed(true);
+    };
+  }, []);
 
   const [showKeyModal, setShowKeyModal] = React.useState<boolean>(false);
   const [tempKey, setTempKey] = React.useState<string>(() => {
