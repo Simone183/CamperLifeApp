@@ -51,7 +51,23 @@ export function configureAndroidAuto() {
   if (fs.existsSync(manifestPath)) {
     let manifest = fs.readFileSync(manifestPath, 'utf-8');
 
+    // Assicura il namespace xmlns:tools="http://schemas.android.com/tools" nel tag <manifest>
+    if (!manifest.includes('xmlns:tools=')) {
+      manifest = manifest.replace(
+        '<manifest ',
+        '<manifest xmlns:tools="http://schemas.android.com/tools" '
+      );
+    }
+
+    // Rimuove eventuali dichiarazioni pregresse di USE_EXACT_ALARM prive di tools:node="remove"
+    manifest = manifest.replace(
+      /\s*<uses-permission\s+android:name="android\.permission\.USE_EXACT_ALARM"(?!\s+tools:node="remove")[^>]*\/>/g,
+      ''
+    );
+
     // Permessi necessari per navigazione continua, notifiche push in background ad app chiusa (Android 12/13/14) e audio guida in auto
+    // NOTA: USE_EXACT_ALARM viene forzatamente rimosso (tools:node="remove") come richiesto da Google Play Policy;
+    // al suo posto si usa SCHEDULE_EXACT_ALARM + JobScheduler/WorkManager per scadenze e promemoria camper.
     const permissionsToAdd = [
       '    <uses-permission android:name="android.permission.INTERNET" />',
       '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
@@ -64,7 +80,7 @@ export function configureAndroidAuto() {
       '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
       '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
       '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />',
-      '    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />',
+      '    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove" />',
       '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
       '    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />',
       '    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />',
@@ -4455,7 +4471,11 @@ public class WeatherAlertMonitor {
                 long triggerAt = System.currentTimeMillis() + safeDelay;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     try {
-                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+                            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                        } else {
+                            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                        }
                     } catch (SecurityException se) {
                         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
                     }
@@ -4519,7 +4539,11 @@ public class WeatherAlertMonitor {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
-                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+                        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    } else {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    }
                 } catch (SecurityException se) {
                     am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
                 }

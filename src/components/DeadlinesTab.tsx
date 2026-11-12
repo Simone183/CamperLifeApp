@@ -13,6 +13,7 @@ import { db } from "../lib/firebase";
 import { sanitizeForFirestore } from "../utils/firestoreHelper";
 import { playAlertSound } from '../utils/soundHelper';
 import { INITIAL_DEADLINES } from '../data/mockData';
+import { scheduleCamperDeadlineNotifications } from '../utils/localNotifications';
 
 interface DeadlinesTabProps {
   deadlines?: Deadline[];
@@ -185,6 +186,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
     });
     try {
       localStorage.setItem("camper_deadlines", JSON.stringify(deadlines));
+      scheduleCamperDeadlineNotifications(deadlines).catch(() => {});
     } catch (e) {}
   }, [deadlines, loadedFromFirestore]);
 

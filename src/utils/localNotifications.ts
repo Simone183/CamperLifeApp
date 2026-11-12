@@ -5,6 +5,146 @@ import { PROMO_MESSAGES } from '../data/promoMessages';
 const CURRENT_APP_VERSION = '2.5.20';
 
 /**
+ * Helper to schedule notifications safely on Android 12+ (API 31+) without USE_EXACT_ALARM.
+ * Uses SCHEDULE_EXACT_ALARM if granted by the user, and automatically falls back to
+ * inexact scheduling (allowWhileIdle: false) if the user revoked exact alarms in Android Settings.
+ */
+async function scheduleNotificationsSafely(notifications: any[]) {
+  let canUseExact = true;
+  if (Capacitor.getPlatform() === 'android' && typeof (LocalNotifications as any).checkExactNotificationSetting === 'function') {
+    try {
+      const exactStatus = await (LocalNotifications as any).checkExactNotificationSetting();
+      if (exactStatus && exactStatus.exact_alarm !== 'granted') {
+        canUseExact = false;
+      }
+    } catch {
+      // Ignore if plugin version doesn't implement checkExactNotificationSetting
+    }
+  }
+
+  const prepared = notifications.map((n) => ({
+    ...n,
+    schedule: {
+      ...n.schedule,
+      allowWhileIdle: canUseExact ? Boolean(n.schedule?.allowWhileIdle ?? true) : false
+    }
+  }));
+
+  try {
+    await LocalNotifications.schedule({ notifications: prepared });
+  } catch (err) {
+    // Fallback to non-exact alarms if Android throws SecurityException for SCHEDULE_EXACT_ALARM
+    console.warn('[LocalPush] Exact alarm restricted by OS, falling back to standard inexact alarm:', err);
+    const fallbackNotifs = notifications.map((n) => ({
+      ...n,
+      schedule: {
+        ...n.schedule,
+        allowWhileIdle: false
+      }
+    }));
+    await LocalNotifications.schedule({ notifications: fallbackNotifs });
+  }
+}
+
+/**
+ * Schedule native reminders for Camper Deadlines (Revisione, Assicurazione, Bollo, Tagliando, ecc.)
+ * Sends notifications 7 days before and 1 day before each active deadline at 09:30.
+ */
+export async function scheduleCamperDeadlineNotifications(deadlinesInput?: any[]) {
+  if (!Capacitor.isNativePlatform()) return { scheduled: 0 };
+
+  try {
+    let permStatus = await LocalNotifications.checkPermissions();
+    if (permStatus.display !== 'granted') return { scheduled: 0 };
+
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        await LocalNotifications.createChannel({
+          id: 'deadlines_channel',
+          name: 'Scadenze & Manutenzioni Camper 📅',
+          description: 'Avvisi per scadenza revisione, assicurazione, bollo e manutenzione del camper',
+          importance: 5,
+          visibility: 1,
+          sound: 'default',
+          vibration: true,
+          lights: true,
+          lightColor: '#A45C40'
+        });
+      } catch (e) {}
+    }
+
+    let deadlines = deadlinesInput;
+    if (!Array.isArray(deadlines)) {
+      try {
+        const raw = localStorage.getItem('camper_deadlines');
+        deadlines = raw ? JSON.parse(raw) : [];
+      } catch {
+        deadlines = [];
+      }
+    }
+
+    if (!Array.isArray(deadlines) || deadlines.length === 0) return { scheduled: 0 };
+
+    // Cancel previous deadline notifications (IDs 2000 to 2999)
+    try {
+      const pending = await LocalNotifications.getPending();
+      const deadlineIds = (pending.notifications || [])
+        .filter((n) => n.id >= 2000 && n.id < 3000)
+        .map((n) => ({ id: n.id }));
+      if (deadlineIds.length > 0) {
+        await LocalNotifications.cancel({ notifications: deadlineIds });
+      }
+    } catch (e) {}
+
+    const now = Date.now();
+    const notificationsToSchedule: any[] = [];
+    let idCounter = 2000;
+
+    deadlines.forEach((item: any) => {
+      if (!item || item.done || !item.dueDate) return;
+      const [y, m, d] = String(item.dueDate).split('-').map(Number);
+      if (!y || !m || !d) return;
+
+      // Reminders: 7 days before, 1 day before, and day of deadline at 09:30
+      const offsets = [
+        { daysBefore: 7, label: 'tra 7 giorni' },
+        { daysBefore: 1, label: 'domani' },
+        { daysBefore: 0, label: 'oggi' }
+      ];
+
+      offsets.forEach(({ daysBefore, label }) => {
+        if (idCounter >= 2990) return;
+        const targetDate = new Date(y, m - 1, d, 9, 30, 0, 0);
+        targetDate.setDate(targetDate.getDate() - daysBefore);
+
+        if (targetDate.getTime() > now + 60_000) {
+          notificationsToSchedule.push({
+            id: idCounter++,
+            title: `📅 Scadenza Camper: ${item.title || item.category || 'Promemoria'}`,
+            body: `La scadenza "${item.title || item.category}" è prevista ${label} (${item.dueDate}). Controlla lo Scadenziere di ViaCamper!`,
+            schedule: { at: targetDate, allowWhileIdle: true },
+            sound: 'default',
+            channelId: 'deadlines_channel',
+            actionTypeId: 'OPEN_APP',
+            extra: { type: 'deadline_reminder', deadlineId: item.id }
+          });
+        }
+      });
+    });
+
+    if (notificationsToSchedule.length > 0) {
+      await scheduleNotificationsSafely(notificationsToSchedule);
+      console.log(`[LocalPush] Scheduled ${notificationsToSchedule.length} camper deadline notifications.`);
+    }
+
+    return { scheduled: notificationsToSchedule.length };
+  } catch (err) {
+    console.warn('[LocalPush] Warning scheduling camper deadline notifications:', err);
+    return { scheduled: 0 };
+  }
+}
+
+/**
  * Schedule local notifications to arrive every 2 days on native mobile devices.
  * Automatically detects Play Store app updates and forces fresh rescheduling.
  * If force is true, app version changed, or less than 25 pending notifications remain,
@@ -47,9 +187,13 @@ export async function scheduleLocalPromoNotifications(force = false) {
       }
     }
 
+    // Always keep camper deadline reminders synced
+    await scheduleCamperDeadlineNotifications();
+
     // 3. Check existing pending notifications & app update state
     const pending = await LocalNotifications.getPending();
-    const existingCount = pending.notifications ? pending.notifications.length : 0;
+    const promoPending = (pending.notifications || []).filter((n) => n.id >= 100 && n.id < 200);
+    const existingCount = promoPending.length;
     const lastVersion = localStorage.getItem('camper_last_scheduled_app_version');
 
     let shouldForce = force;
@@ -67,7 +211,7 @@ export async function scheduleLocalPromoNotifications(force = false) {
     // 4. Cancel existing promo notifications before rescheduling to avoid duplicates
     if (existingCount > 0) {
       try {
-        const idsToCancel = pending.notifications.map((n) => ({ id: n.id }));
+        const idsToCancel = promoPending.map((n) => ({ id: n.id }));
         await LocalNotifications.cancel({ notifications: idsToCancel });
         console.log(`[LocalPush] Cancelled ${idsToCancel.length} stale pending notifications.`);
       } catch (cancelErr) {
@@ -88,7 +232,7 @@ export async function scheduleLocalPromoNotifications(force = false) {
         id: index + 100, // Unique IDs 100 to 149
         title: msg.title,
         body: msg.body,
-        schedule: { at: scheduleDate },
+        schedule: { at: scheduleDate, allowWhileIdle: true },
         sound: 'default',
         channelId: 'promo_channel',
         actionTypeId: 'OPEN_APP',
@@ -96,7 +240,7 @@ export async function scheduleLocalPromoNotifications(force = false) {
       };
     });
 
-    await LocalNotifications.schedule({ notifications });
+    await scheduleNotificationsSafely(notifications);
     try {
       localStorage.setItem('camper_last_scheduled_app_version', CURRENT_APP_VERSION);
     } catch (e) {}
@@ -145,19 +289,17 @@ export async function sendTestLocalNotification(): Promise<{ success: boolean; m
 
     const testDate = new Date(Date.now() + 3000); // 3 seconds from now
 
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: 999,
-          title: '🔔 Prova Notifica ViaCamper',
-          body: 'Notifica di test programmata con successo! L\'app ti invierà avvisi ogni 2 giorni.',
-          schedule: { at: testDate },
-          sound: 'default',
-          channelId: 'promo_channel',
-          extra: { type: 'test_notification' }
-        }
-      ]
-    });
+    await scheduleNotificationsSafely([
+      {
+        id: 999,
+        title: '🔔 Prova Notifica ViaCamper',
+        body: 'Notifica di test programmata con successo! L\'app ti invierà avvisi ogni 2 giorni.',
+        schedule: { at: testDate, allowWhileIdle: true },
+        sound: 'default',
+        channelId: 'promo_channel',
+        extra: { type: 'test_notification' }
+      }
+    ]);
 
     return { success: true, message: 'Notifica di prova programmata tra 3 secondi!' };
   } catch (err: any) {
@@ -244,19 +386,17 @@ export async function sendWeatherAlertPushNotification(title: string, body: stri
     // Create 32-bit positive integer ID from alertId string hash
     const numericId = (Math.abs(alertId.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 100000) + 5000;
 
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: numericId,
-          title: `⚠️ ${title}`,
-          body: body,
-          schedule: { at: new Date(Date.now() + 200) },
-          sound: 'default',
-          channelId: 'weather_alert_channel',
-          extra: { type: 'weather_alert', alertId }
-        }
-      ]
-    });
+    await scheduleNotificationsSafely([
+      {
+        id: numericId,
+        title: `⚠️ ${title}`,
+        body: body,
+        schedule: { at: new Date(Date.now() + 200), allowWhileIdle: true },
+        sound: 'default',
+        channelId: 'weather_alert_channel',
+        extra: { type: 'weather_alert', alertId }
+      }
+    ]);
 
     console.log('[WeatherPush] Android weather alert push notification sent successfully for ID:', alertId);
     return true;
