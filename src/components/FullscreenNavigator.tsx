@@ -1512,7 +1512,7 @@ out center;`;
       });
     };
 
-    if (!('speechSynthesis' in window) || isNativeMobileApp()) {
+    if (!('speechSynthesis' in window) || isNativeMobileApp() || (settings?.ttsGender || 'auto') !== 'female') {
       triggerAudioFallback();
       return;
     }
@@ -4390,34 +4390,35 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                   </label>
                 </div>
 
-                {/* Voce Navigatore: Auto / Femminile / Maschile */}
+                {/* Voce Navigatore: Voce Uomo / Voce Donna */}
                 <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col gap-1.5 shadow-sm select-none">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-200 flex items-center gap-1">
-                      <Volume2 className="w-3 h-3 text-emerald-400" />
-                      Voce Guida GPS
+                      <Volume2 className="w-3 h-3 text-blue-400" />
+                      Voce Guida stile Google Maps
                     </span>
                     <button
                       type="button"
                       onClick={() => {
+                        const activeG = settings?.ttsGender === 'female' ? 'female' : 'male';
                         window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova vocale GPS in corso...", duration: 3500 } }));
-                        speakSampleTts(settings?.ttsGender || 'auto');
+                        speakSampleTts(activeG);
                       }}
-                      className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                      className={`text-[9px] font-extrabold px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
                         isSpeakingTts
-                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-md animate-pulse ring-2 ring-emerald-400/50'
-                          : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30'
+                          ? 'bg-blue-600 text-white border-blue-500 shadow-md animate-pulse ring-2 ring-blue-400/50'
+                          : 'bg-blue-600 text-white border-blue-500 hover:bg-blue-500'
                       }`}
                     >
                       <Volume2 className={`w-3 h-3 ${isSpeakingTts ? 'animate-bounce' : ''}`} />
-                      <span>{isSpeakingTts ? "In corso..." : "Prova"}</span>
+                      <span>{isSpeakingTts ? "In riproduzione..." : "Prova Voce"}</span>
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-1">
-                    {(['auto', 'female', 'male'] as const).map((g) => {
-                      const currentG = settings?.ttsGender || 'auto';
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['male', 'female'] as const).map((g) => {
+                      const currentG = settings?.ttsGender === 'female' ? 'female' : 'male';
                       const isSel = currentG === g;
-                      const label = g === 'auto' ? '⚙️ Auto' : g === 'female' ? '♀️ Donna' : '♂️ Uomo';
+                      const label = g === 'male' ? 'Voce Uomo' : 'Voce Donna';
                       return (
                         <button
                           key={g}
@@ -4433,11 +4434,11 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                               speakSampleTts(g);
                             } catch (_) {}
                           }}
-                          className={`py-1 text-[9px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
+                          className={`py-1.5 text-[10px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
                             isSel
                               ? isSpeakingTts
-                                ? 'bg-emerald-500/30 border-emerald-400 text-emerald-200 ring-2 ring-emerald-500/80 animate-pulse'
-                                : 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                                ? 'bg-blue-500/30 border-blue-400 text-blue-200 ring-2 ring-blue-500/80 animate-pulse'
+                                : 'bg-blue-500/20 border-blue-500 text-blue-300'
                               : 'bg-slate-800/80 border-slate-700/80 text-slate-400 hover:text-slate-200'
                           }`}
                         >

@@ -4,8 +4,8 @@ import { resolveApiUrl } from './resolveMediaUrl';
 
 export type TtsGender = 'auto' | 'female' | 'male';
 
-const FEMALE_VOICE_REGEX = /alice|elsa|federica|sonia|monica|silvia|isabella|paola|giulia|chiara|female|femminile|woman|siri|zira|samantha/i;
-const MALE_VOICE_REGEX = /cosimo|luca|diego|paolo|marco|matteo|giorgio|mario|roberto|stefano|male|maschile|man|guy|david|george/i;
+const FEMALE_VOICE_REGEX = /it-it-x-kda|it-it-x-ita|it-it-x-itb|kda-local|kda-network|ita-local|ita-network|itb-local|itb-network|\bkda\b|\bita\b|\bitb\b|iof|alice|elsa|federica|sonia|monica|silvia|isabella|paola|giulia|chiara|fabiola|imelda|irma|palmira|pierina|female|femminile|donna|woman|siri|zira|samantha/i;
+const MALE_VOICE_REGEX = /it-it-x-itd|it-it-x-itc|itd-local|itd-network|itc-local|itc-network|\bitd\b|\bitc\b|iom|cosimo|luca|diego|paolo|marco|matteo|giorgio|giuseppe|mario|roberto|stefano|rinaldo|lisandro|calimero|benigno|male|maschile|uomo|\bman\b|guy|david|george/i;
 
 export function isNativeMobileApp(): boolean {
   if (typeof window === "undefined") return false;
@@ -55,40 +55,39 @@ export function applyTtsVoiceAndPitch(
   msg.lang = 'it-IT';
   msg.rate = 1.0;
 
-  if (isNativeMobileApp()) {
-    msg.pitch = genderSetting === 'female' ? 1.08 : genderSetting === 'male' ? 0.92 : 1.0;
-    return;
-  }
-
   let voices: SpeechSynthesisVoice[] = [];
   try {
     voices = window.speechSynthesis.getVoices() || [];
   } catch (_) {}
 
   const italianVoices = voices.filter(
-    v => v.lang && (v.lang.startsWith('it') || v.lang.includes('IT') || v.lang.includes('it'))
+    v => v && v.lang && (v.lang.toLowerCase().startsWith('it') || v.lang.toLowerCase().includes('it-it') || v.lang.toLowerCase().includes('it_it'))
   );
 
-  let selectedVoice: SpeechSynthesisVoice | null = null;
-  let targetPitch = 1.0;
-
   if (genderSetting === 'female') {
-    selectedVoice = italianVoices.find(v => FEMALE_VOICE_REGEX.test(v.name) && v.localService) || italianVoices.find(v => FEMALE_VOICE_REGEX.test(v.name)) || null;
-    targetPitch = 1.05;
+    const femVoice =
+      italianVoices.find(v => FEMALE_VOICE_REGEX.test(`${v.name} ${v.voiceURI}`) && v.localService) ||
+      italianVoices.find(v => FEMALE_VOICE_REGEX.test(`${v.name} ${v.voiceURI}`)) ||
+      italianVoices[0] ||
+      null;
+    if (femVoice) {
+      try { msg.voice = femVoice; } catch (_) {}
+    }
+    msg.pitch = 1.05;
   } else if (genderSetting === 'male') {
-    selectedVoice = italianVoices.find(v => MALE_VOICE_REGEX.test(v.name) && v.localService) || italianVoices.find(v => MALE_VOICE_REGEX.test(v.name)) || null;
-    targetPitch = 0.95;
+    const maleVoice =
+      italianVoices.find(v => MALE_VOICE_REGEX.test(`${v.name} ${v.voiceURI}`) && v.localService) ||
+      italianVoices.find(v => MALE_VOICE_REGEX.test(`${v.name} ${v.voiceURI}`)) ||
+      null;
+    if (maleVoice) {
+      try { msg.voice = maleVoice; } catch (_) {}
+      msg.pitch = 1.0;
+    } else {
+      msg.pitch = 0.85;
+    }
   } else {
-    selectedVoice = null;
-    targetPitch = 1.0;
+    msg.pitch = 1.0;
   }
-
-  if (selectedVoice && selectedVoice.localService !== false) {
-    try {
-      msg.voice = selectedVoice;
-    } catch (_) {}
-  }
-  msg.pitch = targetPitch;
 }
 
 let isSpeakingState = false;
@@ -223,12 +222,17 @@ export function playTextToSpeechWebAudio(
   let activeSource: AudioBufferSourceNode | null = null;
   let activeHtmlAudio: HTMLAudioElement | null = null;
   let safetyTimer: any = null;
+  let startWatchdog: any = null;
   let nativeDoneListener: (() => void) | null = null;
 
   const cleanupListeners = () => {
     if (safetyTimer) {
       clearTimeout(safetyTimer);
       safetyTimer = null;
+    }
+    if (startWatchdog) {
+      clearTimeout(startWatchdog);
+      startWatchdog = null;
     }
     if (nativeDoneListener && typeof window !== "undefined") {
       window.removeEventListener('android-native-tts-done', nativeDoneListener);
@@ -277,35 +281,103 @@ export function playTextToSpeechWebAudio(
     onEnd?.();
   };
 
-  const targetPitch = genderSetting === 'female' ? 1.08 : genderSetting === 'male' ? 0.90 : 1.0;
   const maxDurationMs = Math.min(14000, Math.max(4000, cleanText.length * 140));
 
-  // Fallback Layer 4: Browser SpeechSynthesis (last resort if network/audio elements fail)
-  const playViaBrowserSpeechSynthesis = () => {
+  // Offline / Local Device SpeechSynthesis Fallback (or primary for 'female' since Android's local voice is 225 Hz female)
+  const playViaLocalDeviceTts = () => {
     if (isCancelled) { finish(); return; }
-    if (!('speechSynthesis' in window)) {
-      finish();
-      return;
-    }
+
+    // 1. Try AndroidNativeTTS bridge if in native APK
     try {
-      const msg = new SpeechSynthesisUtterance(cleanText);
-      applyTtsVoiceAndPitch(msg, genderSetting);
-      safetyTimer = setTimeout(() => finish(), maxDurationMs);
-      msg.onstart = () => {
-        if (!isCancelled) onStart?.();
-      };
-      msg.onend = () => finish();
-      msg.onerror = () => finish();
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
+      const androidBridge = (window as any).AndroidNativeTTS;
+      if (androidBridge && typeof androidBridge.isReady === 'function' && androidBridge.isReady()) {
+        nativeDoneListener = () => finish();
+        window.addEventListener('android-native-tts-done', nativeDoneListener, { once: true });
+        safetyTimer = setTimeout(() => finish(), maxDurationMs);
+        let started = false;
+        if (typeof androidBridge.speakWithGender === 'function') {
+          started = androidBridge.speakWithGender(cleanText, genderSetting, 1.0, 1.0, true);
+        } else {
+          const bridgePitch = genderSetting === 'female' ? 1.05 : genderSetting === 'male' ? 0.90 : 1.0;
+          started = androidBridge.speak(cleanText, bridgePitch, 1.0, true);
+        }
+        if (started) {
+          onStart?.();
+          return;
+        } else {
+          cleanupListeners();
+        }
       }
-      window.speechSynthesis.speak(msg);
     } catch (_) {
-      finish();
+      cleanupListeners();
     }
+
+    // 2. Try Capacitor Community TextToSpeech if in native APK
+    if (isNativeMobileApp()) {
+      try {
+        safetyTimer = setTimeout(() => finish(), maxDurationMs);
+        let didStart = false;
+        const startTimer = setTimeout(() => {
+          if (!isCancelled) {
+            didStart = true;
+            onStart?.();
+          }
+        }, 60);
+
+        TextToSpeech.speak({
+          text: cleanText,
+          lang: 'it-IT',
+          rate: 1.0,
+          pitch: genderSetting === 'female' ? 1.05 : 1.0,
+          volume: 1.0,
+          category: 'playback',
+        })
+          .then(() => {
+            clearTimeout(startTimer);
+            if (!didStart && !isCancelled) onStart?.();
+            finish();
+          })
+          .catch(() => {
+            clearTimeout(startTimer);
+            finish();
+          });
+        return;
+      } catch (_) {
+        cleanupListeners();
+      }
+    }
+
+    // 3. Browser SpeechSynthesis
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(cleanText);
+        applyTtsVoiceAndPitch(msg, genderSetting);
+        (window as any)._activeSampleUtterance = msg;
+        safetyTimer = setTimeout(() => finish(), maxDurationMs);
+        msg.onstart = () => {
+          if (!isCancelled) onStart?.();
+        };
+        msg.onend = () => {
+          (window as any)._activeSampleUtterance = null;
+          finish();
+        };
+        msg.onerror = () => {
+          (window as any)._activeSampleUtterance = null;
+          finish();
+        };
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        window.speechSynthesis.speak(msg);
+        return;
+      } catch (_) {}
+    }
+
+    finish();
   };
 
-  // Fallback Layer 3: Direct HTML5 <audio referrerpolicy="no-referrer"> (works even if fetch CORS or AudioContext is restricted)
+  // HTML5 <audio referrerpolicy="no-referrer"> for Google Translate TTS stream (126 Hz Natural Italian Male Voice)
   const playViaHtmlAudioElement = (proxyUrl: string) => {
     if (isCancelled) { finish(); return; }
     try {
@@ -344,16 +416,16 @@ export function playTextToSpeechWebAudio(
             if (playPromise && typeof playPromise.catch === 'function') {
               playPromise.catch(() => {
                 activeHtmlAudio = null;
-                playViaBrowserSpeechSynthesis();
+                playViaLocalDeviceTts();
               });
             }
           } catch (_) {
             activeHtmlAudio = null;
-            playViaBrowserSpeechSynthesis();
+            playViaLocalDeviceTts();
           }
         } else {
           activeHtmlAudio = null;
-          playViaBrowserSpeechSynthesis();
+          playViaLocalDeviceTts();
         }
       };
 
@@ -370,25 +442,27 @@ export function playTextToSpeechWebAudio(
               audio.src = directTranslateUrl;
               audio.play().catch(() => {
                 activeHtmlAudio = null;
-                playViaBrowserSpeechSynthesis();
+                playViaLocalDeviceTts();
               });
             } catch (_) {
               activeHtmlAudio = null;
-              playViaBrowserSpeechSynthesis();
+              playViaLocalDeviceTts();
             }
           } else {
             activeHtmlAudio = null;
-            playViaBrowserSpeechSynthesis();
+            playViaLocalDeviceTts();
           }
         });
       }
     } catch (_) {
-      playViaBrowserSpeechSynthesis();
+      playViaLocalDeviceTts();
     }
   };
 
-  // Layer 2: Backend /api/tts MP3 Stream via WebAudio API (supports male/female detune & background keep-alive)
-  const playViaServerWebAudio = () => {
+  // Google Translate TTS via Server /api/tts + WebAudio API:
+  // Google Translate's Italian voice (`tl=it`) is the exact 126 Hz Natural Male Voice heard in the reference video!
+  // We play it at natural pitch (detune = 0) for both 'male' (Voce Uomo) and 'auto' (Google Auto).
+  const playViaGoogleMaleNeuralStream = () => {
     if (isCancelled) { finish(); return; }
     const proxyUrl = resolveApiUrl(`/api/tts?text=${encodeURIComponent(cleanText)}&gender=${genderSetting}`);
     const ctx = getSharedAudioContext();
@@ -422,10 +496,10 @@ export function playTextToSpeechWebAudio(
         }
         const source = ctx.createBufferSource();
         source.buffer = decodedBuffer;
-        // Apply subtle pitch shift for male/female voice differentiation on MP3 stream
+        // Natural pitch (0 detune) for 'male' and 'auto' matches the 126 Hz Google Male voice from the reference video!
         try {
           if (source.detune) {
-            source.detune.value = genderSetting === 'female' ? 90 : genderSetting === 'male' ? -110 : 0;
+            source.detune.value = genderSetting === 'female' ? 220 : 0;
           }
         } catch (_) {}
         source.connect(ctx.destination);
@@ -445,70 +519,15 @@ export function playTextToSpeechWebAudio(
       });
   };
 
-  // Layer 1A: Direct Native Android JavaScriptInterface Bridge (MainActivity AndroidNativeTTS)
-  try {
-    const androidBridge = (window as any).AndroidNativeTTS;
-    if (androidBridge && typeof androidBridge.isReady === 'function' && androidBridge.isReady()) {
-      nativeDoneListener = () => finish();
-      window.addEventListener('android-native-tts-done', nativeDoneListener, { once: true });
-      safetyTimer = setTimeout(() => finish(), maxDurationMs);
-      const started = androidBridge.speak(cleanText, targetPitch, 1.0, true);
-      if (started) {
-        onStart?.();
-        return cancelFn;
-      } else {
-        cleanupListeners();
-      }
-    }
-  } catch (_) {
-    cleanupListeners();
+  // Routing by selected voice:
+  // - 'male' (Voce Uomo) and 'auto' (Google Auto): use the 126 Hz Google Male Neural stream (/api/tts -> translate_tts at detune 0),
+  //   which is the exact voice in the reference video!
+  // - 'female' (Voce Donna): use the device's 225 Hz Female voice (SpeechSynthesis / AndroidNativeTTS), falling back to stream if needed.
+  if (genderSetting === 'female') {
+    playViaLocalDeviceTts();
+  } else {
+    playViaGoogleMaleNeuralStream();
   }
-
-  // Layer 1B: Capacitor Community Native TextToSpeech Plugin (Android/iOS native OS engine)
-  if (isNativeMobileApp()) {
-    try {
-      safetyTimer = setTimeout(() => finish(), maxDurationMs);
-      let didStart = false;
-      const startTimer = setTimeout(() => {
-        if (!isCancelled) {
-          didStart = true;
-          onStart?.();
-        }
-      }, 60);
-
-      TextToSpeech.speak({
-        text: cleanText,
-        lang: 'it-IT',
-        rate: 1.0,
-        pitch: targetPitch,
-        volume: 1.0,
-        category: 'playback',
-      })
-        .then(() => {
-          clearTimeout(startTimer);
-          if (!didStart && !isCancelled) onStart?.();
-          finish();
-        })
-        .catch(() => {
-          clearTimeout(startTimer);
-          if (safetyTimer) {
-            clearTimeout(safetyTimer);
-            safetyTimer = null;
-          }
-          // Native plugin not compiled in older APK or unavailable -> immediately use WebAudio / HTML5 Audio
-          if (!isCancelled) {
-            playViaServerWebAudio();
-          }
-        });
-
-      return cancelFn;
-    } catch (_) {
-      cleanupListeners();
-    }
-  }
-
-  // On Web or if native bridges are unavailable, run Server WebAudio -> HTML5 Audio -> Browser SpeechSynthesis
-  playViaServerWebAudio();
 
   return cancelFn;
 }
@@ -530,13 +549,9 @@ export function speakSampleTts(
     activeSampleCancelFn = null;
   }
 
-  const sampleText = customText || (
-    genderSetting === 'female'
-      ? "Impostazione voce femminile attivata. Tra 100 metri, svolta a destra."
-      : genderSetting === 'male'
-        ? "Impostazione voce maschile attivata. Tra 100 metri, svolta a destra."
-        : "Impostazione voce automatica di sistema attivata. Navigazione pronta."
-  );
+  const sampleText =
+    customText ||
+    "Navigatore Camper pronto. Percorso verificato per l'altezza e la larghezza del tuo mezzo.";
 
   setSpeakingState(true);
 

@@ -10,6 +10,9 @@ export function useAppSettings(): AppSettings {
         if (!localStorage.getItem("user_google_maps_key")) {
           parsed.mapEngine = "leaflet";
         }
+        if (!parsed.ttsGender || parsed.ttsGender === "auto") {
+          parsed.ttsGender = "male";
+        }
         return parsed;
       }
     } catch (e) {}
@@ -41,7 +44,7 @@ export function useAppSettings(): AppSettings {
       pinEnabled: false,
       mapEngine: "leaflet",
       ttsEnabled: true,
-      ttsGender: "auto"
+      ttsGender: "male"
     } as AppSettings;
   });
 
@@ -50,7 +53,11 @@ export function useAppSettings(): AppSettings {
       try {
         const saved = localStorage.getItem("camper_app_settings");
         if (saved) {
-          setSettings(JSON.parse(saved));
+          const parsed = JSON.parse(saved);
+          if (!parsed.ttsGender || parsed.ttsGender === "auto") {
+            parsed.ttsGender = "male";
+          }
+          setSettings(parsed);
         }
       } catch (e) {}
     };

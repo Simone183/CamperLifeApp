@@ -5248,6 +5248,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -5259,6 +5260,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class MainActivity extends BridgeActivity {
     private TextToSpeech nativeTts;
@@ -5410,6 +5412,61 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception ignored) {}
     }
 
+    private void applyPreferredItalianVoice(String gender) {
+        if (nativeTts == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+        try {
+            Set<Voice> voices = nativeTts.getVoices();
+            if (voices == null || voices.isEmpty()) return;
+
+            List<Voice> italianVoices = new ArrayList<>();
+            for (Voice v : voices) {
+                if (v != null && v.getLocale() != null && v.getLocale().getLanguage() != null
+                        && v.getLocale().getLanguage().toLowerCase(Locale.ROOT).startsWith("it")) {
+                    italianVoices.add(v);
+                }
+            }
+            if (italianVoices.isEmpty()) return;
+
+            Voice bestLocal = null;
+            Voice bestAny = null;
+            String g = gender != null ? gender.toLowerCase(Locale.ROOT).trim() : "auto";
+
+            if ("male".equals(g)) {
+                // Priority 1: Google Italian Male voice it-it-x-itd (exact Google Maps male voice)
+                for (Voice v : italianVoices) {
+                    String n = v.getName() != null ? v.getName().toLowerCase(Locale.ROOT) : "";
+                    if (n.contains("it-it-x-itd") || n.contains("-itd")) {
+                        if (!v.isNetworkConnectionRequired() && bestLocal == null) bestLocal = v;
+                        if (bestAny == null) bestAny = v;
+                    }
+                }
+                // Priority 2: Google Italian Male voice it-it-x-itc or other male identifiers
+                if (bestLocal == null && bestAny == null) {
+                    for (Voice v : italianVoices) {
+                        String n = v.getName() != null ? v.getName().toLowerCase(Locale.ROOT) : "";
+                        if (n.contains("it-it-x-itc") || n.contains("-itc") || n.contains("male") || n.contains("cosimo") || n.contains("diego") || n.contains("luca")) {
+                            if (!v.isNetworkConnectionRequired() && bestLocal == null) bestLocal = v;
+                            if (bestAny == null) bestAny = v;
+                        }
+                    }
+                }
+            } else if ("female".equals(g)) {
+                for (Voice v : italianVoices) {
+                    String n = v.getName() != null ? v.getName().toLowerCase(Locale.ROOT) : "";
+                    if (n.contains("it-it-x-kda") || n.contains("it-it-x-ita") || n.contains("it-it-x-itb") || n.contains("-kda") || n.contains("-ita") || n.contains("-itb") || n.contains("female") || n.contains("elsa") || n.contains("alice") || n.contains("isabella")) {
+                        if (!v.isNetworkConnectionRequired() && bestLocal == null) bestLocal = v;
+                        if (bestAny == null) bestAny = v;
+                    }
+                }
+            }
+
+            Voice chosen = bestLocal != null ? bestLocal : bestAny;
+            if (chosen != null) {
+                nativeTts.setVoice(chosen);
+            }
+        } catch (Exception ignored) {}
+    }
+
     public class AndroidNativeTtsBridge {
         @JavascriptInterface
         public boolean isReady() {
@@ -5417,13 +5474,14 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
-        public boolean speak(String text, float pitch, float rate, boolean flush) {
+        public boolean speakWithGender(String text, String gender, float pitch, float rate, boolean flush) {
             if (!ttsReady || nativeTts == null || text == null || text.trim().isEmpty()) {
                 return false;
             }
             try {
                 requestNavAudioFocus();
-                nativeTts.setPitch(pitch > 0 ? pitch : 1.0f);
+                applyPreferredItalianVoice(gender);
+                nativeTts.setPitch(1.0f);
                 nativeTts.setSpeechRate(rate > 0 ? rate : 1.0f);
                 int queueMode = flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD;
                 String utteranceId = "nav_" + System.currentTimeMillis();
@@ -5433,6 +5491,12 @@ public class MainActivity extends BridgeActivity {
                 abandonNavAudioFocus();
                 return false;
             }
+        }
+
+        @JavascriptInterface
+        public boolean speak(String text, float pitch, float rate, boolean flush) {
+            String inferredGender = pitch < 0.98f ? "male" : (pitch > 1.03f ? "female" : "auto");
+            return speakWithGender(text, inferredGender, 1.0f, rate, flush);
         }
 
         @JavascriptInterface

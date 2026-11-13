@@ -68,7 +68,9 @@ export default function GeneralSettingsTab({
   const [vibrations, setVibrations] = React.useState(initialSettings.vibrations ?? true);
   const [ttsEnabled, setTtsEnabled] = React.useState(initialSettings.ttsEnabled ?? true);
   const [readAppNotifications, setReadAppNotifications] = React.useState(initialSettings.readAppNotifications ?? true);
-  const [ttsGender, setTtsGender] = React.useState<TtsGender>(initialSettings.ttsGender ?? 'auto');
+  const [ttsGender, setTtsGender] = React.useState<TtsGender>(
+    initialSettings.ttsGender === 'female' ? 'female' : 'male'
+  );
   const [isSpeakingTts, setIsSpeakingTts] = React.useState(false);
 
   React.useEffect(() => {
@@ -692,31 +694,31 @@ export default function GeneralSettingsTab({
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    setTtsGender('auto');
-                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Auto (Sistema)...", duration: 3500 } }));
-                    speakSampleTts('auto');
+                    setTtsGender('male');
+                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Uomo...", duration: 3500 } }));
+                    speakSampleTts('male');
                   }}
                   className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    ttsGender === 'auto'
+                    ttsGender !== 'female'
                       ? isSpeakingTts
                         ? 'bg-emerald-500/25 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500 animate-pulse'
                         : 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                   }`}
                 >
-                  <span>⚙️ Auto</span>
-                  <span className="text-[9px] font-normal opacity-80">Sistema</span>
+                  <span>♂️ Voce Uomo</span>
+                  <span className="text-[9px] font-normal opacity-80">Voce Maschile</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     setTtsGender('female');
-                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Femminile...", duration: 3500 } }));
+                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Donna...", duration: 3500 } }));
                     speakSampleTts('female');
                   }}
                   className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
@@ -727,27 +729,8 @@ export default function GeneralSettingsTab({
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
                   }`}
                 >
-                  <span>♀️ Femminile</span>
-                  <span className="text-[9px] font-normal opacity-80">Voce Chiara</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTtsGender('male');
-                    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: "🔊 Riproduzione prova Voce Maschile...", duration: 3500 } }));
-                    speakSampleTts('male');
-                  }}
-                  className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    ttsGender === 'male'
-                      ? isSpeakingTts
-                        ? 'bg-emerald-500/25 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500 animate-pulse'
-                        : 'bg-emerald-500/15 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300'
-                  }`}
-                >
-                  <span>♂️ Maschile</span>
-                  <span className="text-[9px] font-normal opacity-80">Voce Profonda</span>
+                  <span>♀️ Voce Donna</span>
+                  <span className="text-[9px] font-normal opacity-80">Voce Femminile</span>
                 </button>
               </div>
             </div>
