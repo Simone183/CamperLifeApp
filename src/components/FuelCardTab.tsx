@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppSettings } from '../useAppSettings';
 import { getCurrencySymbol, getDistanceUnit, getFuelEfficiencyUnit, getFuelEfficiencyValue } from '../unit-helpers';
 import { Fuel, Plus, Trash2, ArrowLeft, RefreshCw, AlertCircle, MapPin, Pencil } from 'lucide-react';
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { resolveMediaUrl, resolveApiUrl } from '../utils/resolveMediaUrl';
@@ -27,6 +27,23 @@ export interface FuelLog {
   createdAt: any;
   tripId?: string;
   tripTitle?: string;
+}
+
+function sanitizeFuelLogForFirestore(log: FuelLog): Record<string, any> {
+  const clean: Record<string, any> = {
+    id: String(log.id || `fuel_${Date.now()}`),
+    date: String(log.date || new Date().toISOString().split('T')[0]),
+    liters: Number(log.liters) || 0,
+    pricePerLiter: Number(log.pricePerLiter) || 0,
+    totalCost: Number(log.totalCost) || 0,
+    odometer: Number(log.odometer) || 0,
+    isFullTank: Boolean(log.isFullTank),
+    fuelCompany: String(log.fuelCompany || 'Altro').trim(),
+    createdAt: typeof log.createdAt === 'string' ? log.createdAt : new Date().toISOString(),
+  };
+  if (log.tripId) clean.tripId = String(log.tripId);
+  if (log.tripTitle) clean.tripTitle = String(log.tripTitle);
+  return clean;
 }
 
 export function formatDateDDMMAA(dateStr?: string | null): string {
@@ -71,10 +88,187 @@ export function sortFuelLogsDesc(arr: FuelLog[]): FuelLog[] {
   });
 }
 
+function mergeAndDeduplicateFuelLogs(lists: FuelLog[][], deletedIds: Set<string>): FuelLog[] {
+  const byId = new Map<string, FuelLog>();
+
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const raw of list) {
+      if (!raw || !raw.id) continue;
+      const id = String(raw.id);
+      if (deletedIds.has(id)) continue;
+      if (id === 'te1' || raw.tripId === 'trip-example-10-oct-2020' || String(raw.tripId || '').startsWith('trip-example')) {
+        continue;
+      }
+
+      const totalCost = Number(raw.totalCost ?? (raw as any).costEuro ?? 0);
+      const liters = Number(raw.liters ?? 0);
+      const pricePerLiter = Number(raw.pricePerLiter ?? 0) || (totalCost > 0 && liters > 0 ? Number((totalCost / liters).toFixed(3)) : 0);
+      const odometer = Number(raw.odometer ?? 0);
+      if (totalCost <= 0 && liters <= 0) continue;
+
+      // Normalize DD/MM/YYYY if any came from navigator
+      let normDate = String(raw.date || '').trim();
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(normDate)) {
+        const [dd, mm, yyyy] = normDate.split('/');
+        normDate = `${yyyy}-${mm}-${dd}`;
+      }
+
+      const prev = byId.get(id);
+      const entry: FuelLog = {
+        id,
+        date: normDate || prev?.date || new Date().toISOString().split('T')[0],
+        liters: liters > 0 ? liters : (prev?.liters || 0),
+        pricePerLiter: pricePerLiter > 0 ? pricePerLiter : (prev?.pricePerLiter || 0),
+        totalCost: totalCost > 0 ? totalCost : (prev?.totalCost || 0),
+        odometer: odometer > 0 ? odometer : (prev?.odometer || 0),
+        isFullTank: Boolean(raw.isFullTank ?? prev?.isFullTank),
+        fuelCompany: String(raw.fuelCompany || prev?.fuelCompany || 'Altro').trim(),
+        createdAt: raw.createdAt || prev?.createdAt || new Date().toISOString(),
+        tripId: raw.tripId || prev?.tripId,
+        tripTitle: raw.tripTitle || prev?.tripTitle,
+      };
+      byId.set(id, entry);
+    }
+  }
+
+  // Also deduplicate entries that have different IDs but identical date + totalCost (and either identical/close odometer or one has 0 liters)
+  const dedupedList: FuelLog[] = [];
+  for (const item of byId.values()) {
+    const matchIdx = dedupedList.findIndex((existing) => {
+      if (existing.date !== item.date) return false;
+      const sameCost = Math.abs(Number(existing.totalCost || 0) - Number(item.totalCost || 0)) < 0.05;
+      if (!sameCost) return false;
+      const odoA = Number(existing.odometer) || 0;
+      const odoB = Number(item.odometer) || 0;
+      if (odoA > 0 && odoB > 0 && Math.abs(odoA - odoB) <= 50) return true;
+      if ((Number(existing.liters) === 0 && Number(item.liters) > 0) || (Number(item.liters) === 0 && Number(existing.liters) > 0)) return true;
+      return false;
+    });
+
+    if (matchIdx === -1) {
+      dedupedList.push(item);
+    } else {
+      const existing = dedupedList[matchIdx];
+      const preferItem = Number(item.liters) > Number(existing.liters);
+      dedupedList[matchIdx] = {
+        ...existing,
+        ...item,
+        id: preferItem ? item.id : existing.id,
+        liters: Number(item.liters) > 0 ? Number(item.liters) : Number(existing.liters),
+        pricePerLiter: Number(item.pricePerLiter) > 0 ? Number(item.pricePerLiter) : Number(existing.pricePerLiter),
+        totalCost: Number(item.totalCost) > 0 ? Number(item.totalCost) : Number(existing.totalCost),
+        odometer: preferItem && Number(item.odometer) > 0 ? Number(item.odometer) : (Number(existing.odometer) > 0 ? Number(existing.odometer) : Number(item.odometer)),
+        isFullTank: Boolean(item.isFullTank || existing.isFullTank),
+        fuelCompany: (preferItem ? item.fuelCompany : existing.fuelCompany) || item.fuelCompany || existing.fuelCompany,
+        tripId: item.tripId || existing.tripId,
+        tripTitle: item.tripTitle || existing.tripTitle,
+      };
+    }
+  }
+
+  // Second pass: if a 0-liter diary expense is the exact sum of 2+ measured (liters > 0) refuelings within 2 days & 50 km
+  // (e.g. Laguna di Orbetello 113.36 € = 12.02 € + 101.34 €), propagate its trip metadata and omit the duplicate 0L summary row
+  const finalDeduped = dedupedList.filter((item) => {
+    if (Number(item.liters) > 0) return true;
+    const itemTime = new Date(item.date).getTime();
+    if (isNaN(itemTime)) return true;
+    const nearbyMeasured = dedupedList.filter((m) => {
+      if (Number(m.liters) <= 0) return false;
+      const mTime = new Date(m.date).getTime();
+      if (isNaN(mTime) || Math.abs(mTime - itemTime) > 86400000 * 2) return false;
+      const odoA = Number(item.odometer) || 0;
+      const odoB = Number(m.odometer) || 0;
+      return odoA === 0 || odoB === 0 || Math.abs(odoA - odoB) <= 50;
+    });
+    if (nearbyMeasured.length >= 2) {
+      const sumCost = nearbyMeasured.reduce((s, m) => s + (Number(m.totalCost) || 0), 0);
+      if (Math.abs(sumCost - (Number(item.totalCost) || 0)) < 0.15) {
+        nearbyMeasured.forEach((m) => {
+          if (!m.tripId && item.tripId) m.tripId = item.tripId;
+          if (!m.tripTitle && item.tripTitle) m.tripTitle = item.tripTitle;
+        });
+        return false;
+      }
+    }
+    return true;
+  });
+
+  return sortFuelLogsDesc(finalDeduped);
+}
+
+function extractFuelLogsFromTrips(trips: any[]): FuelLog[] {
+  if (!Array.isArray(trips)) return [];
+  const extracted: FuelLog[] = [];
+  for (const trip of trips) {
+    if (!trip || trip.id === 'trip-example-10-oct-2020' || String(trip.id || '').startsWith('trip-example')) continue;
+    for (const exp of (trip.expenses || [])) {
+      if (!exp || exp.id === 'te1') continue;
+      if (exp.category === 'Carburante' || exp.liters || exp.pricePerLiter || exp.fuelCompany) {
+        let liters = Number(exp.liters) || 0;
+        let pricePerLiter = Number(exp.pricePerLiter) || 0;
+        const amount = Number(exp.amount) || 0;
+        if (!liters && exp.title) {
+          const match = String(exp.title).match(/([\d.,]+)\s*L/i);
+          if (match) liters = parseFloat(match[1].replace(',', '.')) || 0;
+        }
+        if (!pricePerLiter && exp.title) {
+          const match = String(exp.title).match(/@\s*([\d.,]+)/i);
+          if (match) pricePerLiter = parseFloat(match[1].replace(',', '.')) || 0;
+        }
+        if (!pricePerLiter && liters > 0 && amount > 0) {
+          pricePerLiter = Number((amount / liters).toFixed(3));
+        }
+        if (!liters && pricePerLiter > 0 && amount > 0) {
+          liters = Number((amount / pricePerLiter).toFixed(2));
+        }
+        const totalCost = amount || Number((liters * pricePerLiter).toFixed(2)) || 0;
+        if (totalCost > 0 || liters > 0) {
+          extracted.push({
+            id: String(exp.id || `fuel_trip_${trip.id}_${exp.date || Date.now()}`),
+            date: exp.date || trip.startDate || new Date().toISOString().split('T')[0],
+            liters,
+            pricePerLiter,
+            totalCost,
+            odometer: Number(exp.odometer) || 0,
+            isFullTank: Boolean(exp.isFullTank),
+            fuelCompany: String(exp.fuelCompany || 'Altro').trim(),
+            createdAt: exp.date ? new Date(exp.date).toISOString() : new Date().toISOString(),
+            tripId: trip.id,
+            tripTitle: trip.title,
+          });
+        }
+      }
+    }
+  }
+  return extracted;
+}
+
 export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrewModal }: FuelCardTabProps) {
   const settings = useAppSettings();
   const { currentCrew, syncCrewSection, isModuleSynced } = useFamilyCrew();
   const emailLower = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+
+  const getDeletedLogIds = React.useCallback((): Set<string> => {
+    if (!emailLower) return new Set();
+    try {
+      const raw = localStorage.getItem(`camper_deleted_fuel_logs_${emailLower}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return new Set(parsed.map(String));
+      }
+    } catch {}
+    return new Set();
+  }, [emailLower]);
+
+  const addDeletedLogId = React.useCallback((id: string) => {
+    if (!emailLower || !id) return;
+    try {
+      const set = getDeletedLogIds();
+      set.add(String(id));
+      localStorage.setItem(`camper_deleted_fuel_logs_${emailLower}`, JSON.stringify(Array.from(set)));
+    } catch {}
+  }, [emailLower, getDeletedLogIds]);
 
   const [allTrips, setAllTrips] = React.useState<any[]>(() => {
     if (propsTrips && propsTrips.length > 0) return propsTrips;
@@ -134,11 +328,16 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
   const [logs, setLogs] = React.useState<FuelLog[]>(() => {
     if (!emailLower) return [];
     try {
-      const cached = localStorage.getItem(`camper_fuel_logs_${emailLower}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return sortFuelLogsDesc(parsed);
-      }
+      const deletedIds = new Set<string>(
+        JSON.parse(localStorage.getItem(`camper_deleted_fuel_logs_${emailLower}`) || '[]')
+      );
+      const cachedRaw = localStorage.getItem(`camper_fuel_logs_${emailLower}`);
+      const cached = cachedRaw ? JSON.parse(cachedRaw) : [];
+      const autoRaw = localStorage.getItem('camper_last_fuel_logs');
+      const autoLogs = autoRaw ? JSON.parse(autoRaw) : [];
+      const savedTripsRaw = localStorage.getItem(`camper_trips_${emailLower}`) || localStorage.getItem('camper_trips');
+      const tripLogs = savedTripsRaw ? extractFuelLogsFromTrips(JSON.parse(savedTripsRaw)) : [];
+      return mergeAndDeduplicateFuelLogs([cached, autoLogs, tripLogs], deletedIds);
     } catch {}
     return [];
   });
@@ -147,15 +346,12 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
   React.useEffect(() => {
     if (currentCrew && isModuleSynced('fuelCard') && Array.isArray(currentCrew.sharedData?.fuelLogs) && currentCrew.sharedData.fuelLogs.length > 0) {
       setLogs(prev => {
-        const mergedMap = new Map<string, FuelLog>();
-        prev.forEach(l => mergedMap.set(l.id, l));
-        currentCrew.sharedData!.fuelLogs!.forEach((l: FuelLog) => mergedMap.set(l.id, l));
-        const mergedList = sortFuelLogsDesc(Array.from(mergedMap.values()));
+        const mergedList = mergeAndDeduplicateFuelLogs([prev, currentCrew.sharedData!.fuelLogs!], getDeletedLogIds());
         localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(mergedList));
         return mergedList;
       });
     }
-  }, [currentCrew, isModuleSynced, emailLower]);
+  }, [currentCrew, isModuleSynced, emailLower, getDeletedLogIds]);
 
   const [loading, setLoading] = React.useState(logs.length === 0);
   const [error, setError] = React.useState<string | null>(null);
@@ -181,134 +377,160 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
       return;
     }
 
+    const deletedIds = getDeletedLogIds();
+    const collectedSources: FuelLog[][] = [];
+
     try {
-      // 1. Try fetching via REST API endpoint with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      let fetchedLogs: FuelLog[] | null = null;
-
+      // A. Local cached logs & Android Auto / Navigator logs
       try {
-        const res = await fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}`), {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            fetchedLogs = data;
-          }
+        const cachedRaw = localStorage.getItem(`camper_fuel_logs_${emailLower}`);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (Array.isArray(parsed)) collectedSources.push(parsed);
         }
-      } catch (apiErr) {
-        clearTimeout(timeoutId);
-      }
+      } catch {}
 
-      // 2. Fallback to direct Firestore if API was not reachable
-      // Controllo anche se sono presenti rifornimenti registrati da Android Auto
       try {
         const autoLogsRaw = localStorage.getItem('camper_last_fuel_logs');
         if (autoLogsRaw) {
           const autoLogs = JSON.parse(autoLogsRaw);
-          if (Array.isArray(autoLogs) && autoLogs.length > 0) {
-            for (const aLog of autoLogs) {
-              if (aLog && aLog.id && aLog.id.startsWith('fuel_auto_')) {
-                // Invia a server per sincronizzazione duratura
-                fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}`), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(aLog)
-                }).catch(() => {});
-              }
-            }
-          }
+          if (Array.isArray(autoLogs)) collectedSources.push(autoLogs);
         }
-      } catch (autoErr) {}
-      if (!fetchedLogs || fetchedLogs.length === 0) {
-        try {
-          const logsRef = collection(db, `users/${emailLower}/fuelLogs`);
-          const q = query(logsRef, orderBy("createdAt", "desc"));
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Timeout Firestore")), 4000)
-          );
-          const snapshot: any = await Promise.race([getDocs(q), timeoutPromise]);
-          if (snapshot && !snapshot.empty) {
-            fetchedLogs = snapshot.docs.map((docSnap: any) => ({
+      } catch {}
+
+      // B. Direct Firestore subcollection users/{emailLower}/fuelLogs (Always query directly for 100% native Android & Web reliability)
+      const firestoreLogIds = new Set<string>();
+      try {
+        const logsRef = collection(db, "users", emailLower, "fuelLogs");
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout Firestore fuelLogs")), 5000)
+        );
+        const snapshot: any = await Promise.race([getDocs(logsRef), timeoutPromise]);
+        if (snapshot && !snapshot.empty) {
+          const fsLogs = snapshot.docs.map((docSnap: any) => {
+            firestoreLogIds.add(docSnap.id);
+            return {
               id: docSnap.id,
               ...docSnap.data()
-            })) as FuelLog[];
-          }
-        } catch (fsErr) {
-          console.warn("Direct Firestore fetch error:", fsErr);
+            };
+          }) as FuelLog[];
+          collectedSources.push(fsLogs);
         }
+      } catch (fsErr) {
+        console.warn("[FuelCardTab] Direct Firestore fuelLogs fetch notice:", fsErr);
       }
 
-      // 3. Fallback: extract from user-scoped trips if no logs found yet
-      if (!fetchedLogs || fetchedLogs.length === 0) {
-        try {
-          const savedTrips = emailLower ? localStorage.getItem(`camper_trips_${emailLower}`) : null;
-          if (savedTrips) {
-            const trips = JSON.parse(savedTrips);
-            if (Array.isArray(trips)) {
-              const extracted: FuelLog[] = [];
-              for (const trip of trips) {
-                for (const exp of (trip.expenses || [])) {
-                  if ((exp.category === 'Carburante' || exp.liters) && (exp.liters > 0 || exp.pricePerLiter > 0)) {
-                    let liters = exp.liters;
-                    let pricePerLiter = exp.pricePerLiter;
-                    if (!liters && exp.title) {
-                      const match = exp.title.match(/([\d.,]+)\s*L/i);
-                      if (match) liters = parseFloat(match[1].replace(',', '.'));
-                    }
-                    if (!pricePerLiter && exp.title) {
-                      const match = exp.title.match(/@\s*([\d.,]+)/i);
-                      if (match) pricePerLiter = parseFloat(match[1].replace(',', '.'));
-                    }
-                    if (liters > 0) {
-                      extracted.push({
-                        id: exp.id || `fuel_${Date.now()}_${Math.random()}`,
-                        date: exp.date || trip.startDate || new Date().toISOString().split('T')[0],
-                        liters: liters || 0,
-                        pricePerLiter: pricePerLiter || (exp.amount && liters ? Number((exp.amount / liters).toFixed(3)) : 0),
-                        totalCost: exp.amount || Number(((liters || 0) * (pricePerLiter || 0)).toFixed(2)),
-                        odometer: exp.odometer || 0,
-                        isFullTank: !!exp.isFullTank,
-                        fuelCompany: exp.fuelCompany || "Eni",
-                        createdAt: exp.date ? new Date(exp.date).toISOString() : new Date().toISOString()
-                      });
-                    }
-                  }
-                }
-              }
-              if (extracted.length > 0) {
-                fetchedLogs = extracted;
-              }
+      // C. Direct Firestore users/{emailLower}/data/trips to recover any refuelings added in DiaryTab across devices
+      try {
+        const tripsDocRef = doc(db, "users", emailLower, "data", "trips");
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout Firestore trips")), 5000)
+        );
+        const tripsSnap: any = await Promise.race([getDoc(tripsDocRef), timeoutPromise]);
+        if (tripsSnap && tripsSnap.exists()) {
+          const tData = tripsSnap.data();
+          if (tData && Array.isArray(tData.trips)) {
+            setAllTrips(prev => (prev.length === 0 ? tData.trips : prev));
+            const fromCloudTrips = extractFuelLogsFromTrips(tData.trips);
+            if (fromCloudTrips.length > 0) collectedSources.push(fromCloudTrips);
+          }
+        }
+      } catch (fsTripErr) {
+        console.warn("[FuelCardTab] Direct Firestore trips fetch notice:", fsTripErr);
+      }
+
+      // D. Local user trips in localStorage
+      try {
+        const savedTrips = localStorage.getItem(`camper_trips_${emailLower}`) || localStorage.getItem('camper_trips');
+        if (savedTrips) {
+          const parsedTrips = JSON.parse(savedTrips);
+          const fromLocalTrips = extractFuelLogsFromTrips(parsedTrips);
+          if (fromLocalTrips.length > 0) collectedSources.push(fromLocalTrips);
+        }
+      } catch {}
+
+      // E. Backend REST API (only parse if JSON content-type, avoiding HTML interstitials on native WebView)
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}`), {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            collectedSources.push(data);
+          }
+        }
+      } catch {}
+
+      // Merge all sources without ever losing local or trip refuelings
+      const mergedValidLogs = mergeAndDeduplicateFuelLogs(collectedSources, deletedIds);
+
+      setLogs(mergedValidLogs);
+      try {
+        localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(mergedValidLogs));
+        localStorage.setItem('camper_last_fuel_logs', JSON.stringify(mergedValidLogs));
+      } catch {}
+      setError(null);
+
+      // F. Backfill any local/trip logs that are missing in Firestore users/{emailLower}/fuelLogs so all devices stay in sync
+      if (mergedValidLogs.length > 0) {
+        (async () => {
+          for (const log of mergedValidLogs) {
+            if (log && log.id && !firestoreLogIds.has(log.id) && !deletedIds.has(log.id)) {
+              try {
+                await setDoc(
+                  doc(db, "users", emailLower, "fuelLogs", log.id),
+                  sanitizeFuelLogForFirestore(log),
+                  { merge: true }
+                );
+              } catch {}
             }
           }
-        } catch (tripErr) {
-          console.warn("Error extracting fuel logs from trips:", tripErr);
-        }
-      }
-
-      if (fetchedLogs && fetchedLogs.length > 0) {
-        const validLogs = sortFuelLogsDesc(
-          fetchedLogs.filter(l => (l.liters && l.liters > 0) || (l.totalCost && l.totalCost > 0))
-        );
-        setLogs(validLogs);
-        localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(validLogs));
-        setError(null);
-      } else if (fetchedLogs) {
-        // Only set empty if local logs were also empty
-        setLogs(prev => prev.length > 0 ? sortFuelLogsDesc(prev) : []);
+        })().catch(() => {});
       }
     } catch (err) {
       console.error("Error in fetchLogs:", err);
     } finally {
       setLoading(false);
     }
-  }, [emailLower]);
+  }, [emailLower, getDeletedLogIds]);
 
   React.useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  // Real-time Firestore listener on users/{emailLower}/fuelLogs so changes on one device appear live on the other
+  React.useEffect(() => {
+    if (!emailLower) return;
+    const logsRef = collection(db, "users", emailLower, "fuelLogs");
+    const unsubscribe = onSnapshot(
+      logsRef,
+      (snapshot) => {
+        if (!snapshot) return;
+        const deletedIds = getDeletedLogIds();
+        const remoteLogs = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data()
+        })) as FuelLog[];
+        setLogs((prev) => {
+          const merged = mergeAndDeduplicateFuelLogs([prev, remoteLogs], deletedIds);
+          try {
+            localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(merged));
+            localStorage.setItem('camper_last_fuel_logs', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      },
+      (err) => {
+        console.warn("[FuelCardTab] Realtime snapshot notice:", err);
+      }
+    );
+    return () => unsubscribe();
+  }, [emailLower, getDeletedLogIds]);
 
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -395,15 +617,28 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
       const updatedLogs = sortFuelLogsDesc([newLog, ...logs.filter(l => l.id !== newLog.id)]);
       setLogs(updatedLogs);
       localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(updatedLogs));
+      localStorage.setItem('camper_last_fuel_logs', JSON.stringify(updatedLogs));
 
-      // 2. Sync into local active trip expenses
+      // 2. Direct Firestore write to users/{emailLower}/fuelLogs/{newLog.id} (Guarantees cloud sync on Android & Web)
+      try {
+        await setDoc(
+          doc(db, "users", emailLower, "fuelLogs", newLog.id),
+          sanitizeFuelLogForFirestore(newLog),
+          { merge: true }
+        );
+      } catch (fsErr) {
+        console.warn("[FuelCardTab] Direct Firestore write notice (queued offline):", fsErr);
+      }
+
+      // 3. Sync into local trip expenses
       try {
         const savedTrips = emailLower ? localStorage.getItem(`camper_trips_${emailLower}`) : null;
         if (savedTrips) {
           let trips = JSON.parse(savedTrips);
           let updated = false;
           trips = trips.map((t: any) => {
-            if (t.status === 'In Corso' || t.status === 'Attivo') {
+            const isTarget = targetTripId ? t.id === targetTripId : (t.status === 'In Corso' || t.status === 'Attivo');
+            if (isTarget) {
               updated = true;
               const litText = newLog.liters > 0 ? ` ${newLog.liters}L` : '';
               const priceText = newLog.pricePerLiter > 0 ? ` @ ${newLog.pricePerLiter}${getCurrencySymbol(settings)}/L` : '';
@@ -431,16 +666,17 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
           });
           if (updated && emailLower) {
             localStorage.setItem(`camper_trips_${emailLower}`, JSON.stringify(trips));
+            window.dispatchEvent(new CustomEvent("trip-updated", { detail: { trips } }));
           }
         }
       } catch (tripErr) {
         console.warn("Could not sync into local trip expenses:", tripErr);
       }
 
-      // 3. Persist to Backend REST API (with server-side local cache & background sync)
+      // 4. Persist to Backend REST API (with server-side local cache & background sync)
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         await fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -449,15 +685,15 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
         });
         clearTimeout(timeoutId);
       } catch (apiErr) {
-        console.info("Fuel log saved locally in cache (offline/background):", apiErr);
+        console.info("Fuel log saved via direct Firestore & local cache:", apiErr);
       }
 
-      // 4. Sync to Family Crew if active
+      // 5. Sync to Family Crew if active
       if (currentCrew && isModuleSynced('fuelCard')) {
         syncCrewSection('fuelLogs', updatedLogs).catch(() => {});
       }
 
-      // 4. Background sync into active Firestore trip without blocking UI
+      // 6. Background sync into Firestore trip without blocking UI
       (async () => {
         try {
           const tripDocRef = doc(db, "users", emailLower, "data", "trips");
@@ -471,19 +707,22 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
               let trips = [...data.trips];
               let updated = false;
               trips = trips.map((t: any) => {
-                if (t.status === 'Attivo' || t.status === 'In Corso') {
+                const isTarget = targetTripId ? t.id === targetTripId : (t.status === 'Attivo' || t.status === 'In Corso');
+                if (isTarget) {
                   updated = true;
                   const expensesList = t.expenses || [];
                   const hasExp = expensesList.some((exp: any) => exp.id === newLogId);
                   if (!hasExp) {
+                    const litText = newLog.liters > 0 ? ` ${newLog.liters}L` : '';
+                    const priceText = newLog.pricePerLiter > 0 ? ` @ ${newLog.pricePerLiter}${getCurrencySymbol(settings)}/L` : '';
                     return {
                       ...t,
-                      endOdometer: odo > (t.endOdometer || 0) ? odo : t.endOdometer,
+                      endOdometer: finalOdo > (t.endOdometer || 0) ? finalOdo : t.endOdometer,
                       expenses: [
                         ...expensesList,
                         {
                           id: newLogId,
-                          title: `Rifornimento ${newLog.fuelCompany} ${newLog.liters}L @ ${newLog.pricePerLiter}${getCurrencySymbol(settings)}/L${isFullTank ? ' [Pieno ✓]' : ''}`,
+                          title: `Rifornimento ${newLog.fuelCompany}${litText}${priceText}${isFullTank ? ' [Pieno ✓]' : ''}`.trim(),
                           amount: newLog.totalCost,
                           category: 'Carburante',
                           date: newLog.date,
@@ -521,7 +760,7 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
 
       window.dispatchEvent(
         new CustomEvent('show-toast', {
-          detail: { message: `⛽ Rifornimento di ${newLog.liters}L salvato con successo!`, duration: 4000 }
+          detail: { message: `⛽ Rifornimento di ${newLog.liters > 0 ? `${newLog.liters}L` : `${newLog.totalCost}€`} salvato e sincronizzato sul Cloud!`, duration: 4000 }
         })
       );
     } catch (err: any) {
@@ -556,39 +795,59 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
     
     setIsSubmitting(true);
 
+    const cleanCost = Number(String(totalCost).replace(',', '.')) || 0;
+    const cleanLit = Number(String(liters).replace(',', '.')) || 0;
+    const cleanPrice = Number(String(pricePerLiter).replace(',', '.')) || (cleanCost > 0 && cleanLit > 0 ? Number((cleanCost / cleanLit).toFixed(3)) : 0);
+
     const updatedLog: FuelLog = {
       ...editingLog,
       date,
-      totalCost: Number(totalCost.replace(',', '.')),
-      liters: Number(liters.replace(',', '.')),
-      pricePerLiter: Number(pricePerLiter.replace(',', '.')),
-      odometer: Number(odometer),
+      totalCost: cleanCost,
+      liters: cleanLit,
+      pricePerLiter: cleanPrice,
+      odometer: Number(String(odometer).replace(/[^\d]/g, '')) || 0,
       fuelCompany: fuelCompany.trim() || 'Eni',
       isFullTank,
-      tripId: selectedTripId === 'auto' ? undefined : selectedTripId,
-      // tripTitle would ideally be re-fetched or kept as is
+      tripId: selectedTripId === 'auto' ? editingLog.tripId : (selectedTripId === 'none' ? undefined : selectedTripId),
     };
 
     try {
-      // 1. API PUT
-      await fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}/${encodeURIComponent(editingLog.id)}`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedLog)
-      });
-
-      // 2. Local State Update
+      // 1. Local State Update
       const updatedLogs = sortFuelLogsDesc(logs.map(l => l.id === editingLog.id ? updatedLog : l));
       setLogs(updatedLogs);
       localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(updatedLogs));
+      localStorage.setItem('camper_last_fuel_logs', JSON.stringify(updatedLogs));
 
-      // 3. Reset
+      // 2. Direct Firestore Update
+      try {
+        await setDoc(
+          doc(db, "users", emailLower, "fuelLogs", editingLog.id),
+          sanitizeFuelLogForFirestore(updatedLog),
+          { merge: true }
+        );
+      } catch (fsErr) {
+        console.warn("[FuelCardTab] Direct Firestore update notice:", fsErr);
+      }
+
+      // 3. API PUT (non-blocking fallback)
+      fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}/${encodeURIComponent(editingLog.id)}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedLog)
+      }).catch(() => {});
+
+      // 4. Sync to Family Crew if active
+      if (currentCrew && isModuleSynced('fuelCard')) {
+        syncCrewSection('fuelLogs', updatedLogs).catch(() => {});
+      }
+
+      // 5. Reset
       setLogAction(null);
       setEditingLog(null);
       
       window.dispatchEvent(
         new CustomEvent('show-toast', {
-          detail: { message: "✏️ Rifornimento aggiornato!" }
+          detail: { message: "✏️ Rifornimento aggiornato e sincronizzato!" }
         })
       );
     } catch (err) {
@@ -604,15 +863,26 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
     const targetId = deletingLogId;
     setDeletingLogId(null);
 
+    // Record deletion so merge doesn't resurrect it from old trip caches
+    addDeletedLogId(targetId);
+
     // 1. Optimistic removal
     const updated = logs.filter(l => l.id !== targetId);
     setLogs(updated);
     localStorage.setItem(`camper_fuel_logs_${emailLower}`, JSON.stringify(updated));
+    localStorage.setItem('camper_last_fuel_logs', JSON.stringify(updated));
 
-    // 2. Cloud deletion via backend API
+    // 2. Direct Firestore delete from users/{emailLower}/fuelLogs/{targetId}
+    try {
+      await deleteDoc(doc(db, "users", emailLower, "fuelLogs", targetId));
+    } catch (fsErr) {
+      console.warn("[FuelCardTab] Direct Firestore delete notice:", fsErr);
+    }
+
+    // 3. Cloud deletion via backend API
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       try {
         await fetch(resolveMediaUrl(`/api/fuel-logs/${encodeURIComponent(emailLower)}/${encodeURIComponent(targetId)}`), {
           method: 'DELETE',
@@ -622,10 +892,10 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
         clearTimeout(timeoutId);
       }
     } catch (apiErr) {
-      console.info("Fuel log deleted locally:", apiErr);
+      console.info("Fuel log deleted via direct Firestore:", apiErr);
     }
 
-    // 3. Sync to Family Crew if active
+    // 4. Sync to Family Crew if active
     if (currentCrew && isModuleSynced('fuelCard')) {
       syncCrewSection('fuelLogs', updated).catch(() => {});
     }
@@ -638,22 +908,36 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
   };
 
   // Stats calculation
-  const totalFuelCost = logs.reduce((sum, log) => sum + (log.totalCost || 0), 0);
-  const totalLiters = logs.reduce((sum, log) => sum + (log.liters || 0), 0);
-  const avgPrice = totalLiters > 0 ? (totalFuelCost / totalLiters).toFixed(3) : '0.000';
+  const totalFuelCost = logs.reduce((sum, log) => sum + (Number(log.totalCost) || 0), 0);
+  const totalLiters = logs.reduce((sum, log) => sum + (Number(log.liters) || 0), 0);
+  const logsWithLiters = logs.filter((l) => Number(l.liters) > 0 && Number(l.totalCost) > 0);
+  const totalCostForLogsWithLiters = logsWithLiters.reduce((sum, l) => sum + (Number(l.totalCost) || 0), 0);
+  const totalLitersForAvg = logsWithLiters.reduce((sum, l) => sum + (Number(l.liters) || 0), 0);
+  const avgPrice = totalLitersForAvg > 0 ? (totalCostForLogsWithLiters / totalLitersForAvg).toFixed(3) : '0.000';
 
-  // Calculate consumption accurately filtering out logs with missing/zero odometer or missing liters
+  // Calculate consumption accurately using only consecutive odometer segments where both endpoints have measured liters (> 0).
+  // This prevents unmeasured diary refuelings (where liters === 0) from artificially inflating the distance covered!
   let averageConsumption = '---';
-  const validFuelLogs = logs.filter(
-    (l) => typeof l.odometer === 'number' && l.odometer > 0 && typeof l.liters === 'number' && l.liters > 0
-  );
+  const logsWithOdo = logs
+    .filter((l) => typeof l.odometer === 'number' && l.odometer > 0)
+    .sort((a, b) => a.odometer - b.odometer);
 
-  if (validFuelLogs.length >= 2) {
-    const sortedValidLogs = [...validFuelLogs].sort((a, b) => a.odometer - b.odometer);
-    const startOdo = sortedValidLogs[0].odometer;
-    const endOdo = sortedValidLogs[sortedValidLogs.length - 1].odometer;
-    const distanceCovered = endOdo - startOdo;
-    const litersBurned = sortedValidLogs.slice(1).reduce((sum, l) => sum + (Number(l.liters) || 0), 0);
+  if (logsWithOdo.length >= 2) {
+    let distanceCovered = 0;
+    let litersBurned = 0;
+
+    for (let i = 1; i < logsWithOdo.length; i++) {
+      const prev = logsWithOdo[i - 1];
+      const curr = logsWithOdo[i];
+      const dist = (Number(curr.odometer) || 0) - (Number(prev.odometer) || 0);
+      const prevLiters = Number(prev.liters) || 0;
+      const currLiters = Number(curr.liters) || 0;
+
+      if (dist > 0 && prevLiters > 0 && currLiters > 0) {
+        distanceCovered += dist;
+        litersBurned += currLiters;
+      }
+    }
 
     if (distanceCovered > 0 && litersBurned > 0) {
       averageConsumption = getFuelEfficiencyValue(litersBurned, distanceCovered, settings);

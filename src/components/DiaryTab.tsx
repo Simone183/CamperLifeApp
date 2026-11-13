@@ -58,7 +58,7 @@ import {
   ArrowUpDown,
   BarChart3,
 } from "lucide-react";
-import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, getDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { sanitizeForFirestore } from "../utils/firestoreHelper";
 import { useFamilyCrew } from "../context/FamilyCrewContext";
@@ -1753,20 +1753,46 @@ export default function DiaryTab({
       }),
     );
 
-    if (expenseSubMode === "refuel" && currentUser?.email) {
-      fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`), {
+    if ((expenseSubMode === "refuel" || expenseCategory === "Carburante") && currentUser?.email) {
+      const cleanEmail = currentUser.email.toLowerCase().trim();
+      const fuelLogPayload = {
+        id: String(mergedExpense.id),
+        date: String(mergedExpense.date || new Date().toISOString().split("T")[0]),
+        liters: Number(litersNum || 0),
+        pricePerLiter: Number(pricePerLiterNum || 0),
+        totalCost: Number(finalAmount || 0),
+        odometer: Number(odometerNum !== undefined ? odometerNum : 0),
+        isFullTank: Boolean(fuelIsFullTank),
+        fuelCompany: String(fuelCompany || "Altro").trim(),
+        createdAt: new Date().toISOString(),
+        tripId: activeTrip.id,
+        tripTitle: activeTrip.title,
+      };
+
+      // 1. Direct Firestore write to users/{cleanEmail}/fuelLogs/{id}
+      setDoc(
+        doc(db, "users", cleanEmail, "fuelLogs", fuelLogPayload.id),
+        fuelLogPayload,
+        { merge: true }
+      ).catch((err) => console.warn("Direct Firestore fuel log sync notice:", err));
+
+      // 2. Local fuel logs cache update
+      try {
+        const rawCached = localStorage.getItem(`camper_fuel_logs_${cleanEmail}`);
+        const prevLogs = rawCached ? JSON.parse(rawCached) : [];
+        const nextLogs = [
+          fuelLogPayload,
+          ...(Array.isArray(prevLogs) ? prevLogs.filter((l: any) => l?.id !== fuelLogPayload.id) : []),
+        ];
+        localStorage.setItem(`camper_fuel_logs_${cleanEmail}`, JSON.stringify(nextLogs));
+        localStorage.setItem("camper_last_fuel_logs", JSON.stringify(nextLogs));
+      } catch {}
+
+      // 3. Backend REST API fallback
+      fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(cleanEmail)}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: mergedExpense.id,
-          date: mergedExpense.date,
-          liters: litersNum || 0,
-          pricePerLiter: pricePerLiterNum || 0,
-          totalCost: finalAmount,
-          odometer: odometerNum !== undefined ? odometerNum : 0,
-          isFullTank: fuelIsFullTank,
-          fuelCompany: fuelCompany || "Sconosciuta",
-        }),
+        body: JSON.stringify(fuelLogPayload),
       }).catch((err) => console.error("Fuel sync error:", err));
     }
 
@@ -2238,8 +2264,20 @@ export default function DiaryTab({
     );
 
     if (currentUser?.email) {
+      const cleanEmail = currentUser.email.toLowerCase().trim();
+      deleteDoc(doc(db, "users", cleanEmail, "fuelLogs", String(expenseId))).catch(() => {});
+      try {
+        const rawCached = localStorage.getItem(`camper_fuel_logs_${cleanEmail}`);
+        if (rawCached) {
+          const prevLogs = JSON.parse(rawCached);
+          if (Array.isArray(prevLogs)) {
+            const nextLogs = prevLogs.filter((l: any) => String(l?.id) !== String(expenseId));
+            localStorage.setItem(`camper_fuel_logs_${cleanEmail}`, JSON.stringify(nextLogs));
+          }
+        }
+      } catch {}
       fetch(
-        `/api/fuel-logs/${encodeURIComponent(currentUser.email)}/${expenseId}`,
+        resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(cleanEmail)}/${encodeURIComponent(String(expenseId))}`),
         {
           method: "DELETE",
         },

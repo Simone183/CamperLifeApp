@@ -11,6 +11,8 @@ import maplibregl from 'maplibre-gl';
 import { getTile, getBestTile, generatePlaceholderTile } from '../utils/offlineMapCache';
 import { applyTtsVoiceAndPitch, speakSampleTts, playTextToSpeechWebAudio, unlockGlobalMobileAudio, isNativeMobileApp, TtsGender } from '../utils/ttsHelper';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { 
   ArrowLeft, 
   Compass, 
@@ -685,13 +687,17 @@ export default function FullscreenNavigator({
     if (liters <= 0 || cost <= 0) return;
 
     const newLog = {
-      id: `fuel-${Date.now()}`,
-      liters,
-      costEuro: cost,
-      pricePerLiter: Number((cost / liters).toFixed(2)),
-      odometer,
-      date: new Date().toLocaleDateString('it-IT'),
-      location: dest.name || 'Rifornimento'
+      id: `fuel_${Date.now()}`,
+      liters: Number(liters.toFixed(2)),
+      totalCost: Number(cost.toFixed(2)),
+      costEuro: Number(cost.toFixed(2)),
+      pricePerLiter: Number((cost / liters).toFixed(3)),
+      odometer: Math.round(odometer) || 0,
+      date: new Date().toISOString().split('T')[0],
+      isFullTank: false,
+      fuelCompany: dest.name || 'Altro',
+      location: dest.name || 'Rifornimento',
+      createdAt: new Date().toISOString(),
     };
 
     const updated = [newLog, ...fuelLogs];
@@ -699,7 +705,14 @@ export default function FullscreenNavigator({
     try {
       localStorage.setItem('camper_last_fuel_logs', JSON.stringify(updated));
       if (currentUser?.email) {
-        await fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(currentUser.email)}`), {
+        const cleanEmail = currentUser.email.toLowerCase().trim();
+        const existingRaw = localStorage.getItem(`camper_fuel_logs_${cleanEmail}`);
+        const existingList = existingRaw ? JSON.parse(existingRaw) : [];
+        localStorage.setItem(`camper_fuel_logs_${cleanEmail}`, JSON.stringify([newLog, ...(Array.isArray(existingList) ? existingList : [])]));
+
+        setDoc(doc(db, "users", cleanEmail, "fuelLogs", newLog.id), newLog, { merge: true }).catch(() => {});
+
+        await fetch(resolveApiUrl(`/api/fuel-logs/${encodeURIComponent(cleanEmail)}`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newLog)
@@ -771,14 +784,21 @@ export default function FullscreenNavigator({
       }
 
       const sortedByOdo = [...fuelLogs]
-        .filter(l => typeof l.odometer === 'number' && l.odometer > 0)
+        .filter(l => l && l.id !== 'te1' && typeof l.odometer === 'number' && l.odometer > 0)
         .sort((a, b) => a.odometer - b.odometer);
 
       if (sortedByOdo.length >= 2) {
-        const startOdo = sortedByOdo[0].odometer;
-        const endOdo = sortedByOdo[sortedByOdo.length - 1].odometer;
-        const distanceCovered = endOdo - startOdo;
-        const litersBurned = sortedByOdo.slice(1).reduce((sum, l) => sum + (l.liters || 0), 0);
+        let distanceCovered = 0;
+        let litersBurned = 0;
+        for (let i = 1; i < sortedByOdo.length; i++) {
+          const prev = sortedByOdo[i - 1];
+          const curr = sortedByOdo[i];
+          const dist = (Number(curr.odometer) || 0) - (Number(prev.odometer) || 0);
+          if (dist > 0 && Number(prev.liters) > 0 && Number(curr.liters) > 0) {
+            distanceCovered += dist;
+            litersBurned += Number(curr.liters);
+          }
+        }
 
         if (distanceCovered > 0 && litersBurned > 0) {
           consumptionKmPerL = distanceCovered / litersBurned;

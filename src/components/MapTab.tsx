@@ -1322,16 +1322,23 @@ export default function MapTab({
         hasRealPrice = true;
       }
 
-      // Calculate consumption
+      // Calculate consumption using consecutive odometer segments where both endpoints have measured liters (> 0)
       const sortedByOdo = [...fuelLogs]
-        .filter(l => typeof l.odometer === 'number' && l.odometer > 0)
+        .filter(l => l && l.id !== 'te1' && typeof l.odometer === 'number' && l.odometer > 0)
         .sort((a, b) => a.odometer - b.odometer);
 
       if (sortedByOdo.length >= 2) {
-        const startOdo = sortedByOdo[0].odometer;
-        const endOdo = sortedByOdo[sortedByOdo.length - 1].odometer;
-        const distanceCovered = endOdo - startOdo;
-        const litersBurned = sortedByOdo.slice(1).reduce((sum, l) => sum + (l.liters || 0), 0);
+        let distanceCovered = 0;
+        let litersBurned = 0;
+        for (let i = 1; i < sortedByOdo.length; i++) {
+          const prev = sortedByOdo[i - 1];
+          const curr = sortedByOdo[i];
+          const dist = (Number(curr.odometer) || 0) - (Number(prev.odometer) || 0);
+          if (dist > 0 && Number(prev.liters) > 0 && Number(curr.liters) > 0) {
+            distanceCovered += dist;
+            litersBurned += Number(curr.liters);
+          }
+        }
 
         if (distanceCovered > 0 && litersBurned > 0) {
           consumptionKmPerL = distanceCovered / litersBurned;

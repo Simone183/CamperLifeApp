@@ -5121,27 +5121,31 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       if (!email) return res.json([]);
 
       let existingLogs = getCachedFuelLogs(email);
+      const fsLogIds = new Set<string>();
 
-      // Try fetching from Firestore fuelLogs subcollection
+      // Try fetching from Firestore fuelLogs subcollection (without orderBy so docs missing createdAt are never excluded)
       try {
-        const logsRef = firestoreDb.collection(`users/${email}/fuelLogs`).orderBy('createdAt', 'desc');
+        const logsRef = firestoreDb.collection(`users/${email}/fuelLogs`);
         const snapshot = await logsRef.get();
         if (snapshot && Array.isArray(snapshot.docs) && snapshot.docs.length > 0) {
-          const fsLogs = snapshot.docs.map((doc: any) => ({
-            id: doc.id,
-            ...doc.data()
-          }));
+          const fsLogs = snapshot.docs.map((doc: any) => {
+            fsLogIds.add(doc.id);
+            return {
+              id: doc.id,
+              ...doc.data()
+            };
+          });
           // Merge fsLogs
           const map = new Map<string, any>();
           existingLogs.forEach(l => map.set(l.id, l));
-          fsLogs.forEach((l: any) => map.set(l.id, l));
+          fsLogs.forEach((l: any) => map.set(l.id, { ...(map.get(l.id) || {}), ...l }));
           existingLogs = Array.from(map.values());
         }
       } catch (fsErr) {
         console.warn("[Fuel Logs] Direct subcollection fetch failed (may be quota or offline):", fsErr);
       }
 
-      // Also recover any fuel expenses recorded in user trips if cache is low or to ensure full history
+      // Also recover any fuel expenses recorded in user trips to ensure full history across Diary & Fuel Card
       try {
         const tripsDoc = await firestoreDb.collection(`users/${email}/data`).doc("trips").get();
         if (tripsDoc && tripsDoc.exists) {
@@ -5151,7 +5155,9 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
             existingLogs.forEach(l => map.set(l.id, l));
 
             for (const trip of tripsData.trips) {
+              if (!trip || trip.id === 'trip-example-10-oct-2020' || String(trip.id || '').startsWith('trip-example')) continue;
               for (const exp of (trip.expenses || [])) {
+                if (!exp || exp.id === 'te1') continue;
                 if (exp.category === 'Carburante' || exp.liters || exp.pricePerLiter || exp.fuelCompany) {
                   let liters = exp.liters;
                   let pricePerLiter = exp.pricePerLiter;
@@ -5175,19 +5181,22 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
                   }
 
                   const logId = exp.id || `fuel_trip_${trip.id}_${exp.date || Date.now()}`;
-                  if (!map.has(logId)) {
-                    map.set(logId, {
-                      id: logId,
-                      date: exp.date || trip.startDate || new Date().toISOString().split('T')[0],
-                      liters: liters || 0,
-                      pricePerLiter: pricePerLiter || 0,
-                      totalCost: exp.amount || 0,
-                      odometer: odometer,
-                      isFullTank: isFullTank,
-                      fuelCompany: fuelCompany,
-                      createdAt: exp.date ? new Date(exp.date).toISOString() : new Date().toISOString()
-                    });
-                  }
+                  const existing = map.get(logId);
+                  const mergedEntry = {
+                    ...(existing || {}),
+                    id: logId,
+                    date: exp.date || existing?.date || trip.startDate || new Date().toISOString().split('T')[0],
+                    liters: Number(liters || existing?.liters || 0),
+                    pricePerLiter: Number(pricePerLiter || existing?.pricePerLiter || 0),
+                    totalCost: Number(exp.amount || existing?.totalCost || 0),
+                    odometer: Number(odometer || existing?.odometer || 0),
+                    isFullTank: Boolean(isFullTank || existing?.isFullTank),
+                    fuelCompany: fuelCompany || existing?.fuelCompany || "Altro",
+                    tripId: trip.id || existing?.tripId,
+                    tripTitle: trip.title || existing?.tripTitle,
+                    createdAt: existing?.createdAt || (exp.date ? new Date(exp.date).toISOString() : new Date().toISOString())
+                  };
+                  map.set(logId, mergedEntry);
                 }
               }
             }
@@ -5197,6 +5206,69 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
       } catch (tripsErr) {
         console.warn("[Fuel Logs] Error recovering from trips:", tripsErr);
       }
+
+      // Deduplicate logs that have different IDs but identical date + totalCost (and close odometer or one has 0 liters), excluding demo 'te1'
+      const dedupedList: any[] = [];
+      for (const l of existingLogs) {
+        if (!l || l.id === 'te1' || l.tripId === 'trip-example-10-oct-2020' || String(l.tripId || '').startsWith('trip-example')) continue;
+        const costNum = Number(l.totalCost ?? l.costEuro ?? 0);
+        const litNum = Number(l.liters ?? 0);
+        const odoNum = Number(l.odometer ?? 0);
+        if (costNum <= 0 && litNum <= 0) continue;
+
+        const matchIdx = dedupedList.findIndex((existing) => {
+          if ((existing.date || '') !== (l.date || '')) return false;
+          const existingCost = Number(existing.totalCost ?? existing.costEuro ?? 0);
+          if (Math.abs(existingCost - costNum) >= 0.05) return false;
+          const existingOdo = Number(existing.odometer ?? 0);
+          if (existingOdo > 0 && odoNum > 0 && Math.abs(existingOdo - odoNum) <= 50) return true;
+          const existingLit = Number(existing.liters ?? 0);
+          if ((existingLit === 0 && litNum > 0) || (litNum === 0 && existingLit > 0)) return true;
+          return false;
+        });
+
+        if (matchIdx === -1) {
+          dedupedList.push(l);
+        } else {
+          const prev = dedupedList[matchIdx];
+          const preferL = litNum > Number(prev.liters ?? 0);
+          dedupedList[matchIdx] = {
+            ...prev,
+            ...l,
+            id: preferL ? l.id : prev.id,
+            liters: Number(l.liters || prev.liters || 0),
+            pricePerLiter: Number(l.pricePerLiter || prev.pricePerLiter || 0),
+            totalCost: Number(l.totalCost || prev.totalCost || 0),
+            odometer: preferL && odoNum > 0 ? odoNum : Number(prev.odometer || l.odometer || 0),
+            tripId: l.tripId || prev.tripId,
+            tripTitle: l.tripTitle || prev.tripTitle,
+          };
+        }
+      }
+      existingLogs = dedupedList.filter((item) => {
+        if (Number(item.liters) > 0) return true;
+        const itemTime = new Date(item.date || '').getTime();
+        if (isNaN(itemTime)) return true;
+        const nearbyMeasured = dedupedList.filter((m) => {
+          if (Number(m.liters) <= 0) return false;
+          const mTime = new Date(m.date || '').getTime();
+          if (isNaN(mTime) || Math.abs(mTime - itemTime) > 86400000 * 2) return false;
+          const odoA = Number(item.odometer) || 0;
+          const odoB = Number(m.odometer) || 0;
+          return odoA === 0 || odoB === 0 || Math.abs(odoA - odoB) <= 50;
+        });
+        if (nearbyMeasured.length >= 2) {
+          const sumCost = nearbyMeasured.reduce((s, m) => s + (Number(m.totalCost) || 0), 0);
+          if (Math.abs(sumCost - (Number(item.totalCost) || 0)) < 0.15) {
+            nearbyMeasured.forEach((m) => {
+              if (!m.tripId && item.tripId) m.tripId = item.tripId;
+              if (!m.tripTitle && item.tripTitle) m.tripTitle = item.tripTitle;
+            });
+            return false;
+          }
+        }
+        return true;
+      });
 
       // Sort descending by date (newest in alto), then odometer, then createdAt
       existingLogs.sort((a, b) => {
@@ -5213,6 +5285,17 @@ Genera circa 12-16 controlli e avvisi specifici ed estremamente utili per questa
 
       // Save merged logs to cache
       saveCachedFuelLogs(email, existingLogs);
+
+      // Backfill any missing logs into Firestore users/{email}/fuelLogs in background so mobile SDK has 100% parity
+      (async () => {
+        for (const log of existingLogs) {
+          if (log && log.id && !fsLogIds.has(log.id)) {
+            try {
+              await firestoreDb.collection(`users/${email}/fuelLogs`).doc(log.id).set(log);
+            } catch {}
+          }
+        }
+      })().catch(() => {});
 
       res.json(existingLogs);
     } catch (err: any) {

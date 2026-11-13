@@ -148,19 +148,12 @@ class ServerRESTFirestoreAdapter {
   }
 
   async runQuery(collectionPath: string, constraints: any[], orderByField?: string, orderDirection?: 'asc' | 'desc', limitCount?: number) {
-    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents:runQuery?key=${this.apiKey}`;
-    
-    const parts = collectionPath.split("/");
+    const parts = collectionPath.split("/").filter(Boolean);
     const collectionId = parts[parts.length - 1];
+    const parentSuffix = parts.length > 1 ? `/${parts.slice(0, parts.length - 1).join("/")}` : "";
+    const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/${this.databaseId}/documents${parentSuffix}:runQuery?key=${this.apiKey}`;
     
     const requestBody: any = {};
-    
-    if (parts.length > 1) {
-      const parentPath = parts.slice(0, parts.length - 1).join("/");
-      requestBody.parent = `projects/${this.projectId}/databases/${this.databaseId}/documents/${parentPath}`;
-    } else {
-      requestBody.parent = `projects/${this.projectId}/databases/${this.databaseId}/documents`;
-    }
     
     const filters = constraints.map(c => ({
       fieldFilter: {

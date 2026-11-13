@@ -420,6 +420,14 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
             <span>Moderazione</span>
           </button>
         </div>
+
+        <div className="pt-3 border-t border-slate-300/80 dark:border-slate-800 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+          <span>ViaCamper v2.5.20</span>
+          <span>•</span>
+          <span className="font-mono bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-md border border-slate-300/80 dark:border-slate-700">
+            Version Code: 20520
+          </span>
+        </div>
       </div>
 
       {/* MODALS for Tools */}

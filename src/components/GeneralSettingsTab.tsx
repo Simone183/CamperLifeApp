@@ -1180,6 +1180,15 @@ export default function GeneralSettingsTab({
         </div>
       )}
 
+      {/* Version & Version Code Footer */}
+      <div className="pt-4 pb-2 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 dark:text-slate-500 select-all">
+        <span>ViaCamper v2.5.20</span>
+        <span>•</span>
+        <span className="font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+          Version Code: 20520
+        </span>
+      </div>
+
       {/* Modal PIN */}
       {showPinModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2D2926]/40 backdrop-blur-sm">

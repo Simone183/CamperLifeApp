@@ -9,7 +9,9 @@
       "odometer": 130042,
       "isFullTank": false,
       "fuelCompany": "Altro",
-      "createdAt": "2026-09-05T00:00:00.000Z"
+      "createdAt": "2026-09-05T00:00:00.000Z",
+      "tripId": "trip_1787575589438",
+      "tripTitle": "Viaggio in Sicilia"
     },
     {
       "id": "exp_1788860362733",
@@ -20,7 +22,9 @@
       "odometer": 129574,
       "isFullTank": false,
       "fuelCompany": "Altro",
-      "createdAt": "2026-09-05T00:00:00.000Z"
+      "createdAt": "2026-09-05T00:00:00.000Z",
+      "tripId": "trip_1787575589438",
+      "tripTitle": "Viaggio in Sicilia"
     },
     {
       "id": "exp_1788860234524",
@@ -31,7 +35,9 @@
       "odometer": 129398,
       "isFullTank": false,
       "fuelCompany": "Altro",
-      "createdAt": "2026-09-04T00:00:00.000Z"
+      "createdAt": "2026-09-04T00:00:00.000Z",
+      "tripId": "trip_1787575589438",
+      "tripTitle": "Viaggio in Sicilia"
     },
     {
       "id": "exp_1788001701669",
@@ -42,7 +48,9 @@
       "odometer": 128775,
       "isFullTank": true,
       "fuelCompany": "Altro",
-      "createdAt": "2026-08-22T00:00:00.000Z"
+      "createdAt": "2026-08-22T00:00:00.000Z",
+      "tripId": "trip_1787575589438",
+      "tripTitle": "Viaggio in Sicilia"
     },
     {
       "id": "exp_1788001620654",
@@ -53,7 +61,9 @@
       "odometer": 128389,
       "isFullTank": false,
       "fuelCompany": "Altro",
-      "createdAt": "2026-08-22T00:00:00.000Z"
+      "createdAt": "2026-08-22T00:00:00.000Z",
+      "tripId": "trip_1787575589438",
+      "tripTitle": "Viaggio in Sicilia"
     },
     {
       "id": "exp_1788001544117",
@@ -64,18 +74,267 @@
       "odometer": 127890,
       "isFullTank": false,
       "fuelCompany": "Altro",
-      "createdAt": "2026-08-17T00:00:00.000Z"
+      "createdAt": "2026-08-17T00:00:00.000Z",
+      "tripId": "trip_1787575589438",
+      "tripTitle": "Viaggio in Sicilia"
     },
     {
-      "id": "te1",
-      "date": "2025-10-10",
-      "liters": 30,
-      "pricePerLiter": 1.833,
-      "totalCost": 55,
-      "odometer": 124500,
+      "id": "fuel_1784983139161",
+      "totalCost": 101.338,
+      "odometer": 127490,
+      "liters": 46,
+      "date": "2026-07-25",
+      "fuelCompany": "Aurol",
+      "createdAt": "2026-07-25T12:38:59.161Z",
       "isFullTank": false,
-      "fuelCompany": "Eni",
-      "createdAt": "2025-10-10T00:00:00.000Z"
+      "pricePerLiter": 2.203,
+      "tripId": "trip_1791293916220",
+      "tripTitle": "Laguna di Orbetello"
+    },
+    {
+      "id": "fuel_1784913976557",
+      "odometer": 127482,
+      "createdAt": "2026-07-24T17:26:16.557Z",
+      "date": "2026-07-24",
+      "isFullTank": false,
+      "fuelCompany": "Esao",
+      "totalCost": 12.0175,
+      "pricePerLiter": 2.185,
+      "liters": 5.5,
+      "tripId": "trip_1791293916220",
+      "tripTitle": "Laguna di Orbetello"
+    },
+    {
+      "id": "fuel_1783091499757",
+      "date": "2026-07-03",
+      "liters": 53.22,
+      "pricePerLiter": 1.879,
+      "totalCost": 100.00037999999999,
+      "odometer": 126966,
+      "isFullTank": false,
+      "fuelCompany": "Q8",
+      "createdAt": "2026-07-03T15:11:39.757Z",
+      "tripId": "trip_1791209289738",
+      "tripTitle": "Fioritura di Castelluccio di Norcia"
+    },
+    {
+      "id": "exp_1790948713821_nvnf9",
+      "date": "2026-05-29",
+      "createdAt": "2026-05-29T00:00:00.000Z",
+      "odometer": 126410,
+      "liters": 0,
+      "fuelCompany": "Q8",
+      "pricePerLiter": 0,
+      "totalCost": 100.03,
+      "isFullTank": false,
+      "tripId": "trip_1790947599314",
+      "tripTitle": "Valle d'Orcia"
+    },
+    {
+      "id": "exp_1790931751216_o1j8j",
+      "date": "2026-04-24",
+      "createdAt": "2026-04-24T00:00:00.000Z",
+      "odometer": 0,
+      "liters": 0,
+      "fuelCompany": "Q8",
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "isFullTank": false,
+      "tripId": "trip_1790931618974",
+      "tripTitle": "Festa del Tulipano a Castiglione del lago"
+    },
+    {
+      "id": "exp_1790865344212_jwlja",
+      "date": "2026-03-27",
+      "liters": 0,
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "odometer": 125491,
+      "isFullTank": false,
+      "fuelCompany": "Q8",
+      "tripId": "trip_1790862812408",
+      "tripTitle": "Nel cuore dell'Umbria tra Bevagna e Rasiglia",
+      "createdAt": "2026-03-27T00:00:00.000Z"
+    },
+    {
+      "id": "exp_1790847566663_54vdp",
+      "date": "2026-02-18",
+      "createdAt": "2026-02-18T00:00:00.000Z",
+      "odometer": 124833,
+      "liters": 0,
+      "fuelCompany": "Q8",
+      "pricePerLiter": 0,
+      "totalCost": 95,
+      "isFullTank": false,
+      "tripId": "trip_1790847051960",
+      "tripTitle": "Ancona"
+    },
+    {
+      "id": "exp_1790694688752_zxc8k",
+      "date": "2026-01-09",
+      "createdAt": "2026-01-09T00:00:00.000Z",
+      "odometer": 124256,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 60,
+      "isFullTank": false,
+      "tripId": "trip_1790692688273",
+      "tripTitle": "Trentino in inverno"
+    },
+    {
+      "id": "exp_1790693698503_xuje1",
+      "date": "2026-01-06",
+      "createdAt": "2026-01-06T00:00:00.000Z",
+      "odometer": 123967,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "isFullTank": false,
+      "tripId": "trip_1790692688273",
+      "tripTitle": "Trentino in inverno"
+    },
+    {
+      "id": "exp_1790693177926_oja7q",
+      "date": "2026-01-03",
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "odometer": 123801,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 60,
+      "isFullTank": false,
+      "tripId": "trip_1790692688273",
+      "tripTitle": "Trentino in inverno"
+    },
+    {
+      "id": "exp_1790693141510_4td58",
+      "date": "2026-01-02",
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "odometer": 123185,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "isFullTank": false,
+      "tripId": "trip_1790692688273",
+      "tripTitle": "Trentino in inverno"
+    },
+    {
+      "id": "exp_1790688694887_zzjvn",
+      "date": "2025-11-30",
+      "createdAt": "2025-11-30T00:00:00.000Z",
+      "odometer": 123128,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "isFullTank": false,
+      "tripId": "trip_1790685981067",
+      "tripTitle": "Mercatini di Natale ad Arezzo"
+    },
+    {
+      "id": "exp_1790676035155_yv91l",
+      "date": "2025-08-23",
+      "liters": 0,
+      "pricePerLiter": 0,
+      "totalCost": 78,
+      "odometer": 122011,
+      "isFullTank": false,
+      "fuelCompany": "Altro",
+      "tripId": "trip_1790661141458",
+      "tripTitle": "Vacanza in Puglia",
+      "createdAt": "2025-08-23T00:00:00.000Z"
+    },
+    {
+      "id": "exp_1790675963424_xrkl6",
+      "date": "2025-08-16",
+      "createdAt": "2025-08-16T00:00:00.000Z",
+      "odometer": 121596,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 102,
+      "isFullTank": false,
+      "tripId": "trip_1790661141458",
+      "tripTitle": "Vacanza in Puglia"
+    },
+    {
+      "id": "exp_1790675931194_afyrh",
+      "date": "2025-08-14",
+      "createdAt": "2025-08-14T00:00:00.000Z",
+      "odometer": 121035,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 80,
+      "isFullTank": false,
+      "tripId": "trip_1790661141458",
+      "tripTitle": "Vacanza in Puglia"
+    },
+    {
+      "id": "exp_1790588434369_71kzt",
+      "date": "2025-07-12",
+      "createdAt": "2025-07-12T00:00:00.000Z",
+      "odometer": 0,
+      "liters": 0,
+      "fuelCompany": "Altro",
+      "pricePerLiter": 0,
+      "totalCost": 72,
+      "isFullTank": false,
+      "tripId": "trip_1790588361370",
+      "tripTitle": "In Giro per l'Abruzzo"
+    },
+    {
+      "id": "exp_1790588409596_p15ed",
+      "date": "2025-07-05",
+      "fuelCompany": "Altro",
+      "isFullTank": false,
+      "createdAt": "2025-07-05T00:00:00.000Z",
+      "odometer": 120212,
+      "liters": 43.45,
+      "pricePerLiter": 1.669,
+      "totalCost": 72.52,
+      "tripId": "trip_1790588361370",
+      "tripTitle": "In Giro per l'Abruzzo"
+    },
+    {
+      "id": "exp_1790315324226",
+      "date": "2025-05-04",
+      "liters": 0,
+      "pricePerLiter": 0,
+      "totalCost": 120,
+      "odometer": 0,
+      "isFullTank": false,
+      "fuelCompany": "Altro",
+      "tripId": "trip_1790315263817",
+      "tripTitle": "Gardaland",
+      "createdAt": "2025-05-04T00:00:00.000Z"
+    },
+    {
+      "id": "exp_1790315304881",
+      "date": "2025-05-01",
+      "liters": 0,
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "odometer": 0,
+      "isFullTank": false,
+      "fuelCompany": "Altro",
+      "tripId": "trip_1790315263817",
+      "tripTitle": "Gardaland",
+      "createdAt": "2025-05-01T00:00:00.000Z"
+    },
+    {
+      "id": "fuel_1791560717939",
+      "date": "2025-04-30",
+      "createdAt": "2026-10-09T15:45:17.939Z",
+      "odometer": 119127,
+      "liters": 0,
+      "fuelCompany": "altro",
+      "pricePerLiter": 0,
+      "totalCost": 100,
+      "isFullTank": false
     }
   ]
 }
