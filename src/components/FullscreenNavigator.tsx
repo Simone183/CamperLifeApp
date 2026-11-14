@@ -115,24 +115,41 @@ export default function FullscreenNavigator({
   const carMarkerRef = React.useRef<maplibregl.Marker | null>(null);
   const markerAnimFrameRef = React.useRef<number | null>(null);
   const destMarkerRef = React.useRef<maplibregl.Marker | null>(null);
+  const turnCalloutMarkerRef = React.useRef<maplibregl.Marker | null>(null);
 
   const [nearbyPlaces, setNearbyPlaces] = React.useState<{ place: Place; minDistance: number }[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState<boolean>(true);
   const [showStopsOnRoute, setShowStopsOnRoute] = React.useState<boolean>(false);
   const [showOsmObstacles, setShowOsmObstacles] = React.useState<boolean>(true);
   const [showTrafficFlow, setShowTrafficFlow] = React.useState<boolean>(true);
+  const [navMapStyle, setNavMapStyle] = React.useState<'nav-night' | 'roadmap' | 'satellite' | 'terrain'>('nav-night');
   const [autoCenter, setAutoCenter] = React.useState<boolean>(true);
 
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(false);
   const [speed, setSpeed] = React.useState<number>(80); // km/h
   const [currentDetectedSpeed, setCurrentDetectedSpeed] = React.useState<number | null>(null);
-  const [showProminentDisclosure, setShowProminentDisclosure] = React.useState<boolean>(() => {
+  const [showProminentDisclosure, setShowProminentDisclosure] = React.useState<boolean>(false);
+  const [localGpsLocation, setLocalGpsLocation] = React.useState<{ lat: number; lng: number } | null>(() => {
+    if (userLocation) return userLocation;
     try {
-      return localStorage.getItem('viacamper_bg_location_disclosed_v2') !== 'true';
-    } catch (e) {
-      return true;
-    }
+      const saved = localStorage.getItem('last_known_gps_location') || localStorage.getItem('camper_last_gps_location');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number' && !isNaN(parsed.lat) && !isNaN(parsed.lng)) {
+          return { lat: parsed.lat, lng: parsed.lng };
+        }
+      }
+    } catch (_) {}
+    return null;
   });
+
+  React.useEffect(() => {
+    if (userLocation && typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number') {
+      setLocalGpsLocation({ lat: userLocation.lat, lng: userLocation.lng });
+    }
+  }, [userLocation?.lat, userLocation?.lng]);
+
+  const resolvedUserLocation = userLocation || localGpsLocation;
 
   const handleCloseNavigator = React.useCallback(() => {
     try {
@@ -197,7 +214,7 @@ export default function FullscreenNavigator({
     };
   }, []);
 
-  // Real-time GPS speed tracking
+  // Real-time GPS position & speed tracking inside FullscreenNavigator
   React.useEffect(() => {
     if (!isGPSEnabled || typeof window === 'undefined' || !('geolocation' in navigator)) {
       setCurrentDetectedSpeed(null);
@@ -206,85 +223,89 @@ export default function FullscreenNavigator({
 
     let lastPos: { lat: number; lng: number; timestamp: number } | null = null;
 
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (pos.coords.speed !== null && pos.coords.speed !== undefined && !isNaN(pos.coords.speed) && pos.coords.speed >= 0) {
-          const kmh = Math.round(pos.coords.speed * 3.6);
-          setCurrentDetectedSpeed(kmh);
-        } else {
-          const now = pos.timestamp || Date.now();
-          if (lastPos) {
-            const dtSeconds = (now - lastPos.timestamp) / 1000;
-            if (dtSeconds > 0.5) {
-              const distKm = calculateHaversineDistance(
-                [lastPos.lat, lastPos.lng],
-                [pos.coords.latitude, pos.coords.longitude]
-              );
-              const kmh = Math.round((distKm / dtSeconds) * 3600);
-              if (distKm * 1000 < 1.5) {
-                setCurrentDetectedSpeed(0);
-              } else if (kmh < 220) {
-                setCurrentDetectedSpeed(kmh);
-              }
-            }
-          } else {
-            setCurrentDetectedSpeed(0);
-          }
-          lastPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: now };
+    const applyGpsFix = (lat: number, lng: number, rawSpeed: number | null | undefined, rawHeading: number | null | undefined, accuracy?: number | null, timestamp?: number) => {
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return;
+
+      setLocalGpsLocation((prev) => {
+        if (!prev || Math.abs(prev.lat - lat) > 0.00001 || Math.abs(prev.lng - lng) > 0.00001) {
+          return { lat, lng };
         }
-      },
-      (err) => {
-        console.warn("GPS speed watcher warning:", err);
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        return prev;
+      });
+
+      try {
+        localStorage.setItem('last_known_gps_location', JSON.stringify({ lat, lng, ts: Date.now() }));
+        localStorage.setItem('camper_last_gps_location', JSON.stringify({ lat, lng }));
+      } catch (_) {}
+
+      try {
+        window.dispatchEvent(new CustomEvent('gps-position-updated', {
+          detail: { lat, lng, accuracy: accuracy ?? null }
+        }));
+      } catch (_) {}
+
+      if (typeof rawHeading === 'number' && !isNaN(rawHeading) && rawHeading >= 0) {
+        vehicleHeadingRef.current = Math.round(rawHeading);
+      }
+
+      const now = timestamp || Date.now();
+      if (rawSpeed !== null && rawSpeed !== undefined && !isNaN(rawSpeed) && rawSpeed >= 0) {
+        setCurrentDetectedSpeed(Math.round(rawSpeed * 3.6));
+      } else if (lastPos) {
+        const dtSeconds = (now - lastPos.timestamp) / 1000;
+        if (dtSeconds > 0.4) {
+          const distKm = calculateHaversineDistance([lastPos.lat, lastPos.lng], [lat, lng]);
+          const kmh = Math.round((distKm / dtSeconds) * 3600);
+          if (distKm * 1000 < 1.5) {
+            setCurrentDetectedSpeed(0);
+          } else if (kmh < 220) {
+            setCurrentDetectedSpeed(kmh);
+          }
+          if (distKm * 1000 >= 2.5) {
+            vehicleHeadingRef.current = Math.round(getBearing([lastPos.lat, lastPos.lng], [lat, lng]));
+          }
+        }
+      } else {
+        setCurrentDetectedSpeed(0);
+      }
+      lastPos = { lat, lng, timestamp: now };
+    };
+
+    // Fast initial fix (accept cached fix up to 15s, then refine with high accuracy)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => applyGpsFix(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.heading, pos.coords.accuracy, pos.timestamp),
+      () => {},
+      { enableHighAccuracy: false, timeout: 3000, maximumAge: 15000 }
     );
 
-    const speedPollInterval = setInterval(() => {
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        applyGpsFix(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.heading, pos.coords.accuracy, pos.timestamp);
+      },
+      (err) => {
+        console.warn("GPS watcher warning:", err);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
+    );
+
+    const nativePollInterval = setInterval(() => {
       try {
         const bridge = (window as any).AndroidNativeTTS;
         if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
           const raw = bridge.getLatestNativeGpsJson();
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed.speed === "number" && parsed.speed >= 0) {
-              setCurrentDetectedSpeed(Math.round(parsed.speed * 3.6));
+            if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
+              applyGpsFix(parsed.lat, parsed.lng, parsed.speed, parsed.bearing, parsed.accuracy, parsed.time || Date.now());
             }
           }
         }
       } catch (_) {}
-      if (typeof window !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (pos.coords.speed !== null && pos.coords.speed !== undefined && !isNaN(pos.coords.speed) && pos.coords.speed >= 0) {
-              const kmh = Math.round(pos.coords.speed * 3.6);
-              setCurrentDetectedSpeed(kmh);
-            } else if (lastPos) {
-              const now = pos.timestamp || Date.now();
-              const dtSeconds = (now - lastPos.timestamp) / 1000;
-              if (dtSeconds > 0.5) {
-                const distKm = calculateHaversineDistance(
-                  [lastPos.lat, lastPos.lng],
-                  [pos.coords.latitude, pos.coords.longitude]
-                );
-                const kmh = Math.round((distKm / dtSeconds) * 3600);
-                if (distKm * 1000 < 1.5) {
-                  setCurrentDetectedSpeed(0);
-                } else if (kmh < 220) {
-                  setCurrentDetectedSpeed(kmh);
-                }
-              }
-            }
-            lastPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: pos.timestamp || Date.now() };
-          },
-          (err) => {},
-          { enableHighAccuracy: true, timeout: 4000, maximumAge: 0 }
-        );
-      }
-    }, 1500);
+    }, 1000);
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
-      clearInterval(speedPollInterval);
+      clearInterval(nativePollInterval);
     };
   }, [isGPSEnabled]);
 
@@ -325,28 +346,105 @@ export default function FullscreenNavigator({
   };
   const [simStep, setSimStep] = React.useState<number>(0);
 
-  // Function to initialize or recreate MapLibre map instance cleanly without triggering React re-renders
-  const initMapInstance = React.useCallback(() => {
-    if (!mapContainerRef.current) return;
+  const registerRoadShieldImages = React.useCallback((map: maplibregl.Map) => {
+    try {
+      const createShieldData = (bgColor: string, borderColor: string) => {
+        const w = 64;
+        const h = 28;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        const r = 6;
+        ctx.beginPath();
+        ctx.moveTo(r + 1, 1);
+        ctx.lineTo(w - r - 1, 1);
+        ctx.quadraticCurveTo(w - 1, 1, w - 1, r + 1);
+        ctx.lineTo(w - 1, h - r - 1);
+        ctx.quadraticCurveTo(w - 1, h - 1, w - r - 1, h - 1);
+        ctx.lineTo(r + 1, h - 1);
+        ctx.quadraticCurveTo(1, h - 1, 1, h - r - 1);
+        ctx.lineTo(1, r + 1);
+        ctx.quadraticCurveTo(1, 1, r + 1, 1);
+        ctx.closePath();
+        ctx.fillStyle = bgColor;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = borderColor;
+        ctx.stroke();
+        return ctx.getImageData(0, 0, w, h);
+      };
 
-    if (mapRef.current) {
-      try {
-        mapRef.current.remove();
-      } catch (e) {}
-      mapRef.current = null;
-    }
+      if (!map.hasImage('road-shield-blue')) {
+        const blueImg = createShieldData('#285785', '#93C5FD');
+        if (blueImg) {
+          map.addImage('road-shield-blue', blueImg, {
+            pixelRatio: 2,
+            stretchX: [[8, 56]],
+            stretchY: [[6, 22]],
+            content: [8, 4, 56, 24]
+          });
+        }
+      }
+      if (!map.hasImage('road-shield-green')) {
+        const greenImg = createShieldData('#15803D', '#86EFAC');
+        if (greenImg) {
+          map.addImage('road-shield-green', greenImg, {
+            pixelRatio: 2,
+            stretchX: [[8, 56]],
+            stretchY: [[6, 22]],
+            content: [8, 4, 56, 24]
+          });
+        }
+      }
+    } catch (_) {}
+  }, []);
 
-    const mapStyle: any = {
+  const buildNavigatorMapStyle = React.useCallback((styleMode: 'nav-night' | 'roadmap' | 'satellite' | 'terrain', trafficVisible: boolean) => {
+    const isLight = styleMode === 'roadmap' || styleMode === 'terrain';
+    // Stile Google Maps Night blu-petrolio (#0E2433 terra, #06374A acqua/aree verdi, #223B4D arterie stradali) senza scritte statiche
+    const googleNightNoLabelsStyle = 's.e:l%7Cp.v:off,s.e:g%7Cp.c:%23ff0e2433,s.t:6%7Cs.e:g%7Cp.c:%23ff06374a,s.t:40%7Cs.e:g.f%7Cp.c:%23ff06374a,s.t:3%7Cs.e:g.f%7Cp.c:%23ff223b4d,s.t:3%7Cs.e:g.s%7Cp.c:%23ff081722';
+    const rasterTiles =
+      styleMode === 'satellite'
+        ? [
+            "https://mt0.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}",
+            "https://mt2.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}",
+            "https://mt3.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}"
+          ]
+        : styleMode === 'terrain'
+          ? [
+              "https://mt0.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+              "https://mt1.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+              "https://mt2.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+              "https://mt3.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
+            ]
+          : styleMode === 'nav-night'
+            ? [
+                `https://mt0.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
+                `https://mt1.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
+                `https://mt2.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
+                `https://mt3.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`
+              ]
+            : [
+                "https://mt0.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+                "https://mt1.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+                "https://mt2.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+                "https://mt3.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
+              ];
+
+    return {
       version: 8,
+      glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
       sources: {
+        'openmaptiles': {
+          type: 'vector',
+          url: 'https://tiles.openfreemap.org/planet'
+        },
         'raster-tiles': {
           type: 'raster',
-          tiles: [
-            "https://mt0.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-            "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-            "https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-            "https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-          ],
+          tiles: rasterTiles,
           tileSize: 256,
           attribution: 'Dati cartografici © Google Maps & OpenStreetMap',
           maxzoom: 19
@@ -354,14 +452,19 @@ export default function FullscreenNavigator({
         'tomtom-traffic-tiles': {
           type: 'raster',
           tiles: [
-            "https://mt0.google.com/vt?lyrs=h,traffic&x={x}&y={y}&z={z}",
-            "https://mt1.google.com/vt?lyrs=h,traffic&x={x}&y={y}&z={z}"
+            "https://mt0.google.com/vt?lyrs=h,traffic&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt?lyrs=h,traffic&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
           ],
           tileSize: 256,
           maxzoom: 19
         }
       },
       layers: [
+        {
+          id: 'nav-bg',
+          type: 'background',
+          paint: { 'background-color': isLight ? '#F1F5F9' : '#0E2433' }
+        },
         {
           id: 'simple-tiles',
           type: 'raster',
@@ -376,14 +479,136 @@ export default function FullscreenNavigator({
           minzoom: 5,
           maxzoom: 22,
           layout: {
-            visibility: 'visible'
+            visibility: trafficVisible ? 'visible' : 'none'
           },
           paint: {
-            'raster-opacity': 0.95
+            'raster-opacity': 0.9
+          }
+        },
+        // 1. Nomi delle vie vettoriali: seguono le strade e si ribaltano sempre dritti (text-keep-upright: true)
+        {
+          id: 'vector-road-labels',
+          type: 'symbol',
+          source: 'openmaptiles',
+          'source-layer': 'transportation_name',
+          minzoom: 12,
+          layout: {
+            'symbol-placement': 'line',
+            'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name']],
+            'text-font': ['Noto Sans Bold'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 15, 12.5, 18, 14.5],
+            'text-keep-upright': true,
+            'text-rotation-alignment': 'map',
+            'text-pitch-alignment': 'viewport',
+            'text-max-angle': 30
+          },
+          paint: {
+            'text-color': isLight ? '#1E293B' : '#CFE6F7',
+            'text-halo-color': isLight ? '#FFFFFF' : '#081824',
+            'text-halo-width': 2
+          }
+        },
+        // 2. Cartelli stradali (SS7, SP4a, A1): targhette blu/verdi sempre dritte (viewport) in primo piano sopra il percorso
+        {
+          id: 'vector-road-shields',
+          type: 'symbol',
+          source: 'openmaptiles',
+          'source-layer': 'transportation_name',
+          filter: ['all', ['has', 'ref'], ['<=', ['length', ['to-string', ['get', 'ref']]], 8]],
+          minzoom: 9,
+          layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 300,
+            'icon-image': [
+              'case',
+              ['==', ['slice', ['to-string', ['get', 'ref']], 0, 1], 'A'],
+              'road-shield-green',
+              'road-shield-blue'
+            ],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [2, 6, 2, 6],
+            'icon-rotation-alignment': 'viewport',
+            'icon-pitch-alignment': 'viewport',
+            'text-field': ['to-string', ['get', 'ref']],
+            'text-font': ['Noto Sans Bold'],
+            'text-size': 11,
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport',
+            'text-keep-upright': true
+          },
+          paint: {
+            'text-color': '#FFFFFF'
+          }
+        },
+        // 3. POI di rilievo (es. Palazzo Chigi Ariccia): sempre dritti rispetto allo schermo
+        {
+          id: 'vector-poi-labels',
+          type: 'symbol',
+          source: 'openmaptiles',
+          'source-layer': 'poi',
+          minzoom: 14,
+          filter: ['has', 'name'],
+          layout: {
+            'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name']],
+            'text-font': ['Noto Sans Bold'],
+            'text-size': 11,
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport',
+            'text-keep-upright': true,
+            'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+            'text-radial-offset': 0.5
+          },
+          paint: {
+            'text-color': isLight ? '#6B21A8' : '#E899F5',
+            'text-halo-color': isLight ? '#FFFFFF' : '#081520',
+            'text-halo-width': 1.8
+          }
+        },
+        // 4. Nomi di città, quartieri e frazioni (es. Fontanaccio, Le Piagge): sempre dritti e orizzontali (viewport)
+        {
+          id: 'vector-place-labels',
+          type: 'symbol',
+          source: 'openmaptiles',
+          'source-layer': 'place',
+          layout: {
+            'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name']],
+            'text-font': ['Noto Sans Bold'],
+            'text-size': [
+              'match',
+              ['get', 'class'],
+              'city', 16.5,
+              'town', 15,
+              'village', 14,
+              'suburb', 13.5,
+              'hamlet', 13,
+              12.5
+            ],
+            'text-rotation-alignment': 'viewport',
+            'text-pitch-alignment': 'viewport',
+            'text-keep-upright': true
+          },
+          paint: {
+            'text-color': isLight ? '#0F172A' : '#FFFFFF',
+            'text-halo-color': isLight ? '#FFFFFF' : '#06131E',
+            'text-halo-width': 2.4
           }
         }
       ]
     };
+  }, []);
+
+  // Function to initialize or recreate MapLibre map instance cleanly without triggering React re-renders
+  const initMapInstance = React.useCallback(() => {
+    if (!mapContainerRef.current) return;
+
+    if (mapRef.current) {
+      try {
+        mapRef.current.remove();
+      } catch (e) {}
+      mapRef.current = null;
+    }
+
+    const mapStyle: any = buildNavigatorMapStyle(navMapStyle, showTrafficFlow);
 
     const initialCenter: [number, number] = displayedRouteCoordinates[0] 
       ? [displayedRouteCoordinates[0][1], displayedRouteCoordinates[0][0]] 
@@ -400,8 +625,17 @@ export default function FullscreenNavigator({
     });
 
     mapRef.current = map;
+    registerRoadShieldImages(map);
+
+    map.on('style.load', () => {
+      registerRoadShieldImages(map);
+      if (displayedRouteCoordsRef.current && displayedRouteCoordsRef.current.length > 0) {
+        addRouteLayer(map, displayedRouteCoordsRef.current);
+      }
+    });
 
     map.on('load', () => {
+      registerRoadShieldImages(map);
       if (displayedRouteCoordsRef.current && displayedRouteCoordsRef.current.length > 0) {
         addRouteLayer(map, displayedRouteCoordsRef.current);
       }
@@ -1137,7 +1371,7 @@ out center;`;
 
       let res: Response;
       try {
-        res = await fetch('/api/map-data-proxy', {
+        res = await fetch(resolveApiUrl('/api/map-data-proxy'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: query }),
@@ -1148,7 +1382,7 @@ out center;`;
         console.warn("Fetch /api/map-data-proxy (Navigator) fallita, riprovo dopo 1.5s per possibile riavvio o cold start del server...", err);
         await new Promise(r => setTimeout(r, 1500));
         try {
-          res = await fetch('/api/map-data-proxy', {
+          res = await fetch(resolveApiUrl('/api/map-data-proxy'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: query }),
@@ -1355,8 +1589,8 @@ out center;`;
   const [currentStartLoc, setCurrentStartLoc] = React.useState<[number, number] | null>(null);
   const startLoc: [number, number] = React.useMemo(() => {
     if (currentStartLoc) return currentStartLoc;
-    return userLocation ? [userLocation.lat, userLocation.lng] : [44.5422, 10.7024];
-  }, [currentStartLoc, userLocation?.lat, userLocation?.lng]);
+    return resolvedUserLocation ? [resolvedUserLocation.lat, resolvedUserLocation.lng] : [44.5422, 10.7024];
+  }, [currentStartLoc, resolvedUserLocation?.lat, resolvedUserLocation?.lng]);
   const endLoc: [number, number] = [dest.lat, dest.lng];
 
   const [osrmRoute, setOsrmRoute] = React.useState<[number, number][]>(() => {
@@ -1365,6 +1599,11 @@ out center;`;
       return cached.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
     }
     return [];
+  });
+  const [osrmDurationMinutes, setOsrmDurationMinutes] = React.useState<number | null>(() => {
+    const cached = getCachedOsrmRoute(startLoc, endLoc);
+    const durSec = cached?.routes?.[0]?.duration;
+    return typeof durSec === 'number' && durSec > 0 ? Math.max(1, Math.round(durSec / 60)) : null;
   });
   const lastRecalcPos = React.useRef<[number, number] | null>(null);
   const isRecalculatedRef = React.useRef<boolean>(false);
@@ -1718,17 +1957,18 @@ out center;`;
 
   // Real-time off-route recalculation listener (triggers when driver strays > 20m away from route)
   React.useEffect(() => {
-    if (userLocation && !isTunnelDeadReckoning) {
+    if (resolvedUserLocation && !isTunnelDeadReckoning) {
       const isDefaultModena = Math.abs(startLoc[0] - 44.5422) < 0.0001 && Math.abs(startLoc[1] - 10.7024) < 0.0001;
-      if (isDefaultModena) {
-        // If we were on default Modena, update immediately as GPS has resolved
-        const dist = Math.sqrt(Math.pow(startLoc[0] - userLocation.lat, 2) + Math.pow(startLoc[1] - userLocation.lng, 2));
-        if (dist > 0.0001) {
-          setCurrentStartLoc([userLocation.lat, userLocation.lng]);
+      if (isDefaultModena || isPreview) {
+        // When on default Modena OR during initial route preview, immediately snap startLoc to the real GPS fix if it differs by > 30m
+        const distMeters = calculateHaversineDistance(startLoc, [resolvedUserLocation.lat, resolvedUserLocation.lng]) * 1000;
+        if (distMeters > 30) {
+          hasInitiallyFitPreviewBounds.current = false;
+          setCurrentStartLoc([resolvedUserLocation.lat, resolvedUserLocation.lng]);
+          lastRecalcPos.current = [resolvedUserLocation.lat, resolvedUserLocation.lng];
         }
-        lastRecalcPos.current = [userLocation.lat, userLocation.lng];
       } else if (!isPreview) { // Only recalculate route due to off-track deviation during active navigation, not during preview!
-        const userPos = [userLocation.lat, userLocation.lng] as [number, number];
+        const userPos = [resolvedUserLocation.lat, resolvedUserLocation.lng] as [number, number];
         let minDistanceMeters = Infinity;
 
         if (osrmRoute && osrmRoute.length > 0) {
@@ -1743,7 +1983,6 @@ out center;`;
         }
 
         // When user is back on route (<= 20m), reset lastRecalcPos so future off-route triggers immediately.
-        // We require 5 consecutive ticks on-track or driving 50m to avoid rapid reset due to GPS noise or initial route snapping.
         if (minDistanceMeters <= 20) {
           onRouteCountRef.current = onRouteCountRef.current + 1;
           if (onRouteCountRef.current >= 5 || distFromLastRecalcMeters > 50) {
@@ -1752,8 +1991,6 @@ out center;`;
         } else {
           onRouteCountRef.current = 0;
 
-          // Recalculate route when off route (>20m).
-          // Guard: If a route fetch is already in progress OR a recalculation was triggered less than 8s ago, DO NOT trigger again!
           const now = Date.now();
           const timeSinceLastRecalc = now - lastRecalcTimestampRef.current;
 
@@ -1761,7 +1998,6 @@ out center;`;
             if (lastRecalcPos.current === null || distFromLastRecalcMeters > 100) {
               console.log(`Off-route detected (${Math.round(minDistanceMeters)}m deviation, ${Math.round(distFromLastRecalcMeters)}m from last alert). Triggering route recalculation.`);
               
-              // Calculate vehicle motion heading vector along the mistaken road
               if (lastRecalcPos.current) {
                 const motionHeading = getBearing(lastRecalcPos.current, userPos);
                 vehicleHeadingRef.current = Math.round(motionHeading);
@@ -1777,21 +2013,20 @@ out center;`;
                 detail: { message: `📍 Ricalcolo percorso`, duration: 3000 }
               }));
 
-              // Spoken ONCE per off-route event
               speakInstruction("Ricalcolo del percorso", 'immediate');
 
               isRecalculatedRef.current = true;
-              const dist = Math.sqrt(Math.pow(startLoc[0] - userLocation.lat, 2) + Math.pow(startLoc[1] - userLocation.lng, 2));
+              const dist = Math.sqrt(Math.pow(startLoc[0] - resolvedUserLocation.lat, 2) + Math.pow(startLoc[1] - resolvedUserLocation.lng, 2));
               if (dist > 0.0001) {
-                setCurrentStartLoc([userLocation.lat, userLocation.lng]);
+                setCurrentStartLoc([resolvedUserLocation.lat, resolvedUserLocation.lng]);
               }
-              lastRecalcPos.current = [userLocation.lat, userLocation.lng];
+              lastRecalcPos.current = [resolvedUserLocation.lat, resolvedUserLocation.lng];
             }
           }
         }
       }
     }
-  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, dest.id, osrmRoute, isPreview, speakInstruction, calculateDistanceToPolylineMeters]);
+  }, [resolvedUserLocation?.lat, resolvedUserLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, dest.id, osrmRoute, isPreview, speakInstruction, calculateDistanceToPolylineMeters]);
 
   // Safe checks for sagoma dimensions
   const hasHeightViolation = dest.hasMaxHeightLimit && dest.maxHeight && parseDimToNumber(vehicleDimensions.height) > dest.maxHeight;
@@ -1921,6 +2156,9 @@ out center;`;
         if (osrmCoords && osrmCoords.length > 0) {
           const route = data?.routes?.[0];
           setOsrmRoute(osrmCoords);
+          if (typeof route?.duration === 'number' && route.duration > 0) {
+            setOsrmDurationMinutes(Math.max(1, Math.round(route.duration / 60)));
+          }
           lastRecalcPos.current = [startLoc[0], startLoc[1]];
           onRouteCountRef.current = 10;
           setTimeout(() => {
@@ -2274,7 +2512,7 @@ out center;`;
         if (active) {
           console.warn("OSRM routing service failed, falling back to high-fidelity BRouter...", err);
           try {
-            const brouterUrl = `/api/brouter?start=${startLoc[1]},${startLoc[0]}&end=${endLoc[1]},${endLoc[0]}`;
+            const brouterUrl = resolveApiUrl(`/api/brouter?start=${startLoc[1]},${startLoc[0]}&end=${endLoc[1]},${endLoc[0]}`);
             const brouterRes = await fetch(brouterUrl, { signal });
             if (!brouterRes.ok) {
               throw new Error(`Entrambi i servizi di routing (OSRM & BRouter) hanno fallito.`);
@@ -2343,14 +2581,14 @@ out center;`;
 
   // Monitor incoming GPS fixes and manage Tunnel Dead Reckoning state transitions
   React.useEffect(() => {
-    if (!isGPSEnabled || !userLocation) return;
+    if (!isGPSEnabled || !resolvedUserLocation) return;
     const now = Date.now();
     if (lastGpsUpdateRef.current) {
       lastGpsUpdateRef.current.time = now;
-      lastGpsUpdateRef.current.lat = userLocation.lat;
-      lastGpsUpdateRef.current.lng = userLocation.lng;
+      lastGpsUpdateRef.current.lat = resolvedUserLocation.lat;
+      lastGpsUpdateRef.current.lng = resolvedUserLocation.lng;
     } else {
-      lastGpsUpdateRef.current = { lat: userLocation.lat, lng: userLocation.lng, time: now };
+      lastGpsUpdateRef.current = { lat: resolvedUserLocation.lat, lng: resolvedUserLocation.lng, time: now };
     }
 
     if (isTunnelDeadReckoning) {
@@ -2363,7 +2601,7 @@ out center;`;
         }));
       }
     }
-  }, [userLocation?.lat, userLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, speakInstruction]);
+  }, [resolvedUserLocation?.lat, resolvedUserLocation?.lng, isGPSEnabled, isTunnelDeadReckoning, speakInstruction]);
 
   // Dead Reckoning Interval loop (90 km/h cruising speed inside tunnels / GPS dead zones)
   React.useEffect(() => {
@@ -2395,8 +2633,8 @@ out center;`;
           let startIdx = 0;
           if (lastGpsUpdateRef.current) {
             startIdx = findClosestCoordinateIndex([lastGpsUpdateRef.current.lat, lastGpsUpdateRef.current.lng], routeCoordinates);
-          } else if (userLocation) {
-            startIdx = findClosestCoordinateIndex([userLocation.lat, userLocation.lng], routeCoordinates);
+          } else if (resolvedUserLocation) {
+            startIdx = findClosestCoordinateIndex([resolvedUserLocation.lat, resolvedUserLocation.lng], routeCoordinates);
           }
           tunnelRouteIndexRef.current = startIdx;
           speakInstruction("Assenza di segnale GPS. Attivata navigazione in galleria a 90 chilometri orari.");
@@ -2422,7 +2660,7 @@ out center;`;
     }, 800);
 
     return () => clearInterval(interval);
-  }, [isGPSEnabled, isPreview, routeCoordinates, isTunnelDeadReckoning, userLocation?.lat, userLocation?.lng, currentDetectedSpeed, speakInstruction]);
+  }, [isGPSEnabled, isPreview, routeCoordinates, isTunnelDeadReckoning, resolvedUserLocation?.lat, resolvedUserLocation?.lng, currentDetectedSpeed, speakInstruction]);
 
   // Derive effective user location (real GPS fix or Dead Reckoning coordinate)
   const effectiveUserLocation = React.useMemo(() => {
@@ -2430,8 +2668,8 @@ out center;`;
       const tunnelPt = routeCoordinates[tunnelRouteIndexRef.current] || routeCoordinates[0];
       return { lat: tunnelPt[0], lng: tunnelPt[1] };
     }
-    return userLocation;
-  }, [isGPSEnabled, isTunnelDeadReckoning, userLocation, routeCoordinates, tunnelStepTick]);
+    return resolvedUserLocation;
+  }, [isGPSEnabled, isTunnelDeadReckoning, resolvedUserLocation, routeCoordinates, tunnelStepTick]);
 
   const displayedRouteCoordinates = React.useMemo(() => {
     const loc = effectiveUserLocation;
@@ -2755,7 +2993,7 @@ out center;`;
     if (!showTrafficFlow || coords.length < 2) {
       features.push({
         type: 'Feature',
-        properties: { color: '#3B82F6' },
+        properties: { color: '#24D2FF' },
         geometry: {
           type: 'LineString',
           coordinates: coords.map(c => [c[1], c[0]])
@@ -2774,7 +3012,6 @@ out center;`;
         const isSharpTurn = /svolta/i.test(step.title || '') || /svolta/i.test(step.desc || '');
 
         if (isLight) {
-          // Red right before traffic light, orange approaching it
           for (let k = Math.max(0, idx - 2); k <= Math.min(coords.length - 1, idx + 1); k++) {
             redIndices.add(k);
           }
@@ -2810,11 +3047,11 @@ out center;`;
         }
       });
 
-      let currentColor = '#3B82F6';
+      let currentColor = '#24D2FF';
       let currentChunk: [number, number][] = [[coords[0][1], coords[0][0]]];
 
       for (let i = 0; i < coords.length - 1; i++) {
-        let segColor = '#3B82F6';
+        let segColor = '#24D2FF';
         if (redIndices.has(i) || redIndices.has(i + 1)) {
           segColor = '#EF4444'; // Rosso Traffico Intenso / Coda / Semaforo
         } else if (orangeIndices.has(i) || orangeIndices.has(i + 1)) {
@@ -2870,6 +3107,9 @@ out center;`;
           data: geojson
         });
 
+        // Insert route underneath vector labels/shields so road shields (SS7, SP4a) and city names stay on top of the route line
+        const beforeLabelLayer = mapInstance.getLayer('vector-road-labels') ? 'vector-road-labels' : undefined;
+
         mapInstance.addLayer({
           id: 'route-casing',
           type: 'line',
@@ -2879,11 +3119,11 @@ out center;`;
             'line-cap': 'round'
           },
           paint: {
-            'line-color': '#0f172a',
-            'line-width': 9,
-            'line-opacity': 0.55
+            'line-color': '#084C78',
+            'line-width': 10,
+            'line-opacity': 0.85
           }
-        });
+        }, beforeLabelLayer);
 
         mapInstance.addLayer({
           id: 'route',
@@ -2894,11 +3134,11 @@ out center;`;
             'line-cap': 'round'
           },
           paint: {
-            'line-color': ['coalesce', ['get', 'color'], '#3B82F6'],
-            'line-width': 6.5,
-            'line-opacity': 0.95
+            'line-color': ['coalesce', ['get', 'color'], '#24D2FF'],
+            'line-width': 7,
+            'line-opacity': 0.98
           }
-        });
+        }, beforeLabelLayer);
       }
     } catch (e) {
       console.warn("Error updating route layer:", e);
@@ -2994,24 +3234,27 @@ out center;`;
     hasInitiallyFitPreviewBounds.current = false;
   }, [dest.id]);
 
+  const lastRouteLayerCountRef = React.useRef<number>(0);
+
   // Synchronize route lines if routeCoordinates updates asynchronously without destroying the map
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    let flyTimeout: NodeJS.Timeout;
-
     const updateRoute = () => {
       const activeCoords = displayedRouteCoordsRef.current;
       if (!activeCoords || activeCoords.length === 0) return;
 
-      addRouteLayer(map, activeCoords);
-
       const activeStart = activeCoords[0];
       const activeEnd = activeCoords[activeCoords.length - 1];
-      if (carMarkerRef.current) {
-        carMarkerRef.current.setLngLat([activeStart[1], activeStart[0]]);
+
+      // During active navigation, avoid rebuilding the full traffic GeoJSON on every tiny GPS jitter unless vertex count changed significantly
+      const countDiff = Math.abs(activeCoords.length - lastRouteLayerCountRef.current);
+      if (isPreview || !map.getSource('route') || countDiff >= 3 || activeCoords.length <= 5) {
+        lastRouteLayerCountRef.current = activeCoords.length;
+        addRouteLayer(map, activeCoords);
       }
+
       if (destMarkerRef.current) {
         destMarkerRef.current.setLngLat([activeEnd[1], activeEnd[0]]);
       }
@@ -3020,8 +3263,9 @@ out center;`;
       try {
         if (activeCoords.length > 0) {
           if (isPreview) {
-            // Force overhead vista dall'alto
-            map.resize();
+            if (carMarkerRef.current) {
+              carMarkerRef.current.setLngLat([activeStart[1], activeStart[0]]);
+            }
             map.setPitch(0);
             map.setBearing(0);
 
@@ -3036,9 +3280,12 @@ out center;`;
             return;
           }
 
-          // Active navigation mode
+          // Active navigation mode: only perform the initial 3D camera swoop once; subsequent camera tracking is handled by the unified movement effect
           if (!hasInitiallyFitBounds.current) {
             hasInitiallyFitBounds.current = true;
+            if (carMarkerRef.current) {
+              carMarkerRef.current.setLngLat([activeStart[1], activeStart[0]]);
+            }
             const nextCoords = activeCoords[1];
             let initBearing = 0;
             if (nextCoords && (activeStart[0] !== nextCoords[0] || activeStart[1] !== nextCoords[1])) {
@@ -3049,33 +3296,13 @@ out center;`;
               ? deviceHeading
               : initBearing;
 
-            map.flyTo({
+            map.easeTo({
               center: [activeStart[1], activeStart[0]],
               zoom: 17.5,
               pitch: 55,
               bearing: Math.round(targetBearing),
               padding: { top: window.innerHeight * 0.4, bottom: 50, left: 0, right: 0 },
-              duration: 1500
-            });
-          } else if (autoCenter) {
-            const nextCoords = activeCoords[1];
-            let initBearing = 0;
-            if (nextCoords && (activeStart[0] !== nextCoords[0] || activeStart[1] !== nextCoords[1])) {
-              initBearing = getBearing(activeStart, nextCoords);
-              setBearing(initBearing);
-            }
-            const targetBearing = (useCompass && deviceHeading !== null)
-              ? deviceHeading
-              : initBearing;
-            
-            map.easeTo({
-              center: [activeStart[1], activeStart[0]],
-              zoom: map.getZoom() < 17 ? 17.5 : map.getZoom(),
-              pitch: map.getPitch() < 40 ? 55 : map.getPitch(),
-              bearing: Math.round(targetBearing),
-              padding: { top: window.innerHeight * 0.4, bottom: 50, left: 0, right: 0 },
-              duration: 800,
-              easing: (t) => t
+              duration: 900
             });
           }
         }
@@ -3084,50 +3311,13 @@ out center;`;
       }
     };
 
-    if (map.isStyleLoaded()) {
-      updateRoute();
-    } else {
+    // Execute immediately so camera bounds and HTML markers update in 0ms without waiting for remote vector/glyph tiles
+    updateRoute();
+    if (!map.getSource('route')) {
       map.once('load', updateRoute);
       map.once('styledata', updateRoute);
     }
-
-    return () => {
-      if (flyTimeout) clearTimeout(flyTimeout);
-    };
   }, [displayedRouteCoordinates, isPreview]);
-
-  // Keep camper marker perfectly positioned at the padded center during camera movements in active navigation
-  React.useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const handleMapMove = () => {
-      if (autoCenter && !isPreview && carMarkerRef.current) {
-        const container = map.getContainer();
-        const rect = container.getBoundingClientRect();
-        const padding = map.getPadding();
-        const topPadding = padding.top || 0;
-        const bottomPadding = padding.bottom || 0;
-        const leftPadding = padding.left || 0;
-        const rightPadding = padding.right || 0;
-        
-        const x = leftPadding + (rect.width - leftPadding - rightPadding) / 2;
-        const y = topPadding + (rect.height - topPadding - bottomPadding) / 2;
-        
-        try {
-          const lngLat = map.unproject([x, y]);
-          carMarkerRef.current.setLngLat(lngLat);
-        } catch (e) {
-          // fallback
-        }
-      }
-    };
-
-    map.on('move', handleMapMove);
-    return () => {
-      map.off('move', handleMapMove);
-    };
-  }, [autoCenter, isPreview]);
 
   // POI markers along the route (Max 5km as requested for trip planning)
   React.useEffect(() => {
@@ -3262,6 +3452,19 @@ out center;`;
   }, [routeCoordinates, places, dest.id, showStopsOnRoute]);
 
   // Synchronize TomTom Orbis Live Traffic Flow Layer visibility & Route Segment Traffic Colors on MapLibre GL Map
+  const prevNavMapStyleRef = React.useRef(navMapStyle);
+  // Update MapLibre style ONLY when the user actually switches navMapStyle (avoid duplicate setStyle on initial mount)
+  React.useEffect(() => {
+    if (prevNavMapStyleRef.current === navMapStyle) return;
+    prevNavMapStyleRef.current = navMapStyle;
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      const nextStyle: any = buildNavigatorMapStyle(navMapStyle, showTrafficFlow);
+      map.setStyle(nextStyle);
+    } catch (e) {}
+  }, [navMapStyle, buildNavigatorMapStyle, showTrafficFlow]);
+
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3449,59 +3652,36 @@ out center;`;
       }
     }
 
-    if (autoCenter && !isPreview) {
-      if (markerAnimFrameRef.current) {
-        cancelAnimationFrame(markerAnimFrameRef.current);
-        markerAnimFrameRef.current = null;
-      }
-      const map = mapRef.current;
-      if (map && carMarkerRef.current) {
-        const container = map.getContainer();
-        const rect = container.getBoundingClientRect();
-        const padding = map.getPadding();
-        const topPadding = padding.top || 0;
-        const bottomPadding = padding.bottom || 0;
-        const leftPadding = padding.left || 0;
-        const rightPadding = padding.right || 0;
-        const x = leftPadding + (rect.width - leftPadding - rightPadding) / 2;
-        const y = topPadding + (rect.height - topPadding - bottomPadding) / 2;
-        try {
-          const lngLat = map.unproject([x, y]);
-          carMarkerRef.current.setLngLat(lngLat);
-        } catch (e) {
-          carMarkerRef.current.setLngLat([targetCoords[1], targetCoords[0]]);
-        }
-      }
-    } else if (carMarkerRef.current) {
+    if (carMarkerRef.current) {
       const startLngLat = carMarkerRef.current.getLngLat();
       const endLng = targetCoords[1];
       const endLat = targetCoords[0];
-      
+
       const newCenter = [endLng, endLat];
       const last = lastEaseStateRef.current;
       const centerChanged = last.center[0] !== newCenter[0] || last.center[1] !== newCenter[1];
-      
+
       let dur = 400;
-      if (!isGPSEnabled && centerChanged) dur = 800;
-      else if (isGPSEnabled && centerChanged) dur = 1000;
-      if (!autoCenter || !centerChanged) dur = 400;
+      if (!isGPSEnabled && centerChanged) dur = 750;
+      else if (isGPSEnabled && centerChanged) dur = 850;
+      if (!autoCenter || !centerChanged) dur = 350;
 
       const startTime = performance.now();
-      
+
       const animateMarker = (now: number) => {
         let progress = (now - startTime) / dur;
         if (progress > 1) progress = 1;
-        
+
         const currentLng = startLngLat.lng + (endLng - startLngLat.lng) * progress;
         const currentLat = startLngLat.lat + (endLat - startLngLat.lat) * progress;
-        
+
         carMarkerRef.current?.setLngLat([currentLng, currentLat]);
-        
+
         if (progress < 1) {
           markerAnimFrameRef.current = requestAnimationFrame(animateMarker);
         }
       };
-      
+
       if (markerAnimFrameRef.current) cancelAnimationFrame(markerAnimFrameRef.current);
       markerAnimFrameRef.current = requestAnimationFrame(animateMarker);
     }
@@ -3512,19 +3692,19 @@ out center;`;
         ? deviceHeading
         : currentBearing;
 
-const newCenter = [targetCoords[1], targetCoords[0]];
+      const newCenter = [targetCoords[1], targetCoords[0]];
       const newBearing = Math.round(activeBearing);
       
       const last = lastEaseStateRef.current;
-      const centerChanged = last.center[0] !== newCenter[0] || last.center[1] !== newCenter[1];
-      const bearingChanged = last.bearing !== newBearing;
+      const centerChanged = Math.abs(last.center[0] - newCenter[0]) > 0.000005 || Math.abs(last.center[1] - newCenter[1]) > 0.000005;
+      const bearingChanged = Math.abs(last.bearing - newBearing) >= 2;
       
       if (centerChanged || bearingChanged) {
         lastEaseStateRef.current = { center: newCenter, bearing: newBearing };
         
-        let dur = 400;
-        if (!isGPSEnabled && centerChanged) dur = 800;
-        else if (isGPSEnabled && centerChanged) dur = 1000;
+        let dur = 450;
+        if (!isGPSEnabled && centerChanged) dur = 750;
+        else if (isGPSEnabled && centerChanged) dur = 850;
 
         map.easeTo({
           center: newCenter as [number, number],
@@ -3566,13 +3746,25 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     simRouteIndexRef.current = simRouteIndex;
   }, [simRouteIndex]);
 
-  // Simulation tick logic (high-fidelity smooth road-following simulation)
+  // Simulation tick logic (advances along the route according to vehicle speed in km/h)
   React.useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isDriving && !isGPSEnabled && routeCoordinates.length > 0) {
       interval = setInterval(() => {
         const currentIdx = simRouteIndexRef.current;
-        const nextIdx = currentIdx + 1;
+        // Advance along the polyline by the distance covered in 800ms at the configured speed (min 18 meters per tick for responsive preview/simulation)
+        const targetMetersPerTick = Math.max(18, ((speed || 75) * 1000 / 3600) * 0.8);
+        let nextIdx = currentIdx;
+        let accumulatedMeters = 0;
+        while (nextIdx < routeCoordinates.length - 1 && accumulatedMeters < targetMetersPerTick) {
+          const segMeters = calculateHaversineDistance(routeCoordinates[nextIdx], routeCoordinates[nextIdx + 1]) * 1000;
+          accumulatedMeters += segMeters;
+          nextIdx++;
+        }
+        if (nextIdx === currentIdx) {
+          nextIdx = currentIdx + 1;
+        }
+
         if (nextIdx < routeCoordinates.length) {
           setSimRouteIndex(nextIdx);
           let stepIndex = 0;
@@ -3594,12 +3786,12 @@ const newCenter = [targetCoords[1], targetCoords[0]];
           setSimStep(directionsSequence.length - 1);
           setSimRouteIndex(0); // reset
         }
-      }, 800); // moves one precise road coordinate point every 800ms for a stunning fluid real-time movement
+      }, 800);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isDriving, isGPSEnabled, routeCoordinates, directionsSequence]);
+  }, [isDriving, isGPSEnabled, routeCoordinates, directionsSequence, speed]);
 
   // Nearest safe place detour fallback
   const handleRerouteAlternative = () => {
@@ -3712,15 +3904,99 @@ const newCenter = [targetCoords[1], targetCoords[0]];
     };
   })();
 
+  const lastCalloutLabelRef = React.useRef<string>('');
+  // Fumetto di svolta flottante sulla mappa in stile Google Maps (es. con icona STOP e codice strada SS7 ancorato alla prossima manovra)
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !routeCoordinates || routeCoordinates.length < 2 || directionsSequence.length === 0) {
+      if (turnCalloutMarkerRef.current) {
+        turnCalloutMarkerRef.current.remove();
+        turnCalloutMarkerRef.current = null;
+        lastCalloutLabelRef.current = '';
+      }
+      return;
+    }
+
+    const currentRouteIdx = (isGPSEnabled && !isPreview && effectiveUserLocation)
+      ? (isTunnelDeadReckoning ? tunnelRouteIndexRef.current : findClosestCoordinateIndex([effectiveUserLocation.lat, effectiveUserLocation.lng], routeCoordinates))
+      : Math.min(simRouteIndex, routeCoordinates.length - 1);
+
+    let hudActiveStepIdx = 0;
+    for (let i = 0; i < directionsSequence.length; i++) {
+      const stepIdx = directionsSequence[i].coordinateIndex ?? Math.min(
+        Math.floor((i / directionsSequence.length) * routeCoordinates.length),
+        routeCoordinates.length - 1
+      );
+      if (stepIdx <= currentRouteIdx) {
+        hudActiveStepIdx = i;
+      } else {
+        break;
+      }
+    }
+
+    const nextStepObj = directionsSequence[hudActiveStepIdx + 1] || directionsSequence[hudActiveStepIdx];
+    if (!nextStepObj) return;
+
+    const targetCoordIdx = Math.min(
+      Math.max(0, nextStepObj.coordinateIndex ?? 0),
+      routeCoordinates.length - 1
+    );
+    const turnCoord = routeCoordinates[targetCoordIdx];
+    if (!turnCoord) return;
+
+    const rawText = `${nextStepObj.streetName || ''} ${nextStepObj.desc || ''} ${nextStepObj.title || ''}`;
+    const roadCodeMatch = rawText.match(/\b(SS\d+[a-z]*|SP\d+[a-z]*|SR\d+[a-z]*|A\d+|E\d+)\b/i);
+    let badgeLabel = roadCodeMatch ? roadCodeMatch[1].toUpperCase() : (nextStepObj.streetName || '').trim();
+    if (!badgeLabel) {
+      const viaMatch = rawText.match(/\b((?:Via|Viale|Piazza|Corso|Largo|Strada)\s+[A-Za-zÀ-ÿ0-9'. -]{2,18})/i);
+      badgeLabel = viaMatch ? viaMatch[1].trim() : 'SVOLTA';
+    }
+    if (badgeLabel.length > 16) {
+      badgeLabel = badgeLabel.slice(0, 15).trim() + '…';
+    }
+
+    if (turnCalloutMarkerRef.current && lastCalloutLabelRef.current === badgeLabel) {
+      turnCalloutMarkerRef.current.setLngLat([turnCoord[1], turnCoord[0]]);
+      return;
+    }
+
+    lastCalloutLabelRef.current = badgeLabel;
+    const el = document.createElement('div');
+    el.className = 'google-maps-turn-callout pointer-events-none select-none';
+    el.innerHTML = `
+      <div style="position:relative; display:inline-flex; align-items:center; gap:5px; background:#FFFFFF; border-radius:16px; padding:3px 4px 3px 5px; box-shadow:0 6px 18px rgba(0,0,0,0.45); transform:translate(24px, -22px);">
+        <div style="width:22px; height:22px; background:#DC2626; clip-path:polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); display:flex; align-items:center; justify-content:center; color:#FFFFFF; font-size:7px; font-weight:900; letter-spacing:-0.3px;">
+          STOP
+        </div>
+        <div style="background:#8CE0FF; color:#082F49; font-weight:900; font-size:12px; padding:3px 9px; border-radius:11px; white-space:nowrap; letter-spacing:0.2px;">
+          ${badgeLabel}
+        </div>
+        <div style="position:absolute; left:-5px; bottom:-4px; width:12px; height:12px; background:#FFFFFF; clip-path:polygon(100% 0, 0 100%, 100% 75%);"></div>
+      </div>
+    `;
+
+    if (turnCalloutMarkerRef.current) {
+      turnCalloutMarkerRef.current.remove();
+    }
+    turnCalloutMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom-left' })
+      .setLngLat([turnCoord[1], turnCoord[0]])
+      .addTo(map);
+  }, [routeCoordinates, directionsSequence, simRouteIndex, effectiveUserLocation?.lat, effectiveUserLocation?.lng, isGPSEnabled, isPreview]);
+
   // Real coordinates based remaining distance in Km using the accurate Haversine helper
   const currentCoordIdx = (isGPSEnabled && !isPreview) ? 0 : Math.min(simRouteIndex, routeCoordinates.length - 1);
+  const totalRouteDistanceKm = React.useMemo(() => getRemainingRouteDistance(routeCoordinates, 0), [routeCoordinates]);
   const remainingDistanceKm = getRemainingRouteDistance(
     (isGPSEnabled && !isPreview) ? displayedRouteCoordinates : routeCoordinates, 
     currentCoordIdx
   );
   const activeSpeed = speed > 0 ? speed : 50;
-  // Calculate remaining time accurately based on distance and speed (min 1 min if route has distance remaining)
-  const remainingMinutes = remainingDistanceKm > 0.05 ? Math.max(1, Math.round((remainingDistanceKm / activeSpeed) * 85)) : 0;
+  // Calculate remaining time accurately using OSRM duration scaled by remaining distance (or speed fallback)
+  const remainingMinutes = remainingDistanceKm > 0.05
+    ? (osrmDurationMinutes && totalRouteDistanceKm > 0.1
+        ? Math.max(1, Math.round(osrmDurationMinutes * (remainingDistanceKm / totalRouteDistanceKm)))
+        : Math.max(1, Math.round((remainingDistanceKm / activeSpeed) * 60)))
+    : 0;
   const etaTimeStr = getETA(remainingMinutes);
 
   const displayDetectedSpeed = React.useMemo(() => {
@@ -4266,6 +4542,42 @@ const newCenter = [targetCoords[1], targetCoords[0]];
 
         {!isAndroidAutoMode && (
           <>
+            {/* Pulsante "Riposiziona" in basso a sinistra stile Google Maps quando la mappa viene spostata manualmente */}
+            {!autoCenter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAutoCenter(true);
+                  const map = mapRef.current;
+                  if (map) {
+                    let target: [number, number] = startLoc;
+                    if (isGPSEnabled && userLocation) {
+                      target = [userLocation.lat, userLocation.lng];
+                    } else {
+                      const curIdx = Math.min(simRouteIndex, routeCoordinates.length - 1);
+                      target = routeCoordinates[curIdx] || startLoc;
+                    }
+                    const targetBearing = (useCompass && deviceHeading !== null)
+                      ? deviceHeading
+                      : bearing;
+
+                    map.flyTo({
+                      center: [target[1], target[0]],
+                      zoom: 17.5,
+                      bearing: targetBearing,
+                      pitch: 55,
+                      essential: true
+                    });
+                  }
+                }}
+                className="absolute left-4 bottom-44 z-20 px-4 py-2.5 bg-[#08131D]/95 border border-slate-600/80 rounded-full shadow-2xl flex items-center gap-2 text-white font-bold text-xs pointer-events-auto cursor-pointer hover:bg-slate-800 transition-all"
+                title="Riposiziona mappa sul camper"
+              >
+                <Navigation className="w-4 h-4 text-[#24D2FF]" />
+                <span>Riposiziona</span>
+              </button>
+            )}
+
             {/* Pulsante di espansione fluttuante (spostato in basso per allineamento orizzontale a bottom-28) */}
             <button
               type="button"
@@ -4388,6 +4700,37 @@ const newCenter = [targetCoords[1], targetCoords[0]];
                     />
                     <div className="w-7 h-4 bg-slate-800 rounded-full peer peer-focus:outline-none peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white animate-none"></div>
                   </label>
+                </div>
+
+                {/* Stile Mappa Vettoriale senza scritte capovolte: Navigazione Notte / Stradale / Satellite / Rilievo */}
+                <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col gap-1.5 shadow-sm select-none">
+                  <span className="text-[10px] font-bold text-slate-200 flex items-center gap-1">
+                    🗺️ Stile Mappa (Etichette Vettoriali Dritte)
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {([
+                      { id: 'nav-night', label: '🌙 Navigazione (Notte)' },
+                      { id: 'roadmap', label: '🛣️ Stradale' },
+                      { id: 'satellite', label: '🛰️ Satellite' },
+                      { id: 'terrain', label: '⛰️ Rilievo' }
+                    ] as const).map((st) => {
+                      const isSel = navMapStyle === st.id;
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setNavMapStyle(st.id)}
+                          className={`py-1.5 px-2 text-[9px] font-bold rounded-lg border transition-all cursor-pointer text-center ${
+                            isSel
+                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                              : 'bg-slate-800/80 border-slate-700/80 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Voce Navigatore: Voce Uomo / Voce Donna */}

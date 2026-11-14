@@ -133,9 +133,15 @@ out body;>;out skel qt;`;
 
 const osrmClientCache = new Map<string, any>();
 
+const getCacheKeys = (start: [number, number], end: [number, number], heading?: number | null) => {
+  const exactKey = `${start[0].toFixed(4)},${start[1].toFixed(4)}->${end[0].toFixed(4)},${end[1].toFixed(4)}_${heading ?? ''}`;
+  const coarseKey = `${start[0].toFixed(3)},${start[1].toFixed(3)}->${end[0].toFixed(3)},${end[1].toFixed(3)}`;
+  return { exactKey, coarseKey };
+};
+
 export const getCachedOsrmRoute = (start: [number, number], end: [number, number], heading?: number | null): any | null => {
-  const cacheKey = `${start[0].toFixed(4)},${start[1].toFixed(4)}->${end[0].toFixed(4)},${end[1].toFixed(4)}_${heading ?? ''}`;
-  return osrmClientCache.get(cacheKey) || null;
+  const { exactKey, coarseKey } = getCacheKeys(start, end, heading);
+  return osrmClientCache.get(exactKey) || osrmClientCache.get(coarseKey) || null;
 };
 
 export const fetchOsrmRoute = async (
@@ -144,28 +150,46 @@ export const fetchOsrmRoute = async (
   heading?: number | null,
   signal?: AbortSignal
 ): Promise<{ coordinates: [number, number][]; data: any }> => {
-  const cacheKey = `${start[0].toFixed(4)},${start[1].toFixed(4)}->${end[0].toFixed(4)},${end[1].toFixed(4)}_${heading ?? ''}`;
-  if (osrmClientCache.has(cacheKey)) {
-    const cached = osrmClientCache.get(cacheKey);
+  const { exactKey, coarseKey } = getCacheKeys(start, end, heading);
+  const cached = osrmClientCache.get(exactKey) || (heading === undefined || heading === null ? osrmClientCache.get(coarseKey) : null);
+  if (cached && cached.routes && cached.routes[0]?.geometry?.coordinates) {
     const coords: [number, number][] = cached.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
     return { coordinates: coords, data: cached };
   }
 
-  let url = `/api/osrm?start=${start[1]},${start[0]}&end=${end[1]},${end[0]}`;
+  const s = `${start[1]},${start[0]}`;
+  const e = `${end[1]},${end[0]}`;
+  const bearingsParam = (typeof heading === 'number' && heading >= 0)
+    ? `&bearings=${Math.round((heading % 360 + 360) % 360)},90;`
+    : '';
+
+  let apiUrl = resolveApiUrl(`/api/osrm?start=${s}&end=${e}`);
   if (typeof heading === 'number' && heading >= 0) {
-    url += `&heading=${Math.round(heading)}`;
+    apiUrl += `&heading=${Math.round(heading)}`;
   }
 
-  try {
-    const res = await fetch(url, { signal });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.code === 'Ok' && data.routes && data.routes[0]?.geometry?.coordinates) {
-        osrmClientCache.set(cacheKey, data);
-        const coords: [number, number][] = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
-        return { coordinates: coords, data };
-      }
+  const directFastUrls = [
+    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+    `https://router.project-osrm.org/route/v1/driving/${s};${e}?overview=full&geometries=geojson&steps=true&continue_straight=true${bearingsParam}`,
+    apiUrl
+  ];
+
+  const fetchCandidate = async (candidateUrl: string) => {
+    const res = await fetch(candidateUrl, { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data && data.code === 'Ok' && data.routes && data.routes[0]?.geometry?.coordinates) {
+      return data;
     }
+    throw new Error('Invalid OSRM payload');
+  };
+
+  try {
+    const data = await Promise.any(directFastUrls.map(u => fetchCandidate(u)));
+    osrmClientCache.set(exactKey, data);
+    osrmClientCache.set(coarseKey, data);
+    const coords: [number, number][] = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+    return { coordinates: coords, data };
   } catch (err: any) {
     if (signal?.aborted) throw err;
   }
@@ -177,3 +201,4 @@ export const fetchOsrmRoute = async (
 
   throw new Error("Invalid route response");
 };
+

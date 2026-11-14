@@ -2525,6 +2525,12 @@ export default function MapTab({
         if (mapRef.current) {
           mapRef.current.setView([selectedPlace.lat, selectedPlace.lng], 15);
         }
+        if (userLocationRef.current) {
+          fetchOsrmRoute(
+            [userLocationRef.current.lat, userLocationRef.current.lng],
+            [selectedPlace.lat, selectedPlace.lng]
+          ).catch(() => {});
+        }
       }
     } else {
       prevSelectedPlaceIdRef.current = null;
@@ -5949,18 +5955,30 @@ out center;`;
               {/* Pulsante Attiva GPS Tutto a Destra con stessa altezza h-9 */}
               <button
                 type="button"
-                onClick={() => onGPSEnabledChange(!isGPSEnabled)}
+                onClick={() => {
+                  if (!isGPSEnabled || !userLocation) {
+                    onGPSEnabledChange(true);
+                    window.dispatchEvent(new CustomEvent("reset-real-gps"));
+                  } else {
+                    handleCenterOnUser();
+                    window.dispatchEvent(new CustomEvent("reset-real-gps"));
+                  }
+                }}
                 className={`h-9 px-3 rounded-xl shadow-md font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
-                  isGPSEnabled
-                    ? "bg-blue-600 text-white border-white animate-pulse"
-                    : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-50 border-slate-200"
+                  isGPSEnabled && userLocation
+                    ? "bg-blue-600 text-white border-white"
+                    : isGPSEnabled
+                      ? "bg-amber-500 text-white border-white animate-pulse"
+                      : "bg-white/95 backdrop-blur-md text-slate-800 hover:bg-slate-50 border-slate-200"
                 }`}
-                title={isGPSEnabled ? "Disattiva GPS" : "Attiva GPS"}
+                title={isGPSEnabled && userLocation ? "Aggiorna e centra posizione GPS" : "Aggancia GPS"}
               >
                 <Compass
                   className={`w-3.5 h-3.5 ${isGPSEnabled ? "text-white" : "text-[#3E4A35]"}`}
                 />
-                <span className="hidden sm:inline">{isGPSEnabled ? "GPS ON" : "Attiva GPS"}</span>
+                <span className="hidden sm:inline">
+                  {isGPSEnabled && userLocation ? "GPS ON" : isGPSEnabled ? "Aggancia GPS..." : "Attiva GPS"}
+                </span>
               </button>
 
               {/* Pulsante Chiusura Mappa (X) */}

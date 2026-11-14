@@ -4445,7 +4445,25 @@ out center;`;
   const [userLocation, setUserLocation] = React.useState<{
     lat: number;
     lng: number;
-  } | null>(null);
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem("last_known_gps_location") || localStorage.getItem("camper_last_gps_location");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (
+          parsed &&
+          typeof parsed.lat === "number" &&
+          typeof parsed.lng === "number" &&
+          !isNaN(parsed.lat) &&
+          !isNaN(parsed.lng) &&
+          (parsed.lat !== 0 || parsed.lng !== 0)
+        ) {
+          return { lat: parsed.lat, lng: parsed.lng };
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
   const [userAccuracy, setUserAccuracy] = React.useState<number | null>(null);
   const [isGPSEnabled, setIsGPSEnabled] = React.useState<boolean>(true);
   const [isGPSConnected, setIsGPSConnected] = React.useState<boolean>(false);
@@ -4453,49 +4471,63 @@ out center;`;
   const [isManualCamperLocation, setIsManualCamperLocation] = React.useState<boolean>(false);
   const [manualCamperPlaceId, setManualCamperPlaceId] = React.useState<string | null>(null);
   const manualCamperTimeRef = React.useRef<number>(0);
+  const hasRealGpsFixRef = React.useRef<boolean>(false);
 
-  const handleGPSEnabledChange = (enabled: boolean) => {
-    setTimeout(() => {
-      if (enabled) {
-        setHasDeniedGPS(false);
+  const saveRealGpsFix = React.useCallback((lat: number, lng: number, accuracy?: number | null) => {
+    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
+    hasRealGpsFixRef.current = true;
+    setIsGPSConnected(true);
+    setUserLocation((prev) => {
+      if (prev && Math.abs(prev.lat - lat) < 0.000003 && Math.abs(prev.lng - lng) < 0.000003) {
+        return prev;
       }
-      setIsGPSEnabled(enabled);
-    }, 0);
-  };
+      return { lat, lng };
+    });
+    if (typeof accuracy === "number" && !isNaN(accuracy)) {
+      setUserAccuracy((prev) => (prev !== null && Math.abs(prev - accuracy) < 1 ? prev : accuracy));
+    }
+    try {
+      const payload = JSON.stringify({ lat, lng, timestamp: Date.now() });
+      localStorage.setItem("last_known_gps_location", payload);
+      localStorage.setItem("camper_last_gps_location", payload);
+    } catch (e) {}
+  }, []);
 
   const handleRequestSingleGPS = React.useCallback(() => {
+    try {
+      const bridge = (window as any).AndroidNativeTTS;
+      if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
+        const raw = bridge.getLatestNativeGpsJson();
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
+            saveRealGpsFix(parsed.lat, parsed.lng, parsed.accuracy);
+          }
+        }
+      }
+    } catch (_) {}
+
     if (typeof window !== "undefined" && navigator.geolocation) {
       let resolvedFast = false;
 
-      // 1. Fast network-based fallback first
+      // 1. Fast network/cached fix first (< 1s)
       navigator.geolocation.getCurrentPosition(
         (position) => {
           resolvedFast = true;
-          setIsGPSConnected(true);
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setUserAccuracy(position.coords.accuracy);
+          saveRealGpsFix(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
         },
-        () => {
-          // If fast path fails, high accuracy query will attempt next
-        },
-        { timeout: 3000, enableHighAccuracy: false, maximumAge: 10000 }
+        () => {},
+        { timeout: 3500, enableHighAccuracy: false, maximumAge: 60000 }
       );
 
       // 2. High accuracy hardware GPS query
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setUserAccuracy(position.coords.accuracy);
+          saveRealGpsFix(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
         },
         (error) => {
           console.warn("GPS high-accuracy fetch warning: ", error);
-          if (resolvedFast) return; // Keep fast location if high accuracy failed
+          if (resolvedFast || hasRealGpsFixRef.current) return;
 
           const isPermissionDenied =
             error.code === 1 ||
@@ -4506,17 +4538,26 @@ out center;`;
             setIsGPSEnabled(false);
           }
         },
-        { timeout: 8000, enableHighAccuracy: true },
+        { timeout: 12000, enableHighAccuracy: true, maximumAge: 5000 },
       );
     }
-  }, []);
+  }, [saveRealGpsFix]);
 
-  // Aggancio automatico GPS all'avvio dell'app (solo DOPO che l'utente ha letto e accettato il Prominent Disclosure)
+  const handleGPSEnabledChange = (enabled: boolean) => {
+    setTimeout(() => {
+      if (enabled) {
+        setHasDeniedGPS(false);
+        handleRequestSingleGPS();
+      }
+      setIsGPSEnabled(enabled);
+    }, 0);
+  };
+
+  // Aggancio automatico GPS all'avvio dell'app
   React.useEffect(() => {
-    if (showPermissionModal) return;
     try {
       const bridge = (window as any).AndroidNativeTTS;
-      if (bridge && typeof bridge.requestLocationAndStartForegroundService === "function") {
+      if (!showPermissionModal && bridge && typeof bridge.requestLocationAndStartForegroundService === "function") {
         bridge.requestLocationAndStartForegroundService();
       }
     } catch (_) {}
@@ -4639,59 +4680,11 @@ out center;`;
     let pollIntervalId: any = null;
 
     if (
-      !showPermissionModal &&
       isGPSEnabled &&
       typeof window !== "undefined" &&
       navigator.geolocation
     ) {
-      // Parallel fast IP fallback if user location is not yet known
-      if (!userLocation) {
-        fetch("https://ipapi.co/json/")
-          .then((res) => res.json())
-          .then((data) => {
-            if (data && data.latitude && data.longitude) {
-              console.log("[App GPS] IP Fallback location found:", data.latitude, data.longitude);
-              setUserLocation((prev) => prev || {
-                lat: data.latitude,
-                lng: data.longitude,
-              });
-              setUserAccuracy((prev) => prev || 5000);
-            }
-          })
-          .catch((err) => {
-            console.warn("[App GPS] First IP Geolocation fallback failed:", err);
-            fetch("https://ipwho.is/")
-              .then((res) => res.json())
-              .then((data) => {
-                if (data && data.success && data.latitude && data.longitude) {
-                  console.log("[App GPS] ipwho.is fallback location found:", data.latitude, data.longitude);
-                  setUserLocation((prev) => prev || {
-                    lat: data.latitude,
-                    lng: data.longitude,
-                  });
-                  setUserAccuracy((prev) => prev || 5000);
-                }
-              })
-              .catch((err2) => console.warn("[App GPS] Second IP Geolocation fallback failed:", err2));
-          });
-      }
-
-      // Fast immediate fix
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setIsGPSConnected(true);
-          setUserLocation(prev => prev || {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setUserAccuracy(prev => prev || position.coords.accuracy);
-        },
-        (err) => console.warn("getCurrentPosition warn:", err),
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: Infinity }
-      );
-      
       const handlePositionSuccess = (position: GeolocationPosition) => {
-        setIsGPSConnected(true);
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         const accuracy = position.coords.accuracy;
@@ -4710,31 +4703,38 @@ out center;`;
           );
         }
 
+        saveRealGpsFix(lat, lng, accuracy);
+
         try {
-          localStorage.setItem('last_known_gps_location', JSON.stringify({ lat, lng, timestamp: Date.now() }));
           const lastSync = (window as any)._lastGpsSyncTime || 0;
-          if (now - lastSync > 180000) { // Sync every 3 minutes
+          if (now - lastSync > 180000) {
             (window as any)._lastGpsSyncTime = now;
             const emailForSync = currentUser?.email || localStorage.getItem("camper_user_email") || undefined;
             updateUserLocationOnServer(lat, lng, emailForSync);
           }
         } catch (e) {}
-
-        setUserLocation((prev) => {
-          if (prev && Math.abs(prev.lat - lat) < 0.000005 && Math.abs(prev.lng - lng) < 0.000005) {
-            return prev;
-          }
-          return { lat, lng };
-        });
-        setUserAccuracy((prev) => {
-          if (prev !== null && Math.abs(prev - accuracy) < 1) {
-            return prev;
-          }
-          return accuracy;
-        });
       };
 
-      // Primary High Accuracy Watch
+      // Fast immediate fix (ALWAYS updates with real coordinates, never blocked by stale IP location)
+      navigator.geolocation.getCurrentPosition(
+        handlePositionSuccess,
+        (err) => console.warn("getCurrentPosition fast warn:", err),
+        { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
+      );
+
+      // Parallel low-accuracy network watch so indoor/cold-start devices get an immediate fix within ~1s
+      fallbackWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          // Only use network watch if we don't have a fresh high-accuracy fix (< 40m) yet
+          if (!hasRealGpsFixRef.current || (pos.coords.accuracy && pos.coords.accuracy < 150)) {
+            handlePositionSuccess(pos);
+          }
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 12000, maximumAge: 5000 }
+      );
+
+      // Primary High Accuracy Satellite Watch (generous timeout so Android GPS chip is never aborted mid-lock)
       watchId = navigator.geolocation.watchPosition(
         handlePositionSuccess,
         (error) => {
@@ -4742,7 +4742,7 @@ out center;`;
             error.code === 1 ||
             error.message?.toLowerCase().includes("permission") ||
             error.message?.toLowerCase().includes("denied");
-          if (isPermissionDenied) {
+          if (isPermissionDenied && !hasRealGpsFixRef.current) {
             console.warn("GPS Permission denied", error.code, error.message);
             setHasDeniedGPS(true);
             setIsGPSEnabled(false);
@@ -4754,54 +4754,26 @@ out center;`;
                 },
               }),
             );
-          } else {
-            console.warn("GPS High Accuracy Watch warning:", error.code, error.message);
-            // If high accuracy times out or fails, start a low-accuracy fallback watch
-            if (!fallbackWatchId) {
-              fallbackWatchId = navigator.geolocation.watchPosition(
-                handlePositionSuccess,
-                (err) => console.warn("GPS Low Accuracy Watch warning:", err),
-                { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
-              );
-            }
           }
         },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 },
       );
 
-      // Active continuous GPS keep-alive polling interval ONLY during active navigation
-      if (isFullscreenNav) {
-        pollIntervalId = setInterval(() => {
-          try {
-            const bridge = (window as any).AndroidNativeTTS;
-            if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
-              const raw = bridge.getLatestNativeGpsJson();
-              if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
-                  setIsGPSConnected(true);
-                  setUserLocation((prev) => {
-                    if (prev && Math.abs(prev.lat - parsed.lat) < 0.000005 && Math.abs(prev.lng - parsed.lng) < 0.000005) {
-                      return prev;
-                    }
-                    return { lat: parsed.lat, lng: parsed.lng };
-                  });
-                  if (typeof parsed.accuracy === "number") {
-                    setUserAccuracy(parsed.accuracy);
-                  }
-                }
+      // Native Android GPS Bridge poll during active navigation (without calling getCurrentPosition which cancels watchPosition)
+      pollIntervalId = setInterval(() => {
+        try {
+          const bridge = (window as any).AndroidNativeTTS;
+          if (bridge && typeof bridge.getLatestNativeGpsJson === "function") {
+            const raw = bridge.getLatestNativeGpsJson();
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && (parsed.lat !== 0 || parsed.lng !== 0)) {
+                saveRealGpsFix(parsed.lat, parsed.lng, parsed.accuracy);
               }
             }
-          } catch (_) {}
-          if (typeof window !== "undefined" && navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-              handlePositionSuccess,
-              (err) => {},
-              { enableHighAccuracy: true, timeout: 4000, maximumAge: 0 }
-            );
           }
-        }, 1500);
-      }
+        } catch (_) {}
+      }, 1000);
     }
 
     return () => {
@@ -4815,7 +4787,7 @@ out center;`;
         clearInterval(pollIntervalId);
       }
     };
-  }, [isGPSEnabled, showPermissionModal, isFullscreenNav]);
+  }, [isGPSEnabled, saveRealGpsFix, currentUser?.email]);
 
   // Rimuove subito la notifica in primo piano e ferma il tracciamento GPS in background quando la navigazione non è attiva
   React.useEffect(() => {
@@ -4829,8 +4801,14 @@ out center;`;
     }
   }, [isFullscreenNav]);
 
-  // Listen for simulated/manual camper location updates and GPS resets
+  // Listen for simulated/manual camper location updates, navigator GPS fixes, and GPS resets
   React.useEffect(() => {
+    const handleGpsUpdatedFromNav = (e: any) => {
+      if (e.detail && typeof e.detail.lat === "number" && typeof e.detail.lng === "number") {
+        saveRealGpsFix(e.detail.lat, e.detail.lng, e.detail.accuracy);
+      }
+    };
+
     const handleSimulate = (e: any) => {
       if (e.detail && e.detail.lat && e.detail.lng) {
         setUserLocation({
@@ -4855,35 +4833,43 @@ out center;`;
       setIsManualCamperLocation(false);
       setManualCamperPlaceId(null);
       manualCamperTimeRef.current = 0;
+      setHasDeniedGPS(false);
+      setIsGPSEnabled(true);
       if (typeof window !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
-            setUserLocation({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-            });
-            setUserAccuracy(position.coords.accuracy);
+            saveRealGpsFix(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
             window.dispatchEvent(
               new CustomEvent("show-toast", {
                 detail: {
-                  message: "🛰️ Posizione GPS reale ripristinata!",
+                  message: "🛰️ Posizione GPS reale agganciata!",
                 },
               })
             );
           },
-          (err) => console.warn("Reset GPS error:", err),
-          { enableHighAccuracy: true, timeout: 10000 }
+          () => {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                saveRealGpsFix(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+              },
+              (err) => console.warn("Reset GPS error:", err),
+              { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+            );
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
         );
       }
     };
 
+    window.addEventListener("gps-position-updated", handleGpsUpdatedFromNav);
     window.addEventListener("simulate-camper-location", handleSimulate);
     window.addEventListener("reset-real-gps", handleResetGPS);
     return () => {
+      window.removeEventListener("gps-position-updated", handleGpsUpdatedFromNav);
       window.removeEventListener("simulate-camper-location", handleSimulate);
       window.removeEventListener("reset-real-gps", handleResetGPS);
     };
-  }, []);
+  }, [saveRealGpsFix]);
 
   // Mantiene il GPS sempre attivo all'avvio dell'app se i permessi sono concessi
   React.useEffect(() => {
