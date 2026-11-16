@@ -766,13 +766,16 @@ export function TripRouteMap({ trip, onSaveRoute, onNavigateToPlace, onNavigateT
     }
 
     const url = isSatellite
-      ? "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-      : "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
-    const attr = "&copy; Google Maps | ViaCamper";
+      ? "https://{s}.google.com/vt/lyrs=s&hl=it&scale=2&x={x}&y={y}&z={z}"
+      : "https://{s}.google.com/vt/lyrs=m&hl=it&scale=2&x={x}&y={y}&z={z}";
+    const attr = "&copy; Google Maps | ViaCamper HiDPI";
 
     const newTileLayer = L.tileLayer(url, {
       subdomains: ["mt0", "mt1", "mt2", "mt3"],
-      attribution: attr
+      attribution: attr,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      keepBuffer: 6
     }).addTo(map);
     tileLayerRef.current = newTileLayer;
   }, [isSatellite]);

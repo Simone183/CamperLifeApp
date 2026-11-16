@@ -145,50 +145,50 @@ export function getTileUrl(mapTheme: string): string {
 export function getTileConfig(mapTheme: string): TileConfig {
   if (mapTheme === 'positron' || mapTheme === 'light') {
     return {
-      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      subdomains: 'abcd',
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+      subdomains: ['a', 'b', 'c', 'd'],
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
     };
   }
   if (mapTheme === 'esri' || mapTheme === 'street') {
     return {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-      subdomains: 'abc',
+      subdomains: ['a', 'b', 'c'],
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ'
     };
   }
   if (mapTheme === 'dark') {
     return {
-      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      subdomains: 'abcd',
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+      subdomains: ['a', 'b', 'c', 'd'],
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
     };
   }
   if (mapTheme === 'osm') {
     return {
       url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      subdomains: 'abc',
+      subdomains: ['a', 'b', 'c'],
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     };
   }
   if (mapTheme === 'satellite') {
     return {
-      url: 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      url: 'https://{s}.google.com/vt/lyrs=s&hl=it&scale=2&x={x}&y={y}&z={z}',
       subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
       attribution: '&copy; Google Maps'
     };
   }
   if (mapTheme === 'hybrid') {
     return {
-      url: 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+      url: 'https://{s}.google.com/vt/lyrs=y&hl=it&scale=2&x={x}&y={y}&z={z}',
       subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
       attribution: '&copy; Google Maps'
     };
   }
 
-  // Default / Standard / Google Roadmap: Direct Google Maps Vector Road Tiles with subdomains mt0..mt3
+  // Default / Standard / Google Roadmap: Direct Google Maps HiDPI Retina (@2x scale=2) Road Tiles with subdomains mt0..mt3
   return {
-    url: 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    url: 'https://{s}.google.com/vt/lyrs=m&hl=it&scale=2&x={x}&y={y}&z={z}',
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
     attribution: '&copy; Google Maps'
   };

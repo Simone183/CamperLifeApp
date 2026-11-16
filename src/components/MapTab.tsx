@@ -3692,35 +3692,16 @@ out center;`;
       if (centerDebounceRef.current) {
         clearTimeout(centerDebounceRef.current);
       }
-      centerDebounceRef.current = setTimeout(async () => {
-        setMapCenterCoords({ lat, lng });
-
-        // Auto-fetch OSM camper spots for this 10km radius area in background if online
-        if (!isOnline) return;
-
-        const alreadyFetched = fetchedOSMCentersRef.current.some(
-          (c) => getDistanceKm(c.lat, c.lng, lat, lng) < 3
-        );
-        if (alreadyFetched) return;
-
-        fetchedOSMCentersRef.current.push({ lat, lng });
-        if (fetchedOSMCentersRef.current.length > 60) {
-          fetchedOSMCentersRef.current = fetchedOSMCentersRef.current.slice(-40);
-        }
-
-        try {
-          await autoLoadOSMForProximity(
-            lat,
-            lng,
-            "Ricerca soste entro 5 km...",
-            true
-          );
-        } catch (err) {
-          console.warn("[AutoOSM] Background proximity scan failed:", err);
-        }
-      }, 300);
+      centerDebounceRef.current = setTimeout(() => {
+        setMapCenterCoords((prev) => {
+          if (prev && getDistanceKm(prev.lat, prev.lng, lat, lng) < 0.5) {
+            return prev;
+          }
+          return { lat, lng };
+        });
+      }, 400);
     },
-    [isOnline]
+    []
   );
 
   const handleImportFromOSM = async (
@@ -11403,12 +11384,16 @@ export function LeafletOfflineMap({
         : storedLng;
     const initialZoom = selectedPlace ? 15 : (userLocation || storedLat !== 42.5) ? 15 : 12;
 
-    // Create Leaflet Map instance
+    // Create Leaflet Map instance with hardware-accelerated canvas & zero tile fade delay
     const map = L.map(containerRef.current, {
       center: [initialLat, initialLng],
       zoom: initialZoom,
       zoomControl: false,
       attributionControl: true,
+      preferCanvas: true,
+      fadeAnimation: false,
+      zoomAnimation: true,
+      markerZoomAnimation: true,
     });
 
     (map as any).getDiv = () => map.getContainer();
@@ -11451,13 +11436,17 @@ export function LeafletOfflineMap({
       }
     });
 
+    let boundsDebounceTimer: any = null;
     map.on("moveend zoomend", () => {
       try {
         const center = map.getCenter();
         if (center && onCenterChangeRef.current) {
           onCenterChangeRef.current(center.lat, center.lng);
         }
-        setBoundsTick((t) => (t + 1) % 1000000);
+        if (boundsDebounceTimer) clearTimeout(boundsDebounceTimer);
+        boundsDebounceTimer = setTimeout(() => {
+          setBoundsTick((t) => (t + 1) % 1000000);
+        }, 180);
       } catch (e) {}
     });
 
@@ -11465,7 +11454,7 @@ export function LeafletOfflineMap({
       try {
         map.invalidateSize();
       } catch (e) {}
-    }, 400);
+    }, 100);
 
     // Check if we are offline
     const isSimulated =
@@ -11475,16 +11464,19 @@ export function LeafletOfflineMap({
       !isOnline ||
       (typeof navigator !== "undefined" && !navigator.onLine);
 
-    // Add our customized offline-aware tile layer!
-    // We can fetch from local IndexedDB storage if available!
-    const tileCfg = getTileConfig(settings?.mapTheme || 'positron');
+    // Add our customized high-DPI Retina & offline-aware tile layer!
+    const tileCfg = getTileConfig(settings?.mapTheme || 'standard');
     const customTileLayer = L.tileLayer(
       tileCfg.url,
       {
         maxZoom: 19,
-        maxNativeZoom: offlineActive ? 16 : 19, // Support detailed offline maps up to zoom 16
-        attribution: tileCfg.attribution + " | ViaCamper Offline Cache",
+        maxNativeZoom: offlineActive ? 16 : 19,
+        attribution: tileCfg.attribution + " | ViaCamper HiDPI",
         subdomains: tileCfg.subdomains || ['mt0', 'mt1', 'mt2', 'mt3'],
+        updateWhenIdle: false, // Load tiles immediately while dragging on mobile
+        updateWhenZooming: false,
+        updateInterval: 60,
+        keepBuffer: 8, // Keep a wide 8-tile ring buffered in memory around the screen
       },
     );
 
@@ -11492,12 +11484,17 @@ export function LeafletOfflineMap({
     const origCreateTile = (customTileLayer as any).createTile;
     (customTileLayer as any).createTile = function (coords: any, done: any) {
       const tile = origCreateTile.call(this, coords, done);
+      tile.decoding = "async";
 
-      // Attach automatic tile fallback if primary tile server fails or times out
-      tile.onerror = () => {
-        tile.onerror = null; // Prevent loop
-        tile.src = `https://a.tile.openstreetmap.org/${coords.z}/${coords.x}/${coords.y}.png`;
-      };
+      // Fast mirror retry on alternate Google CDN server (never mix slow OpenStreetMap tiles onto Google Maps)
+      let retryCount = 0;
+      tile.addEventListener("error", () => {
+        if (retryCount < 2 && navigator.onLine) {
+          retryCount++;
+          const mirrorIdx = (coords.x + coords.y + retryCount) % 4;
+          tile.src = `https://mt${mirrorIdx}.google.com/vt/lyrs=m&hl=it&scale=2&x=${coords.x}&y=${coords.y}&z=${coords.z}`;
+        }
+      });
       
       const isSimulated = localStorage.getItem("camper_simulated_offline") === "true";
       const offlineActive = isSimulated || !isOnline || (typeof navigator !== "undefined" && !navigator.onLine);
@@ -11529,13 +11526,14 @@ export function LeafletOfflineMap({
     };
 
     customTileLayer.addTo(map);
+    (map as any)._customBaseTileLayer = customTileLayer;
 
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
       resizeObserver = new ResizeObserver(() => {
         if (mapRef.current) {
           try {
-            mapRef.current.invalidateSize();
+            mapRef.current.invalidateSize({ animate: false });
           } catch (e) {}
         }
       });
@@ -11543,6 +11541,7 @@ export function LeafletOfflineMap({
     }
 
     return () => {
+      if (boundsDebounceTimer) clearTimeout(boundsDebounceTimer);
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
@@ -11554,6 +11553,16 @@ export function LeafletOfflineMap({
       onMapInstanceRef.current?.(null);
     };
   }, []); // Run ONCE on mount
+
+  // Sync mapTheme changes dynamically on existing Leaflet tile layer
+  React.useEffect(() => {
+    const map = mapRef.current as any;
+    if (!map || !map._customBaseTileLayer) return;
+    const cfg = getTileConfig(settings?.mapTheme || 'standard');
+    try {
+      map._customBaseTileLayer.setUrl(cfg.url);
+    } catch (_) {}
+  }, [settings?.mapTheme]);
 
   // 1b) Toggle Live Traffic Flow Overlay Tile Layer (TomTom Orbis / Live Traffic)
   React.useEffect(() => {

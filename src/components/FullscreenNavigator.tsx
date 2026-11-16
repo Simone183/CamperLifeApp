@@ -408,30 +408,30 @@ export default function FullscreenNavigator({
     const rasterTiles =
       styleMode === 'satellite'
         ? [
-            "https://mt0.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}",
-            "https://mt1.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}",
-            "https://mt2.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}",
-            "https://mt3.google.com/vt/lyrs=s&hl=it&x={x}&y={y}&z={z}"
+            "https://mt0.google.com/vt/lyrs=s&hl=it&scale=2&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt/lyrs=s&hl=it&scale=2&x={x}&y={y}&z={z}",
+            "https://mt2.google.com/vt/lyrs=s&hl=it&scale=2&x={x}&y={y}&z={z}",
+            "https://mt3.google.com/vt/lyrs=s&hl=it&scale=2&x={x}&y={y}&z={z}"
           ]
         : styleMode === 'terrain'
           ? [
-              "https://mt0.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-              "https://mt1.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-              "https://mt2.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-              "https://mt3.google.com/vt/lyrs=p&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
+              "https://mt0.google.com/vt/lyrs=p&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+              "https://mt1.google.com/vt/lyrs=p&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+              "https://mt2.google.com/vt/lyrs=p&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+              "https://mt3.google.com/vt/lyrs=p&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
             ]
           : styleMode === 'nav-night'
             ? [
-                `https://mt0.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
-                `https://mt1.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
-                `https://mt2.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
-                `https://mt3.google.com/vt/lyrs=m&hl=it&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`
+                `https://mt0.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
+                `https://mt1.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
+                `https://mt2.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`,
+                `https://mt3.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=${googleNightNoLabelsStyle}&x={x}&y={y}&z={z}`
               ]
             : [
-                "https://mt0.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-                "https://mt1.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-                "https://mt2.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-                "https://mt3.google.com/vt/lyrs=m&hl=it&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
+                "https://mt0.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+                "https://mt1.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+                "https://mt2.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+                "https://mt3.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
               ];
 
     return {
@@ -452,8 +452,8 @@ export default function FullscreenNavigator({
         'tomtom-traffic-tiles': {
           type: 'raster',
           tiles: [
-            "https://mt0.google.com/vt?lyrs=h,traffic&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
-            "https://mt1.google.com/vt?lyrs=h,traffic&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
+            "https://mt0.google.com/vt?lyrs=h,traffic&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}",
+            "https://mt1.google.com/vt?lyrs=h,traffic&scale=2&apistyle=s.e:l%7Cp.v:off&x={x}&y={y}&z={z}"
           ],
           tileSize: 256,
           maxzoom: 19

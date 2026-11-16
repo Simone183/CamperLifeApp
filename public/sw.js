@@ -58,13 +58,48 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+const TILE_CACHE_NAME = 'viacamper-tiles-fast-v1';
+
 // Fetch Event
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+  if (event.request.method !== 'GET') {
     return;
   }
 
-  const url = new URL(event.request.url);
+  const reqUrl = event.request.url;
+
+  // Fast Cache-First strategy for map tiles & vector glyphs (Google Maps, Carto, OpenFreeMap)
+  if (
+    reqUrl.includes('.google.com/vt') ||
+    reqUrl.includes('basemaps.cartocdn.com/') ||
+    reqUrl.includes('tiles.openfreemap.org/') ||
+    reqUrl.includes('arcgisonline.com/ArcGIS/rest/services/')
+  ) {
+    event.respondWith(
+      caches.open(TILE_CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedTile) => {
+          if (cachedTile) {
+            return cachedTile;
+          }
+          return fetch(event.request).then((netRes) => {
+            if (netRes && (netRes.status === 200 || netRes.type === 'opaque')) {
+              try {
+                cache.put(event.request, netRes.clone());
+              } catch (_) {}
+            }
+            return netRes;
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  if (!reqUrl.startsWith(self.location.origin)) {
+    return;
+  }
+
+  const url = new URL(reqUrl);
   const path = url.pathname.toLowerCase();
   
   if (path.startsWith('/api/')) {
