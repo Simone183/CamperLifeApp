@@ -29,8 +29,8 @@ const photoDataMap: Record<string, PhotoStepData> = {
     fallbackUrl: 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=900&q=85',
     badge: 'MAPPA & GPS SOSTE',
     badgeIcon: <Navigation className="w-3.5 h-3.5 text-sky-400" />,
-    tag: 'Filtri & Servizi',
-    highlights: ['Aree Sosta 24h', 'Camper Service', 'Ponti & ZTL']
+    tag: 'Soste & Carburante',
+    highlights: ['Aree Sosta 24h', 'Prezzi Carburante', 'Navigatore 3D']
   },
   diary: {
     imageUrl: 'https://images.unsplash.com/photo-1527786356703-4b100091cd2c?auto=format&fit=crop&w=900&q=85',
@@ -38,15 +38,15 @@ const photoDataMap: Record<string, PhotoStepData> = {
     badge: 'DIARIO DI BORDO',
     badgeIcon: <BookOpen className="w-3.5 h-3.5 text-amber-400" />,
     tag: 'I Tuoi Ricordi',
-    highlights: ['Traccia Km & Spese', 'Foto Tappe', 'Consumi km/L']
+    highlights: ['Traccia Km & Spese', 'Foto Tappe', 'Esporta PDF']
   },
   tools: {
     imageUrl: 'https://images.unsplash.com/photo-1516939884455-1445c8652f83?auto=format&fit=crop&w=900&q=85',
     fallbackUrl: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=900&q=85',
     badge: 'STRUMENTI DI BORDO',
     badgeIcon: <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />,
-    tag: 'Sicurezza & Comfort',
-    highlights: ['Livella 3D Assi', 'Autonomia Solare', 'Checklist']
+    tag: 'Viaggio & Sosta',
+    highlights: ['Livella 3D Cunei', 'Sagre & Locandine', 'Checklist & SOS']
   }
 };
 

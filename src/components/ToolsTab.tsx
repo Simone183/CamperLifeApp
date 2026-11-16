@@ -199,22 +199,6 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-400" />
               </div>
-
-              <div
-                onClick={() => setOpenModal('WEIGHT')}
-                className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-300/80 dark:border-slate-800 hover:border-emerald-600 transition-all cursor-pointer shadow-xs flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
-                    <Truck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Bilanciamento & Carico Utile</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Calcolo pesi di bagagli, acqua e passeggeri sotto i 3500 kg (Patente B).</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-400" />
-              </div>
             </div>
           </div>
         )}
@@ -469,49 +453,6 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
 
             <button onClick={() => setOpenModal(null)} className="w-full py-2.5 rounded-xl bg-emerald-800 text-white font-bold text-xs">
               Salva e Chiudi
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Weight Calculator Modal */}
-      {openModal === 'WEIGHT' && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
-              <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                <Truck className="w-5 h-5 text-blue-700" />
-                <span>🚐 Calcolatore Peso & Sagoma Camper</span>
-              </h3>
-              <button onClick={() => setOpenModal(null)} className="p-1 text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="p-3 rounded-xl bg-stone-100 dark:bg-slate-800">
-                <span className="text-[10px] uppercase font-extrabold text-slate-400 block">Misure Sagoma</span>
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white">{vehicle.lengthMeters}m x {vehicle.heightMeters}m</span>
-              </div>
-              <div className="p-3 rounded-xl bg-amber-100 dark:bg-amber-950/60">
-                <span className="text-[10px] uppercase font-extrabold text-amber-800 block">Peso Stimato</span>
-                <span className="text-sm font-extrabold text-amber-950 dark:text-amber-200">{totalEstimatedWeightTons} t / 3.50 t</span>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs font-semibold">
-              <div>
-                <label className="block text-slate-600 dark:text-slate-400 mb-1">Passeggeri: {passengerCount}</label>
-                <input type="range" min="1" max="6" value={passengerCount} onChange={(e) => setPassengerCount(parseInt(e.target.value))} className="w-full accent-emerald-700" />
-              </div>
-              <div>
-                <label className="block text-slate-600 dark:text-slate-400 mb-1">Acqua Serbatoio: {waterWeightKg}L</label>
-                <input type="range" min="0" max="120" value={waterWeightKg} onChange={(e) => setWaterWeightKg(parseInt(e.target.value))} className="w-full accent-emerald-700" />
-              </div>
-            </div>
-
-            <button onClick={() => setOpenModal(null)} className="w-full py-2.5 rounded-xl bg-emerald-800 text-white font-bold text-xs">
-              Chiudi
             </button>
           </div>
         </div>

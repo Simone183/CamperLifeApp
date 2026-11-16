@@ -618,13 +618,13 @@ export const RollyTutorialIllustration: React.FC<RollyTutorialIllustrationProps>
                 <text x="51" y="5" fill="#78350F" fontSize="6.5" fontWeight="bold" textAnchor="middle">LIVELLA 3D</text>
               </g>
 
-              {/* 2. Battery & Solar Autonomy Badge */}
+              {/* 2. Checklist & SOS Badge */}
               <g transform="translate(268, 92)">
                 <rect x="0" y="0" width="92" height="36" rx="8" fill="#0284C7" stroke="#0369A1" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.1))" />
                 <circle cx="18" cy="18" r="10" fill="#FDE047" />
-                <path d="M 18 12 L 14 19 L 18 19 L 17 24 L 23 17 L 19 17 Z" fill="#EA580C" />
-                <text x="54" y="18" fontSize="10" fontWeight="900" fill="#FFFFFF" textAnchor="middle">100%</text>
-                <text x="54" y="27" fontSize="6" fontWeight="bold" fill="#BAE6FD" textAnchor="middle">AUTONOMIA</text>
+                <path d="M 14 18 L 17 21 L 23 15" stroke="#15803D" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                <text x="54" y="18" fontSize="8.5" fontWeight="900" fill="#FFFFFF" textAnchor="middle">CHECKLIST</text>
+                <text x="54" y="27" fontSize="6" fontWeight="bold" fill="#BAE6FD" textAnchor="middle">&amp; SAGRE</text>
               </g>
             </g>
           )}

@@ -14,25 +14,25 @@ const steps: TourStep[] = [
   {
     title: "Benvenuto su ViaCamper!",
     subtitle: "Tutto per il tuo viaggio in camper",
-    content: "L'app completa per camperisti e vanlifers: trova subito le migliori aree sosta e campeggi, naviga in sicurezza con limiti per camper, tieni il diario di bordo e usa gli strumenti di bordo dedicati.",
+    content: "L'app pensata per i camperisti: trova aree sosta e campeggi, controlla i distributori carburante con prezzi aggiornati, scopri sagre con locandina ufficiale e tieni il tuo diario di bordo.",
     variant: "welcome"
   },
   {
-    title: "Mappa, Soste & GPS 3D",
-    subtitle: "Trova tutto ciò che serve per il tuo mezzo",
-    content: "Esplora oltre 10.000 punti sosta con recensioni, foto, servizi e tariffe aggiornate. Avvia il navigatore 3D con limiti di altezza e peso per evitare ponti bassi e strade strette!",
+    title: "Mappa, Soste, Carburante & GPS 3D",
+    subtitle: "Tutto ciò che serve lungo la rotta",
+    content: "Esplora oltre 10.000 punti sosta, attiva sulla mappa i distributori carburante con i prezzi aggiornati e le sagre locali, e naviga in 3D evitando ponti bassi e strade strette!",
     variant: "map"
   },
   {
     title: "Diario di Bordo & Ricordi",
     subtitle: "Conserva per sempre ogni avventura",
-    content: "Registra ogni tappa, calcola i consumi reali in km/L, aggiungi note, scontrini e scatta foto dei tuoi posti del cuore per creare un archivio di viaggio indimenticabile.",
+    content: "Registra ogni tappa, annota spese e rifornimenti, carica le foto dei tuoi posti del cuore ed esporta o condividi i tuoi viaggi con la community.",
     variant: "diary"
   },
   {
-    title: "Strumenti & Sicurezza Camper",
-    subtitle: "Tutto sotto controllo prima di partire",
-    content: "Usa la livella digitale 3D, calcola la distribuzione dei pesi, verifica l'autonomia energetica in sosta libera e controlla la checklist pre-partenza per viaggiare senza pensieri.",
+    title: "Strumenti, Eventi & Vita a Bordo",
+    subtitle: "Solo ciò che serve davvero in camper",
+    content: "Usa la livella digitale con calcolo cunei, la checklist pre-partenza, la dispensa smart, gli itinerari AI di Rolly, gli Eventi Camper con locandina ufficiale e il generatore SOS GPS.",
     variant: "tools"
   }
 ];

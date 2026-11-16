@@ -59,9 +59,6 @@ import FuelCardTab from "./components/FuelCardTab";
 import GeneralSettingsTab from "./components/GeneralSettingsTab";
 import ProfileSettingsTab from "./components/ProfileSettingsTab";
 import { BubbleLevelTab } from "./components/BubbleLevelTab";
-import { WeightCalculatorTab } from "./components/WeightCalculatorTab";
-import { OffGridEstimatorTab } from "./components/OffGridEstimatorTab";
-import { SostaLiberaToolsTab } from "./components/SostaLiberaToolsTab";
 import { CamperSecurityTab } from "./components/CamperSecurityTab";
 import { PantryShoppingTab } from "./components/PantryShoppingTab";
 import { MaintenanceLogTab } from "./components/MaintenanceLogTab";
@@ -5946,14 +5943,17 @@ out center;`;
                 {/* Clean introductory tile with bento flavor */}
                 <div className="bg-gradient-to-br from-[#3E4A35] to-[#5A6B4E] rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
                   <div className="relative z-10 space-y-2">
-                    <span className="text-[10px] uppercase font-black tracking-widest bg-white/20 px-2.5 py-1 rounded-full text-white">
-                      {appLang === 'en' ? 'Onboard Dashboard' : appLang === 'fr' ? 'Tableau de bord' : 'Pannello Strumenti di Bordo'}
-                    </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[10px] uppercase font-black tracking-widest bg-white/20 px-2.5 py-1 rounded-full text-white">
+                        {appLang === 'en' ? 'Onboard Dashboard' : appLang === 'fr' ? 'Tableau de bord' : 'Pannello Strumenti di Bordo'}
+                      </span>
+                      <RollyOnboardingGuide sectionKey="tools_hub" autoShow={false} />
+                    </div>
                     <h2 className="text-xl sm:text-2xl font-black tracking-tight">
                       {appLang === 'en' ? 'Camper Management & Setup' : appLang === 'fr' ? 'Gestion & Configuration' : 'Gestione & Configurazione Camper'}
                     </h2>
                     <p className="text-xs text-white/80 max-w-xl leading-relaxed">
-                      {appLang === 'en' ? 'Monitor maintenance, manage dimensions for the smart navigator, pre-departure checks and community.' : appLang === 'fr' ? 'Gérez vos ressources, navigation, sécurité et communauté.' : 'Monitora lo stato di manutenzione, gestisci le dimensioni per il navigatore sagomato, controlla la sicurezza pre-partenza e rimani in contatto con la community.'}
+                      {appLang === 'en' ? 'Monitor maintenance, manage dimensions for the smart navigator, pre-departure checks and community.' : appLang === 'fr' ? 'Gérez vos ressources, navigation, sécurité et communauté.' : 'Monitora lo stato di manutenzione, gestisci le dimensioni per il navigatore sagomato, controlla la sicurezza pre-partenza, scopri sagre con locandina ufficiale e rimani in contatto con la community.'}
                     </p>
                   </div>
                   <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
@@ -6068,8 +6068,7 @@ out center;`;
                   {/* Category 1: Safety & Vehicle */}
                   {(toolsCategory === "all" || toolsCategory === "safety") &&
                     (dashboardSettings.showChecklists ||
-                      dashboardSettings.showPantryShopping ||
-                      dashboardSettings.showWeightCalculator) && (
+                      dashboardSettings.showPantryShopping) && (
                       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/50 dark:border-slate-700 shadow-xs overflow-hidden">
                         <div className="bg-slate-50/70 dark:bg-slate-700/50 border-b border-rose-50 dark:border-slate-700 px-4.5 py-2.5 flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 dark:text-slate-300 tracking-widest flex items-center gap-1.5">
@@ -6142,37 +6141,6 @@ out center;`;
                               <div className="flex items-center gap-2.5 shrink-0">
                                 <span className="bg-amber-100/70 text-amber-900 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
                                   Anti-Spreco
-                                </span>
-                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 3. Calcolatore Carico Utile */}
-                          {dashboardSettings.showWeightCalculator && (
-                            <div
-                              onClick={() =>
-                                setSettingsSubTab("weight_calculator")
-                              }
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-amber-50 dark:bg-amber-900 text-amber-800 dark:text-amber-100 border border-amber-100 dark:border-amber-700 group-hover:scale-105 transition-transform">
-                                  <Scale className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Bilanciamento & Carico Utile
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Calcolo pesi di bagagli, acqua e passeggeri
-                                    sotto i 3500 kg (Patente B).
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                  Patente B
                                 </span>
                                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
                               </div>
@@ -6384,8 +6352,8 @@ out center;`;
                                     Eventi Camper
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Fiere, raduni ed eventi dedicati al mondo
-                                    del plein air.
+                                    Sagre, feste ed eventi con la loro locandina
+                                    ufficiale e soste camper vicine.
                                   </p>
                                 </div>
                               </div>
@@ -6399,8 +6367,6 @@ out center;`;
                   {/* Category 3: Life on board */}
                   {(toolsCategory === "all" || toolsCategory === "camping") &&
                     (dashboardSettings.showBubbleLevel ||
-                      dashboardSettings.showOffGridEstimator ||
-                      dashboardSettings.showSostaLiberaTools ||
                       dashboardSettings.showCamperSecurity) && (
                       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/50 dark:border-slate-700 shadow-xs overflow-hidden">
                         <div className="bg-slate-50/70 dark:bg-slate-700/50 border-b border-indigo-50 dark:border-slate-700 px-4.5 py-2.5 flex items-center justify-between">
@@ -6438,73 +6404,7 @@ out center;`;
                             </div>
                           )}
 
-                          {/* Autonomia Off-Grid */}
-                          {dashboardSettings.showOffGridEstimator && (
-                            <div
-                              onClick={() =>
-                                setSettingsSubTab("offgrid_estimator")
-                              }
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-emerald-50 text-emerald-800 border border-emerald-100 group-hover:scale-105 transition-transform">
-                                  <Sun className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Autonomia Off-Grid
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Simula riserva idrica, carica batterie e
-                                    consumi energetici per la sosta in libera.
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                  Simulatore
-                                </span>
-                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 10-bis. Strumenti Sosta Libera & Off-grid */}
-                          {dashboardSettings.showSostaLiberaTools && (
-                            <div
-                              onClick={() =>
-                                setSettingsSubTab("sosta_libera_tools")
-                              }
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-[#A45C40]/10 text-[#A45C40] border border-[#A45C40]/20 group-hover:scale-105 transition-transform">
-                                  <Sliders className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-1.5">
-                                    Strumenti & Edge Utilities sosta
-                                    <span className="bg-orange-600 text-white text-[8px] font-black tracking-widest px-1 py-0.5 rounded uppercase">
-                                      OFFLINE
-                                    </span>
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Allineamento solare fotovoltaico, stato
-                                    carica batterie in Volt e risoluzione guasti
-                                    fai-da-te.
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                  Multi-Edge 📡
-                                </span>
-                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Sicurezza Attiva & Sosta Notturna */}
+                          {/* Generatore Messaggio SOS Istantaneo */}
                           {dashboardSettings.showCamperSecurity && (
                             <div
                               onClick={() =>
@@ -6518,17 +6418,17 @@ out center;`;
                                 </div>
                                 <div className="min-w-0">
                                   <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#2D2926] transition-colors">
-                                    Sicurezza Attiva & Sosta Notturna
+                                    Generatore Messaggio SOS Istantaneo
                                   </h4>
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Valutatore rischio sosta libera, generatore
-                                    SOS con GPS e sirena d'allarme.
+                                    Crea un messaggio di emergenza con coordinate
+                                    GPS e link posizione pronto da inviare.
                                   </p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2.5 shrink-0">
                                 <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                  Deterrente 🛡️
+                                  SOS GPS 🚨
                                 </span>
                                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
                               </div>
@@ -6975,10 +6875,6 @@ out center;`;
                             "Generatore Itinerari AI Rolly"}
                           {settingsSubTab === "bubble_level" &&
                             "Livella Digitale Camper"}
-                          {settingsSubTab === "weight_calculator" &&
-                            "Bilanciamento & Carico"}
-                          {settingsSubTab === "offgrid_estimator" &&
-                            "Autonomia Off-Grid"}
                           {settingsSubTab === "pantry_shopping" &&
                             "Cambusa & Spesa Intelligente"}
                           {settingsSubTab === "maintenance_log" &&
@@ -6988,10 +6884,8 @@ out center;`;
                           {settingsSubTab === "fuel_card" && "Carta Carburante & Consumi"}
                           {settingsSubTab === "copyright" &&
                             "Tutela & Licenza D’Autore"}
-                          {settingsSubTab === "sosta_libera_tools" &&
-                            "Pannello Sosta Libera"}
                           {settingsSubTab === "camper_security" &&
-                            "Sicurezza Attiva & Sosta Notturna"}
+                            "Generatore Messaggio SOS Istantaneo"}
                           {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
                           {settingsSubTab === "offline_maps" &&
                             "Mappe Cartografiche Offline"}
@@ -7846,18 +7740,6 @@ out center;`;
                   )}
 
                   {settingsSubTab === "bubble_level" && <BubbleLevelTab />}
-
-                  {settingsSubTab === "weight_calculator" && (
-                    <WeightCalculatorTab />
-                  )}
-
-                  {settingsSubTab === "offgrid_estimator" && (
-                    <OffGridEstimatorTab />
-                  )}
-
-                  {settingsSubTab === "sosta_libera_tools" && (
-                    <SostaLiberaToolsTab />
-                  )}
 
                   {settingsSubTab === "camper_security" && (
                     <CamperSecurityTab
