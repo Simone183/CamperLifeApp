@@ -74,7 +74,7 @@ export function TripShareModal({ trip, isOpen, onClose, onConfirmShare }: Props)
                 }`}
               >
                 <div className="flex items-center gap-2.5 text-sm">
-                  <span>💬 Bacheca Social (Community Feed)</span>
+                  <span>📷 Bacheca Social (Social &gt; Social)</span>
                 </div>
                 <div className={`w-5 h-5 rounded-md flex items-center justify-center border ${shareToSocial ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
                   {shareToSocial && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -90,7 +90,7 @@ export function TripShareModal({ trip, isOpen, onClose, onConfirmShare }: Props)
                 }`}
               >
                 <div className="flex items-center gap-2.5 text-sm">
-                  <span>🗺️ Viaggi Condivisi (Community Itineraries)</span>
+                  <span>🗺️ Viaggi Condivisi (Social &gt; Viaggi)</span>
                 </div>
                 <div className={`w-5 h-5 rounded-md flex items-center justify-center border ${shareToSharedTrips ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
                   {shareToSharedTrips && <Check className="w-3.5 h-3.5 stroke-[3]" />}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trip } from '../types';
 import { Share2, Calendar, Edit3, Trash2, AlertTriangle, X } from 'lucide-react';
+import { RollyOnboardingGuide } from './RollyOnboardingGuide';
 
 interface Props {
   trips: Trip[];
@@ -93,12 +94,17 @@ export default function SharedTripsTab({ trips, onViewTrip, setTrips }: Props) {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold flex items-center gap-2">
-        <Share2 className="text-[#3E4A35]" />
-        Viaggi Condivisi dalla Community
-      </h2>
-      <p className="text-gray-600">Esplora i diari di bordo condivisi dagli altri camperisti e gestisci le tue condivisioni.</p>
+    <div className="p-4 sm:p-6 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+          <Share2 className="text-[#3E4A35]" />
+          <span>Viaggi Condivisi dalla Community</span>
+        </h2>
+        <RollyOnboardingGuide sectionKey="shared_trips" autoShow={false} />
+      </div>
+      <p className="text-xs sm:text-sm text-gray-600">
+        Esplora i diari di bordo condivisi dagli altri camperisti nella sezione Social e gestisci le tue condivisioni.
+      </p>
 
       {sharedTrips.length === 0 ? (
         <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300">

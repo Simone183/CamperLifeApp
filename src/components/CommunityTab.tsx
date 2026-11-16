@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { CommunityMessage, ChallengeSubmission, ChallengeItem } from '../types';
+import { CommunityMessage, ChallengeSubmission, ChallengeItem, Trip } from '../types';
 import { sanitizeCommunityMessagesList } from '../utils/communitySanitizer';
 import { resolveMediaUrl, resolveApiUrl } from '../utils/resolveMediaUrl';
 import { CamperImage } from './CamperImage';
@@ -12,7 +12,8 @@ import { CartoonCamperAvatar } from './CartoonCamperAvatar';
 import ProfilePhotoCropper from './ProfilePhotoCropper';
 import { moderateText, getRollyWarningText } from '../utils/rollyModerator';
 import { compressImage } from '../utils/photoCompressor';
-import { isChallengeExpired, INITIAL_CHALLENGES } from './ChallengesTab';
+import { ChallengesTab, isChallengeExpired, INITIAL_CHALLENGES } from './ChallengesTab';
+import SharedTripsTab from './SharedTripsTab';
 import {
   MessageSquare,
   Heart,
@@ -45,7 +46,8 @@ import {
   Trophy,
   Lock,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Compass
 } from 'lucide-react';
 import { recoverPhoto, persistCommunityPhoto } from '../utils/photoPersistence';
 
@@ -467,7 +469,12 @@ interface CommunityTabProps {
   challengeSubmissions?: ChallengeSubmission[];
   onChallengeSubmissionsChange?: (subs: ChallengeSubmission[]) => void;
   challenges?: ChallengeItem[];
+  onChallengesChange?: (challenges: ChallengeItem[]) => void;
+  onOpenAddPlace?: () => void;
+  trips?: Trip[];
+  setTrips?: React.Dispatch<React.SetStateAction<Trip[]>>;
   onViewTrip?: (tripId: string) => void;
+  onViewModeChange?: (mode: 'social' | 'feed' | 'chat' | 'challenges' | 'trips' | 'sos') => void;
 }
 
 function UserAvatar({
@@ -544,7 +551,12 @@ export default function CommunityTab({
   challengeSubmissions,
   onChallengeSubmissionsChange,
   challenges,
-  onViewTrip
+  onChallengesChange,
+  onOpenAddPlace,
+  trips = [],
+  setTrips,
+  onViewTrip,
+  onViewModeChange
 }: CommunityTabProps) {
   // Sanitize messages array to filter out any remaining fake replies, fake likes, or deleted messages
   const sanitizedMessages = React.useMemo(() => {
@@ -561,8 +573,12 @@ export default function CommunityTab({
       }));
   }, [messages]);
 
-  // View mode: 'social' (Social Feed), 'feed' (Forum Argomenti), 'chat' (WhatsApp style), 'sos' (Emergency SOS focus)
-  const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'sos'>('social');
+  // View mode: 'social' (Social Feed), 'feed' (Forum Argomenti), 'chat' (WhatsApp style), 'challenges' (Sfide & Badge), 'trips' (Viaggi Condivisi), 'sos' (Emergency SOS focus)
+  const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'challenges' | 'trips' | 'sos'>('social');
+
+  React.useEffect(() => {
+    onViewModeChange?.(viewMode);
+  }, [viewMode, onViewModeChange]);
   const [socialSubFilter, setSocialSubFilter] = React.useState<'all' | 'media' | 'popular' | 'mine'>('all');
   const [quickSocialText, setQuickSocialText] = React.useState('');
   const [postLocationName, setPostLocationName] = React.useState('');
@@ -1527,19 +1543,19 @@ export default function CommunityTab({
         }}
       />
 
-      {/* Main Mode Navigation Bar: 4-column grid for Social, Forum, Chat Live, SOS */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-2.5 shadow-md">
-        <div className="grid grid-cols-4 gap-1">
+      {/* Main Mode Navigation Bar: compact 6-column grid for Social, Forum, Chat, Sfide, Viaggi, SOS */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-1.5 sm:p-2.5 shadow-md">
+        <div className="grid grid-cols-6 gap-1">
           <button
             onClick={() => setViewMode('social')}
-            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
+            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
               viewMode === 'social'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Camera className="w-4 h-4 shrink-0" />
-            <span className="text-[10px] sm:text-xs">Social</span>
+            <span className="text-[9.5px] sm:text-xs leading-tight">Social</span>
           </button>
 
           <button
@@ -1548,19 +1564,19 @@ export default function CommunityTab({
               setSelectedForumCategory(null);
               setSelectedDiscussionId(null);
             }}
-            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
+            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
               viewMode === 'feed'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Flame className="w-4 h-4 shrink-0" />
-            <span className="text-[10px] sm:text-xs">Forum</span>
+            <span className="text-[9.5px] sm:text-xs leading-tight">Forum</span>
           </button>
 
           <button
             onClick={() => setViewMode('chat')}
-            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer ${
+            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
               viewMode === 'chat'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1570,12 +1586,36 @@ export default function CommunityTab({
               <MessageCircle className="w-4 h-4 shrink-0" />
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse sm:hidden" />
             </div>
-            <span className="text-[10px] sm:text-xs">Chat Live</span>
+            <span className="text-[9.5px] sm:text-xs leading-tight">Chat</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('challenges')}
+            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
+              viewMode === 'challenges'
+                ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Trophy className="w-4 h-4 shrink-0 text-amber-500" />
+            <span className="text-[9.5px] sm:text-xs leading-tight">Sfide</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('trips')}
+            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
+              viewMode === 'trips'
+                ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Compass className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-[9.5px] sm:text-xs leading-tight">Viaggi</span>
           </button>
 
           <button
             onClick={() => setViewMode('sos')}
-            className={`py-2 px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 text-center cursor-pointer relative ${
+            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer relative ${
               viewMode === 'sos'
                 ? 'bg-rose-600 text-white shadow-xs'
                 : 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60'
@@ -1589,13 +1629,13 @@ export default function CommunityTab({
                 </span>
               )}
             </div>
-            <span className="text-[10px] sm:text-xs">SOS</span>
+            <span className="text-[9.5px] sm:text-xs leading-tight">SOS</span>
           </button>
         </div>
       </div>
 
-      {/* Filter & Search Toolbar for non-social modes */}
-      {viewMode !== 'social' && (
+      {/* Filter & Search Toolbar for Forum/Chat/SOS modes */}
+      {viewMode !== 'social' && viewMode !== 'challenges' && viewMode !== 'trips' && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-3.5 shadow-md space-y-2.5">
           {/* Search Bar */}
           <div className="relative">
@@ -2267,6 +2307,29 @@ export default function CommunityTab({
             </div>
           )}
           </div>
+        </div>
+      ) : viewMode === 'challenges' ? (
+        /* SFIDE, CONCORSI & BADGE VIEW INTEGRATED IN SOCIAL */
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 p-3 sm:p-5 shadow-md">
+          <ChallengesTab
+            onOpenAddPlace={() => onOpenAddPlace?.()}
+            currentUser={currentUser as any}
+            submissions={challengeSubmissions || []}
+            onSubmissionsChange={(subs) => onChallengeSubmissionsChange?.(subs)}
+            communityMessages={messages}
+            onCommunityMessagesChange={onChange}
+            challenges={challenges}
+            onChallengesChange={onChallengesChange}
+          />
+        </div>
+      ) : viewMode === 'trips' ? (
+        /* VIAGGI CONDIVISI VIEW INTEGRATED IN SOCIAL */
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 p-3 sm:p-5 shadow-md">
+          <SharedTripsTab
+            trips={trips}
+            setTrips={setTrips as any}
+            onViewTrip={(tripId) => onViewTrip?.(tripId)}
+          />
         </div>
       ) : viewMode === 'chat' ? (
         /* WHATSAPP / DIRECT CHAT STREAM VIEW */

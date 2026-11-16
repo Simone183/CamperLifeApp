@@ -39,8 +39,8 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       },
       {
         icon: '🎪',
-        title: 'Sagre ed Eventi su Mappa',
-        description: 'Visualizza direttamente sulla mappa le sagre e gli eventi con locandina ufficiale, date e l\'area sosta camper più vicina.'
+        title: 'Sagre ed Eventi su Mappa con Locandina',
+        description: 'Visualizza direttamente sulla mappa le sagre e gli eventi con la loro locandina ufficiale, le date e l\'area sosta camper più vicina.'
       },
       {
         icon: '📍',
@@ -50,16 +50,16 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       {
         icon: '🧭',
         title: 'Navigatore 3D Sagomato & Proponi Sosta',
-        description: 'Avvia il navigatore vocale 3D (Voce uomo o Voce donna) calibrato sulle misure del tuo camper, oppure condividi una nuova sosta con la community.'
+        description: 'Avvia il navigatore vocale 3D (Voce uomo o Voce donna) calibrato sulle misure de "Il Mio Camper", oppure proponi una nuova sosta (guadagnando anche punti XP per le Sfide in Social).'
       }
     ],
-    rollyTip: '💡 Consiglio di Rolly: Attiva i distributori sulla mappa prima di fare rifornimento per risparmiare sul pieno, e verifica sempre le misure del mezzo nella scheda "Il Mio Camper"!'
+    rollyTip: '💡 Consiglio di Rolly: Attiva i distributori sulla mappa prima di fare rifornimento per risparmiare sul pieno, e verifica sempre le misure del mezzo nella scheda "Il Mio Camper" in Strumenti!'
   },
   diary: {
     key: 'diary',
     badge: '📖 Diario di Bordo',
     title: 'Diario di Bordo, Tappe & Ricordi di Viaggio',
-    subtitle: 'Registra itinerari, movimenti, spese, foto ed esporta o condividi i tuoi viaggi.',
+    subtitle: 'Registra itinerari, movimenti, spese, foto ed esporta o condividi i tuoi viaggi nella sezione Social.',
     features: [
       {
         icon: '➕',
@@ -78,17 +78,99 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       },
       {
         icon: '📄',
-        title: 'Esporta PDF & Condividi con la Community',
-        description: 'Scarica l\'intero diario di viaggio impaginato in PDF oppure pubblicalo nella sezione Viaggi Condivisi della community.'
+        title: 'Esporta PDF & Condividi in Social > Viaggi',
+        description: 'Scarica l\'intero diario di viaggio impaginato in PDF oppure condividilo direttamente nella Bacheca Social e nella scheda "🗺️ Viaggi" dentro la sezione Social.'
       }
     ],
-    rollyTip: '💡 Consiglio di Rolly: Puoi sincronizzare il Diario di Bordo in tempo reale con il tuo Equipaggio Famiglia così tutti i compagni di viaggio possono aggiungere foto e spese!'
+    rollyTip: '💡 Consiglio di Rolly: Quando condividi un viaggio dal Diario, tutti i camperisti potranno ammirarlo nella sezione Social toccando la scheda "🗺️ Viaggi" in alto!'
+  },
+  community: {
+    key: 'community',
+    badge: '👥 Social & Community',
+    title: 'Social, Forum, Chat, Sfide & Viaggi Condivisi',
+    subtitle: 'Tutto il mondo social dei camperisti riunito in un\'unica barra a 6 schede in alto.',
+    features: [
+      {
+        icon: '📷',
+        title: 'Social Feed (Foto, Video & Pensieri)',
+        description: 'Pubblica scatti dei tuoi viaggi, foto in diretta dalla fotocamera, posizione GPS e hashtag per interagire con gli altri equipaggi.'
+      },
+      {
+        icon: '🔥',
+        title: 'Forum per Categorie & Chat Live',
+        description: 'Passa a "Forum" per le discussioni tematiche (Generale, Sosta, Meteo, Incontri) oppure a "Chat" per scrivere in tempo reale.'
+      },
+      {
+        icon: '🏆',
+        title: 'Sfide, Concorsi & Badge (Integrato qui!)',
+        description: 'Tocca "🏆 Sfide" nella barra in alto per partecipare ai concorsi fotografici, votare le foto della community, accumulare punti XP e sbloccare i badge.'
+      },
+      {
+        icon: '🗺️',
+        title: 'Viaggi Condivisi (Integrato qui!)',
+        description: 'Tocca "🗺️ Viaggi" nella barra in alto per esplorare i diari di bordo e gli itinerari reali condivisi dagli altri camperisti.'
+      },
+      {
+        icon: '🛑',
+        title: 'Canale Emergenze SOS',
+        description: 'Tocca "🛑 SOS" per chiedere o offrire supporto rapido tra camperisti nelle vicinanze in caso di guasto o difficoltà.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: "Sfide & Badge" e "Viaggi Condivisi" sono ora integrati direttamente qui nella barra in alto della sezione Social, senza occupare spazio extra!'
+  },
+  challenges: {
+    key: 'challenges',
+    badge: '🏆 Social > Sfide',
+    title: 'Sfide, Concorsi & Badge Camperisti',
+    subtitle: 'Integrato nella barra superiore della sezione Social: concorsi fotografici, punti XP e badge.',
+    features: [
+      {
+        icon: '📸',
+        title: 'Concorsi Fotografici Sincronizzati col Social',
+        description: 'Partecipa alle sfide fotografiche caricando i tuoi scatti migliori: ogni foto viene pubblicata anche nel Social Feed e votata dalla community.'
+      },
+      {
+        icon: '📍',
+        title: 'Contributi Soste & Punti Esperienza (XP)',
+        description: 'Segnala nuove aree sosta sulla mappa o partecipa alle sfide attive per guadagnare punti XP e salire di livello.'
+      },
+      {
+        icon: '👑',
+        title: 'Classifica & Bacheca Badge',
+        description: 'Sfoglia le 3 sotto-schede (Sfide & Concorsi, Classifica, I Tuoi Badge) per vedere la tua posizione e i riconoscimenti sbloccati.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Puoi accedere a Sfide, Concorsi & Badge in qualsiasi momento entrando in "Social" dalla barra in basso e toccando "🏆 Sfide" in alto!'
+  },
+  shared_trips: {
+    key: 'shared_trips',
+    badge: '🗺️ Social > Viaggi',
+    title: 'Viaggi Condivisi della Community',
+    subtitle: 'Integrato nella barra superiore della sezione Social: esplora i diari di bordo condivisi dai camperisti.',
+    features: [
+      {
+        icon: '🗺️',
+        title: 'Itinerari Reali della Community',
+        description: 'Sfoglia i viaggi pubblicati dagli altri equipaggi completi di tappe, date, chilometraggi e foto.'
+      },
+      {
+        icon: '📖',
+        title: 'Visualizza Diario Completo',
+        description: 'Tocca "Visualizza Diario 📖" su qualsiasi viaggio per aprire il racconto, le tappe e la mappa dell\'itinerario.'
+      },
+      {
+        icon: '🚀',
+        title: 'Condividi o Gestisci i Tuoi Viaggi',
+        description: 'Dal tuo Diario di Bordo puoi pubblicare i tuoi viaggi in questa sezione e modificare o rimuovere la condivisione quando vuoi.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Trovi i Viaggi Condivisi direttamente nella sezione "Social" toccando la scheda "🗺️ Viaggi" nella barra in alto!'
   },
   tools_hub: {
     key: 'tools_hub',
     badge: '🧰 Strumenti di Bordo',
     title: 'Pannello Strumenti & Configurazione Camper',
-    subtitle: 'Tutti gli strumenti essenziali selezionati per la gestione del mezzo, il viaggio e la sosta.',
+    subtitle: 'Gli strumenti essenziali e pratici per la gestione del mezzo, la partenza, la rotta e la sosta.',
     features: [
       {
         icon: '🛡️',
@@ -97,26 +179,26 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       },
       {
         icon: '📊',
-        title: 'Risorse di Bordo',
-        description: 'Carta Carburante Sincronizzata per consumi km/L, Scadenziere manutenzioni (bollo, assicurazione, revisione) e Registro lavori fatti.'
+        title: 'Risorse di Bordo & Manutenzioni',
+        description: 'Carta Carburante Sincronizzata per calcolare i consumi km/L, Scadenziere (bollo, assicurazione, revisione) e Registro lavori fatti.'
       },
       {
         icon: '🗺️',
-        title: 'Rotta & Esplorazione',
+        title: 'Rotta, Soste Preferite & Eventi Camper',
         description: 'Generatore Itinerari AI Rolly, Soste & Aree Preferite ed Eventi Camper con sagre, feste e locandine ufficiali.'
       },
       {
         icon: '🏕️',
-        title: 'Vita in Piazzola & Emergenza',
+        title: 'Vita in Piazzola & SOS GPS',
         description: 'Livella Digitale Camper con calcolo cunei e Generatore Messaggio SOS Istantaneo con coordinate GPS esatte.'
       },
       {
-        icon: '👥',
-        title: 'Community & Impostazioni Mezzo',
-        description: 'Bacheca & Chat Locale, Sfide & Badge, Viaggi Condivisi, scheda Il Mio Camper (misure e info) e Mappe Offline.'
+        icon: '⚙️',
+        title: 'Il Mio Camper, Mappe Offline & Impostazioni',
+        description: 'Scheda Il Mio Camper (misure e info per il navigatore sagomato), Mappe Cartografiche Offline, Profilo e Impostazioni Generali.'
       }
     ],
-    rollyTip: '💡 Consiglio di Rolly: Dalle Impostazioni Generali puoi scegliere quali moduli mostrare o nascondere per personalizzare il tuo pannello Strumenti!'
+    rollyTip: '💡 Consiglio di Rolly: Bacheca, Forum, Chat Live, Sfide e Viaggi Condivisi sono ora tutti riuniti nella sezione "Social" sulla barra in basso!'
   },
   work_log: {
     key: 'work_log',
@@ -257,30 +339,6 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
     ],
     rollyTip: '💡 Consiglio di Rolly: Imposta il preavviso scadenze nelle Impostazioni Generali (7, 15 o 30 giorni prima) per ricevere sempre il promemoria in tempo!'
   },
-  community: {
-    key: 'community',
-    badge: '💬 Community',
-    title: 'Bacheca, Chat Locale & Forum Camperisti',
-    subtitle: 'Parla con altri equipaggi, scambia consigli di viaggio e condividi foto ed esperienze.',
-    features: [
-      {
-        icon: '📱',
-        title: 'Bacheca Social & Foto',
-        description: 'Pubblica post, foto dei tuoi viaggi e consigli, e interagisci con i contenuti degli altri camperisti.'
-      },
-      {
-        icon: '💬',
-        title: 'Forum per Categorie & Chat',
-        description: 'Partecipa alle discussioni su Soste, Meteo, Incontri, Meccanica/SOS e scrivi nella chat della community.'
-      },
-      {
-        icon: '🏆',
-        title: 'Accesso a Sfide & Badge',
-        description: 'Passa rapidamente ai concorsi fotografici e accumula punti XP aiutando gli altri equipaggi.'
-      }
-    ],
-    rollyTip: '💡 Consiglio di Rolly: Usa la categoria Meccanica/SOS per chiedere un consiglio rapido ad altri camperisti esperti!'
-  },
   favorites: {
     key: 'favorites',
     badge: '❤️ Soste Preferite',
@@ -323,30 +381,6 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Lubrificare periodicamente le guarnizioni di oblò e finestre con spray al silicone le mantiene morbide e a tenuta stagna!'
-  },
-  challenges: {
-    key: 'challenges',
-    badge: '🏆 Sfide & Concorsi',
-    title: 'Sfide, Concorsi & Badge Camperisti',
-    subtitle: 'Partecipa ai concorsi fotografici, contribuisci alle soste e sblocca i badge della community.',
-    features: [
-      {
-        icon: '📸',
-        title: 'Concorsi Fotografici',
-        description: 'Condividi i tuoi scatti migliori in camper (vista mare, tramonti, montagna e borghi) e vota le foto della community.'
-      },
-      {
-        icon: '📍',
-        title: 'Contributi & Nuove Soste',
-        description: 'Segnala nuove aree sosta o aggiornamenti utili per guadagnare punti esperienza (XP).'
-      },
-      {
-        icon: '👑',
-        title: 'Classifica & Badge Esclusivi',
-        description: 'Sali di livello nella classifica camperisti e colleziona i badge sul tuo profilo.'
-      }
-    ],
-    rollyTip: '💡 Consiglio di Rolly: Ogni recensione o nuova area sosta segnalata rende il viaggio più semplice e sicuro per tutta la community!'
   },
   dimensions: {
     key: 'dimensions',
@@ -468,35 +502,16 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
     ],
     rollyTip: '💡 Consiglio di Rolly: Spunta "Pieno Completo" quando riempi il serbatoio fino allo scatto della pompa per ottenere il calcolo km/L più accurato!'
   },
-  shared_trips: {
-    key: 'shared_trips',
-    badge: '🗺️ Viaggi Condivisi',
-    title: 'Viaggi Condivisi della Community',
-    subtitle: 'Esplora i diari di bordo e gli itinerari reali condivisi dagli altri camperisti.',
-    features: [
-      {
-        icon: '👥',
-        title: 'Itinerari Reali della Community',
-        description: 'Sfoglia i viaggi pubblicati dagli altri equipaggi completi di tappe, chilometraggi, giorni e foto.'
-      },
-      {
-        icon: '📖',
-        title: 'Dettagli Tappe & Racconti',
-        description: 'Apri ogni viaggio per leggere il diario completo, vedere il percorso sulla mappa e prendere spunto per la tua prossima meta.'
-      }
-    ],
-    rollyTip: '💡 Consiglio di Rolly: Quando completi un bel viaggio nel tuo Diario di Bordo, condividilo per ispirare gli altri camperisti della community!'
-  },
   profile: {
     key: 'profile',
     badge: '👤 Profilo Utente',
     title: 'Profilo Utente & Nickname Social',
-    subtitle: 'Gestisci i tuoi dati personali, il nickname pubblico e la foto profilo per la community.',
+    subtitle: 'Gestisci i tuoi dati personali, il nickname pubblico e la foto profilo per la sezione Social.',
     features: [
       {
         icon: '📸',
         title: 'Foto Profilo & Avatar',
-        description: 'Carica e ritaglia la tua foto profilo o quella del tuo camper per farti riconoscere in Bacheca e nei Viaggi Condivisi.'
+        description: 'Carica e ritaglia la tua foto profilo o quella del tuo camper per farti riconoscere in Social, Forum, Chat, Sfide e Viaggi Condivisi.'
       },
       {
         icon: '🏷️',
@@ -515,10 +530,114 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       {
         icon: '👁️',
         title: 'Attiva o Nascondi Singoli Moduli',
-        description: 'Abilita solo gli strumenti che usi davvero in viaggio (Checklist, Dispensa, Carta Carburante, Eventi, Livella, SOS, ecc.).'
+        description: 'Abilita solo gli strumenti che usi davvero in viaggio (Checklist, Dispensa, Carta Carburante, Eventi, Livella, SOS GPS, ecc.).'
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Puoi riattivare qualsiasi modulo in ogni momento con un semplice interruttore!'
+  },
+  install: {
+    key: 'install',
+    badge: '📲 Installa App',
+    title: 'Installa ViaCamper sul tuo Telefono o PC',
+    subtitle: 'Aggiungi l\'icona di ViaCamper alla schermata Home per usarla a schermo intero e anche offline.',
+    features: [
+      {
+        icon: '📱',
+        title: 'Su Android & PC (Installazione Diretta)',
+        description: 'Tocca il pulsante "Scarica ed Installa Ora" oppure apri il menu del browser (⋮) e seleziona "Installa applicazione".'
+      },
+      {
+        icon: '🍏',
+        title: 'Su iPhone & iPad (Safari)',
+        description: 'Apri ViaCamper in Safari, tocca il pulsante Condividi in basso e scegli "Aggiungi alla schermata Home".'
+      },
+      {
+        icon: '📴',
+        title: 'Avvio Rapido & Supporto Offline',
+        description: 'Una volta installata, l\'app si apre a tutto schermo senza barre del browser e mantiene disponibili diario, checklist e soste salvate.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Dopo aver installato l\'app sulla Home, scarica anche le regioni che visiterai da "Mappe Cartografiche Offline" in Strumenti!'
+  },
+  feedback: {
+    key: 'feedback',
+    badge: '💬 Supporto & Idee',
+    title: 'Suggerimenti, Segnalazioni & Risposte',
+    subtitle: 'Invia consigli, segnala anomalie con screenshot e leggi le risposte dell\'amministratore.',
+    features: [
+      {
+        icon: '💡',
+        title: 'Invia un Suggerimento o Segnalazione',
+        description: 'Scegli la categoria (Suggerimento, Bug/Anomalia o Altro), descrivi la tua idea e allega eventualmente uno screenshot.'
+      },
+      {
+        icon: '🛡️',
+        title: 'Bacheca Risposte in Tempo Reale',
+        description: 'Consulta nello stesso pannello lo stato delle tue segnalazioni e le risposte dirette dell\'amministratore di ViaCamper.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: I suggerimenti dei camperisti come te ci aiutano a rendere ViaCamper sempre più pratica, veloce ed essenziale!'
+  },
+  copyright: {
+    key: 'copyright',
+    badge: '⚖️ Note Legali',
+    title: 'Termini d\'Uso, Privacy & Tutela D\'Autore',
+    subtitle: 'Informazioni su licenza d\'uso, protezione dei dati personali e regole di sicurezza alla guida.',
+    features: [
+      {
+        icon: '🔒',
+        title: 'Privacy & Protezione Dati',
+        description: 'I tuoi diari, le spese e le impostazioni del mezzo sono protetti e sincronizzati in sicurezza.'
+      },
+      {
+        icon: '🚐',
+        title: 'Uso Responsabile alla Guida',
+        description: 'Indicazioni importanti sulla verifica della segnaletica stradale reale durante l\'uso del navigatore sagomato.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Imposta sempre la destinazione del navigatore a camper fermo prima di metterti in marcia!'
+  },
+  login: {
+    key: 'login',
+    badge: '🔑 Accesso Account',
+    title: 'Accedi al tuo Account ViaCamper',
+    subtitle: 'Entra con la tua email per sincronizzare diario, soste preferite, equipaggio e profilo social.',
+    features: [
+      {
+        icon: '☁️',
+        title: 'Sincronizzazione Automatica in Cloud',
+        description: 'Accedendo ritrovi subito i tuoi viaggi del Diario di Bordo, la Carta Carburante, le Soste Preferite e i tuoi Badge.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Se non hai ancora un account, tocca "Registrati" per crearlo in pochi secondi!'
+  },
+  registration: {
+    key: 'registration',
+    badge: '✨ Nuovo Account',
+    title: 'Registrazione Account ViaCamper',
+    subtitle: 'Crea il tuo profilo camperista per salvare i dati in cloud e partecipare alla sezione Social.',
+    features: [
+      {
+        icon: '🚐',
+        title: 'Profilo Camperista & Cloud',
+        description: 'Scegli il tuo nickname per interagire in Social, Forum, Chat, Sfide e Viaggi Condivisi e salvare i tuoi dati in cloud.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Scegli un nickname facile da ricordare così gli altri equipaggi potranno taggarti nella community!'
+  },
+  delete_account: {
+    key: 'delete_account',
+    badge: '🗑️ Gestione Account',
+    title: 'Cancellazione Definitiva Account',
+    subtitle: 'Procedura di rimozione permanente del profilo e dei dati associati.',
+    features: [
+      {
+        icon: '⚠️',
+        title: 'Rimozione Completa Dati',
+        description: 'Elimina in modo definitivo il tuo account e i dati personali salvati sui server di ViaCamper.'
+      }
+    ],
+    rollyTip: '💡 Consiglio di Rolly: Prima di eliminare l\'account, ricorda che puoi esportare i tuoi Diari di Bordo in PDF per conservarne una copia!'
   },
   general: {
     key: 'general',
@@ -538,8 +657,8 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       },
       {
         icon: '👁️',
-        title: 'Moduli Visibili & Aspetto',
-        description: 'Scegli il tema chiaro/scuro, la dimensione del testo e quali strumenti mostrare nella scheda Strumenti.'
+        title: 'Moduli Visibili in Strumenti & Aspetto',
+        description: 'Scegli il tema chiaro/scuro, la dimensione del testo e quali strumenti mostrare o nascondere nella scheda Strumenti.'
       },
       {
         icon: '💾',

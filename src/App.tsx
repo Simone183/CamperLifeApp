@@ -1229,6 +1229,10 @@ export default function App() {
     | "delete_account"
   >("hub");
 
+  const [communityViewMode, setCommunityViewMode] = React.useState<
+    "social" | "feed" | "chat" | "challenges" | "trips" | "sos"
+  >("social");
+
 
   // Tracking unread community messages for notification badge on main page & header
   const [lastSeenCommunityCount, setLastSeenCommunityCount] = React.useState<number>(() => {
@@ -5953,7 +5957,7 @@ out center;`;
                       {appLang === 'en' ? 'Camper Management & Setup' : appLang === 'fr' ? 'Gestion & Configuration' : 'Gestione & Configurazione Camper'}
                     </h2>
                     <p className="text-xs text-white/80 max-w-xl leading-relaxed">
-                      {appLang === 'en' ? 'Monitor maintenance, manage dimensions for the smart navigator, pre-departure checks and community.' : appLang === 'fr' ? 'Gérez vos ressources, navigation, sécurité et communauté.' : 'Monitora lo stato di manutenzione, gestisci le dimensioni per il navigatore sagomato, controlla la sicurezza pre-partenza, scopri sagre con locandina ufficiale e rimani in contatto con la community.'}
+                      {appLang === 'en' ? 'Monitor maintenance, manage dimensions for the smart navigator, pre-departure checks and pitch tools.' : appLang === 'fr' ? 'Gérez vos ressources, navigation, sécurité et outils de halte.' : 'Monitora lo stato di manutenzione, gestisci le dimensioni per il navigatore sagomato, controlla la sicurezza pre-partenza, scopri sagre con locandina ufficiale e usa gli strumenti per la vita in piazzola.'}
                     </p>
                   </div>
                   <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
@@ -6033,23 +6037,6 @@ out center;`;
                     }`}
                   >
                     {appLang === 'en' ? '🏕️ Camping Life' : appLang === 'fr' ? '🏕️ Vie en Camping' : '🏕️ Vita in Piazzola'}
-                  </button>
-                  <button
-                    onClick={() => setToolsCategory("community")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
-                      toolsCategory === "community"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
-                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    <span>{appLang === 'en' ? '👥 Community' : appLang === 'fr' ? '👥 Communauté' : '👥 Community'}</span>
-                    {unreadCommunityCount > 0 && (
-                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
-                        toolsCategory === "community" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-800"
-                      }`}>
-                        {unreadCommunityCount}
-                      </span>
-                    )}
                   </button>
                   <button
                     onClick={() => setToolsCategory("settings")}
@@ -6438,110 +6425,6 @@ out center;`;
                       </div>
                     )}
 
-                  {/* Category 4: Community */}
-                  {(toolsCategory === "all" || toolsCategory === "community") &&
-                    (dashboardSettings.showCommunity ||
-                      dashboardSettings.showSharedTrips) && (
-                      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/50 dark:border-slate-700 shadow-xs overflow-hidden mb-6">
-                        <div className="bg-slate-50/70 dark:bg-slate-700/50 border-b border-stone-100 dark:border-slate-700 px-4.5 py-2.5 flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-[#3E4A35]/80 dark:text-slate-300 tracking-widest flex items-center gap-1.5">
-                            👤 Community
-                          </span>
-                        </div>
-                        <div className="divide-y divide-slate-100">
-                          {/* 11. Bacheca e Chat Community */}
-                          {dashboardSettings.showCommunity && (
-                            <div
-                              onClick={() => setSettingsSubTab("community")}
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800 group-hover:scale-105 transition-transform">
-                                  <MessageSquare className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
-                                    <span>Bacheca & Chat Locale</span>
-                                    {unreadCommunityCount > 0 && (
-                                      <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
-                                        {unreadCommunityCount}
-                                      </span>
-                                    )}
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Parla con altri equipaggi vicini, ricevi
-                                    pareri e condividi curiosità locali.
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                {unreadCommunityCount > 0 ? (
-                                  <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-full font-black text-[10px] animate-pulse">
-                                    {unreadCommunityCount} {unreadCommunityCount === 1 ? 'nuovo' : 'nuovi'}
-                                  </span>
-                                ) : (
-                                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-extrabold text-[10px] hidden sm:inline-block">
-                                    Disponibile
-                                  </span>
-                                )}
-                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Sfide, Concorsi & Badge */}
-                          {dashboardSettings.showCommunity && (
-                            <div
-                              onClick={() => setSettingsSubTab("challenges")}
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 group-hover:scale-105 transition-transform">
-                                  <Trophy className="w-5 h-5 text-amber-600" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors flex items-center gap-2">
-                                    <span>Sfide, Concorsi &amp; Badge</span>
-                                    <span className="bg-amber-400 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-full uppercase">Nuovo</span>
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Partecipa ai concorsi foto vista mare, segnala nuove soste e vinci badge e premi!
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5 shrink-0">
-                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Viaggi Condivisi */}
-                          {dashboardSettings.showSharedTrips && (
-                            <div
-                              onClick={() => setSettingsSubTab("shared_trips")}
-                              className="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer transition-all group active:scale-[0.995]"
-                            >
-                              <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
-                                <div className="p-2.5 rounded-xl shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-100 group-hover:scale-105 transition-transform">
-                                  <Share2 className="w-5 h-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="font-extrabold text-[#3E4A35]/90 text-sm tracking-tight leading-tight group-hover:text-[#3E4A35] transition-colors">
-                                    Viaggi Condivisi
-                                  </h4>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                                    Esplora gli itinerari condivisi dalla
-                                    community.
-                                  </p>
-                                </div>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#3E4A35] group-hover:translate-x-0.5 transition-all" />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
                   {/* Category 5: Impostazioni */}
                   {(toolsCategory === "all" ||
                     toolsCategory === "settings") && (
@@ -6846,59 +6729,72 @@ out center;`;
                   </div>
                 )}
                 {currentUser && hasAcceptedTerms && (
-                  <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-3 shadow-xs">
-                    <button
-                      onClick={() => setSettingsSubTab("hub")}
-                      className="flex items-center gap-2 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-xs transition-all py-2 px-3.5 bg-slate-50 rounded-xl border border-slate-200/60 cursor-pointer select-none active:scale-95"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
-                      <span>Torna a Strumenti</span>
-                    </button>
+                  <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-2.5 sm:p-3 shadow-xs">
+                    {settingsSubTab === "community" ? (
+                      <div className="flex items-center gap-2 px-2 py-1">
+                        <span className="text-xs sm:text-sm font-black text-[#3E4A35] tracking-tight">
+                          {communityViewMode === "challenges"
+                            ? "🏆 Sfide, Concorsi & Badge"
+                            : communityViewMode === "trips"
+                            ? "🗺️ Viaggi Condivisi Community"
+                            : "👥 Social, Sfide & Viaggi Community"}
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setSettingsSubTab("hub")}
+                        className="flex items-center gap-2 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-xs transition-all py-2 px-3.5 bg-slate-50 rounded-xl border border-slate-200/60 cursor-pointer select-none active:scale-95"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
+                        <span>Torna a Strumenti</span>
+                      </button>
+                    )}
 
                     {/* Small heading telling where we are & Rolly Guide button */}
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2 pr-2 hidden xs:flex">
-                        <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 tracking-wider">
-                          Strumenti &gt;{" "}
-                          {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
-                          {settingsSubTab === "checklist" &&
-                            "Checklist Pre-partenza"}
-                          {settingsSubTab === "deadlines" && "Scadenzario di Bordo"}
-                          {settingsSubTab === "community" && "Bacheca & Chat"}
-                          {settingsSubTab === "challenges" && "Sfide & Concorsi Camperisti"}
-                          {settingsSubTab === "registration" && "Registrazione"}
-                          {settingsSubTab === "login" && "Login"}
-                          {settingsSubTab === "install" && "Installazione"}
-                          {settingsSubTab === "feedback" &&
-                            "Segnalazione & Opinione"}
-                          {settingsSubTab === "ai_itinerary" &&
-                            "Generatore Itinerari AI Rolly"}
-                          {settingsSubTab === "bubble_level" &&
-                            "Livella Digitale Camper"}
-                          {settingsSubTab === "pantry_shopping" &&
-                            "Cambusa & Spesa Intelligente"}
-                          {settingsSubTab === "maintenance_log" &&
-                            "Registro Manutenzione Cellula"}
-                          {settingsSubTab === "work_log" && "Registro Lavori"}
-                          {settingsSubTab === "favorites" && "Soste Preferite"}
-                          {settingsSubTab === "fuel_card" && "Carta Carburante & Consumi"}
-                          {settingsSubTab === "copyright" &&
-                            "Tutela & Licenza D’Autore"}
-                          {settingsSubTab === "camper_security" &&
-                            "Generatore Messaggio SOS Istantaneo"}
-                          {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
-                          {settingsSubTab === "offline_maps" &&
-                            "Mappe Cartografiche Offline"}
-                          {settingsSubTab === "shared_trips" && "Viaggi Condivisi"}
-                          {settingsSubTab === "dashboard_settings" &&
-                            "Personalizzazione Dashboard"}
-                          {settingsSubTab === "general" &&
-                            "Impostazioni Generali"}
-                          {settingsSubTab === "profile" &&
-                            "Profilo Utente"}
-                          {settingsSubTab === "delete_account" &&
-                            "Cancellazione Definitiva Account"}
-                        </span>
+                        {settingsSubTab !== "community" && (
+                          <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 tracking-wider">
+                            Strumenti &gt;{" "}
+                            {settingsSubTab === "dimensions" && "Il Mio Camper, misure e info"}
+                            {settingsSubTab === "checklist" &&
+                              "Checklist Pre-partenza"}
+                            {settingsSubTab === "deadlines" && "Scadenzario di Bordo"}
+                            {settingsSubTab === "challenges" && "Sfide & Concorsi Camperisti"}
+                            {settingsSubTab === "registration" && "Registrazione"}
+                            {settingsSubTab === "login" && "Login"}
+                            {settingsSubTab === "install" && "Installazione"}
+                            {settingsSubTab === "feedback" &&
+                              "Segnalazione & Opinione"}
+                            {settingsSubTab === "ai_itinerary" &&
+                              "Generatore Itinerari AI Rolly"}
+                            {settingsSubTab === "bubble_level" &&
+                              "Livella Digitale Camper"}
+                            {settingsSubTab === "pantry_shopping" &&
+                              "Cambusa & Spesa Intelligente"}
+                            {settingsSubTab === "maintenance_log" &&
+                              "Registro Manutenzione Cellula"}
+                            {settingsSubTab === "work_log" && "Registro Lavori"}
+                            {settingsSubTab === "favorites" && "Soste Preferite"}
+                            {settingsSubTab === "fuel_card" && "Carta Carburante & Consumi"}
+                            {settingsSubTab === "copyright" &&
+                              "Tutela & Licenza D’Autore"}
+                            {settingsSubTab === "camper_security" &&
+                              "Generatore Messaggio SOS Istantaneo"}
+                            {settingsSubTab === "events" && "Feste, Sagre ed Eventi"}
+                            {settingsSubTab === "offline_maps" &&
+                              "Mappe Cartografiche Offline"}
+                            {settingsSubTab === "shared_trips" && "Viaggi Condivisi"}
+                            {settingsSubTab === "dashboard_settings" &&
+                              "Personalizzazione Dashboard"}
+                            {settingsSubTab === "general" &&
+                              "Impostazioni Generali"}
+                            {settingsSubTab === "profile" &&
+                              "Profilo Utente"}
+                            {settingsSubTab === "delete_account" &&
+                              "Cancellazione Definitiva Account"}
+                          </span>
+                        )}
                         {settingsSubTab === "checklist" && incompleteChecklistCount > 0 && (
                           <span className="bg-[#E56B38] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
                             {incompleteChecklistCount} da fare
@@ -6920,7 +6816,27 @@ out center;`;
                           </span>
                         )}
                       </div>
-                      <RollyOnboardingGuide sectionKey={settingsSubTab} key={settingsSubTab} />
+                      <RollyOnboardingGuide
+                        sectionKey={
+                          settingsSubTab === "community"
+                            ? communityViewMode === "challenges"
+                              ? "challenges"
+                              : communityViewMode === "trips"
+                              ? "shared_trips"
+                              : "community"
+                            : settingsSubTab
+                        }
+                        autoShow={
+                          settingsSubTab === "community"
+                            ? communityViewMode !== "challenges" && communityViewMode !== "trips"
+                            : true
+                        }
+                        key={
+                          settingsSubTab === "community"
+                            ? `community_${communityViewMode}`
+                            : settingsSubTab
+                        }
+                      />
                     </div>
                   </div>
                 )}
@@ -7029,6 +6945,11 @@ out center;`;
                       challengeSubmissions={challengeSubmissions}
                       onChallengeSubmissionsChange={saveCommunityChallengeSubmissions}
                       challenges={challenges}
+                      onChallengesChange={saveCommunityChallenges}
+                      onOpenAddPlace={() => setActiveTab("map_nav")}
+                      trips={trips}
+                      setTrips={setTrips}
+                      onViewModeChange={setCommunityViewMode}
                       onViewTrip={(tripId) => {
                         setSelectedDiaryTripId(tripId);
                         setDiarySubTab("details");

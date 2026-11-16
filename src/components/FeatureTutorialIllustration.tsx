@@ -22,7 +22,7 @@ const photoDataMap: Record<string, PhotoStepData> = {
     badge: 'VIAGGI & LIBERTÀ',
     badgeIcon: <Compass className="w-3.5 h-3.5 text-emerald-400 animate-spin" style={{ animationDuration: '16s' }} />,
     tag: 'Italia & Europa',
-    highlights: ['10.000+ Soste', 'Navigatore Sagomato', 'Community']
+    highlights: ['10.000+ Soste', 'Navigatore Sagomato', 'Social, Sfide & Viaggi']
   },
   map: {
     imageUrl: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=900&q=85',
@@ -35,10 +35,10 @@ const photoDataMap: Record<string, PhotoStepData> = {
   diary: {
     imageUrl: 'https://images.unsplash.com/photo-1527786356703-4b100091cd2c?auto=format&fit=crop&w=900&q=85',
     fallbackUrl: 'https://images.unsplash.com/photo-1510312305653-8ed496efae75?auto=format&fit=crop&w=900&q=85',
-    badge: 'DIARIO DI BORDO',
+    badge: 'DIARIO & SOCIAL',
     badgeIcon: <BookOpen className="w-3.5 h-3.5 text-amber-400" />,
-    tag: 'I Tuoi Ricordi',
-    highlights: ['Traccia Km & Spese', 'Foto Tappe', 'Esporta PDF']
+    tag: 'Ricordi & Community',
+    highlights: ['Diario & Spese', 'Sfide & Badge', 'Viaggi Condivisi']
   },
   tools: {
     imageUrl: 'https://images.unsplash.com/photo-1516939884455-1445c8652f83?auto=format&fit=crop&w=900&q=85',

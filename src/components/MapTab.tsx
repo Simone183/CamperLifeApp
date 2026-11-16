@@ -749,8 +749,13 @@ export default function MapTab({
   }, []);
 
   // Periodic speech bubble for Rolly on the map with 5-min inactivity reset on map interaction
-  const [rollyBubbleText, setRollyBubbleText] = React.useState<string | null>(null);
-  const [showRollyBubble, setShowRollyBubble] = React.useState<boolean>(false);
+  const INITIAL_ROLLY_BUBBLE_MESSAGE =
+    "Apri *Filtri ed Elenco* per selezionare le soste o ciò che vuoi visualizzare sulla mappa";
+  const [rollyBubbleText, setRollyBubbleText] = React.useState<string | null>(
+    INITIAL_ROLLY_BUBBLE_MESSAGE,
+  );
+  const [showRollyBubble, setShowRollyBubble] = React.useState<boolean>(true);
+  const hasShownFirstRollyBubbleRef = React.useRef<boolean>(false);
   const rollyTimerRef = React.useRef<any>(null);
   const rollyHideTimerRef = React.useRef<any>(null);
   const rollySnoozeUntilRef = React.useRef<number>(0);
@@ -762,6 +767,39 @@ export default function MapTab({
   const rollyDragStartXRef = React.useRef<number>(0);
   const rollyDragStartYRef = React.useRef<number>(0);
   const rollyHasDraggedRef = React.useRef<boolean>(false);
+
+  const showRandomRollyPhrase = React.useCallback((forceInitial = false) => {
+    // If currently snoozed, do not display
+    if (!forceInitial && Date.now() < rollySnoozeUntilRef.current) return;
+
+    if (forceInitial || !hasShownFirstRollyBubbleRef.current) {
+      hasShownFirstRollyBubbleRef.current = true;
+      setRollyBubbleText(INITIAL_ROLLY_BUBBLE_MESSAGE);
+    } else {
+      const phrases = [
+        INITIAL_ROLLY_BUBBLE_MESSAGE,
+        "🛏️ Dove c'è posto stasera? Ti cerco le migliori soste!",
+        "Ciao! Dove vuoi che ti porti oggi? 🚐✨",
+        "Ti va di pianificare un itinerario con me? 🗺️",
+        "Dimmi la tua meta e ti organizzo il viaggio! 🚀",
+        "Trovo le migliori aree sosta per il tuo camper! ⛺",
+        "Sostiamo vista mare o in montagna oggi? 🌊⛰️",
+        "Vuoi scoprire posti fantastici lungo la rotta? 🌲🧭",
+      ];
+      const randomIdx = Math.floor(Math.random() * phrases.length);
+      setRollyBubbleText(phrases[randomIdx]);
+    }
+
+    setRollyDragX(0);
+    setIsRollyDragging(false);
+    setRollyDismissDirection(null);
+    setShowRollyBubble(true);
+
+    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
+    rollyHideTimerRef.current = setTimeout(() => {
+      setShowRollyBubble(false);
+    }, 10000);
+  }, []);
 
   const dismissRollyBubbleWithSnooze = React.useCallback((direction: 'left' | 'right' = 'right', snoozeDurationMs = 20000) => {
     setRollyDismissDirection(direction);
@@ -783,33 +821,7 @@ export default function MapTab({
         showRandomRollyPhrase();
       }
     }, snoozeDurationMs);
-  }, []);
-
-  const showRandomRollyPhrase = React.useCallback(() => {
-    // If currently snoozed, do not display
-    if (Date.now() < rollySnoozeUntilRef.current) return;
-
-    const phrases = [
-      "🛏️ Dove c'è posto stasera? Ti cerco le migliori soste!",
-      "Ciao! Dove vuoi che ti porti oggi? 🚐✨",
-      "Ti va di pianificare un itinerario con me? 🗺️",
-      "Dimmi la tua meta e ti organizzo il viaggio! 🚀",
-      "Trovo le migliori aree sosta per il tuo camper! ⛺",
-      "Sostiamo vista mare o in montagna oggi? 🌊⛰️",
-      "Vuoi scoprire posti fantastici lungo la rotta? 🌲🧭",
-    ];
-    const randomIdx = Math.floor(Math.random() * phrases.length);
-    setRollyBubbleText(phrases[randomIdx]);
-    setRollyDragX(0);
-    setIsRollyDragging(false);
-    setRollyDismissDirection(null);
-    setShowRollyBubble(true);
-
-    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
-    rollyHideTimerRef.current = setTimeout(() => {
-      setShowRollyBubble(false);
-    }, 7000);
-  }, []);
+  }, [showRandomRollyPhrase]);
 
   // Called whenever user interacts with or explores the map (clicks, drags, zooms)
   const handleMapUserActivity = React.useCallback(() => {
@@ -819,27 +831,25 @@ export default function MapTab({
     if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
     if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
 
-    if (!onNavigateToAI || !currentUser) return;
+    if (!onNavigateToAI) return;
 
     // Reset inactivity timer: show bubble only after 5 minutes (300,000 ms) of inactivity
     rollyTimerRef.current = setTimeout(() => {
       showRandomRollyPhrase();
     }, 300000);
-  }, [onNavigateToAI, currentUser, showRandomRollyPhrase]);
+  }, [onNavigateToAI, showRandomRollyPhrase]);
 
-  // Initial welcome message 3.5s after load if inactive
+  // Initial welcome message on app open: always show the Filtri ed Elenco prompt first
   React.useEffect(() => {
-    if (!onNavigateToAI || !currentUser) return;
+    if (!onNavigateToAI) return;
 
-    rollyTimerRef.current = setTimeout(() => {
-      showRandomRollyPhrase();
-    }, 3500);
+    showRandomRollyPhrase(true);
 
     return () => {
       if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
       if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
     };
-  }, [onNavigateToAI, currentUser, showRandomRollyPhrase]);
+  }, [onNavigateToAI, showRandomRollyPhrase]);
 
   // Tracks image error loads (so if /area_sosta.png etc. fails or is missing, we fallback)
   const [imageErrorUrls, setImageErrorUrls] = React.useState<
@@ -6670,6 +6680,10 @@ out center;`;
                       return;
                     }
                     setShowRollyBubble(false);
+                    if (rollyBubbleText?.includes("Filtri ed Elenco")) {
+                      setMobileView("list");
+                      return;
+                    }
                     if (!currentUser) {
                       window.dispatchEvent(
                         new CustomEvent("show-toast", {
@@ -6695,7 +6709,7 @@ out center;`;
                     transition: isRollyDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease',
                     touchAction: 'none',
                   }}
-                  className="absolute bottom-12 left-0 z-[1001] w-[210px] sm:w-[230px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-500 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-grab active:cursor-grabbing select-none"
+                  className="absolute bottom-12 left-0 z-[1001] w-[225px] sm:w-[245px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs font-semibold p-3 rounded-2xl shadow-xl border-2 border-emerald-500 animate-in fade-in slide-in-from-bottom-2 duration-300 flex items-start gap-2 cursor-grab active:cursor-grabbing select-none"
                   title="Trascina verso destra o sinistra per chiudere (silenzia 20s)"
                 >
                   {/* Coda a nuvoletta del fumetto rivolta verso l'icona di Rolly */}
@@ -6714,7 +6728,18 @@ out center;`;
                       </span>
                     </div>
                     <p className="text-[11.5px] text-slate-700 dark:text-slate-200 font-bold leading-snug">
-                      {rollyBubbleText}
+                      {rollyBubbleText.split(/(\*[^*]+\*)/g).map((part, idx) =>
+                        part.startsWith("*") && part.endsWith("*") ? (
+                          <strong
+                            key={idx}
+                            className="font-black text-emerald-700 dark:text-emerald-400 underline decoration-emerald-500/50"
+                          >
+                            {part.slice(1, -1)}
+                          </strong>
+                        ) : (
+                          <React.Fragment key={idx}>{part}</React.Fragment>
+                        ),
+                      )}
                     </p>
                   </div>
                   <button

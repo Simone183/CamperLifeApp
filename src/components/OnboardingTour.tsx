@@ -14,7 +14,7 @@ const steps: TourStep[] = [
   {
     title: "Benvenuto su ViaCamper!",
     subtitle: "Tutto per il tuo viaggio in camper",
-    content: "L'app pensata per i camperisti: trova aree sosta e campeggi, controlla i distributori carburante con prezzi aggiornati, scopri sagre con locandina ufficiale e tieni il tuo diario di bordo.",
+    content: "Trova aree sosta e campeggi, controlla i distributori carburante con prezzi aggiornati, scopri sagre con locandina ufficiale e partecipa a Social, Sfide e Viaggi Condivisi.",
     variant: "welcome"
   },
   {
@@ -24,15 +24,15 @@ const steps: TourStep[] = [
     variant: "map"
   },
   {
-    title: "Diario di Bordo & Ricordi",
-    subtitle: "Conserva per sempre ogni avventura",
-    content: "Registra ogni tappa, annota spese e rifornimenti, carica le foto dei tuoi posti del cuore ed esporta o condividi i tuoi viaggi con la community.",
+    title: "Diario di Bordo & Social Community",
+    subtitle: "Racconta, condividi e partecipa",
+    content: "Registra tappe, spese e foto nel Diario, poi entra nella sezione Social per bacheca, forum, chat live, Concorsi & Sfide fotografiche e Viaggi Condivisi della community.",
     variant: "diary"
   },
   {
-    title: "Strumenti, Eventi & Vita a Bordo",
+    title: "Strumenti Essenziali & Sagre",
     subtitle: "Solo ciò che serve davvero in camper",
-    content: "Usa la livella digitale con calcolo cunei, la checklist pre-partenza, la dispensa smart, gli itinerari AI di Rolly, gli Eventi Camper con locandina ufficiale e il generatore SOS GPS.",
+    content: "Usa la livella digitale con calcolo cunei, la checklist pre-partenza, la dispensa smart, la carta carburante km/L, gli Eventi Camper con locandina ufficiale e il generatore SOS GPS.",
     variant: "tools"
   }
 ];

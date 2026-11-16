@@ -814,8 +814,6 @@ export default function GeneralSettingsTab({
           { key: 'showEvents', label: 'Eventi', icon: CloudSun },
           { key: 'showOfflineMaps', label: 'Mappe Offline', icon: LayoutDashboard },
           { key: 'showDeadlines', label: 'Scadenziere', icon: LayoutDashboard },
-          { key: 'showCommunity', label: 'Bacheca & Chat Locale', icon: LayoutDashboard },
-          { key: 'showSharedTrips', label: 'Viaggi Condivisi', icon: LayoutDashboard },
           { key: 'showDimensions', label: 'Il Mio Camper, misure e info', icon: LayoutDashboard },
         ].map(({ key, label, icon: Icon }, index) => {
           const isChecked = dashboardSettings[key as keyof DashboardSettings];
