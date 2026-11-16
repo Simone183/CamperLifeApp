@@ -574,6 +574,19 @@ interface MapTabProps {
   isOnline?: boolean;
   onNavigateToFuelCard?: () => void;
   onNavigateToAI?: () => void;
+  onNavigateToSection?: (
+    target:
+      | "ai_itinerary"
+      | "diary"
+      | "community"
+      | "challenges"
+      | "shared_trips"
+      | "events"
+      | "checklist"
+      | "bubble_level"
+      | "fuel_card"
+      | "dimensions",
+  ) => void;
   hasActiveTrip?: boolean;
   onNavigateToExpenses?: () => void;
   onNavigateToMovementLog?: () => void;
@@ -680,6 +693,7 @@ export default function MapTab({
   isOnline = true,
   onNavigateToFuelCard,
   onNavigateToAI,
+  onNavigateToSection,
   hasActiveTrip = false,
   onNavigateToExpenses,
   onNavigateToMovementLog,
@@ -748,14 +762,58 @@ export default function MapTab({
     };
   }, []);
 
-  // Periodic speech bubble for Rolly on the map with 5-min inactivity reset on map interaction
-  const INITIAL_ROLLY_BUBBLE_MESSAGE =
-    "Apri *Filtri ed Elenco* per selezionare le soste o ciò che vuoi visualizzare sulla mappa";
+  // Periodic rotating speech bubble for Rolly on the map:
+  // 1st message on open is always the "Filtri ed Elenco" tip, then closes after 7s, re-opens after 8s with the next tip, and clicking any bubble opens the section it talks about.
+  const ROLLY_BUBBLE_ROTATION = React.useMemo(
+    () => [
+      {
+        text: "Apri *Filtri ed Elenco* per selezionare le soste o ciò che vuoi visualizzare sulla mappa",
+        target: "filters" as const,
+      },
+      {
+        text: "Ti va di pianificare un itinerario con me? Apri il *Generatore Itinerari AI*! 🗺️",
+        target: "ai_itinerary" as const,
+      },
+      {
+        text: "⛽ Vuoi risparmiare sul pieno? Attiva i *Distributori Carburante* con i prezzi aggiornati sulla mappa!",
+        target: "map_fuel" as const,
+      },
+      {
+        text: "🎪 Scopri feste e sagre con locandina ufficiale nella sezione *Eventi Camper*!",
+        target: "events" as const,
+      },
+      {
+        text: "📖 Registra tappe, foto e spese del tuo viaggio nel *Diario di Bordo*!",
+        target: "diary" as const,
+      },
+      {
+        text: "🏆 Partecipa ai concorsi fotografici in *Sfide & Badge* dentro la sezione *Social*!",
+        target: "challenges" as const,
+      },
+      {
+        text: "🗺️ Esplora gli itinerari degli altri camperisti in *Viaggi Condivisi* nella sezione *Social*!",
+        target: "shared_trips" as const,
+      },
+      {
+        text: "☑️ Prima di mettere in moto, controlla la *Checklist Pre-partenza* per viaggiare sicuro!",
+        target: "checklist" as const,
+      },
+      {
+        text: "⚖️ Sei arrivato in piazzola? Usa la *Livella Digitale* per mettere il camper in bolla!",
+        target: "bubble_level" as const,
+      },
+    ],
+    [],
+  );
+
   const [rollyBubbleText, setRollyBubbleText] = React.useState<string | null>(
-    INITIAL_ROLLY_BUBBLE_MESSAGE,
+    ROLLY_BUBBLE_ROTATION[0].text,
+  );
+  const [rollyBubbleTarget, setRollyBubbleTarget] = React.useState<string>(
+    ROLLY_BUBBLE_ROTATION[0].target,
   );
   const [showRollyBubble, setShowRollyBubble] = React.useState<boolean>(true);
-  const hasShownFirstRollyBubbleRef = React.useRef<boolean>(false);
+  const rollyRotationIndexRef = React.useRef<number>(0);
   const rollyTimerRef = React.useRef<any>(null);
   const rollyHideTimerRef = React.useRef<any>(null);
   const rollySnoozeUntilRef = React.useRef<number>(0);
@@ -768,40 +826,38 @@ export default function MapTab({
   const rollyDragStartYRef = React.useRef<number>(0);
   const rollyHasDraggedRef = React.useRef<boolean>(false);
 
-  const showRandomRollyPhrase = React.useCallback((forceInitial = false) => {
-    // If currently snoozed, do not display
-    if (!forceInitial && Date.now() < rollySnoozeUntilRef.current) return;
+  const showRandomRollyPhrase = React.useCallback(
+    (forceFirst = false) => {
+      if (!forceFirst && Date.now() < rollySnoozeUntilRef.current) return;
 
-    if (forceInitial || !hasShownFirstRollyBubbleRef.current) {
-      hasShownFirstRollyBubbleRef.current = true;
-      setRollyBubbleText(INITIAL_ROLLY_BUBBLE_MESSAGE);
-    } else {
-      const phrases = [
-        INITIAL_ROLLY_BUBBLE_MESSAGE,
-        "🛏️ Dove c'è posto stasera? Ti cerco le migliori soste!",
-        "Ciao! Dove vuoi che ti porti oggi? 🚐✨",
-        "Ti va di pianificare un itinerario con me? 🗺️",
-        "Dimmi la tua meta e ti organizzo il viaggio! 🚀",
-        "Trovo le migliori aree sosta per il tuo camper! ⛺",
-        "Sostiamo vista mare o in montagna oggi? 🌊⛰️",
-        "Vuoi scoprire posti fantastici lungo la rotta? 🌲🧭",
-      ];
-      const randomIdx = Math.floor(Math.random() * phrases.length);
-      setRollyBubbleText(phrases[randomIdx]);
-    }
+      if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
+      if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
 
-    setRollyDragX(0);
-    setIsRollyDragging(false);
-    setRollyDismissDirection(null);
-    setShowRollyBubble(true);
+      const idx = forceFirst
+        ? 0
+        : rollyRotationIndexRef.current % ROLLY_BUBBLE_ROTATION.length;
+      const item = ROLLY_BUBBLE_ROTATION[idx];
+      rollyRotationIndexRef.current = (idx + 1) % ROLLY_BUBBLE_ROTATION.length;
 
-    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
-    rollyHideTimerRef.current = setTimeout(() => {
-      setShowRollyBubble(false);
-    }, 10000);
-  }, []);
+      setRollyBubbleText(item.text);
+      setRollyBubbleTarget(item.target);
+      setRollyDragX(0);
+      setIsRollyDragging(false);
+      setRollyDismissDirection(null);
+      setShowRollyBubble(true);
 
-  const dismissRollyBubbleWithSnooze = React.useCallback((direction: 'left' | 'right' = 'right', snoozeDurationMs = 20000) => {
+      // Keep bubble visible for 7 seconds, then close it and schedule the next one after 8 seconds
+      rollyHideTimerRef.current = setTimeout(() => {
+        setShowRollyBubble(false);
+        rollyTimerRef.current = setTimeout(() => {
+          showRandomRollyPhrase(false);
+        }, 8000);
+      }, 7000);
+    },
+    [ROLLY_BUBBLE_ROTATION],
+  );
+
+  const dismissRollyBubbleWithSnooze = React.useCallback((direction: 'left' | 'right' = 'right', snoozeDurationMs = 12000) => {
     setRollyDismissDirection(direction);
     rollySnoozeUntilRef.current = Date.now() + snoozeDurationMs;
     if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
@@ -815,17 +871,15 @@ export default function MapTab({
       setRollyDismissDirection(null);
     }, 250);
 
-    // Schedule re-appearance after snooze period (20s) if user is still active
+    // Schedule next bubble after snooze period
     rollyTimerRef.current = setTimeout(() => {
-      if (Date.now() >= rollySnoozeUntilRef.current) {
-        showRandomRollyPhrase();
-      }
+      rollySnoozeUntilRef.current = 0;
+      showRandomRollyPhrase(false);
     }, snoozeDurationMs);
   }, [showRandomRollyPhrase]);
 
-  // Called whenever user interacts with or explores the map (clicks, drags, zooms)
+  // Called whenever user interacts with or explores the map (clicks, drags)
   const handleMapUserActivity = React.useCallback(() => {
-    // Hide bubble immediately
     setShowRollyBubble(false);
 
     if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
@@ -833,13 +887,13 @@ export default function MapTab({
 
     if (!onNavigateToAI) return;
 
-    // Reset inactivity timer: show bubble only after 5 minutes (300,000 ms) of inactivity
+    // Show the next rotating bubble after 12 seconds of quiet map viewing
     rollyTimerRef.current = setTimeout(() => {
-      showRandomRollyPhrase();
-    }, 300000);
+      showRandomRollyPhrase(false);
+    }, 12000);
   }, [onNavigateToAI, showRandomRollyPhrase]);
 
-  // Initial welcome message on app open: always show the Filtri ed Elenco prompt first
+  // Start the automatic rotation cycle on mount with the Filtri ed Elenco message first
   React.useEffect(() => {
     if (!onNavigateToAI) return;
 
@@ -6680,8 +6734,30 @@ out center;`;
                       return;
                     }
                     setShowRollyBubble(false);
-                    if (rollyBubbleText?.includes("Filtri ed Elenco")) {
+                    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
+                    if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
+                    rollyTimerRef.current = setTimeout(() => {
+                      showRandomRollyPhrase(false);
+                    }, 12000);
+
+                    if (rollyBubbleTarget === "filters") {
                       setMobileView("list");
+                      return;
+                    }
+                    if (rollyBubbleTarget === "map_fuel") {
+                      setSelectedCategories((prev) =>
+                        prev.includes("distributore")
+                          ? prev
+                          : [...prev.filter((c) => c !== "all"), "distributore"],
+                      );
+                      window.dispatchEvent(
+                        new CustomEvent("show-toast", {
+                          detail: {
+                            message: "⛽ Distributori carburante con prezzi aggiornati attivati sulla mappa!",
+                            duration: 3500,
+                          },
+                        }),
+                      );
                       return;
                     }
                     if (!currentUser) {
@@ -6689,12 +6765,16 @@ out center;`;
                         new CustomEvent("show-toast", {
                           detail: {
                             message:
-                              "🔒 Effettua il login o registrati per utilizzare l'assistente Rolly!",
+                              "🔒 Effettua il login o registrati per aprire questa sezione!",
                             duration: 4000,
                           },
                         }),
                       );
                       onRedirectToLogin?.();
+                      return;
+                    }
+                    if (onNavigateToSection && rollyBubbleTarget) {
+                      onNavigateToSection(rollyBubbleTarget as any);
                       return;
                     }
                     if (onNavigateToAI) onNavigateToAI();

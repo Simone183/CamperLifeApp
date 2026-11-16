@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PROMO_MESSAGES } from '../data/promoMessages';
 
-const CURRENT_APP_VERSION = '2.5.20';
+const CURRENT_APP_VERSION = '2.5.21';
 
 /**
  * Helper to schedule notifications safely on Android 12+ (API 31+) without USE_EXACT_ALARM.

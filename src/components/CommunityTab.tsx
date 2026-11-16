@@ -474,6 +474,7 @@ interface CommunityTabProps {
   trips?: Trip[];
   setTrips?: React.Dispatch<React.SetStateAction<Trip[]>>;
   onViewTrip?: (tripId: string) => void;
+  initialViewMode?: 'social' | 'feed' | 'chat' | 'challenges' | 'trips' | 'sos';
   onViewModeChange?: (mode: 'social' | 'feed' | 'chat' | 'challenges' | 'trips' | 'sos') => void;
 }
 
@@ -556,6 +557,7 @@ export default function CommunityTab({
   trips = [],
   setTrips,
   onViewTrip,
+  initialViewMode,
   onViewModeChange
 }: CommunityTabProps) {
   // Sanitize messages array to filter out any remaining fake replies, fake likes, or deleted messages
@@ -574,7 +576,13 @@ export default function CommunityTab({
   }, [messages]);
 
   // View mode: 'social' (Social Feed), 'feed' (Forum Argomenti), 'chat' (WhatsApp style), 'challenges' (Sfide & Badge), 'trips' (Viaggi Condivisi), 'sos' (Emergency SOS focus)
-  const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'challenges' | 'trips' | 'sos'>('social');
+  const [viewMode, setViewMode] = React.useState<'social' | 'feed' | 'chat' | 'challenges' | 'trips' | 'sos'>(initialViewMode || 'social');
+
+  React.useEffect(() => {
+    if (initialViewMode) {
+      setViewMode(initialViewMode);
+    }
+  }, [initialViewMode]);
 
   React.useEffect(() => {
     onViewModeChange?.(viewMode);

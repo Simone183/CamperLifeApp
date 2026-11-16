@@ -5813,6 +5813,26 @@ out center;`;
                     setActiveTab("settings_tools");
                     setSettingsSubTab("ai_itinerary");
                   }}
+                  onNavigateToSection={(target) => {
+                    if (target === "diary") {
+                      setActiveTab("diary");
+                    } else if (target === "community") {
+                      setActiveTab("settings_tools");
+                      setSettingsSubTab("community");
+                      setCommunityViewMode("social");
+                    } else if (target === "challenges") {
+                      setActiveTab("settings_tools");
+                      setSettingsSubTab("community");
+                      setCommunityViewMode("challenges");
+                    } else if (target === "shared_trips") {
+                      setActiveTab("settings_tools");
+                      setSettingsSubTab("community");
+                      setCommunityViewMode("trips");
+                    } else {
+                      setActiveTab("settings_tools");
+                      setSettingsSubTab(target);
+                    }
+                  }}
                   hasActiveTrip={hasActiveTrip}
                   onNavigateToExpenses={() => {
                     if (!currentUser) {
@@ -6703,10 +6723,10 @@ out center;`;
 
                   {/* Version & Version Code Footer */}
                   <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400 select-all">
-                    <span>ViaCamper v2.5.20</span>
+                    <span>ViaCamper v2.5.21</span>
                     <span>•</span>
                     <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/70">
-                      Version Code: 20520
+                      Version Code: 20521
                     </span>
                   </div>
                 </div>
@@ -6949,6 +6969,7 @@ out center;`;
                       onOpenAddPlace={() => setActiveTab("map_nav")}
                       trips={trips}
                       setTrips={setTrips}
+                      initialViewMode={communityViewMode}
                       onViewModeChange={setCommunityViewMode}
                       onViewTrip={(tripId) => {
                         setSelectedDiaryTripId(tripId);
@@ -7300,7 +7321,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.4.70",
+                                      appVersion: "2.5.21",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,
