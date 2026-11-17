@@ -87,7 +87,7 @@ import { fetchOsrmRoute, getCachedOsrmRoute } from "../utils/routing";
 import {
   getAllSagrePlaces,
   doesSagraMatchDateFilter,
-  saveLiveSagre,
+  fetchLiveSagreUniversal,
 } from "../data/sagreData";
 import {
   APIProvider,
@@ -1152,13 +1152,12 @@ export default function MapTab({
     const refreshSagrePlaces = () => setAllSagrePlaces(getAllSagrePlaces());
     window.addEventListener("sagre-updated", refreshSagrePlaces);
 
-    // Automatic weekly search on Mondays (lunedì)
+    // Automatic daily search so sagre and flyers stay updated
     const today = new Date();
-    const isMonday = today.getDay() === 1;
     const dateStr = today.toISOString().split("T")[0];
-    const lastFetch = localStorage.getItem("viacamper_last_monday_sagra_fetch");
-    if (isMonday && lastFetch !== dateStr) {
-      localStorage.setItem("viacamper_last_monday_sagra_fetch", dateStr);
+    const lastFetch = localStorage.getItem("viacamper_last_daily_sagra_fetch");
+    if (lastFetch !== dateStr) {
+      localStorage.setItem("viacamper_last_daily_sagra_fetch", dateStr);
       handleFetchLiveSagreOnMap();
     }
 
@@ -1169,30 +1168,22 @@ export default function MapTab({
     if (isFetchingLiveSagreMap) return;
     setIsFetchingLiveSagreMap(true);
     try {
-      const res = await fetch(resolveApiUrl("/api/sagre-live"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location: searchQuery.trim() || "Italia",
-          startDate: sagraStartDate,
-          endDate: sagraEndDate,
-          month: sagraSelectedMonth,
-          season: sagraPeriodMode,
-        }),
+      const synced = await fetchLiveSagreUniversal({
+        location: searchQuery.trim() || "Italia",
+        startDate: sagraStartDate,
+        endDate: sagraEndDate,
+        month: sagraSelectedMonth,
+        season: sagraPeriodMode,
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.sagre) && data.sagre.length > 0) {
-          saveLiveSagre(data.sagre);
-          setAllSagrePlaces(getAllSagrePlaces());
-          window.dispatchEvent(
-            new CustomEvent("show-toast", {
-              detail: {
-                message: `🎪 Aggiunte ${data.sagre.length} nuove sagre sulla mappa per il periodo selezionato!`,
-              },
-            }),
-          );
-        }
+      setAllSagrePlaces(getAllSagrePlaces());
+      if (synced.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent("show-toast", {
+            detail: {
+              message: `🎪 Sincronizzate ${synced.length} nuove sagre aggiornate sulla mappa!`,
+            },
+          }),
+        );
       }
     } catch {
       // handled silently via built-in national archive

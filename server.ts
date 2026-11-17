@@ -2183,20 +2183,24 @@ Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di c
       "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"
     ];
 
+    const now = new Date();
+    const nowYear = now.getFullYear();
+    const nowMonth = now.getMonth() + 1;
+
     let targetMonth = month;
-    let targetYear = 2027;
+    let targetYear = nowYear;
     if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-      targetYear = parseInt(startDate.slice(0, 4), 10) || 2027;
+      targetYear = parseInt(startDate.slice(0, 4), 10) || nowYear;
       targetMonth = parseInt(startDate.slice(5, 7), 10) || targetMonth;
     }
     if (!targetMonth || targetMonth < 1 || targetMonth > 12) {
       if (season === "estate") targetMonth = 8;
       else if (season === "primavera") targetMonth = 5;
       else if (season === "natale" || season === "inverno") targetMonth = 12;
-      else targetMonth = 11;
+      else targetMonth = nowMonth;
     }
-    if (targetMonth >= 10 && !startDate) {
-      targetYear = 2026;
+    if (!startDate && targetMonth < nowMonth) {
+      targetYear = nowYear + 1;
     }
 
     const resolvedSeason: "primavera" | "estate" | "autunno" | "inverno" =
@@ -2420,95 +2424,12 @@ Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di c
     return results;
   }
 
-  // Proxy for real TrovaSagre poster flyers (/thumbs/*.webp and /uploads/*.jpg/.png) to avoid hotlink/CORS issues
-  app.get("/api/sagre-flyer", async (req, res) => {
-    try {
-      const rawPath = String(req.query.path || req.query.url || "").trim();
-      if (!rawPath) {
-        return res.status(400).send("Missing path");
-      }
-
-      let targetUrl = rawPath;
-      if (rawPath.startsWith("/thumbs/") || rawPath.startsWith("/uploads/") || rawPath.startsWith("/img/")) {
-        targetUrl = `https://trovasagre.com${rawPath}`;
-      } else if (!rawPath.startsWith("https://trovasagre.com/")) {
-        return res.status(400).send("Invalid flyer path");
-      }
-
-      const upstream = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-          "Referer": "https://trovasagre.com/app",
-          "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
-        }
-      });
-
-      if (!upstream.ok) {
-        return res.redirect("https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80");
-      }
-
-      const contentType = upstream.headers.get("content-type") || "image/webp";
-      const arrayBuf = await upstream.arrayBuffer();
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Cache-Control", "public, max-age=86400");
-      return res.send(Buffer.from(arrayBuf));
-    } catch {
-      return res.redirect("https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80");
-    }
+  // Legacy flyer endpoint kept as safe redirect to royalty-free culinary poster
+  app.get("/api/sagre-flyer", (_req, res) => {
+    return res.redirect("https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=900&q=80");
   });
 
-  // Helper to obtain and cache the TrovaSagre API pass cookie (ts_p)
-  let cachedTrovaSagreCookie = "";
-  let cachedTrovaSagreCookieTime = 0;
-
-  async function getTrovaSagreCookie(): Promise<string> {
-    if (cachedTrovaSagreCookie && Date.now() - cachedTrovaSagreCookieTime < 12 * 60 * 60 * 1000) {
-      return cachedTrovaSagreCookie;
-    }
-    try {
-      const rPage = await fetch("https://trovasagre.com/app", {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none"
-        }
-      });
-      const rawCookies: string[] =
-        typeof (rPage.headers as any).getSetCookie === "function"
-          ? (rPage.headers as any).getSetCookie()
-          : [rPage.headers.get("set-cookie") || ""];
-      const cookieHeader = rawCookies
-        .filter(Boolean)
-        .map((c) => c.split(";")[0])
-        .join("; ");
-      if (cookieHeader) {
-        cachedTrovaSagreCookie = cookieHeader;
-        cachedTrovaSagreCookieTime = Date.now();
-      }
-      return cachedTrovaSagreCookie;
-    } catch {
-      return "";
-    }
-  }
-
-  function toProxyFlyerUrls(flyerPath?: string | null): { thumbUrl: string; fullUrl: string; isRealFlyer: boolean } {
-    if (!flyerPath || typeof flyerPath !== "string") {
-      const fallback = "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80";
-      return { thumbUrl: fallback, fullUrl: fallback, isRealFlyer: false };
-    }
-    const clean = flyerPath.trim();
-    const m = /^\/uploads\/([A-Za-z0-9_-]{1,120})\.[A-Za-z0-9]{2,5}$/.exec(clean);
-    const thumbPath = m ? `/thumbs/${m[1]}.webp` : clean;
-    return {
-      thumbUrl: `/api/sagre-flyer?path=${encodeURIComponent(thumbPath)}`,
-      fullUrl: `/api/sagre-flyer?path=${encodeURIComponent(clean)}`,
-      isRealFlyer: true
-    };
-  }
-
-  function formatTrovaSagreDateBadge(dateStart?: string | null, dateEnd?: string | null): {
+  function formatSagraDateBadgeServer(dateStart?: string | null, dateEnd?: string | null): {
     badge: string;
     readable: string;
     month: number;
@@ -2519,11 +2440,12 @@ Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di c
       "", "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
       "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"
     ];
-    const start = (dateStart || "2026-11-14").slice(0, 10);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const start = (dateStart || todayIso).slice(0, 10);
     const end = (dateEnd || start).slice(0, 10);
     const y1 = start.slice(0, 4);
     const m1 = parseInt(start.slice(5, 7), 10) || 11;
-    const d1 = parseInt(start.slice(8, 10), 10) || 14;
+    const d1 = parseInt(start.slice(8, 10), 10) || 1;
     const m2 = parseInt(end.slice(5, 7), 10) || m1;
     const d2 = parseInt(end.slice(8, 10), 10) || d1;
 
@@ -2560,104 +2482,110 @@ Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di c
     };
   }
 
-  async function fetchFromTrovaSagreOfficialApi(params: {
+  async function discoverSagreViaGoogleSearchGrounding(params: {
     location: string;
     startDate: string;
     endDate: string;
     month: number;
     season: string;
+    foodImages: string[];
   }): Promise<any[]> {
     try {
-      const cookieHeader = await getTrovaSagreCookie();
-      if (!cookieHeader) return [];
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const periodHint =
+        params.startDate && params.endDate
+          ? `tra il ${params.startDate} e il ${params.endDate}`
+          : params.month > 0
+          ? `nel mese ${params.month} (a partire da oggi ${todayIso})`
+          : params.season && params.season !== "all"
+          ? `nella stagione ${params.season} (a partire da oggi ${todayIso})`
+          : `nei prossimi weekend a partire da oggi ${todayIso}`;
 
-      const headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-        "Accept": "application/json",
-        "Referer": "https://trovasagre.com/app",
-        "Cookie": cookieHeader,
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin"
-      };
+      const prompt = `Cerca sul web pubblico (siti istituzionali comunali, Pro Loco, portali regionali del turismo) sagre enogastronomiche, feste di paese o mercatini tradizionali REALI e CON DATE UFFICIALI CONFERMATE in programma in "${params.location || "Italia"}" ${periodHint}.
+REGOLE CRITICHE OBBLIGATORIE:
+1. Includi ESCLUSIVAMENTE eventi realmente esistenti di cui trovi le date ufficiali confermate dagli organizzatori sul web.
+2. NON inventare mai eventi, NON stimare date non ancora pubblicate dagli organizzatori. Se per il periodo richiesto (es. mesi futuri lontani) le Pro Loco non hanno ancora pubblicato le date ufficiali, restituisci un array vuoto [].
+Restituisci ESCLUSIVAMENTE un array JSON valido (senza commenti) con oggetti aventi esattamente queste chiavi:
+[
+  {
+    "title": "Nome ufficiale della sagra o festa",
+    "categoryLabel": "Breve categoria es. Castagne & Vino Novello",
+    "locationName": "Comune (Provincia)",
+    "region": "Regione",
+    "startDate": "YYYY-MM-DD (deve essere >= ${todayIso})",
+    "endDate": "YYYY-MM-DD (deve essere >= startDate)",
+    "lat": 42.1234,
+    "lng": 12.1234,
+    "description": "Descrizione rielaborata dei piatti tipici e dell'evento",
+    "specialties": ["Piatto 1", "Piatto 2", "Piatto 3"],
+    "camperParking": "Consiglio sosta camper nel comune"
+  }
+]`;
 
-      const italianRegions = [
-        "Lazio", "Toscana", "Marche", "Umbria", "Abruzzo", "Campania", "Puglia",
-        "Emilia-Romagna", "Lombardia", "Veneto", "Piemonte", "Liguria", "Sicilia",
-        "Sardegna", "Calabria", "Basilicata", "Molise", "Friuli-Venezia Giulia", "Trentino-Alto Adige"
-      ];
-      const matchedRegion = italianRegions.find((r) =>
-        params.location.toLowerCase().includes(r.toLowerCase())
-      );
+      const response = await generateContentWithRetry({
+        model: "gemini-4-hydrogen",
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
+      });
 
-      const queryParams = new URLSearchParams();
-      queryParams.set("limit", "40");
-      if (matchedRegion) {
-        queryParams.set("region", matchedRegion);
-      }
-      if (params.startDate) {
-        queryParams.set("date_from", params.startDate);
-      }
-      if (params.endDate) {
-        queryParams.set("date_to", params.endDate);
-      }
+      const rawText = (response?.text || "").trim();
+      const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
 
-      const apiUrl =
-        params.location && params.location.toLowerCase() !== "italia" && !matchedRegion
-          ? `https://trovasagre.com/api/events/search?q=${encodeURIComponent(params.location)}&limit=30`
-          : `https://trovasagre.com/api/events?${queryParams.toString()}`;
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(parsed)) return [];
 
-      const res = await fetch(apiUrl, { headers });
-      if (!res.ok) return [];
-      const data = await res.json();
-      const rawEvents = Array.isArray(data.events) ? data.events : [];
-
-      return rawEvents
-        .filter((ev: any) => typeof ev.lat === "number" && typeof ev.lng === "number" && ev.flyer_path)
-        .map((ev: any) => {
-          const flyerInfo = toProxyFlyerUrls(ev.flyer_path);
-          const dInfo = formatTrovaSagreDateBadge(ev.date_start || ev.date, ev.date_end);
-          const locName = ev.location || (ev.city ? `${ev.city}${ev.province_code ? ` (${ev.province_code})` : ""}` : "Italia");
+      return parsed
+        .filter((ev: any) => ev && ev.title && typeof ev.lat === "number" && typeof ev.lng === "number")
+        .map((ev: any, idx: number) => {
+          const sDate = String(ev.startDate || todayIso).slice(0, 10);
+          const eDate = String(ev.endDate || sDate).slice(0, 10);
+          const dInfo = formatSagraDateBadgeServer(sDate, eDate);
+          const img = params.foodImages[idx % params.foodImages.length];
           return {
-            id: `ts_${ev.id}`,
-            title: ev.title || "Sagra Tradizionale",
+            id: `ai_sagra_${sDate}_${ String(ev.title).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24) }`,
+            title: String(ev.title),
             category: dInfo.month === 12 ? "natale" : "sagra",
-            categoryLabel: ev.category && ev.category !== "Altro" ? ev.category : "Sagra & Gastronomia",
-            locationName: locName,
-            region: matchedRegion || ev.province_code || "Italia",
+            categoryLabel: String(ev.categoryLabel || "Sagra & Gastronomia"),
+            locationName: String(ev.locationName || params.location || "Italia"),
+            region: String(ev.region || "Italia"),
             dates: dInfo.readable,
             dateBadge: dInfo.badge,
-            startDate: (ev.date_start || ev.date || "2026-11-14").slice(0, 10),
-            endDate: (ev.date_end || ev.date_start || ev.date || "2026-11-15").slice(0, 10),
+            startDate: sDate,
+            endDate: eDate,
             month: dInfo.month,
             season: dInfo.season,
             lat: Number(ev.lat),
             lng: Number(ev.lng),
-            description: ev.description || ev.program_notes || `Sagra tradizionale a ${locName}.`,
-            specialties: ev.menu_notes
-              ? String(ev.menu_notes).split(/[,;\n]/).map((s: string) => s.trim()).filter(Boolean).slice(0, 4)
-              : ["Piatti Tipici in Locandina", "Stand Gastronomici", "Prodotti Locali"],
-            camperParking: `Parcheggio camper consigliato presso area comunale di ${ev.city || locName}.`,
-            imageUrl: flyerInfo.thumbUrl,
-            fullFlyerUrl: flyerInfo.fullUrl,
-            isRealFlyer: flyerInfo.isRealFlyer,
-            section: dInfo.season === "estate" ? "estate" : dInfo.month === 12 ? "natale" : "weekend",
-            sourceUrl: ev.slug ? `https://trovasagre.com/evento/${ev.slug}` : "https://trovasagre.com"
+            description: String(ev.description || `Appuntamento enogastronomico a ${ev.locationName}.`),
+            specialties: Array.isArray(ev.specialties) && ev.specialties.length > 0
+              ? ev.specialties.slice(0, 4).map(String)
+              : ["Piatti Tipici Locali", "Stand Gastronomici"],
+            camperParking: String(ev.camperParking || `Area parcheggio camper comunale presso ${ev.locationName}.`),
+            imageUrl: img,
+            fullFlyerUrl: img,
+            isRealFlyer: false,
+            section: dInfo.season === "estate" ? "estate" : dInfo.month === 12 ? "natale" : "weekend"
           };
-        });
+        })
+        .filter((ev: any) => ev.endDate >= todayIso);
     } catch {
       return [];
     }
   }
 
   app.post("/api/sagre-live", async (req, res) => {
-    const realFlyerFallbacks = [
-      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_af4ea46c-2dd0-4be2-9cbc-006b469edace.webp",
-      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_84007c9c-7b09-419a-8e4f-afcb30206cd9.webp",
-      "/api/sagre-flyer?path=%2Fthumbs%2Fbatch_1e5df168-d6cf-4359-9a01-000fc31b983b.webp",
-      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_92089b5c-a6ae-4594-8c24-81debc39771c.webp",
-      "/api/sagre-flyer?path=%2Fthumbs%2Fbatch_3dd643a1-4e1a-44e5-a802-1cd3209e2604.webp",
-      "/api/sagre-flyer?path=%2Fthumbs%2Fflyer_eb7b215f-1437-4d31-afe7-107a4acb1ef4.webp"
+    const royaltyFreeCulinaryPosters = [
+      "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1508061253366-f7da158b6d46?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=900&q=80"
     ];
 
     const location = ((req.body && req.body.location) || "Italia").trim();
@@ -2673,45 +2601,66 @@ Formatta in markdown chiaro usando un titolo di livello 3 (###) per il nome di c
         return res.json({ sagre: cached.sagre, fromCache: true });
       }
 
-      // 1. Query the official TrovaSagre JSON API for real events with authentic poster flyers
-      let sagreList = await fetchFromTrovaSagreOfficialApi({
-        location,
-        startDate,
-        endDate,
-        month,
-        season
-      });
-
-      // 2. If user is planning for future summer/spring months not yet uploaded on TrovaSagre, append seasonal regional events
-      if (sagreList.length === 0 || season === "estate" || season === "primavera" || (month >= 4 && month <= 9)) {
-        const seasonalExtra = buildRegionalSeasonalSagreFallback(
-          location,
-          startDate,
-          endDate,
-          month,
-          season,
-          realFlyerFallbacks
-        );
-        const existingIds = new Set(sagreList.map((s: any) => s.id));
-        for (const item of seasonalExtra) {
-          if (!existingIds.has(item.id)) {
-            sagreList.push(item);
-          }
-        }
-      }
-
-      liveSagreCache.set(cacheKey, { sagre: sagreList, timestamp: Date.now() });
-      return res.json({ sagre: sagreList });
-    } catch {
-      const fallbackList = buildRegionalSeasonalSagreFallback(
+      // Strictly return ONLY real upcoming sagre with confirmed dates found via Google Search Grounding
+      const sagreList = await discoverSagreViaGoogleSearchGrounding({
         location,
         startDate,
         endDate,
         month,
         season,
-        realFlyerFallbacks
-      );
-      return res.json({ sagre: fallbackList });
+        foodImages: royaltyFreeCulinaryPosters
+      });
+
+      if (sagreList.length > 0) {
+        liveSagreCache.set(cacheKey, { sagre: sagreList, timestamp: Date.now() });
+      }
+      return res.json({ sagre: sagreList });
+    } catch {
+      return res.json({ sagre: [] });
+    }
+  });
+
+  // AI & Geocoding helper to auto-fill sagra details (coordinates, region, original description, specialties, camper parking)
+  app.post("/api/sagre-ai-autofill", async (req, res) => {
+    try {
+      const title = String(req.body?.title || "").trim();
+      const locationName = String(req.body?.locationName || "").trim();
+      const rawNotes = String(req.body?.rawNotes || "").trim();
+      if (!title && !locationName) {
+        return res.status(400).json({ error: "Inserisci almeno il titolo o il comune della sagra." });
+      }
+
+      const prompt = `Sei un assistente esperto per l'app di camperisti ViaCamper.
+L'amministratore o un utente sta inserendo manualmente questa sagra/evento in Italia:
+- Titolo: "${title}"
+- Comune / Località: "${locationName}"
+${rawNotes ? `- Note aggiuntive: "${rawNotes}"` : ""}
+
+Compila e restituisci ESCLUSIVAMENTE un oggetto JSON valido con queste proprietà:
+{
+  "locationName": "Comune formattato con sigla provincia es. Borgo Velino (RI)",
+  "region": "Nome della Regione italiana es. Lazio",
+  "lat": 42.4043,
+  "lng": 13.0513,
+  "category": "sagra | natale | storica | vino",
+  "categoryLabel": "Etichetta breve max 3 parole es. Castagne & Vino Novello",
+  "description": "Descrizione originale di 2 frasi scritta con parole tue (senza copiare da altri siti) invitante per chi viaggia in camper",
+  "specialties": ["Specialità 1", "Specialità 2", "Specialità 3"],
+  "camperParking": "Consiglio pratico su dove sostare in camper nel comune indicato"
+}`;
+
+      const response = await generateContentWithRetry({
+        model: "gemini-4-hydrogen",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const parsed = JSON.parse((response?.text || "{}").trim());
+      return res.json(parsed);
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || "Errore compilazione automatica" });
     }
   });
 

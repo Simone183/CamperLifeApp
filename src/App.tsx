@@ -7781,6 +7781,7 @@ out center;`;
                     <EventsTab
                       onBack={() => setSettingsSubTab("hub")}
                       userLocation={userLocation}
+                      currentUser={currentUser}
                       onNavigateFullscreen={(place) => {
                         setNavDestination(place);
                         setIsFullscreenNav(true);
