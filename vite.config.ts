@@ -1,12 +1,25 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
     base: '/',
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'exclude-aistudio-chat-assets',
+        closeBundle() {
+          const chatAssetsDir = path.resolve(__dirname, 'dist/assets/aistudio');
+          if (fs.existsSync(chatAssetsDir)) {
+            fs.rmSync(chatAssetsDir, { recursive: true, force: true });
+          }
+        },
+      },
+    ],
     define: {
       'process.env.GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(process.env.GOOGLE_MAPS_PLATFORM_KEY || '')
     },

@@ -34,7 +34,10 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build Web Application
-        run: npm run build
+        run: |
+          rm -rf public/assets/aistudio
+          npm run build
+          rm -rf dist/assets/aistudio
 
       - name: Sync Capacitor Android
         env:

@@ -43,43 +43,18 @@ import { unlockGlobalMobileAudio } from "./utils/ttsHelper";
 import { EditPlaceModal } from "./components/EditPlaceModal";
 import { ConfirmDeleteModal } from "./components/ConfirmDeleteModal";
 import MapTab from "./components/MapTab";
-import { MovementLog } from "./components/MovementLog";
-import NavTab from "./components/NavTab";
 import ChecklistTab, { sanitizeChecklistItems } from "./components/ChecklistTab";
 import DeadlinesTab, { sanitizeDeadlines } from "./components/DeadlinesTab";
-import CommunityTab from "./components/CommunityTab";
-import VehicleSettings from "./components/VehicleSettings";
-import DiaryTab from "./components/DiaryTab";
-import FullscreenNavigator from "./components/FullscreenNavigator";
-import RegistrationForm from "./components/RegistrationForm";
-import LoginForm from "./components/LoginForm";
-import AIItineraryTab from "./components/AIItineraryTab";
-import FavoritesTab from "./components/FavoritesTab";
-import FuelCardTab from "./components/FuelCardTab";
-import GeneralSettingsTab from "./components/GeneralSettingsTab";
-import ProfileSettingsTab from "./components/ProfileSettingsTab";
-import { BubbleLevelTab } from "./components/BubbleLevelTab";
-import { CamperSecurityTab } from "./components/CamperSecurityTab";
-import { PantryShoppingTab } from "./components/PantryShoppingTab";
-import { MaintenanceLogTab } from "./components/MaintenanceLogTab";
+import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
 import { playAlertSound, playTapSound } from "./utils/soundHelper";
 import { applyTtsVoiceAndPitch, speakSampleTts } from "./utils/ttsHelper";
-import WorkLogTab from "./components/WorkLogTab";
-import SharedTripsTab from "./components/SharedTripsTab";
 import { TripShareModal } from "./components/TripShareModal";
-import { LegalTermsSection } from "./components/LegalTermsSection";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
 import { CartoonCamperAvatar } from "./components/CartoonCamperAvatar";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
 import { WeatherAlertBanner } from "./components/WeatherAlertBanner";
-import { ReportWeatherModal } from "./components/ReportWeatherModal";
-import { WeatherRadarModal } from "./components/WeatherRadarModal";
-import EventsTab from "./components/EventsTab";
-import OfflineMapsTab from "./components/OfflineMapsTab";
-import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
-import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { enablePersistentStorage } from "./utils/offlineMapCache";
@@ -88,7 +63,34 @@ import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
 import { AppPermissionModal } from "./components/AppPermissionModal";
-import { AdminNotificationSchedulerWidget } from "./components/AdminNotificationSchedulerWidget";
+
+// Lazy-loaded Secondary Tabs & Modals (loaded on-demand to speed up initial startup)
+const MovementLog = React.lazy(() => import("./components/MovementLog").then(m => ({ default: m.MovementLog })));
+const NavTab = React.lazy(() => import("./components/NavTab"));
+const CommunityTab = React.lazy(() => import("./components/CommunityTab"));
+const VehicleSettings = React.lazy(() => import("./components/VehicleSettings"));
+const DiaryTab = React.lazy(() => import("./components/DiaryTab"));
+const FullscreenNavigator = React.lazy(() => import("./components/FullscreenNavigator"));
+const RegistrationForm = React.lazy(() => import("./components/RegistrationForm"));
+const LoginForm = React.lazy(() => import("./components/LoginForm"));
+const AIItineraryTab = React.lazy(() => import("./components/AIItineraryTab"));
+const FavoritesTab = React.lazy(() => import("./components/FavoritesTab"));
+const FuelCardTab = React.lazy(() => import("./components/FuelCardTab"));
+const GeneralSettingsTab = React.lazy(() => import("./components/GeneralSettingsTab"));
+const ProfileSettingsTab = React.lazy(() => import("./components/ProfileSettingsTab"));
+const BubbleLevelTab = React.lazy(() => import("./components/BubbleLevelTab").then(m => ({ default: m.BubbleLevelTab })));
+const CamperSecurityTab = React.lazy(() => import("./components/CamperSecurityTab").then(m => ({ default: m.CamperSecurityTab })));
+const PantryShoppingTab = React.lazy(() => import("./components/PantryShoppingTab").then(m => ({ default: m.PantryShoppingTab })));
+const MaintenanceLogTab = React.lazy(() => import("./components/MaintenanceLogTab").then(m => ({ default: m.MaintenanceLogTab })));
+const WorkLogTab = React.lazy(() => import("./components/WorkLogTab"));
+const SharedTripsTab = React.lazy(() => import("./components/SharedTripsTab"));
+const LegalTermsSection = React.lazy(() => import("./components/LegalTermsSection").then(m => ({ default: m.LegalTermsSection })));
+const ReportWeatherModal = React.lazy(() => import("./components/ReportWeatherModal").then(m => ({ default: m.ReportWeatherModal })));
+const WeatherRadarModal = React.lazy(() => import("./components/WeatherRadarModal").then(m => ({ default: m.WeatherRadarModal })));
+const EventsTab = React.lazy(() => import("./components/EventsTab"));
+const OfflineMapsTab = React.lazy(() => import("./components/OfflineMapsTab"));
+const DeleteAccountTab = React.lazy(() => import("./components/DeleteAccountTab").then(m => ({ default: m.DeleteAccountTab })));
+const AdminNotificationSchedulerWidget = React.lazy(() => import("./components/AdminNotificationSchedulerWidget").then(m => ({ default: m.AdminNotificationSchedulerWidget })));
 
 // Icons
 import {
@@ -5705,6 +5707,14 @@ out center;`;
             : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
         }`}
       >
+        <React.Suspense
+          fallback={
+            <div className="flex-1 flex flex-col items-center justify-center p-12 gap-2 text-xs font-bold text-[#3E4A35]">
+              <div className="w-6 h-6 border-2 border-[#3E4A35] border-t-transparent rounded-full animate-spin" />
+              <span>Caricamento sezione...</span>
+            </div>
+          }
+        >
         {/* Render Category 1: Mappa & Navigatore with sub segmentation (Available without login as Guest Navigator) */}
         {activeTab === "map_nav" && (
             <div className="flex-1 min-h-0 space-y-2 md:space-y-3 h-full flex flex-col">
@@ -7802,6 +7812,7 @@ out center;`;
           </div>
           )
         )}
+        </React.Suspense>
       </main>
 
       {/* Persistent Sticky Bottom Navigation Bar styled like the reference app design */}
@@ -7926,31 +7937,33 @@ out center;`;
       </div>
 
       {isFullscreenNav && navDestination && (
-        <FullscreenNavigator
-          dest={navDestination}
-          navigationMode={navigationMode}
-          vehicleDimensions={vehicleDimensions}
-          currentUser={currentUser}
-          onMinimizeChange={setIsNavMinimized}
-          onClose={() => {
-            try {
-              const bridge = (window as any).AndroidNativeTTS;
-              if (bridge && typeof bridge.stopForegroundNavigationNotification === "function") {
-                bridge.stopForegroundNavigationNotification();
-              }
-            } catch (_) {}
-            setTimeout(() => {
-              setIsFullscreenNav(false);
-              setIsNavMinimized(false);
-            }, 0);
-          }}
-          userLocation={userLocation}
-          userAccuracy={userAccuracy}
-          isGPSEnabled={isGPSEnabled}
-          onGPSEnabledChange={handleGPSEnabledChange}
-          places={places}
-          onSelectPlaceDirectly={handleSelectPlaceDirectly}
-        />
+        <React.Suspense fallback={null}>
+          <FullscreenNavigator
+            dest={navDestination}
+            navigationMode={navigationMode}
+            vehicleDimensions={vehicleDimensions}
+            currentUser={currentUser}
+            onMinimizeChange={setIsNavMinimized}
+            onClose={() => {
+              try {
+                const bridge = (window as any).AndroidNativeTTS;
+                if (bridge && typeof bridge.stopForegroundNavigationNotification === "function") {
+                  bridge.stopForegroundNavigationNotification();
+                }
+              } catch (_) {}
+              setTimeout(() => {
+                setIsFullscreenNav(false);
+                setIsNavMinimized(false);
+              }, 0);
+            }}
+            userLocation={userLocation}
+            userAccuracy={userAccuracy}
+            isGPSEnabled={isGPSEnabled}
+            onGPSEnabledChange={handleGPSEnabledChange}
+            places={places}
+            onSelectPlaceDirectly={handleSelectPlaceDirectly}
+          />
+        </React.Suspense>
       )}
 
       {/* --- ADMIN MODERATION CONTROL PANEL --- */}
@@ -10574,7 +10587,9 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                         </div>
                       </div>
 
-                      <AdminNotificationSchedulerWidget />
+                      <React.Suspense fallback={null}>
+                        <AdminNotificationSchedulerWidget />
+                      </React.Suspense>
                     </div>
                   </div>
                 )}
@@ -11067,52 +11082,56 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
       {/* Weather Radar & MeteoAlarm Modal */}
       <AnimatePresence>
         {showWeatherRadarModal && (
-          <WeatherRadarModal
-            userLocation={userLocation}
-            currentUser={currentUser}
-            onClose={() => setShowWeatherRadarModal(false)}
-            onOpenReportModal={() => {
-              setShowWeatherRadarModal(false);
-              if (!currentUser) {
-                window.dispatchEvent(
-                  new CustomEvent("show-toast", {
-                    detail: {
-                      message:
-                        "🔒 Registrati o effettua il login per segnalare il maltempo alla community!",
-                      duration: 4500,
-                    },
-                  }),
-                );
-                setActiveTab("settings_tools");
-                setSettingsSubTab("hub");
-                return;
-              }
-              setShowReportWeatherModal(true);
-            }}
-            onShowOnMap={() => {
-              setShowWeatherRadarModal(false);
-              setReturnTabAfterMap({
-                tab: activeTab,
-                subTab: activeTab === 'settings_tools' ? settingsSubTab : mapNavSubTab
-              });
-              setActiveTab("map_nav");
-              setMapNavSubTab("map");
-            }}
-          />
+          <React.Suspense fallback={null}>
+            <WeatherRadarModal
+              userLocation={userLocation}
+              currentUser={currentUser}
+              onClose={() => setShowWeatherRadarModal(false)}
+              onOpenReportModal={() => {
+                setShowWeatherRadarModal(false);
+                if (!currentUser) {
+                  window.dispatchEvent(
+                    new CustomEvent("show-toast", {
+                      detail: {
+                        message:
+                          "🔒 Registrati o effettua il login per segnalare il maltempo alla community!",
+                        duration: 4500,
+                      },
+                    }),
+                  );
+                  setActiveTab("settings_tools");
+                  setSettingsSubTab("hub");
+                  return;
+                }
+                setShowReportWeatherModal(true);
+              }}
+              onShowOnMap={() => {
+                setShowWeatherRadarModal(false);
+                setReturnTabAfterMap({
+                  tab: activeTab,
+                  subTab: activeTab === 'settings_tools' ? settingsSubTab : mapNavSubTab
+                });
+                setActiveTab("map_nav");
+                setMapNavSubTab("map");
+              }}
+            />
+          </React.Suspense>
         )}
       </AnimatePresence>
 
       {/* Report Weather & Hail Modal */}
       <AnimatePresence>
         {showReportWeatherModal && (
-          <ReportWeatherModal
-            userLocation={userLocation}
-            currentUser={currentUser}
-            onClose={() => setShowReportWeatherModal(false)}
-            onSuccess={() => {
-              setShowReportWeatherModal(false);
-            }}
-          />
+          <React.Suspense fallback={null}>
+            <ReportWeatherModal
+              userLocation={userLocation}
+              currentUser={currentUser}
+              onClose={() => setShowReportWeatherModal(false)}
+              onSuccess={() => {
+                setShowReportWeatherModal(false);
+              }}
+            />
+          </React.Suspense>
         )}
       </AnimatePresence>
 
