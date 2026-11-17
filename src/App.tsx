@@ -43,18 +43,43 @@ import { unlockGlobalMobileAudio } from "./utils/ttsHelper";
 import { EditPlaceModal } from "./components/EditPlaceModal";
 import { ConfirmDeleteModal } from "./components/ConfirmDeleteModal";
 import MapTab from "./components/MapTab";
+import { MovementLog } from "./components/MovementLog";
+import NavTab from "./components/NavTab";
 import ChecklistTab, { sanitizeChecklistItems } from "./components/ChecklistTab";
 import DeadlinesTab, { sanitizeDeadlines } from "./components/DeadlinesTab";
-import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
+import CommunityTab from "./components/CommunityTab";
+import VehicleSettings from "./components/VehicleSettings";
+import DiaryTab from "./components/DiaryTab";
+import FullscreenNavigator from "./components/FullscreenNavigator";
+import RegistrationForm from "./components/RegistrationForm";
+import LoginForm from "./components/LoginForm";
+import AIItineraryTab from "./components/AIItineraryTab";
+import FavoritesTab from "./components/FavoritesTab";
+import FuelCardTab from "./components/FuelCardTab";
+import GeneralSettingsTab from "./components/GeneralSettingsTab";
+import ProfileSettingsTab from "./components/ProfileSettingsTab";
+import { BubbleLevelTab } from "./components/BubbleLevelTab";
+import { CamperSecurityTab } from "./components/CamperSecurityTab";
+import { PantryShoppingTab } from "./components/PantryShoppingTab";
+import { MaintenanceLogTab } from "./components/MaintenanceLogTab";
 import { playAlertSound, playTapSound } from "./utils/soundHelper";
 import { applyTtsVoiceAndPitch, speakSampleTts } from "./utils/ttsHelper";
+import WorkLogTab from "./components/WorkLogTab";
+import SharedTripsTab from "./components/SharedTripsTab";
 import { TripShareModal } from "./components/TripShareModal";
+import { LegalTermsSection } from "./components/LegalTermsSection";
 import { CamperLifeIcon } from "./components/CamperLifeIcon";
 import { CartoonCamperAvatar } from "./components/CartoonCamperAvatar";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { HeaderGPSWeather } from "./components/HeaderGPSWeather";
 import { WeatherWidget } from "./components/WeatherWidget";
 import { WeatherAlertBanner } from "./components/WeatherAlertBanner";
+import { ReportWeatherModal } from "./components/ReportWeatherModal";
+import { WeatherRadarModal } from "./components/WeatherRadarModal";
+import EventsTab from "./components/EventsTab";
+import OfflineMapsTab from "./components/OfflineMapsTab";
+import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
+import { DeleteAccountTab } from "./components/DeleteAccountTab";
 import { RollyOnboardingGuide } from "./components/RollyOnboardingGuide";
 import { DebugPanel, DebugPanelContent } from "./components/DebugPanel";
 import { enablePersistentStorage } from "./utils/offlineMapCache";
@@ -63,34 +88,7 @@ import { scheduleLocalPromoNotifications } from "./utils/localNotifications";
 import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
 import { AppPermissionModal } from "./components/AppPermissionModal";
-
-// Lazy-loaded Secondary Tabs & Modals (loaded on-demand to speed up initial startup)
-const MovementLog = React.lazy(() => import("./components/MovementLog").then(m => ({ default: m.MovementLog })));
-const NavTab = React.lazy(() => import("./components/NavTab"));
-const CommunityTab = React.lazy(() => import("./components/CommunityTab"));
-const VehicleSettings = React.lazy(() => import("./components/VehicleSettings"));
-const DiaryTab = React.lazy(() => import("./components/DiaryTab"));
-const FullscreenNavigator = React.lazy(() => import("./components/FullscreenNavigator"));
-const RegistrationForm = React.lazy(() => import("./components/RegistrationForm"));
-const LoginForm = React.lazy(() => import("./components/LoginForm"));
-const AIItineraryTab = React.lazy(() => import("./components/AIItineraryTab"));
-const FavoritesTab = React.lazy(() => import("./components/FavoritesTab"));
-const FuelCardTab = React.lazy(() => import("./components/FuelCardTab"));
-const GeneralSettingsTab = React.lazy(() => import("./components/GeneralSettingsTab"));
-const ProfileSettingsTab = React.lazy(() => import("./components/ProfileSettingsTab"));
-const BubbleLevelTab = React.lazy(() => import("./components/BubbleLevelTab").then(m => ({ default: m.BubbleLevelTab })));
-const CamperSecurityTab = React.lazy(() => import("./components/CamperSecurityTab").then(m => ({ default: m.CamperSecurityTab })));
-const PantryShoppingTab = React.lazy(() => import("./components/PantryShoppingTab").then(m => ({ default: m.PantryShoppingTab })));
-const MaintenanceLogTab = React.lazy(() => import("./components/MaintenanceLogTab").then(m => ({ default: m.MaintenanceLogTab })));
-const WorkLogTab = React.lazy(() => import("./components/WorkLogTab"));
-const SharedTripsTab = React.lazy(() => import("./components/SharedTripsTab"));
-const LegalTermsSection = React.lazy(() => import("./components/LegalTermsSection").then(m => ({ default: m.LegalTermsSection })));
-const ReportWeatherModal = React.lazy(() => import("./components/ReportWeatherModal").then(m => ({ default: m.ReportWeatherModal })));
-const WeatherRadarModal = React.lazy(() => import("./components/WeatherRadarModal").then(m => ({ default: m.WeatherRadarModal })));
-const EventsTab = React.lazy(() => import("./components/EventsTab"));
-const OfflineMapsTab = React.lazy(() => import("./components/OfflineMapsTab"));
-const DeleteAccountTab = React.lazy(() => import("./components/DeleteAccountTab").then(m => ({ default: m.DeleteAccountTab })));
-const AdminNotificationSchedulerWidget = React.lazy(() => import("./components/AdminNotificationSchedulerWidget").then(m => ({ default: m.AdminNotificationSchedulerWidget })));
+import { AdminNotificationSchedulerWidget } from "./components/AdminNotificationSchedulerWidget";
 
 // Icons
 import {
@@ -177,9 +175,18 @@ const firestore = new ClientFirestoreAdapter(
 
 export default function App() {
   React.useEffect(() => {
-    const preShell = document.getElementById("v-pre-shell");
-    if (preShell) {
-      preShell.remove();
+    const removePreShell = () => {
+      const preShell = document.getElementById("v-pre-shell");
+      if (preShell) {
+        preShell.remove();
+      }
+    };
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(removePreShell);
+      });
+    } else {
+      removePreShell();
     }
     // Sincronizza automaticamente eventuali segnalazioni ostacoli salvate in locale
     syncPendingLocalOsmReports();
@@ -2329,9 +2336,30 @@ export default function App() {
 
   // --- Toast/Notification State ---
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
+  const isTripTrulyActive = React.useCallback((t: Trip): boolean => {
+    if (!currentUser) return false;
+    if (!t || t.status !== "Attivo") return false;
+    if (
+      t.id === EXAMPLE_TRIP.id ||
+      t.id === "trip-example-10-oct-2025" ||
+      t.id === "t1" ||
+      String(t.title || "").toUpperCase().startsWith("ESEMPIO:") ||
+      String(t.title || "").toUpperCase().startsWith("EXAMPLE:")
+    ) {
+      return false;
+    }
+    if (t.endDate) {
+      const endTs = new Date(t.endDate).getTime();
+      if (!isNaN(endTs) && endTs + 86400000 * 2 < Date.now()) {
+        return false;
+      }
+    }
+    return true;
+  }, [currentUser]);
+
   const hasActiveTrip = React.useMemo(() => {
-    return trips.some((t) => t.status === "Attivo");
-  }, [trips]);
+    return trips.some((t) => isTripTrulyActive(t));
+  }, [trips, isTripTrulyActive]);
 
   React.useEffect(() => {
     let lastSpokenText = "";
@@ -4926,16 +4954,27 @@ out center;`;
   const lastTrackedLocationRef = React.useRef<{ lat: number; lng: number } | null>(null);
   const isGeocodingRef = React.useRef<boolean>(false);
 
+  const appBootTimestampRef = React.useRef<number>(Date.now());
+
   React.useEffect(() => {
-    const activeTrip = trips.find((t) => t.status === "Attivo");
+    const activeTrip = trips.find((t) => isTripTrulyActive(t));
     if (!activeTrip) {
       lastActiveTripIdRef.current = null;
+      lastTrackedLocationRef.current = null;
+      if (pendingAutoMovement) {
+        setPendingAutoMovement(null);
+      }
+      return;
+    }
+
+    if (!userLocation || isManualCamperLocation) {
       lastTrackedLocationRef.current = null;
       return;
     }
 
-    if (!userLocation) {
-      lastTrackedLocationRef.current = null;
+    // Ignore the first 15 seconds after app boot so the jump from cached last_known_gps_location to current GPS never triggers a false stop popup
+    if (Date.now() - appBootTimestampRef.current < 15000) {
+      lastTrackedLocationRef.current = { lat: userLocation.lat, lng: userLocation.lng };
       return;
     }
 
@@ -4954,8 +4993,8 @@ out center;`;
     // Calculate distance from last tracked location
     const distance = calculateDistance(lat, lng, lastTrackedLocationRef.current.lat, lastTrackedLocationRef.current.lng);
 
-    // Threshold for adding a new stage: 150 meters
-    if (distance > 150 && !isGeocodingRef.current) {
+    // Threshold for adding a new stage: 300 meters
+    if (distance > 300 && !isGeocodingRef.current) {
       isGeocodingRef.current = true;
       lastTrackedLocationRef.current = { lat, lng };
 
@@ -5015,7 +5054,7 @@ out center;`;
           isGeocodingRef.current = false;
         });
     }
-  }, [userLocation, trips, pendingAutoMovement]);
+  }, [userLocation, trips, pendingAutoMovement, isTripTrulyActive, isManualCamperLocation]);
 
   // --- Sync States with LocalStorage & Load Places (Instant & Non-blocking) ---
   React.useEffect(() => {
@@ -5707,14 +5746,6 @@ out center;`;
             : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
         }`}
       >
-        <React.Suspense
-          fallback={
-            <div className="flex-1 flex flex-col items-center justify-center p-12 gap-2 text-xs font-bold text-[#3E4A35]">
-              <div className="w-6 h-6 border-2 border-[#3E4A35] border-t-transparent rounded-full animate-spin" />
-              <span>Caricamento sezione...</span>
-            </div>
-          }
-        >
         {/* Render Category 1: Mappa & Navigatore with sub segmentation (Available without login as Guest Navigator) */}
         {activeTab === "map_nav" && (
             <div className="flex-1 min-h-0 space-y-2 md:space-y-3 h-full flex flex-col">
@@ -6733,10 +6764,10 @@ out center;`;
 
                   {/* Version & Version Code Footer */}
                   <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400 select-all">
-                    <span>ViaCamper v2.5.22</span>
+                    <span>ViaCamper v2.5.23</span>
                     <span>•</span>
                     <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/70">
-                      Version Code: 20522
+                      Version Code: 20523
                     </span>
                   </div>
                 </div>
@@ -7331,7 +7362,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.5.22",
+                                      appVersion: "2.5.23",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,
@@ -7812,7 +7843,6 @@ out center;`;
           </div>
           )
         )}
-        </React.Suspense>
       </main>
 
       {/* Persistent Sticky Bottom Navigation Bar styled like the reference app design */}
@@ -7937,33 +7967,31 @@ out center;`;
       </div>
 
       {isFullscreenNav && navDestination && (
-        <React.Suspense fallback={null}>
-          <FullscreenNavigator
-            dest={navDestination}
-            navigationMode={navigationMode}
-            vehicleDimensions={vehicleDimensions}
-            currentUser={currentUser}
-            onMinimizeChange={setIsNavMinimized}
-            onClose={() => {
-              try {
-                const bridge = (window as any).AndroidNativeTTS;
-                if (bridge && typeof bridge.stopForegroundNavigationNotification === "function") {
-                  bridge.stopForegroundNavigationNotification();
-                }
-              } catch (_) {}
-              setTimeout(() => {
-                setIsFullscreenNav(false);
-                setIsNavMinimized(false);
-              }, 0);
-            }}
-            userLocation={userLocation}
-            userAccuracy={userAccuracy}
-            isGPSEnabled={isGPSEnabled}
-            onGPSEnabledChange={handleGPSEnabledChange}
-            places={places}
-            onSelectPlaceDirectly={handleSelectPlaceDirectly}
-          />
-        </React.Suspense>
+        <FullscreenNavigator
+          dest={navDestination}
+          navigationMode={navigationMode}
+          vehicleDimensions={vehicleDimensions}
+          currentUser={currentUser}
+          onMinimizeChange={setIsNavMinimized}
+          onClose={() => {
+            try {
+              const bridge = (window as any).AndroidNativeTTS;
+              if (bridge && typeof bridge.stopForegroundNavigationNotification === "function") {
+                bridge.stopForegroundNavigationNotification();
+              }
+            } catch (_) {}
+            setTimeout(() => {
+              setIsFullscreenNav(false);
+              setIsNavMinimized(false);
+            }, 0);
+          }}
+          userLocation={userLocation}
+          userAccuracy={userAccuracy}
+          isGPSEnabled={isGPSEnabled}
+          onGPSEnabledChange={handleGPSEnabledChange}
+          places={places}
+          onSelectPlaceDirectly={handleSelectPlaceDirectly}
+        />
       )}
 
       {/* --- ADMIN MODERATION CONTROL PANEL --- */}
@@ -10587,9 +10615,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
                         </div>
                       </div>
 
-                      <React.Suspense fallback={null}>
-                        <AdminNotificationSchedulerWidget />
-                      </React.Suspense>
+                      <AdminNotificationSchedulerWidget />
                     </div>
                   </div>
                 )}
@@ -11082,56 +11108,52 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
       {/* Weather Radar & MeteoAlarm Modal */}
       <AnimatePresence>
         {showWeatherRadarModal && (
-          <React.Suspense fallback={null}>
-            <WeatherRadarModal
-              userLocation={userLocation}
-              currentUser={currentUser}
-              onClose={() => setShowWeatherRadarModal(false)}
-              onOpenReportModal={() => {
-                setShowWeatherRadarModal(false);
-                if (!currentUser) {
-                  window.dispatchEvent(
-                    new CustomEvent("show-toast", {
-                      detail: {
-                        message:
-                          "🔒 Registrati o effettua il login per segnalare il maltempo alla community!",
-                        duration: 4500,
-                      },
-                    }),
-                  );
-                  setActiveTab("settings_tools");
-                  setSettingsSubTab("hub");
-                  return;
-                }
-                setShowReportWeatherModal(true);
-              }}
-              onShowOnMap={() => {
-                setShowWeatherRadarModal(false);
-                setReturnTabAfterMap({
-                  tab: activeTab,
-                  subTab: activeTab === 'settings_tools' ? settingsSubTab : mapNavSubTab
-                });
-                setActiveTab("map_nav");
-                setMapNavSubTab("map");
-              }}
-            />
-          </React.Suspense>
+          <WeatherRadarModal
+            userLocation={userLocation}
+            currentUser={currentUser}
+            onClose={() => setShowWeatherRadarModal(false)}
+            onOpenReportModal={() => {
+              setShowWeatherRadarModal(false);
+              if (!currentUser) {
+                window.dispatchEvent(
+                  new CustomEvent("show-toast", {
+                    detail: {
+                      message:
+                        "🔒 Registrati o effettua il login per segnalare il maltempo alla community!",
+                      duration: 4500,
+                    },
+                  }),
+                );
+                setActiveTab("settings_tools");
+                setSettingsSubTab("hub");
+                return;
+              }
+              setShowReportWeatherModal(true);
+            }}
+            onShowOnMap={() => {
+              setShowWeatherRadarModal(false);
+              setReturnTabAfterMap({
+                tab: activeTab,
+                subTab: activeTab === 'settings_tools' ? settingsSubTab : mapNavSubTab
+              });
+              setActiveTab("map_nav");
+              setMapNavSubTab("map");
+            }}
+          />
         )}
       </AnimatePresence>
 
       {/* Report Weather & Hail Modal */}
       <AnimatePresence>
         {showReportWeatherModal && (
-          <React.Suspense fallback={null}>
-            <ReportWeatherModal
-              userLocation={userLocation}
-              currentUser={currentUser}
-              onClose={() => setShowReportWeatherModal(false)}
-              onSuccess={() => {
-                setShowReportWeatherModal(false);
-              }}
-            />
-          </React.Suspense>
+          <ReportWeatherModal
+            userLocation={userLocation}
+            currentUser={currentUser}
+            onClose={() => setShowReportWeatherModal(false)}
+            onSuccess={() => {
+              setShowReportWeatherModal(false);
+            }}
+          />
         )}
       </AnimatePresence>
 

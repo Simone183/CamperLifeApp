@@ -52,15 +52,60 @@
         }
       })();
 
-      // 2. Service Worker registration (only in top-level standalone context)
+      // 2. Service Worker handling:
+      // In native Android APK (Capacitor localhost), all app bundles are already stored locally in the APK.
+      // An active Service Worker on localhost can serve stale HTML/JS from a previous APK version on the
+      // very first launch after an update (causing a blank/white screen until the app is closed and reopened).
       try {
-        if ('serviceWorker' in navigator && window.self === window.top) {
-          window.addEventListener('load', function() {
-            navigator.serviceWorker.register('/sw.js').catch(function(err) {
-              console.warn('SW registration skipped:', err);
+        var isCapNative =
+          typeof window.Capacitor !== 'undefined' ||
+          window.location.protocol.indexOf('capacitor') === 0 ||
+          window.location.protocol.indexOf('file') === 0 ||
+          ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+            window.location.port !== '3000' &&
+            window.location.port !== '5173');
+
+        if ('serviceWorker' in navigator) {
+          if (isCapNative) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              for (var i = 0; i < regs.length; i++) {
+                regs[i].unregister();
+              }
+            }).catch(function() {});
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                for (var j = 0; j < names.length; j++) {
+                  var cname = names[j];
+                  if (
+                    cname.indexOf('viacamper-offline') !== 0 &&
+                    cname.indexOf('viacamper-tiles') !== 0 &&
+                    cname.indexOf('viacamper-persistent') !== 0
+                  ) {
+                    caches.delete(cname);
+                  }
+                }
+              }).catch(function() {});
+            }
+          } else if (window.self === window.top) {
+            window.addEventListener('load', function() {
+              navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                console.warn('SW registration skipped:', err);
+              });
             });
-          });
+          }
         }
+
+        // Auto-recover if a Vite chunk fails to preload after an app update
+        window.addEventListener('vite:preloadError', function() {
+          try {
+            if (!sessionStorage.getItem('__vc_preload_reloaded__')) {
+              sessionStorage.setItem('__vc_preload_reloaded__', '1');
+              window.location.reload();
+            }
+          } catch (e) {
+            window.location.reload();
+          }
+        });
       } catch (err) {}
     </script>
   </head>

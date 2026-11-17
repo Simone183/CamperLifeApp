@@ -1,4 +1,4 @@
-const CACHE_NAME = 'viacamper-cache-v2026-v41';
+const CACHE_NAME = 'viacamper-cache-v2026-v20523';
 const ASSETS_TO_CACHE = [
   '/manifest.json',
   '/logo.png',
@@ -106,8 +106,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First for HTML navigation / index to ensure users NEVER get stuck on stale bundles
-  if (event.request.mode === 'navigate' || path === '/' || path === '/index.html') {
+  // Network-First for HTML navigation, index, and compiled JS/CSS assets to ensure users NEVER get stuck on stale bundles
+  if (event.request.mode === 'navigate' || path === '/' || path === '/index.html' || path.startsWith('/assets/')) {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {

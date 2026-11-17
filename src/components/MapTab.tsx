@@ -846,13 +846,14 @@ export default function MapTab({
       setRollyDismissDirection(null);
       setShowRollyBubble(true);
 
-      // Keep bubble visible for 7 seconds, then close it and schedule the next one after 8 seconds
+      // Keep the 1st bubble ("Filtri ed Elenco") visible for 10 seconds on startup (7s for subsequent tips), then close for 8 seconds before showing the next tip
+      const visibleDurationMs = forceFirst ? 10000 : 7000;
       rollyHideTimerRef.current = setTimeout(() => {
         setShowRollyBubble(false);
         rollyTimerRef.current = setTimeout(() => {
           showRandomRollyPhrase(false);
         }, 8000);
-      }, 7000);
+      }, visibleDurationMs);
     },
     [ROLLY_BUBBLE_ROTATION],
   );
@@ -878,32 +879,20 @@ export default function MapTab({
     }, snoozeDurationMs);
   }, [showRandomRollyPhrase]);
 
-  // Called whenever user interacts with or explores the map (clicks, drags)
+  // Do not hide Rolly's bubble when the user simply pans or touches the map, so the 1st tip ("Filtri ed Elenco") and rotating tips remain readable
   const handleMapUserActivity = React.useCallback(() => {
-    setShowRollyBubble(false);
+    // No-op: let the automatic 10s/7s visible + 8s hidden cycle (or explicit X/swipe on the bubble) control the speech bubble
+  }, []);
 
-    if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
-    if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
-
-    if (!onNavigateToAI) return;
-
-    // Show the next rotating bubble after 12 seconds of quiet map viewing
-    rollyTimerRef.current = setTimeout(() => {
-      showRandomRollyPhrase(false);
-    }, 12000);
-  }, [onNavigateToAI, showRandomRollyPhrase]);
-
-  // Start the automatic rotation cycle on mount with the Filtri ed Elenco message first
+  // Start the automatic rotation cycle once on mount with the Filtri ed Elenco message first
   React.useEffect(() => {
-    if (!onNavigateToAI) return;
-
     showRandomRollyPhrase(true);
 
     return () => {
       if (rollyTimerRef.current) clearTimeout(rollyTimerRef.current);
       if (rollyHideTimerRef.current) clearTimeout(rollyHideTimerRef.current);
     };
-  }, [onNavigateToAI, showRandomRollyPhrase]);
+  }, [showRandomRollyPhrase]);
 
   // Tracks image error loads (so if /area_sosta.png etc. fails or is missing, we fallback)
   const [imageErrorUrls, setImageErrorUrls] = React.useState<

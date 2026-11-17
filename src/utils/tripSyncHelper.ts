@@ -256,8 +256,24 @@ export function normalizeTrip(rawTrip: any, userEmail?: string): Trip {
     normalizedStatus = "Pianificato";
   } else if (normalizedStatus === "Attivo" || (normalizedStatus as any) === "ATTIVO" || normalizedStatus === "In corso") {
     normalizedStatus = "Attivo";
-  } else if (!normalizedStatus) {
-    normalizedStatus = "Attivo";
+  } else {
+    normalizedStatus = "Completato";
+  }
+
+  // Example trips and trips whose endDate is already in the past (> 2 days ago) must never remain "Attivo"
+  if (
+    tripId === "trip-example-10-oct-2020" ||
+    tripId === "trip-example-10-oct-2025" ||
+    tripId === "t1" ||
+    String(rawTrip.title || "").toUpperCase().startsWith("ESEMPIO:") ||
+    String(rawTrip.title || "").toUpperCase().startsWith("EXAMPLE:")
+  ) {
+    normalizedStatus = "Completato";
+  } else if (normalizedStatus === "Attivo" && tripEndDate) {
+    const endTs = new Date(tripEndDate).getTime();
+    if (!isNaN(endTs) && endTs + 86400000 * 2 < Date.now()) {
+      normalizedStatus = "Completato";
+    }
   }
 
   return {
@@ -465,7 +481,7 @@ export function mergeSingleTrip(localTrip: Trip, cloudTrip: Trip, userEmail?: st
       bestStatus = "Completato";
     }
   } else {
-    bestStatus = isLocalNewer ? (localTrip.status || cloudTrip.status || "Attivo") : (cloudTrip.status || localTrip.status || "Attivo");
+    bestStatus = isLocalNewer ? (localTrip.status || cloudTrip.status || "Completato") : (cloudTrip.status || localTrip.status || "Completato");
   }
 
   const bestStartDate = isCloudNewer ? (cloudTrip.startDate || localTrip.startDate) : (localTrip.startDate || cloudTrip.startDate);

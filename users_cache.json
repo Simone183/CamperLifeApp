@@ -31,5 +31,27 @@
     "isModerator": true,
     "approved": true,
     "favoritesCount": 0
+  },
+  {
+    "email": "prova.123@gmail.com",
+    "name": "Prova",
+    "surname": "Prova1",
+    "nickname": "Prova123",
+    "dob": "1990-10-22",
+    "createdAt": "2026-10-22T13:33:50.617Z",
+    "isModerator": false,
+    "approved": true,
+    "favoritesCount": 0
+  },
+  {
+    "email": "prova2@gmail.com",
+    "name": "Prova2",
+    "surname": "Prova2",
+    "nickname": "Prova2",
+    "dob": "1999-10-22",
+    "createdAt": "2026-10-22T15:39:59.562Z",
+    "isModerator": false,
+    "approved": true,
+    "favoritesCount": 0
   }
 ]

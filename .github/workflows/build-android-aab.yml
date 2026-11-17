@@ -104,12 +104,10 @@ jobs:
 
       - name: Set Android Version and VersionCode
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
+          PKG_VERSION="2.5.23"
+          VCODE=20523
           echo "Package version: $PKG_VERSION"
           if [ -f "android/app/build.gradle" ]; then
-            # Calcola versionCode numerico basato sui campi semver (es. 2.4.34 -> 20434)
-            IFS='.' read -r major minor patch <<< "$PKG_VERSION"
-            VCODE=$(( ${major:-2} * 10000 + ${minor:-4} * 100 + ${patch:-34} ))
             echo "Computed versionCode: $VCODE, versionName: $PKG_VERSION"
             
             # Aggiorna versionCode
@@ -152,11 +150,9 @@ jobs:
           echo "aab_path=$AAB_PATH" >> $GITHUB_OUTPUT
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           
-          # Estrai versione da android/app/build.gradle o package.json
+          # Estrai versione da android/app/build.gradle
           GRADLE_VER=$(grep -o "versionName [\"'][^\"']*[\"']" android/app/build.gradle 2>/dev/null | awk '{print $2}' | tr -d '"'\''')
-          PKG_VER=$(node -p "require('./package.json').version" 2>/dev/null)
-          VERSION="${GRADLE_VER:-$PKG_VER}"
-          if [ -z "$VERSION" ]; then VERSION="2.4.59"; fi
+          VERSION="${GRADLE_VER:-2.5.23}"
           echo "Determined Android Version: $VERSION"
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 

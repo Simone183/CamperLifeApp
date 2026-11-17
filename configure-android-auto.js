@@ -177,10 +177,8 @@ export function configureAndroidAuto() {
     let gradle = fs.readFileSync(buildGradlePath, 'utf-8');
     
     try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
-      const newVersionName = pkg.version || '2.5.4';
-      const parts = newVersionName.split('.').map(n => parseInt(n, 10));
-      const newVersionCode = (parts[0] || 2) * 10000 + (parts[1] || 5) * 100 + (parts[2] || 4);
+      const newVersionName = '2.5.23';
+      const newVersionCode = 20523;
 
       if (/versionCode\s+\d+/.test(gradle)) {
         gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${newVersionCode}`);
@@ -5274,7 +5272,48 @@ public class MainActivity extends BridgeActivity {
 
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
-        // 1. Configura i canali di notifica (NON richiede permessi runtime qui per lasciare apparire prima il Prominent Disclosure in-app)
+        // 1. Configura subito il WebView nativo con sfondo scuro (#1C261B) e pulizia cache al primo avvio dopo installazione/aggiornamento
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            try {
+                webView.setBackgroundColor(android.graphics.Color.parseColor("#1C261B"));
+            } catch (Exception ignored) {}
+            WebSettings settings = webView.getSettings();
+            settings.setMediaPlaybackRequiresUserGesture(false);
+            webView.addJavascriptInterface(new AndroidNativeTtsBridge(), "AndroidNativeTTS");
+
+            try {
+                SharedPreferences prefs = getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+                int currentVCode = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+                int lastLaunchedVCode = prefs.getInt("last_launched_version_code", -1);
+                if (currentVCode != lastLaunchedVCode) {
+                    prefs.edit().putInt("last_launched_version_code", currentVCode).apply();
+                    webView.clearCache(true);
+                }
+            } catch (Exception ignored) {}
+
+            // Watchdog nativo: se al primo avvio a freddo dopo l'installazione #root fosse ancora vuoto dopo 4s, ricarica pulendo la cache
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    if (getBridge() != null && getBridge().getWebView() != null) {
+                        WebView wv = getBridge().getWebView();
+                        wv.evaluateJavascript(
+                            "(function(){ var r = document.getElementById('root'); return Boolean(r && r.childElementCount > 0); })()",
+                            value -> {
+                                if (!"true".equals(value)) {
+                                    try {
+                                        wv.clearCache(true);
+                                        wv.reload();
+                                    } catch (Exception ignored2) {}
+                                }
+                            }
+                        );
+                    }
+                } catch (Exception ignored) {}
+            }, 4000L);
+        }
+
+        // 2. Configura i canali di notifica (NON richiede permessi runtime qui per lasciare apparire prima il Prominent Disclosure in-app)
         WeatherAlertMonitor.ensureNotificationChannel(getApplicationContext());
         ViaCamperCarAppService.ensureChannel(getApplicationContext());
 
@@ -5283,49 +5322,48 @@ public class MainActivity extends BridgeActivity {
             ViaCamperCarAppService.hidePersistentGpsNotification(getApplicationContext());
         }
 
-        // 2. Avvia il servizio e gli scheduler nativi per il monitoraggio meteo a schermo spento / app chiusa
-        try {
-            startService(new Intent(this, WeatherGuardService.class));
-        } catch (Exception ignored) {}
-        WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 20000L);
+        // 3. Posticipa di 2 secondi l'avvio dei servizi in background e del motore TTS per non rallentare il primo avvio della WebView
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                startService(new Intent(MainActivity.this, WeatherGuardService.class));
+            } catch (Exception ignored) {}
+            try {
+                WeatherAlertMonitor.scheduleBackgroundChecks(getApplicationContext(), 20000L);
+            } catch (Exception ignored) {}
 
-        nativeTts = new TextToSpeech(getApplicationContext(), status -> {
-            if (status == TextToSpeech.SUCCESS && nativeTts != null) {
-                int res = nativeTts.setLanguage(Locale.ITALIAN);
-                if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    nativeTts.setLanguage(Locale.getDefault());
-                }
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build();
-                nativeTts.setAudioAttributes(attrs);
-                nativeTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override
-                    public void onStart(String utteranceId) {}
+            try {
+                nativeTts = new TextToSpeech(getApplicationContext(), status -> {
+                    if (status == TextToSpeech.SUCCESS && nativeTts != null) {
+                        int res = nativeTts.setLanguage(Locale.ITALIAN);
+                        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            nativeTts.setLanguage(Locale.getDefault());
+                        }
+                        AudioAttributes attrs = new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build();
+                        nativeTts.setAudioAttributes(attrs);
+                        nativeTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                            @Override
+                            public void onStart(String utteranceId) {}
 
-                    @Override
-                    public void onDone(String utteranceId) {
-                        abandonNavAudioFocus();
-                        notifyWebTtsDone();
-                    }
+                            @Override
+                            public void onDone(String utteranceId) {
+                                abandonNavAudioFocus();
+                                notifyWebTtsDone();
+                            }
 
-                    @Override
-                    public void onError(String utteranceId) {
-                        abandonNavAudioFocus();
-                        notifyWebTtsDone();
+                            @Override
+                            public void onError(String utteranceId) {
+                                abandonNavAudioFocus();
+                                notifyWebTtsDone();
+                            }
+                        });
+                        ttsReady = true;
                     }
                 });
-                ttsReady = true;
-            }
-        });
-
-        if (getBridge() != null && getBridge().getWebView() != null) {
-            WebView webView = getBridge().getWebView();
-            WebSettings settings = webView.getSettings();
-            settings.setMediaPlaybackRequiresUserGesture(false);
-            webView.addJavascriptInterface(new AndroidNativeTtsBridge(), "AndroidNativeTTS");
-        }
+            } catch (Exception ignored) {}
+        }, 2000L);
 
         handleIncomingAutoIntent(getIntent());
     }
