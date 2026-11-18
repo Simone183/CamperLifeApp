@@ -23,6 +23,7 @@ export interface SagraEvent {
   camperParking: string;
   imageUrl: string;
   fullFlyerUrl?: string;
+  extraPhotos?: string[];
   isRealFlyer?: boolean;
   section: 'vicino' | 'weekend' | 'natale' | 'primavera' | 'estate' | 'tutte';
   sourceUrl?: string;
@@ -494,6 +495,7 @@ function sanitizeSagraItem(item: SagraEvent): SagraEvent {
     fullFlyerUrl: item.fullFlyerUrl && item.fullFlyerUrl.startsWith('data:image/')
       ? item.fullFlyerUrl
       : cleanUrl,
+    extraPhotos: Array.isArray(item.extraPhotos) ? item.extraPhotos.filter(Boolean) : [],
     sourceUrl: item.sourceUrl && item.sourceUrl.includes('trovasagre.com') ? undefined : item.sourceUrl,
   };
 }
@@ -698,6 +700,7 @@ export async function fetchLiveSagreUniversal(params: {
   season?: string;
   userLat?: number;
   userLng?: number;
+  fetchAllItaly?: boolean;
 }): Promise<SagraEvent[]> {
   const loc = (params.location || 'Italia').trim();
   const sDate = (params.startDate || '').trim();
@@ -706,6 +709,7 @@ export async function fetchLiveSagreUniversal(params: {
   const season = (params.season || '').trim();
   const uLat = typeof params.userLat === 'number' ? params.userLat : 41.72;
   const uLng = typeof params.userLng === 'number' ? params.userLng : 12.65;
+  const fetchAllItaly = Boolean(params.fetchAllItaly);
 
   // 1. Always sync custom/admin sagre from Firestore first
   const { approved: firestoreApproved } = await syncSagreFromFirestore();
@@ -723,6 +727,7 @@ export async function fetchLiveSagreUniversal(params: {
         season,
         lat: uLat,
         lng: uLng,
+        fetchAllItaly,
       }),
     });
     const contentType = res.headers.get('content-type') || '';
@@ -769,6 +774,7 @@ export function sagraToPlace(s: SagraEvent): Place {
     eventSeason: s.season,
     eventMonth: s.month,
     eventSpecialties: s.specialties,
+    eventExtraPhotos: s.extraPhotos,
   };
 }
 

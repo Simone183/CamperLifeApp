@@ -2537,15 +2537,38 @@ Restituisci ESCLUSIVAMENTE un array JSON valido (senza commenti) con oggetti ave
       const parsed = JSON.parse(jsonMatch[0]);
       if (!Array.isArray(parsed)) return [];
 
-      return parsed
+      const rawItems = parsed
         .filter((ev: any) => ev && ev.title && typeof ev.lat === "number" && typeof ev.lng === "number")
-        .map((ev: any, idx: number) => {
+        .filter((ev: any) => String(ev.endDate || ev.startDate || todayIso).slice(0, 10) >= todayIso);
+
+      const results = await Promise.all(
+        rawItems.map(async (ev: any, idx: number) => {
           const sDate = String(ev.startDate || todayIso).slice(0, 10);
           const eDate = String(ev.endDate || sDate).slice(0, 10);
           const dInfo = formatSagraDateBadgeServer(sDate, eDate);
-          const img = params.foodImages[idx % params.foodImages.length];
+          let img = params.foodImages[idx % params.foodImages.length];
+          let isReal = false;
+          let extraFlyers: string[] = [];
+
+          try {
+            const foundFlyers = await findPublicWebFlyers(
+              String(ev.title),
+              String(ev.locationName || params.location || ""),
+              2
+            );
+            if (foundFlyers.length > 0) {
+              img = foundFlyers[0];
+              isReal = true;
+              if (foundFlyers.length > 1) {
+                extraFlyers = foundFlyers.slice(1);
+              }
+            }
+          } catch {
+            // fallback to default image
+          }
+
           return {
-            id: `ai_sagra_${sDate}_${ String(ev.title).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24) }`,
+            id: `ai_sagra_${sDate}_${String(ev.title).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24)}`,
             title: String(ev.title),
             category: dInfo.month === 12 ? "natale" : "sagra",
             categoryLabel: String(ev.categoryLabel || "Sagra & Gastronomia"),
@@ -2560,21 +2583,137 @@ Restituisci ESCLUSIVAMENTE un array JSON valido (senza commenti) con oggetti ave
             lat: Number(ev.lat),
             lng: Number(ev.lng),
             description: String(ev.description || `Appuntamento enogastronomico a ${ev.locationName}.`),
-            specialties: Array.isArray(ev.specialties) && ev.specialties.length > 0
-              ? ev.specialties.slice(0, 4).map(String)
-              : ["Piatti Tipici Locali", "Stand Gastronomici"],
+            specialties:
+              Array.isArray(ev.specialties) && ev.specialties.length > 0
+                ? ev.specialties.slice(0, 4).map(String)
+                : ["Piatti Tipici Locali", "Stand Gastronomici"],
             camperParking: String(ev.camperParking || `Area parcheggio camper comunale presso ${ev.locationName}.`),
             imageUrl: img,
             fullFlyerUrl: img,
-            isRealFlyer: false,
-            section: dInfo.season === "estate" ? "estate" : dInfo.month === 12 ? "natale" : "weekend"
+            extraPhotos: extraFlyers,
+            isRealFlyer: isReal,
+            section: dInfo.season === "estate" ? "estate" : dInfo.month === 12 ? "natale" : "weekend",
           };
         })
-        .filter((ev: any) => ev.endDate >= todayIso);
+      );
+
+      return results;
     } catch {
       return [];
     }
   }
+
+  /**
+   * Searches the public web (Pro Loco pages, municipal portals, public event pages — strictly excluding trovasagre.com)
+   * for official flyer/poster images of a given Sagra + Municipality and converts them to base64 Data-URIs.
+   */
+  async function findPublicWebFlyers(
+    title: string,
+    locationName: string,
+    maxCount = 5
+  ): Promise<string[]> {
+    const cleanCity = String(locationName || "")
+      .replace(/\([A-Z]{2}\)/gi, "")
+      .trim();
+    const searchQueries = [
+      `${title} ${cleanCity} locandina -site:trovasagre.com`,
+      `${title} ${cleanCity} programma volantino -site:trovasagre.com`,
+    ];
+
+    const candidateUrls: string[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const q of searchQueries) {
+      if (candidateUrls.length >= maxCount * 3) break;
+      try {
+        const searchUrl = `https://www.bing.com/images/search?q=${encodeURIComponent(q)}&form=HDRSC2&first=1`;
+        const resp = await fetch(searchUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "it-IT,it;q=0.9",
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!resp.ok) continue;
+        const html = await resp.text();
+
+        // Extract murl (media URL) and turl (thumbnail URL) from Bing image results
+        const murlRegex = /murl&quot;:&quot;(https?:\/\/[^&"]+)&quot;/gi;
+        const turlRegex = /turl&quot;:&quot;(https?:\/\/[^&"]+)&quot;/gi;
+
+        const mMatches = Array.from(html.matchAll(murlRegex)).map((m) => m[1]);
+        const tMatches = Array.from(html.matchAll(turlRegex)).map((m) => m[1]);
+
+        // Interleave direct media URLs and high-availability thumbnail URLs
+        const combined = [...mMatches.slice(0, 6), ...tMatches.slice(0, 6)];
+        for (const rawUrl of combined) {
+          const decodedUrl = rawUrl.replace(/\\u0026/g, "&").replace(/&amp;/g, "&");
+          const lower = decodedUrl.toLowerCase();
+          if (
+            lower.includes("trovasagre") ||
+            lower.includes("unsplash.com") ||
+            lower.includes("shutterstock") ||
+            lower.includes("istockphoto") ||
+            lower.includes("depositphotos") ||
+            lower.endsWith(".svg") ||
+            seenUrls.has(decodedUrl)
+          ) {
+            continue;
+          }
+          seenUrls.add(decodedUrl);
+          candidateUrls.push(decodedUrl);
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    const dataUris: string[] = [];
+    for (const imgUrl of candidateUrls) {
+      if (dataUris.length >= maxCount) break;
+      try {
+        const imgRes = await fetch(imgUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+          },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (!imgRes.ok) continue;
+        const cType = (imgRes.headers.get("content-type") || "").toLowerCase();
+        if (!cType.startsWith("image/") || cType.includes("svg")) continue;
+
+        const arrayBuf = await imgRes.arrayBuffer();
+        // Skip tiny icons (< 8KB) or huge raw files (> 2.5MB)
+        if (arrayBuf.byteLength < 8000 || arrayBuf.byteLength > 2500000) continue;
+
+        const mime = cType.split(";")[0].trim() || "image/jpeg";
+        const base64 = Buffer.from(arrayBuf).toString("base64");
+        dataUris.push(`data:${mime};base64,${base64}`);
+      } catch {
+        // skip unreachable image
+      }
+    }
+
+    return dataUris;
+  }
+
+  app.post("/api/sagre-find-flyers", async (req, res) => {
+    try {
+      const title = String(req.body?.title || "").trim();
+      const locationName = String(req.body?.locationName || "").trim();
+      const maxCount = Math.min(Number(req.body?.maxCount) || 5, 8);
+      if (!title && !locationName) {
+        return res.status(400).json({ error: "Inserisci titolo o comune della sagra." });
+      }
+      const flyers = await findPublicWebFlyers(title, locationName, maxCount);
+      return res.json({ flyers });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || "Errore ricerca locandine", flyers: [] });
+    }
+  });
 
   app.post("/api/sagre-live", async (req, res) => {
     const royaltyFreeCulinaryPosters = [
@@ -2593,12 +2732,46 @@ Restituisci ESCLUSIVAMENTE un array JSON valido (senza commenti) con oggetti ave
     const endDate = ((req.body && req.body.endDate) || "").trim();
     const month = Number(req.body && req.body.month) || 0;
     const season = ((req.body && req.body.season) || "").trim();
+    const fetchAllItaly = Boolean(req.body && req.body.fetchAllItaly);
 
     try {
-      const cacheKey = `${location.toLowerCase()}|${startDate}|${endDate}|${month}|${season}`;
+      const cacheKey = `${fetchAllItaly ? "ALL_ITALIA" : location.toLowerCase()}|${startDate}|${endDate}|${month}|${season}`;
       const cached = liveSagreCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < EVENTS_CACHE_TTL_MS && cached.sagre.length > 0) {
+      if (!fetchAllItaly && cached && Date.now() - cached.timestamp < EVENTS_CACHE_TTL_MS && cached.sagre.length > 0) {
         return res.json({ sagre: cached.sagre, fromCache: true });
+      }
+
+      if (fetchAllItaly) {
+        const macroAreas = [
+          "Nord Italia (Piemonte, Lombardia, Veneto, Emilia-Romagna, Liguria, Friuli-Venezia Giulia, Trentino-Alto Adige)",
+          "Centro Italia (Toscana, Umbria, Marche, Lazio, Abruzzo)",
+          "Sud Italia e Isole (Campania, Puglia, Calabria, Basilicata, Molise, Sicilia, Sardegna)"
+        ];
+        const areaBatches = await Promise.all(
+          macroAreas.map((area) =>
+            discoverSagreViaGoogleSearchGrounding({
+              location: area,
+              startDate,
+              endDate,
+              month,
+              season,
+              foodImages: royaltyFreeCulinaryPosters
+            })
+          )
+        );
+        const dedupedMap = new Map<string, any>();
+        for (const batch of areaBatches) {
+          for (const item of batch) {
+            if (item && item.id && !dedupedMap.has(item.id)) {
+              dedupedMap.set(item.id, item);
+            }
+          }
+        }
+        const allList = Array.from(dedupedMap.values());
+        if (allList.length > 0) {
+          liveSagreCache.set(cacheKey, { sagre: allList, timestamp: Date.now() });
+        }
+        return res.json({ sagre: allList });
       }
 
       // Strictly return ONLY real upcoming sagre with confirmed dates found via Google Search Grounding

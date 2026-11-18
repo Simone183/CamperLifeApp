@@ -55,6 +55,7 @@ interface EventsTabProps {
     role?: string;
     isModerator?: boolean;
   } | null;
+  isAdminOverride?: boolean;
   onNavigateFullscreen?: (place: Place) => void;
   onShowOnMap?: (lat: number, lng: number, title: string) => void;
 }
@@ -130,18 +131,53 @@ function compressFlyerImageToDataUri(file: File): Promise<string> {
   });
 }
 
+function compressDataUriToJpeg(srcDataUri: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve(srcDataUri);
+    img.onload = () => {
+      const maxW = 640;
+      const maxH = 880;
+      let w = img.width;
+      let h = img.height;
+      if (w > maxW || h > maxH) {
+        const ratio = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(srcDataUri);
+        return;
+      }
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.78));
+    };
+    img.src = srcDataUri;
+  });
+}
+
 export default function EventsTab({
   onBack,
   userLocation,
   currentUser,
+  isAdminOverride,
   onNavigateFullscreen,
   onShowOnMap,
 }: EventsTabProps) {
   const isAdmin = Boolean(
-    currentUser?.role === 'admin' ||
+    isAdminOverride ||
+      currentUser?.role === 'admin' ||
       currentUser?.isModerator ||
       (currentUser?.email &&
-        currentUser.email.toLowerCase().trim() === 'sambucci.simone@gmail.com')
+        ['sambucci.simone@gmail.com', 'viacamperapp@gmail.com'].includes(
+          currentUser.email.toLowerCase().trim()
+        ))
   );
 
   const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'ai_search'>('explore');
@@ -180,9 +216,13 @@ export default function EventsTab({
   const [formSpecialties, setFormSpecialties] = useState('');
   const [formCamperParking, setFormCamperParking] = useState('');
   const [formFlyerDataUri, setFormFlyerDataUri] = useState<string>('');
+  const [formExtraPhotos, setFormExtraPhotos] = useState<string[]>([]);
+  const [webFlyerCandidates, setWebFlyerCandidates] = useState<string[]>([]);
+  const [isSearchingWebFlyers, setIsSearchingWebFlyers] = useState(false);
   const [isAutoFillingAi, setIsAutoFillingAi] = useState(false);
   const [isSavingSagra, setIsSavingSagra] = useState(false);
   const flyerInputRef = useRef<HTMLInputElement | null>(null);
+  const extraPhotosInputRef = useRef<HTMLInputElement | null>(null);
 
   // AI Search states
   const [searchLocation, setSearchLocation] = useState('');
@@ -231,6 +271,8 @@ export default function EventsTab({
       setFormSpecialties((sagraToEdit.specialties || []).join(', '));
       setFormCamperParking(sagraToEdit.camperParking || '');
       setFormFlyerDataUri(sagraToEdit.fullFlyerUrl || sagraToEdit.imageUrl || '');
+      setFormExtraPhotos(Array.isArray(sagraToEdit.extraPhotos) ? sagraToEdit.extraPhotos : []);
+      setWebFlyerCandidates([]);
     } else {
       const today = getTodayIsoDate();
       setEditingSagraId(null);
@@ -247,6 +289,8 @@ export default function EventsTab({
       setFormSpecialties('');
       setFormCamperParking('');
       setFormFlyerDataUri('');
+      setFormExtraPhotos([]);
+      setWebFlyerCandidates([]);
     }
     setShowAddSagraModal(true);
   };
@@ -259,6 +303,62 @@ export default function EventsTab({
       setFormFlyerDataUri(compressed);
     } catch {
       setLiveApiStatusMsg('⚠️ Impossibile leggere il file della locandina.');
+    }
+  };
+
+  const handleExtraPhotosFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileList: File[] = Array.from(files);
+    try {
+      const compressedList: string[] = [];
+      for (const f of fileList) {
+        const dataUri = await compressFlyerImageToDataUri(f);
+        compressedList.push(dataUri);
+      }
+      setFormExtraPhotos((prev) => [...prev, ...compressedList].slice(0, 8));
+    } catch {
+      setLiveApiStatusMsg('⚠️ Errore nel caricamento di una delle foto aggiuntive.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleFindFlyersOnWebForForm = async () => {
+    if (!formTitle.trim() && !formLocationName.trim()) {
+      setLiveApiStatusMsg('⚠️ Inserisci prima il Nome della Sagra e il Comune per cercare le locandine sul web.');
+      return;
+    }
+    setIsSearchingWebFlyers(true);
+    try {
+      const res = await fetch(resolveApiUrl('/api/sagre-find-flyers'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formTitle.trim(),
+          locationName: formLocationName.trim(),
+          maxCount: 5,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.flyers) && data.flyers.length > 0) {
+          const compressedAll: string[] = [];
+          for (const rawUri of data.flyers) {
+            compressedAll.push(await compressDataUriToJpeg(rawUri));
+          }
+          setWebFlyerCandidates(compressedAll);
+          if (!formFlyerDataUri || !formFlyerDataUri.startsWith('data:image/')) {
+            setFormFlyerDataUri(compressedAll[0]);
+          }
+        } else {
+          setLiveApiStatusMsg('ℹ️ Nessuna locandina trovata automaticamente sul web per questo titolo.');
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsSearchingWebFlyers(false);
     }
   };
 
@@ -407,6 +507,7 @@ export default function EventsTab({
           `Area sosta o parcheggio camper comunale a ${formLocationName.trim()}.`,
         imageUrl: chosenPoster,
         fullFlyerUrl: chosenPoster,
+        extraPhotos: formExtraPhotos,
         isRealFlyer: Boolean(formFlyerDataUri.trim()),
         section:
           dInfo.season === 'estate'
@@ -533,6 +634,42 @@ export default function EventsTab({
       }
     } catch {
       setLiveApiStatusMsg('ℹ️ Archivio nazionale sagre sincronizzato.');
+    } finally {
+      setIsFetchingLiveApi(false);
+    }
+  };
+
+  const handleFetchAllItalySagre = async () => {
+    if (isFetchingLiveApi) return;
+    setSelectedPeriodFilter('all');
+    setSelectedMonth(0);
+    setFilterStartDate('');
+    setFilterEndDate('');
+    setSearchQuery('');
+    setIsFetchingLiveApi(true);
+    setLiveApiStatusMsg('🇮🇹 Ricerca in corso di tutte le sagre ed eventi confermati in tutta Italia (Nord, Centro, Sud e Isole)...');
+    try {
+      const synced = await fetchLiveSagreUniversal({
+        location: 'Tutta Italia',
+        startDate: '',
+        endDate: '',
+        month: 0,
+        season: 'all',
+        userLat: userLocation?.lat,
+        userLng: userLocation?.lng,
+        fetchAllItaly: true,
+      });
+      await refreshLocalAndFirestore();
+      const totalNow = getAllSagreEvents().length;
+      if (synced.length > 0 || totalNow > 0) {
+        setLiveApiStatusMsg(
+          `✅ Ricerca completata in tutta Italia! Trovate e sincronizzate ${totalNow} sagre attive da Nord a Sud.`
+        );
+      } else {
+        setLiveApiStatusMsg('ℹ️ Archivio nazionale sagre d\'Italia aggiornato.');
+      }
+    } catch {
+      setLiveApiStatusMsg('ℹ️ Archivio nazionale sagre d\'Italia sincronizzato.');
     } finally {
       setIsFetchingLiveApi(false);
     }
@@ -794,19 +931,29 @@ export default function EventsTab({
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <span className="text-[10px] text-indigo-800 font-medium">
-              Cerca nuove sagre ed eventi gastronomici confermati per regione o periodo:
+              Cerca nuove sagre ed eventi gastronomici confermati per regione o in tutta Italia:
             </span>
-            <button
-              type="button"
-              onClick={handleFetchLiveSagreFromApi}
-              disabled={isFetchingLiveApi}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-xl text-[10.5px] font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-            >
-              <RefreshCw className={`w-3 h-3 ${isFetchingLiveApi ? 'animate-spin' : ''}`} />
-              <span>
-                {isFetchingLiveApi ? 'Ricerca in corso...' : 'Cerca altre sagre'}
-              </span>
-            </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleFetchLiveSagreFromApi}
+                disabled={isFetchingLiveApi}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-xl text-[10.5px] font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+              >
+                <RefreshCw className={`w-3 h-3 ${isFetchingLiveApi ? 'animate-spin' : ''}`} />
+                <span>
+                  {isFetchingLiveApi ? 'Ricerca...' : 'Cerca altre sagre'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={handleFetchAllItalySagre}
+                disabled={isFetchingLiveApi}
+                className="px-3 py-1.5 bg-[#3E4A35] hover:bg-[#5A6B4E] disabled:bg-slate-300 text-white rounded-xl text-[10.5px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+              >
+                <span>🇮🇹 Cerca tutte</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -848,7 +995,7 @@ export default function EventsTab({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-2 py-3 sm:p-4 space-y-3">
         {liveApiStatusMsg && (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center justify-between gap-2">
             <span>{liveApiStatusMsg}</span>
@@ -948,25 +1095,36 @@ export default function EventsTab({
                 )}
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => openNewSagraModal()}
-                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-full text-[11px] font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                  className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-full text-[11px] font-black flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-all"
                 >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>{isAdmin ? '+ Nuova Sagra / Locandina' : 'Segnala Sagra'}</span>
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+                  <span>{isAdmin ? '+ Nuova Sagra' : 'Segnala Sagra'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleFetchLiveSagreFromApi}
                   disabled={isFetchingLiveApi}
-                  className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-300 text-white rounded-full text-[11px] font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 transition-all"
-                  title="Cerca nuove sagre ed eventi gastronomici in Italia"
+                  className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-300 text-white rounded-full text-[11px] font-black flex items-center justify-center gap-1 shadow-xs cursor-pointer shrink-0 transition-all"
+                  title="Cerca nuove sagre per il filtro o la zona selezionata"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isFetchingLiveApi ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isFetchingLiveApi ? 'animate-spin' : ''}`} />
                   <span>{isFetchingLiveApi ? 'Ricerca...' : 'Cerca altre sagre'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleFetchAllItalySagre}
+                  disabled={isFetchingLiveApi}
+                  className="px-3 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] disabled:bg-slate-300 text-white rounded-full text-[11px] font-black flex items-center justify-center gap-1 shadow-xs cursor-pointer shrink-0 transition-all"
+                  title="Cerca tutte le sagre d'Italia da Nord a Sud"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 text-amber-300 shrink-0 ${isFetchingLiveApi ? 'animate-spin' : ''}`} />
+                  <span>🇮🇹 Cerca tutte</span>
                 </button>
               </div>
             </div>
@@ -1002,7 +1160,7 @@ export default function EventsTab({
             </div>
 
             {/* Vertical Poster Flyer Grid (2 columns on mobile, 3 on desktop) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3.5">
               {filteredSagres.map((sagra) => {
                 const distKm = calcDistanceKm(refLat, refLng, sagra.lat, sagra.lng);
                 const resolvedThumb = resolveApiUrl(sagra.imageUrl);
@@ -1012,9 +1170,60 @@ export default function EventsTab({
                   <div
                     key={sagra.id}
                     onClick={() => setSelectedSagra(sagra)}
-                    className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col cursor-pointer group"
+                    className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col cursor-pointer group min-w-0"
                   >
-                    {/* VERTICAL 3:4 POSTER FLYER */}
+                    {/* Dedicated Top Bar: Full Date on Left (never truncated), Edit/Delete/Favorite on Right */}
+                    <div className="px-1.5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-1 shrink-0">
+                      <span className="bg-emerald-700 text-white px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black leading-tight whitespace-nowrap shrink-0 shadow-2xs">
+                        {sagra.dateBadge}
+                      </span>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isAdmin && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openNewSagraModal(sagra);
+                              }}
+                              className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-2xs flex items-center justify-center cursor-pointer transition-transform active:scale-90"
+                              title="Admin: Cambia locandina o modifica sagra"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSagra(sagra);
+                              }}
+                              className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-2xs flex items-center justify-center cursor-pointer transition-transform active:scale-90"
+                              title="Admin: Elimina sagra"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLikedIds((prev) => ({ ...prev, [sagra.id]: !prev[sagra.id] }));
+                          }}
+                          className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+                          title="Salva sagra tra i preferiti"
+                        >
+                          <Heart
+                            className={`w-3 h-3 ${
+                              isLiked ? 'fill-rose-600 text-rose-600' : 'text-slate-700'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* VERTICAL 3:4 POSTER FLYER (Top of flyer is 100% uncovered) */}
                     <div className="relative aspect-[3/4] w-full bg-slate-900 overflow-hidden">
                       <img
                         src={resolvedThumb}
@@ -1031,85 +1240,41 @@ export default function EventsTab({
                         className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                       />
 
-                      <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
                       <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/95 via-black/65 to-transparent pointer-events-none" />
 
-                      {/* Top-Left White Pill Date Badge */}
-                      <div className="absolute top-2.5 left-2.5 bg-white text-slate-900 px-2.5 py-1 rounded-full text-[11px] font-extrabold shadow-md leading-none">
-                        {sagra.dateBadge}
-                      </div>
-
-                      {/* Top-Right Actions: Heart + Admin Quick Edit Flyer / Delete */}
-                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
-                        {isAdmin && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openNewSagraModal(sagra);
-                              }}
-                              className="w-7 h-7 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-md flex items-center justify-center cursor-pointer"
-                              title="Admin: Cambia locandina o modifica sagra"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteSagra(sagra);
-                              }}
-                              className="w-7 h-7 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md flex items-center justify-center cursor-pointer"
-                              title="Admin: Elimina sagra"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLikedIds((prev) => ({ ...prev, [sagra.id]: !prev[sagra.id] }));
-                          }}
-                          className="w-8 h-8 rounded-full bg-white/95 hover:bg-white shadow-md flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
-                          title="Salva sagra tra i preferiti"
-                        >
-                          <Heart
-                            className={`w-4 h-4 ${
-                              isLiked ? 'fill-rose-600 text-rose-600' : 'text-slate-800'
-                            }`}
-                          />
-                        </button>
-                      </div>
-
                       {/* Bottom Poster Overlay */}
-                      <div className="absolute bottom-2.5 left-2.5 right-2.5 text-white">
-                        <span className="inline-block bg-amber-400 text-slate-950 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider mb-1 shadow-xs">
-                          {sagra.categoryLabel}
-                        </span>
-                        <h3 className="text-sm sm:text-[15px] font-extrabold leading-tight line-clamp-2 drop-shadow-sm">
+                      <div className="absolute bottom-2 left-2 right-2 text-white">
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="inline-block bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded-md text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider shadow-xs truncate">
+                            {sagra.categoryLabel}
+                          </span>
+                          {sagra.extraPhotos && sagra.extraPhotos.length > 0 && (
+                            <span className="inline-block bg-white/95 text-slate-950 px-1.5 py-0.5 rounded-md text-[8.5px] font-black shadow-xs shrink-0">
+                              +{sagra.extraPhotos.length} foto
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-xs sm:text-[15px] font-extrabold leading-tight line-clamp-2 drop-shadow-sm">
                           {sagra.title}
                         </h3>
-                        <p className="text-[11px] text-white/90 font-medium truncate mt-0.5 drop-shadow-xs">
+                        <p className="text-[10.5px] sm:text-[11px] text-white/90 font-medium truncate mt-0.5 drop-shadow-xs">
                           {distKm} km · {sagra.locationName}
                         </p>
                       </div>
                     </div>
 
-                    {/* Compact Action Footer for Camper Navigation & Map */}
-                    <div className="p-2 bg-white flex items-center justify-between gap-1.5 border-t border-slate-100">
+                    {/* 2-Column Grid Action Footer: Mappa & Naviga always visible in full without truncation */}
+                    <div className="p-1.5 bg-white grid grid-cols-2 gap-1 border-t border-slate-100">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           openSagraOnMainMap(sagra);
                         }}
-                        className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-[10px] font-extrabold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        className="w-full min-w-0 py-1.5 px-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-[10.5px] sm:text-[11px] font-extrabold flex items-center justify-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
                       >
                         <MapIcon className="w-3 h-3 shrink-0 text-emerald-700" />
-                        <span className="truncate">Mappa</span>
+                        <span>Mappa</span>
                       </button>
                       <button
                         type="button"
@@ -1133,10 +1298,10 @@ export default function EventsTab({
                             });
                           }
                         }}
-                        className="flex-1 py-1.5 px-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-[10px] font-extrabold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        className="w-full min-w-0 py-1.5 px-1 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-[10.5px] sm:text-[11px] font-extrabold flex items-center justify-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
                       >
                         <Navigation className="w-3 h-3 shrink-0" />
-                        <span className="truncate">Naviga</span>
+                        <span>Naviga</span>
                       </button>
                     </div>
                   </div>
@@ -1308,7 +1473,18 @@ export default function EventsTab({
                         className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        <span>{formFlyerDataUri ? 'Cambia Locandina' : 'Carica Foto Locandina'}</span>
+                        <span>{formFlyerDataUri ? 'Cambia da Dispositivo' : 'Carica da Dispositivo'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleFindFlyersOnWebForForm}
+                        disabled={isSearchingWebFlyers}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <Search className={`w-3.5 h-3.5 ${isSearchingWebFlyers ? 'animate-spin' : ''}`} />
+                        <span>
+                          {isSearchingWebFlyers ? 'Cerco sul Web...' : '🔍 Cerca Locandina sul Web'}
+                        </span>
                       </button>
                       {formFlyerDataUri && (
                         <button
@@ -1322,6 +1498,58 @@ export default function EventsTab({
                     </div>
                   </div>
                 </div>
+
+                {/* Web Flyer Candidates Picker */}
+                {webFlyerCandidates.length > 0 && (
+                  <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] font-black text-indigo-950">
+                        🌐 Locandine trovate sul Web ({webFlyerCandidates.length}) — Clicca per usare come principale o aggiungere in basso:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setWebFlyerCandidates([])}
+                        className="text-[10px] font-bold text-indigo-700 hover:underline cursor-pointer"
+                      >
+                        Chiudi
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {webFlyerCandidates.map((candUri, idx) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-[3/4] rounded-xl overflow-hidden border-2 border-indigo-300 bg-slate-900 group"
+                        >
+                          <img
+                            src={candUri}
+                            alt={`Candidata ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/80 p-1 flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setFormFlyerDataUri(candUri)}
+                              className="w-full py-0.5 bg-amber-400 text-slate-950 rounded text-[8.5px] font-black cursor-pointer"
+                            >
+                              Principale
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFormExtraPhotos((prev) =>
+                                  prev.includes(candUri) ? prev : [...prev, candUri].slice(0, 8)
+                                )
+                              }
+                              className="w-full py-0.5 bg-emerald-600 text-white rounded text-[8.5px] font-black cursor-pointer"
+                            >
+                              + In basso
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* 2. Title & Municipality + AI Magic Auto-Fill Button */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1489,6 +1717,63 @@ export default function EventsTab({
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px]"
                     />
                   </div>
+                </div>
+
+                {/* 6. Additional Flyers / Menu / Event Photos at the bottom */}
+                <div className="bg-amber-50/60 border-2 border-dashed border-amber-400 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <label className="block font-black text-slate-800 text-xs">
+                        📄 Altri Volantini, Menù o Foto dell&apos;Evento ({formExtraPhotos.length}/8)
+                      </label>
+                      <p className="text-[10.5px] text-slate-500 leading-snug">
+                        Aggiungi eventuali altre locandine della Pro Loco (es. programma serate, menù stand gastronomici, mappa parcheggi).
+                      </p>
+                    </div>
+                    <input
+                      ref={extraPhotosInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleExtraPhotosFileChange}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => extraPhotosInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Aggiungi Altre Foto</span>
+                    </button>
+                  </div>
+
+                  {formExtraPhotos.length > 0 && (
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
+                      {formExtraPhotos.map((photoUri, idx) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-[3/4] rounded-xl overflow-hidden border border-amber-300 bg-slate-900 group"
+                        >
+                          <img
+                            src={resolveApiUrl(photoUri)}
+                            alt={`Volantino aggiuntivo ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFormExtraPhotos((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md cursor-pointer"
+                            title="Rimuovi questa foto"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Submit Footer */}
@@ -1677,6 +1962,35 @@ export default function EventsTab({
                   </p>
                 </div>
 
+                {/* Additional Flyers / Menus / Event Photos Gallery at the bottom */}
+                {selectedSagra.extraPhotos && selectedSagra.extraPhotos.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <h4 className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>📄 Altri Volantini, Menù & Locandine ({selectedSagra.extraPhotos.length})</span>
+                      <span className="text-[9.5px] font-normal text-slate-400">· Tocca per ingrandire</span>
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {selectedSagra.extraPhotos.map((extraUri, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setZoomedPosterUrl(resolveApiUrl(extraUri))}
+                          className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-slate-200 bg-slate-950 cursor-zoom-in group shadow-xs"
+                        >
+                          <img
+                            src={resolveApiUrl(extraUri)}
+                            alt={`${selectedSagra.title} - Locandina ${idx + 2}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                          <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-white px-2 py-0.5 rounded-lg text-[9.5px] font-bold flex items-center gap-1">
+                            <Maximize2 className="w-2.5 h-2.5" />
+                            <span>Locandina {idx + 2}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {selectedSagra.sourceUrl && !selectedSagra.sourceUrl.includes('trovasagre.com') && (
                   <a
                     href={selectedSagra.sourceUrl}
@@ -1774,3 +2088,1044 @@ export default function EventsTab({
     </div>
   );
 }
+
+export function AdminSagreModerationSection({
+  userLocation,
+  currentUser,
+}: {
+  userLocation: { lat: number; lng: number } | null;
+  currentUser?: {
+    email?: string;
+    name?: string;
+    username?: string;
+    role?: string;
+    isModerator?: boolean;
+  } | null;
+}) {
+  const [allSagre, setAllSagre] = useState<SagraEvent[]>(() => getAllSagreEvents());
+  const [pendingSagre, setPendingSagre] = useState<SagraEvent[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Add / Edit Form state inside Admin Panel
+  const [showForm, setShowForm] = useState(false);
+  const [editingSagraId, setEditingSagraId] = useState<string | null>(null);
+  const [formTitle, setFormTitle] = useState('');
+  const [formLocationName, setFormLocationName] = useState('');
+  const [formRegion, setFormRegion] = useState('Lazio');
+  const [formCategory, setFormCategory] = useState<'sagra' | 'natale' | 'storica' | 'vino'>('sagra');
+  const [formCategoryLabel, setFormCategoryLabel] = useState('Sagra & Gastronomia');
+  const [formStartDate, setFormStartDate] = useState(() => getTodayIsoDate());
+  const [formEndDate, setFormEndDate] = useState(() => getTodayIsoDate());
+  const [formLat, setFormLat] = useState<string>('');
+  const [formLng, setFormLng] = useState<string>('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formSpecialties, setFormSpecialties] = useState('');
+  const [formCamperParking, setFormCamperParking] = useState('');
+  const [formFlyerDataUri, setFormFlyerDataUri] = useState<string>('');
+  const [formExtraPhotos, setFormExtraPhotos] = useState<string[]>([]);
+  const [webFlyerCandidates, setWebFlyerCandidates] = useState<string[]>([]);
+  const [isSearchingWebFlyers, setIsSearchingWebFlyers] = useState(false);
+  const [isBatchFindingFlyers, setIsBatchFindingFlyers] = useState(false);
+  const [findingSagraId, setFindingSagraId] = useState<string | null>(null);
+  const [isAutoFillingAi, setIsAutoFillingAi] = useState(false);
+  const [isSavingSagra, setIsSavingSagra] = useState(false);
+  const flyerInputRef = useRef<HTMLInputElement | null>(null);
+  const extraPhotosInputRef = useRef<HTMLInputElement | null>(null);
+
+  const refreshData = async () => {
+    setIsSyncing(true);
+    try {
+      const { pending } = await syncSagreFromFirestore();
+      setPendingSagre(pending);
+      setAllSagre(getAllSagreEvents());
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    const onUpdated = () => setAllSagre(getAllSagreEvents());
+    window.addEventListener('sagre-updated', onUpdated);
+    refreshData();
+    return () => window.removeEventListener('sagre-updated', onUpdated);
+  }, []);
+
+  const openEditor = (sagra?: SagraEvent) => {
+    if (sagra) {
+      setEditingSagraId(sagra.id);
+      setFormTitle(sagra.title);
+      setFormLocationName(sagra.locationName);
+      setFormRegion(sagra.region || 'Italia');
+      setFormCategory(sagra.category || 'sagra');
+      setFormCategoryLabel(sagra.categoryLabel || 'Sagra & Gastronomia');
+      setFormStartDate(sagra.startDate || getTodayIsoDate());
+      setFormEndDate(sagra.endDate || sagra.startDate || getTodayIsoDate());
+      setFormLat(String(sagra.lat || ''));
+      setFormLng(String(sagra.lng || ''));
+      setFormDescription(sagra.description || '');
+      setFormSpecialties((sagra.specialties || []).join(', '));
+      setFormCamperParking(sagra.camperParking || '');
+      setFormFlyerDataUri(sagra.fullFlyerUrl || sagra.imageUrl || '');
+      setFormExtraPhotos(Array.isArray(sagra.extraPhotos) ? sagra.extraPhotos : []);
+      setWebFlyerCandidates([]);
+    } else {
+      const today = getTodayIsoDate();
+      setEditingSagraId(null);
+      setFormTitle('');
+      setFormLocationName('');
+      setFormRegion('Lazio');
+      setFormCategory('sagra');
+      setFormCategoryLabel('Sagra & Gastronomia');
+      setFormStartDate(today);
+      setFormEndDate(today);
+      setFormLat(userLocation ? userLocation.lat.toFixed(4) : '41.7200');
+      setFormLng(userLocation ? userLocation.lng.toFixed(4) : '12.6500');
+      setFormDescription('');
+      setFormSpecialties('');
+      setFormCamperParking('');
+      setFormFlyerDataUri('');
+      setFormExtraPhotos([]);
+      setWebFlyerCandidates([]);
+    }
+    setShowForm(true);
+  };
+
+  const handleFindFlyersOnWebInAdminForm = async () => {
+    if (!formTitle.trim() && !formLocationName.trim()) {
+      setStatusMsg('⚠️ Inserisci almeno il Titolo e il Comune per cercare le locandine sul web.');
+      return;
+    }
+    setIsSearchingWebFlyers(true);
+    try {
+      const res = await fetch(resolveApiUrl('/api/sagre-find-flyers'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formTitle.trim(),
+          locationName: formLocationName.trim(),
+          maxCount: 5,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.flyers) && data.flyers.length > 0) {
+          const compressedAll: string[] = [];
+          for (const rawUri of data.flyers) {
+            compressedAll.push(await compressDataUriToJpeg(rawUri));
+          }
+          setWebFlyerCandidates(compressedAll);
+          if (!formFlyerDataUri || !formFlyerDataUri.startsWith('data:image/')) {
+            setFormFlyerDataUri(compressedAll[0]);
+          }
+          setStatusMsg(`✅ Trovate ${compressedAll.length} locandine sul web! La prima è stata impostata come principale.`);
+        } else {
+          setStatusMsg('ℹ️ Nessuna locandina trovata automaticamente per questo titolo.');
+        }
+      }
+    } catch {
+      setStatusMsg('⚠️ Errore durante la ricerca locandine sul web.');
+    } finally {
+      setIsSearchingWebFlyers(false);
+    }
+  };
+
+  const handleAutoAttachFlyerForSingleSagra = async (sagra: SagraEvent) => {
+    setFindingSagraId(sagra.id);
+    try {
+      const res = await fetch(resolveApiUrl('/api/sagre-find-flyers'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: sagra.title,
+          locationName: sagra.locationName,
+          maxCount: 3,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.flyers) && data.flyers.length > 0) {
+          const mainCompressed = await compressDataUriToJpeg(data.flyers[0]);
+          const extraCompressed: string[] = [];
+          for (const extraRaw of data.flyers.slice(1, 3)) {
+            extraCompressed.push(await compressDataUriToJpeg(extraRaw));
+          }
+          const updated: SagraEvent = {
+            ...sagra,
+            imageUrl: mainCompressed,
+            fullFlyerUrl: mainCompressed,
+            extraPhotos: [...(sagra.extraPhotos || []), ...extraCompressed].slice(0, 8),
+            isRealFlyer: true,
+          };
+          await saveSagraToFirestore(updated, true);
+          await refreshData();
+          setStatusMsg(`✅ Locandina trovata sul web e salvata per "${sagra.title}"!`);
+          return;
+        }
+      }
+      setStatusMsg(`ℹ️ Nessuna locandina trovata sul web per "${sagra.title}".`);
+    } catch {
+      setStatusMsg('⚠️ Errore durante la ricerca automatica della locandina.');
+    } finally {
+      setFindingSagraId(null);
+    }
+  };
+
+  const handleBatchAutoAttachAllMissingFlyers = async () => {
+    const missing = allSagre.filter((s) => !s.imageUrl.startsWith('data:image/'));
+    if (missing.length === 0) {
+      setStatusMsg('✅ Tutte le sagre attive hanno già una locandina salvata su Firebase!');
+      return;
+    }
+    setIsBatchFindingFlyers(true);
+    let updatedCount = 0;
+    try {
+      for (const s of missing) {
+        setStatusMsg(`🔍 Ricerca locandina sul web per "${s.title}" (${updatedCount + 1}/${missing.length})...`);
+        try {
+          const res = await fetch(resolveApiUrl('/api/sagre-find-flyers'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: s.title,
+              locationName: s.locationName,
+              maxCount: 2,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.flyers) && data.flyers.length > 0) {
+              const mainCompressed = await compressDataUriToJpeg(data.flyers[0]);
+              const extraCompressed: string[] = [];
+              if (data.flyers.length > 1) {
+                extraCompressed.push(await compressDataUriToJpeg(data.flyers[1]));
+              }
+              await saveSagraToFirestore(
+                {
+                  ...s,
+                  imageUrl: mainCompressed,
+                  fullFlyerUrl: mainCompressed,
+                  extraPhotos: [...(s.extraPhotos || []), ...extraCompressed].slice(0, 8),
+                  isRealFlyer: true,
+                },
+                true
+              );
+              updatedCount++;
+            }
+          }
+        } catch {
+          // continue with next
+        }
+      }
+      await refreshData();
+      setStatusMsg(`✅ Completato! Trovate e salvate in automatico su Firebase le locandine per ${updatedCount} sagre.`);
+    } finally {
+      setIsBatchFindingFlyers(false);
+    }
+  };
+
+  const handleFlyerFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressFlyerImageToDataUri(file);
+      setFormFlyerDataUri(compressed);
+    } catch {
+      setStatusMsg('⚠️ Impossibile leggere il file della locandina.');
+    }
+  };
+
+  const handleExtraPhotosFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileList: File[] = Array.from(files);
+    try {
+      const compressedList: string[] = [];
+      for (const f of fileList) {
+        const dataUri = await compressFlyerImageToDataUri(f);
+        compressedList.push(dataUri);
+      }
+      setFormExtraPhotos((prev) => [...prev, ...compressedList].slice(0, 8));
+    } catch {
+      setStatusMsg('⚠️ Errore nel caricamento di una delle foto aggiuntive.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleAutoFillWithAi = async () => {
+    if (!formTitle.trim() && !formLocationName.trim()) {
+      setStatusMsg('⚠️ Inserisci almeno il Titolo o il Comune prima di auto-compilare.');
+      return;
+    }
+    setIsAutoFillingAi(true);
+    try {
+      if (formLocationName.trim()) {
+        try {
+          const nomRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&accept-language=it&q=${encodeURIComponent(
+              formLocationName.trim()
+            )}`
+          );
+          if (nomRes.ok) {
+            const nomArr = await nomRes.json();
+            if (Array.isArray(nomArr) && nomArr.length > 0) {
+              setFormLat(Number(nomArr[0].lat).toFixed(4));
+              setFormLng(Number(nomArr[0].lon).toFixed(4));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const res = await fetch(resolveApiUrl('/api/sagre-ai-autofill'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formTitle.trim(),
+          locationName: formLocationName.trim(),
+          rawNotes: formSpecialties.trim(),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.locationName) setFormLocationName(data.locationName);
+        if (data.region) setFormRegion(data.region);
+        if (typeof data.lat === 'number' && (!formLat || formLat === '41.7200')) {
+          setFormLat(data.lat.toFixed(4));
+        }
+        if (typeof data.lng === 'number' && (!formLng || formLng === '12.6500')) {
+          setFormLng(data.lng.toFixed(4));
+        }
+        if (data.category && ['sagra', 'natale', 'storica', 'vino'].includes(data.category)) {
+          setFormCategory(data.category);
+        }
+        if (data.categoryLabel) setFormCategoryLabel(data.categoryLabel);
+        if (data.description) setFormDescription(data.description);
+        if (Array.isArray(data.specialties) && data.specialties.length > 0) {
+          setFormSpecialties(data.specialties.join(', '));
+        }
+        if (data.camperParking) setFormCamperParking(data.camperParking);
+      }
+    } finally {
+      setIsAutoFillingAi(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTitle.trim() || !formLocationName.trim() || !formStartDate) return;
+    setIsSavingSagra(true);
+    try {
+      const sDate = formStartDate.slice(0, 10);
+      const eDate = (formEndDate || formStartDate).slice(0, 10);
+      const dInfo = formatSagraDateBadgeClient(sDate, eDate);
+
+      let latNum = parseFloat(formLat);
+      let lngNum = parseFloat(formLng);
+      if (isNaN(latNum) || isNaN(lngNum)) {
+        try {
+          const nomRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&accept-language=it&q=${encodeURIComponent(
+              formLocationName.trim()
+            )}`
+          );
+          if (nomRes.ok) {
+            const nomArr = await nomRes.json();
+            if (Array.isArray(nomArr) && nomArr.length > 0) {
+              latNum = parseFloat(nomArr[0].lat);
+              lngNum = parseFloat(nomArr[0].lon);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (isNaN(latNum)) latNum = userLocation?.lat ?? 41.72;
+      if (isNaN(lngNum)) lngNum = userLocation?.lng ?? 12.65;
+
+      const specs = formSpecialties
+        .split(/[,;\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const defaultPoster =
+        'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=900&q=80';
+      const chosenPoster = formFlyerDataUri.trim() || defaultPoster;
+
+      const sagraObj: SagraEvent = {
+        id: editingSagraId || `custom_sagra_${Date.now()}`,
+        title: formTitle.trim(),
+        category: formCategory,
+        categoryLabel: formCategoryLabel.trim() || 'Sagra & Gastronomia',
+        locationName: formLocationName.trim(),
+        region: formRegion.trim() || 'Italia',
+        dates: dInfo.readable,
+        dateBadge: dInfo.badge,
+        startDate: sDate,
+        endDate: eDate >= sDate ? eDate : sDate,
+        month: dInfo.month,
+        season: dInfo.season,
+        lat: latNum,
+        lng: lngNum,
+        description:
+          formDescription.trim() ||
+          `Festa gastronomica e prodotti tipici a ${formLocationName.trim()}.`,
+        specialties: specs.length > 0 ? specs : ['Stand Gastronomici', 'Piatti Tipici Locali'],
+        camperParking:
+          formCamperParking.trim() ||
+          `Area sosta o parcheggio camper comunale a ${formLocationName.trim()}.`,
+        imageUrl: chosenPoster,
+        fullFlyerUrl: chosenPoster,
+        extraPhotos: formExtraPhotos,
+        isRealFlyer: Boolean(formFlyerDataUri.trim()),
+        section:
+          dInfo.season === 'estate' ? 'estate' : dInfo.month === 12 ? 'natale' : 'weekend',
+        submittedByEmail: currentUser?.email || 'admin@viacamper.app',
+        submittedByName: currentUser?.name || 'Admin ViaCamper',
+      };
+
+      await saveSagraToFirestore(sagraObj, true);
+      await refreshData();
+      setShowForm(false);
+      setStatusMsg(`✅ Sagra "${sagraObj.title}" salvata e pubblicata con successo!`);
+    } catch {
+      setStatusMsg('⚠️ Errore durante il salvataggio della sagra.');
+    } finally {
+      setIsSavingSagra(false);
+    }
+  };
+
+  const handleApprove = async (sagra: SagraEvent) => {
+    await approvePendingSagraInFirestore(sagra);
+    await refreshData();
+    setStatusMsg(`✅ Sagra "${sagra.title}" approvata e pubblicata!`);
+  };
+
+  const handleDelete = async (sagra: SagraEvent) => {
+    await deleteSagraEverywhere(sagra.id);
+    await refreshData();
+    setStatusMsg(`🗑️ Sagra "${sagra.title}" eliminata.`);
+  };
+
+  const filtered = allSagre.filter((s) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      s.title.toLowerCase().includes(q) ||
+      s.locationName.toLowerCase().includes(q) ||
+      s.region.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div className="p-3 sm:p-5 flex-1 space-y-4 font-sans">
+      {/* Top Action Banner */}
+      <div className="bg-[#3E4A35]/5 border border-[#3E4A35]/15 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h4 className="font-black text-[#3E4A35] text-xs sm:text-sm flex items-center gap-1.5">
+            🎪 Gestione Sagre, Fiere & Locandine ({allSagre.length} attive)
+          </h4>
+          <p className="text-[11px] text-slate-600 mt-0.5">
+            Inserisci nuove sagre con locandina, modifica quelle esistenti o approva le segnalazioni degli utenti. Le sagre scadute vengono eliminate automaticamente.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleBatchAutoAttachAllMissingFlyers}
+            disabled={isBatchFindingFlyers || isSyncing}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            title="Cerca sul web e allega in automatico le locandine per tutte le sagre che ancora non ne hanno una"
+          >
+            <Wand2 className={`w-4 h-4 ${isBatchFindingFlyers ? 'animate-spin' : ''}`} />
+            <span>
+              {isBatchFindingFlyers
+                ? 'Ricerca locandine in corso...'
+                : '🪄 Cerca Locandine sul Web (Tutte)'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => openEditor()}
+            className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>+ Aggiungi Sagra + Locandina</span>
+          </button>
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={isSyncing}
+            className="px-3 py-2 bg-[#3E4A35] hover:bg-[#5A6B4E] text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-all"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>Ricarica</span>
+          </button>
+        </div>
+      </div>
+
+      {statusMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between">
+          <span>{statusMsg}</span>
+          <button
+            type="button"
+            onClick={() => setStatusMsg(null)}
+            className="text-emerald-700 hover:text-emerald-950 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* OVERLAY MODAL FOR ADD / EDIT SAGRA IN ADMIN PANEL */}
+      {showForm &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            onClick={() => setShowForm(false)}
+            className="fixed inset-0 z-[100001] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-xl max-h-[90vh] rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 font-sans"
+            >
+              {/* Modal Header */}
+              <div className="bg-[#3E4A35] text-white px-4 py-3.5 flex items-center justify-between shrink-0">
+                <div>
+                  <h5 className="font-black text-white text-sm sm:text-base flex items-center gap-1.5">
+                    🎪{' '}
+                    {editingSagraId
+                      ? 'Modifica Sagra / Cambia Locandina'
+                      : 'Nuova Sagra + Locandina'}
+                  </h5>
+                  <p className="text-[10.5px] text-emerald-100 font-medium">
+                    Modifica i dati o le locandine: quando salvi, torni esattamente al punto della lista in cui ti trovavi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={handleSave}
+                className="p-4 overflow-y-auto space-y-3 text-xs flex-1"
+              >
+                {/* Upload Flyer */}
+                <div className="bg-slate-50 border-2 border-dashed border-emerald-600/50 rounded-2xl p-3 flex items-center gap-3">
+                  {formFlyerDataUri ? (
+                    <img
+                      src={resolveApiUrl(formFlyerDataUri)}
+                      alt="Anteprima Locandina"
+                      className="w-20 h-28 object-cover rounded-xl border border-slate-300 shadow-xs shrink-0"
+                    />
+                  ) : (
+                    <div className="w-20 h-28 rounded-xl bg-emerald-950/10 border border-emerald-600/30 flex flex-col items-center justify-center text-emerald-800 shrink-0 text-center p-1">
+                      <Upload className="w-5 h-5 mb-1" />
+                      <span className="text-[9px] font-extrabold leading-tight">
+                        Nessuna locandina
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-1.5">
+                    <label className="block font-black text-slate-800 text-xs">
+                      📸 Foto della Locandina Ufficiale
+                    </label>
+                    <p className="text-[10.5px] text-slate-500">
+                      Carica la foto o screenshot della locandina dal telefono o PC, oppure cercala automaticamente sul web.
+                    </p>
+                    <input
+                      ref={flyerInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFlyerFileChange}
+                      className="hidden"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => flyerInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>
+                          {formFlyerDataUri
+                            ? 'Cambia da PC/Telefono'
+                            : 'Carica da PC/Telefono'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleFindFlyersOnWebInAdminForm}
+                        disabled={isSearchingWebFlyers}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Search
+                          className={`w-3.5 h-3.5 ${
+                            isSearchingWebFlyers ? 'animate-spin' : ''
+                          }`}
+                        />
+                        <span>
+                          {isSearchingWebFlyers
+                            ? 'Cerco sul Web...'
+                            : '🔍 Cerca Locandina sul Web'}
+                        </span>
+                      </button>
+                      {formFlyerDataUri && (
+                        <button
+                          type="button"
+                          onClick={() => setFormFlyerDataUri('')}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[10.5px] font-bold cursor-pointer"
+                        >
+                          Rimuovi foto
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {webFlyerCandidates.length > 0 && (
+                  <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] font-black text-indigo-950">
+                        🌐 Locandine trovate sul Web ({webFlyerCandidates.length}) — Clicca per usare come principale o aggiungere in basso:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setWebFlyerCandidates([])}
+                        className="text-[10px] font-bold text-indigo-700 hover:underline cursor-pointer"
+                      >
+                        Chiudi
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {webFlyerCandidates.map((candUri, idx) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-[3/4] rounded-xl overflow-hidden border-2 border-indigo-300 bg-slate-900"
+                        >
+                          <img
+                            src={candUri}
+                            alt={`Candidata ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/80 p-1 flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setFormFlyerDataUri(candUri)}
+                              className="w-full py-0.5 bg-amber-400 text-slate-950 rounded text-[8.5px] font-black cursor-pointer"
+                            >
+                              Principale
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFormExtraPhotos((prev) =>
+                                  prev.includes(candUri)
+                                    ? prev
+                                    : [...prev, candUri].slice(0, 8)
+                                )
+                              }
+                              className="w-full py-0.5 bg-emerald-600 text-white rounded text-[8.5px] font-black cursor-pointer"
+                            >
+                              + In basso
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">
+                      Nome della Sagra / Evento *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formTitle}
+                      onChange={(e) => setFormTitle(e.target.value)}
+                      placeholder="Es. Sagra della Castagna e Vino Novello"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-900 outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">
+                      Comune e Provincia *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formLocationName}
+                      onChange={(e) => setFormLocationName(e.target.value)}
+                      placeholder="Es. Soriano nel Cimino (VT)"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-900 outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-2.5 flex items-center justify-between gap-2">
+                  <span className="text-[10.5px] font-bold text-amber-950">
+                    💡 Premi per compilare in automatico GPS, Regione, Piatti, Sosta Camper e Descrizione:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAutoFillWithAi}
+                    disabled={isAutoFillingAi}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-amber-200 text-slate-950 rounded-xl text-[10.5px] font-black flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <Wand2
+                      className={`w-3.5 h-3.5 ${
+                        isAutoFillingAi ? 'animate-spin' : ''
+                      }`}
+                    />
+                    <span>
+                      {isAutoFillingAi ? 'Compilazione...' : '✨ Auto-compila AI'}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">
+                      Data Inizio *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formStartDate}
+                      onChange={(e) => {
+                        setFormStartDate(e.target.value);
+                        if (!formEndDate || formEndDate < e.target.value) {
+                          setFormEndDate(e.target.value);
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-900 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">
+                      Data Fine (Scadenza automatica) *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formEndDate}
+                      onChange={(e) => setFormEndDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-900 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">
+                      Regione
+                    </label>
+                    <input
+                      type="text"
+                      value={formRegion}
+                      onChange={(e) => setFormRegion(e.target.value)}
+                      placeholder="Es. Lazio, Toscana..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-extrabold text-slate-700 mb-1">
+                      Etichetta Categoria
+                    </label>
+                    <input
+                      type="text"
+                      value={formCategoryLabel}
+                      onChange={(e) => setFormCategoryLabel(e.target.value)}
+                      placeholder="Es. Castagne & Vino Novello"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-slate-700 mb-1">
+                    Piatti Tipici / Specialità (separati da virgola)
+                  </label>
+                  <input
+                    type="text"
+                    value={formSpecialties}
+                    onChange={(e) => setFormSpecialties(e.target.value)}
+                    placeholder="Es. Gnocchi al Cinghiale, Polenta, Caldarroste"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-slate-700 mb-1">
+                    Descrizione Evento
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={formDescription}
+                    onChange={(e) => setFormDescription(e.target.value)}
+                    placeholder="Breve descrizione della festa..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-600 text-[10.5px] mb-0.5">
+                      Coordinate GPS (Lat / Lng)
+                    </label>
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        value={formLat}
+                        onChange={(e) => setFormLat(e.target.value)}
+                        placeholder="Lat"
+                        className="w-1/2 px-2 py-1.5 rounded-lg border border-slate-200 text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={formLng}
+                        onChange={(e) => setFormLng(e.target.value)}
+                        placeholder="Lng"
+                        className="w-1/2 px-2 py-1.5 rounded-lg border border-slate-200 text-[11px] font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-slate-600 text-[10.5px] mb-0.5">
+                      🏕️ Sosta Camper Consigliata
+                    </label>
+                    <input
+                      type="text"
+                      value={formCamperParking}
+                      onChange={(e) => setFormCamperParking(e.target.value)}
+                      placeholder="Es. Parcheggio camper comunale in Via Roma"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px]"
+                    />
+                  </div>
+                </div>
+
+                {/* Upload Additional Flyers / Photos at the bottom of the form */}
+                <div className="bg-amber-50/60 border-2 border-dashed border-amber-400 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <label className="block font-black text-slate-800 text-xs">
+                        📄 Altri Volantini, Menù o Foto dell&apos;Evento ({formExtraPhotos.length}/8)
+                      </label>
+                      <p className="text-[10.5px] text-slate-500">
+                        Aggiungi eventuali altri volantini della Pro Loco (es. programma serate, menù stand gastronomici, seconda pagina locandina).
+                      </p>
+                    </div>
+                    <input
+                      ref={extraPhotosInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleExtraPhotosFileChange}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => extraPhotosInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Aggiungi Altre Foto</span>
+                    </button>
+                  </div>
+
+                  {formExtraPhotos.length > 0 && (
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
+                      {formExtraPhotos.map((photoUri, idx) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-[3/4] rounded-xl overflow-hidden border border-amber-300 bg-slate-900"
+                        >
+                          <img
+                            src={resolveApiUrl(photoUri)}
+                            alt={`Volantino aggiuntivo ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFormExtraPhotos((prev) =>
+                                prev.filter((_, i) => i !== idx)
+                              )
+                            }
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md cursor-pointer"
+                            title="Rimuovi questa foto"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingSagra}
+                    className="px-5 py-2 rounded-xl bg-[#3E4A35] hover:bg-[#5A6B4E] disabled:bg-slate-300 text-white font-black text-xs cursor-pointer shadow-md"
+                  >
+                    {isSavingSagra ? 'Salvataggio...' : 'Salva e Pubblica Subito'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* PENDING USER SUBMISSIONS */}
+      {pendingSagre.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 space-y-2.5">
+          <h5 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+            🔔 Sagre segnalate dagli utenti in attesa di approvazione ({pendingSagre.length})
+          </h5>
+          <div className="space-y-2">
+            {pendingSagre.map((p) => (
+              <div
+                key={p.id}
+                className="bg-white rounded-xl p-3 border border-amber-200 flex items-center justify-between gap-3"
+              >
+                <img
+                  src={resolveApiUrl(p.imageUrl)}
+                  alt={p.title}
+                  className="w-12 h-16 object-cover rounded-lg border border-slate-200 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-black text-slate-900 truncate">{p.title}</div>
+                  <div className="text-[11px] font-bold text-slate-600 truncate">
+                    📍 {p.locationName} ({p.region}) · 📅 {p.dates}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Inviata da: {p.submittedByName || p.submittedByEmail || 'Utente'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openEditor(p)}
+                    className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold cursor-pointer"
+                  >
+                    Modifica
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApprove(p)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black cursor-pointer"
+                  >
+                    Approva
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(p)}
+                    className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold cursor-pointer"
+                  >
+                    Rifiuta
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SEARCH & ALL ACTIVE SAGRE LIST */}
+      <div className="space-y-2.5">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="🔍 Cerca tra le sagre attive per nome, comune o regione..."
+          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium outline-none focus:border-[#3E4A35]"
+        />
+
+        <div className="space-y-2">
+          {filtered.map((s) => (
+            <div
+              key={s.id}
+              className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-3 hover:border-slate-300 transition-all"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={resolveApiUrl(s.imageUrl)}
+                  alt={s.title}
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    const svg = buildSvgPosterDataUri(s);
+                    if (img.src !== svg) img.src = svg;
+                  }}
+                  className="w-12 h-16 object-cover rounded-lg border border-slate-200 shrink-0 bg-slate-900"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                      {s.title}
+                    </span>
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-900 text-[9px] font-black uppercase rounded-md">
+                      {s.dateBadge}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 font-medium truncate mt-0.5">
+                    📍 {s.locationName} ({s.region}) · Scadenza: {s.endDate}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={() => handleAutoAttachFlyerForSingleSagra(s)}
+                  disabled={findingSagraId === s.id || isBatchFindingFlyers}
+                  className="px-2.5 py-1.5 text-amber-950 bg-amber-300 hover:bg-amber-400 disabled:bg-slate-200 rounded-lg text-xs font-black transition-colors cursor-pointer flex items-center gap-1"
+                  title="Cerca automaticamente sul web la locandina di questa sagra e salvala su Firebase"
+                >
+                  <Search className={`w-3.5 h-3.5 ${findingSagraId === s.id ? 'animate-spin' : ''}`} />
+                  <span>{findingSagraId === s.id ? 'Cerco...' : '🔍 Auto-Locandina'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openEditor(s)}
+                  className="px-3 py-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Modifica</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(s)}
+                  className="px-3 py-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Elimina</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+

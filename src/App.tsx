@@ -76,7 +76,7 @@ import { WeatherWidget } from "./components/WeatherWidget";
 import { WeatherAlertBanner } from "./components/WeatherAlertBanner";
 import { ReportWeatherModal } from "./components/ReportWeatherModal";
 import { WeatherRadarModal } from "./components/WeatherRadarModal";
-import EventsTab from "./components/EventsTab";
+import EventsTab, { AdminSagreModerationSection } from "./components/EventsTab";
 import OfflineMapsTab from "./components/OfflineMapsTab";
 import { ChallengesTab, INITIAL_CHALLENGES } from "./components/ChallengesTab";
 import { DeleteAccountTab } from "./components/DeleteAccountTab";
@@ -1675,6 +1675,7 @@ export default function App() {
   const [adminSubTab, setAdminSubTab] = React.useState<
     | "pending"
     | "all_places"
+    | "sagre"
     | "osm"
     | "osm_reports"
     | "feedback"
@@ -7782,6 +7783,7 @@ out center;`;
                       onBack={() => setSettingsSubTab("hub")}
                       userLocation={userLocation}
                       currentUser={currentUser}
+                      isAdminOverride={isAdminLoggedIn || isSuperAdminOrModerator}
                       onNavigateFullscreen={(place) => {
                         setNavDestination(place);
                         setIsFullscreenNav(true);
@@ -8148,6 +8150,21 @@ out center;`;
                     }`}
                   >
                     <span>🗺️ Tutte le Soste</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSubTab("sagre");
+                      adminModalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className={`py-1.5 text-[10px] md:text-[11px] font-black rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      adminSubTab === "sagre"
+                        ? "bg-amber-500 text-slate-950 shadow-xs"
+                        : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
+                    }`}
+                  >
+                    <span>🎪 Sagre & Eventi</span>
                   </button>
 
                   <button
@@ -8532,6 +8549,14 @@ out center;`;
                     )}
                   </div>
                 )}
+
+                {adminSubTab === "sagre" && (
+                  <AdminSagreModerationSection
+                    userLocation={userLocation}
+                    currentUser={currentUser}
+                  />
+                )}
+
                 {adminSubTab === "pending" && (
                   <div className="p-3 sm:p-5 flex-1 space-y-4">
                     {/* Visual warning banner if there are new registered users pending approval */}

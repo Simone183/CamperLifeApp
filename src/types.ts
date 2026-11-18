@@ -188,6 +188,7 @@ export interface Place {
   eventSeason?: 'inverno' | 'primavera' | 'estate' | 'autunno';
   eventMonth?: number;
   eventSpecialties?: string[];
+  eventExtraPhotos?: string[];
   fuelPrices?: {
     gasolioSelf?: number;
     gasolioServito?: number;
