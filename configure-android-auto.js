@@ -177,8 +177,9 @@ export function configureAndroidAuto() {
     let gradle = fs.readFileSync(buildGradlePath, 'utf-8');
     
     try {
-      const newVersionName = '2.5.23';
-      const newVersionCode = 20523;
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
+      const newVersionName = pkg.version || '2.5.24';
+      const newVersionCode = pkg.versionCode || 20524;
 
       if (/versionCode\s+\d+/.test(gradle)) {
         gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${newVersionCode}`);
