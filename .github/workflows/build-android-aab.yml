@@ -104,8 +104,8 @@ jobs:
 
       - name: Set Android Version and VersionCode
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version || '2.5.24'")
-          VCODE=$(node -p "require('./package.json').versionCode || 20524")
+          PKG_VERSION=$(node -p "require('./package.json').version || '2.5.25'")
+          VCODE=$(node -p "require('./package.json').versionCode || 20525")
           echo "Package version: $PKG_VERSION"
           if [ -f "android/app/build.gradle" ]; then
             echo "Computed versionCode: $VCODE, versionName: $PKG_VERSION"
@@ -152,7 +152,7 @@ jobs:
           
           # Estrai versione da android/app/build.gradle
           GRADLE_VER=$(grep -o "versionName [\"'][^\"']*[\"']" android/app/build.gradle 2>/dev/null | awk '{print $2}' | tr -d '"'\''')
-          VERSION="${GRADLE_VER:-2.5.24}"
+          VERSION="${GRADLE_VER:-2.5.25}"
           echo "Determined Android Version: $VERSION"
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
