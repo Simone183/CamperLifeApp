@@ -9382,11 +9382,13 @@ out center;`;
         document.body
       )}
 
-      {/* --- NAVIGATOR SELECTOR MODAL --- */}
-      <AnimatePresence>
-        {showNavigatorSelector && navigatorTargetPlace && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] flex items-center justify-center p-2 sm:p-4">
-            <motion.div
+      {/* --- NAVIGATOR SELECTOR MODAL (Portaled to document.body so it renders above the mobile fullscreen place details sheet) --- */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {showNavigatorSelector && navigatorTargetPlace && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100050] flex items-center justify-center p-2 sm:p-4">
+                <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -9539,11 +9541,15 @@ out center;`;
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
+          </AnimatePresence>,
+          document.body
+        )}
 
       {/* --- ADD MOVEMENT/STOP TO ACTIVE TRIP MODAL --- */}
-      {showAddMovementModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10000] flex items-center justify-center p-4 overflow-y-auto">
+      {showAddMovementModal &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[100050] flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
@@ -9675,8 +9681,9 @@ out center;`;
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
 
       {/* --- PROPOSE PLACE MODAL DIALOG --- */}
       {showAddPlaceModal && (

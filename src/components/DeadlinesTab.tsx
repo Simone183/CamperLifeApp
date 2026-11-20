@@ -106,6 +106,8 @@ export function saveCompletedToMaintenanceHistory(log: { title: string; date: st
     };
     const updated = [newEntry, ...(Array.isArray(logs) ? logs : [])];
     localStorage.setItem('camper_maintenance_logs', JSON.stringify(updated));
+    const maintRef = doc(db, "user_data", "maintenance_logs");
+    setDoc(maintRef, sanitizeForFirestore({ logs: updated }), { merge: true }).catch(() => {});
   } catch (e) {
     console.error("Error saving completed maintenance history:", e);
   }
@@ -130,6 +132,64 @@ export function sanitizeDeadlines(items: Deadline[]): Deadline[] {
     }
     return cleaned as Deadline;
   });
+}
+
+export function isDefaultDeadlinesList(items?: Deadline[]): boolean {
+  if (!Array.isArray(items) || items.length === 0) return true;
+  const defaultMap = new Map(INITIAL_DEADLINES.map(d => [d.id, d]));
+  const hasCustomItem = items.some(item => !defaultMap.has(item.id));
+  if (hasCustomItem) return false;
+  const hasModifiedDefault = items.some(item => {
+    const def = defaultMap.get(item.id);
+    if (!def) return true;
+    return item.price !== def.price || item.dueDate !== def.dueDate || item.done !== def.done || item.km !== def.km;
+  });
+  return !hasModifiedDefault;
+}
+
+export function mergeUserDeadlines(primary?: Deadline[], secondary?: Deadline[]): Deadline[] {
+  const cleanPrimary = Array.isArray(primary) && primary.length > 0 ? sanitizeDeadlines(primary) : [];
+  const cleanSecondary = Array.isArray(secondary) && secondary.length > 0 ? sanitizeDeadlines(secondary) : [];
+
+  if (cleanPrimary.length === 0 && cleanSecondary.length === 0) return INITIAL_DEADLINES;
+  if (cleanPrimary.length === 0 || (isDefaultDeadlinesList(cleanPrimary) && !isDefaultDeadlinesList(cleanSecondary))) {
+    return cleanSecondary;
+  }
+  if (cleanSecondary.length === 0 || (isDefaultDeadlinesList(cleanSecondary) && !isDefaultDeadlinesList(cleanPrimary))) {
+    return cleanPrimary;
+  }
+
+  const defaultMap = new Map(INITIAL_DEADLINES.map(d => [d.id, d]));
+  const mergedMap = new Map<string, Deadline>();
+
+  for (const item of cleanPrimary) {
+    mergedMap.set(item.id, item);
+  }
+  for (const secItem of cleanSecondary) {
+    const existing = mergedMap.get(secItem.id);
+    if (!existing) {
+      mergedMap.set(secItem.id, secItem);
+    } else {
+      const def = defaultMap.get(secItem.id);
+      if (def) {
+        const existingIsUnmodified =
+          existing.price === def.price &&
+          existing.dueDate === def.dueDate &&
+          existing.done === def.done &&
+          existing.km === def.km;
+        const secIsModified =
+          secItem.price !== def.price ||
+          secItem.dueDate !== def.dueDate ||
+          secItem.done !== def.done ||
+          secItem.km !== def.km;
+        if (existingIsUnmodified && secIsModified) {
+          mergedMap.set(secItem.id, secItem);
+        }
+      }
+    }
+  }
+
+  return Array.from(mergedMap.values());
 }
 
 export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: propSetDeadlines }: DeadlinesTabProps = {}) {
@@ -157,18 +217,16 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
   // Current vehicle odometer dynamically updated
   const currentOdometer = getVehicleCurrentOdometer();
 
-  // Firestore sync
+  // Firestore sync (only when DeadlinesTab is used standalone without App.tsx propDeadlines, or to keep live updates)
   React.useEffect(() => {
     const docRef = doc(db, "user_data", "deadlines");
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data.deadlines) {
+        if (Array.isArray(data.deadlines) && data.deadlines.length > 0) {
           const sanitized = sanitizeDeadlines(data.deadlines);
-          setDeadlines(sanitized);
-          if (JSON.stringify(sanitized) !== JSON.stringify(data.deadlines)) {
-            const cloudPayload = sanitizeForFirestore({ deadlines: sanitized });
-            setDoc(docRef, cloudPayload, { merge: true }).catch(() => {});
+          if (!isDefaultDeadlinesList(sanitized)) {
+            setDeadlines(sanitized);
           }
         }
       }
@@ -179,6 +237,7 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
 
   React.useEffect(() => {
     if (!loadedFromFirestore) return;
+    if (isDefaultDeadlinesList(deadlines)) return;
     const docRef = doc(db, "user_data", "deadlines");
     const cloudPayload = sanitizeForFirestore({ deadlines });
     setDoc(docRef, cloudPayload, { merge: true }).catch(err => {

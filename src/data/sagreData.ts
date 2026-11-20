@@ -1,7 +1,11 @@
 import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import type { Place, PlaceCategory } from '../types.ts';
-import { normalizeSagraFlyerUrl, resolveApiUrl } from '../utils/resolveMediaUrl';
+import { normalizeSagraFlyerUrl, resolveApiUrl } from '../utils/resolveMediaUrl.ts';
+
+async function getClientDb() {
+  const mod = await import('../lib/firebase.ts');
+  return mod.db;
+}
 
 export interface SagraEvent {
   id: string;
@@ -580,6 +584,7 @@ export async function syncSagreFromFirestore(): Promise<{
   pending: SagraEvent[];
 }> {
   try {
+    const db = await getClientDb();
     const colRef = collection(db, 'sagre_events');
     const snap = await getDocs(colRef);
     const approved: SagraEvent[] = [];
@@ -629,6 +634,7 @@ export async function saveSagraToFirestore(
   sagra: SagraEvent,
   isAdmin: boolean
 ): Promise<SagraEvent> {
+  const db = await getClientDb();
   const finalStatus: 'approved' | 'pending' = isAdmin ? 'approved' : 'pending';
   const record: SagraEvent = {
     ...sagra,
@@ -648,6 +654,7 @@ export async function saveSagraToFirestore(
  * Approves a user-submitted pending sagra in Firestore so all users see it immediately.
  */
 export async function approvePendingSagraInFirestore(sagra: SagraEvent): Promise<void> {
+  const db = await getClientDb();
   const approvedRecord: SagraEvent = {
     ...sagra,
     status: 'approved',
@@ -677,6 +684,7 @@ export async function deleteSagraEverywhere(sagraId: string): Promise<void> {
     }
   }
   try {
+    const db = await getClientDb();
     if (sagraId.startsWith('vc_')) {
       // Mark built-in archive ID as deleted in Firestore so all devices hide it too
       await setDoc(doc(db, 'sagre_events', sagraId), { id: sagraId, deleted: true }, { merge: true });

@@ -20,6 +20,9 @@ import {
 import { Deadline } from '../types';
 import { MaintenanceLog, sanitizeMaintenanceLogs } from './MaintenanceLogTab';
 import { calculateNextDeadline, saveCompletedToMaintenanceHistory, getVehicleCurrentOdometer } from './DeadlinesTab';
+import { db } from '../lib/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/firestoreHelper';
 
 interface WorkLogTabProps {
   deadlines: Deadline[];
@@ -38,12 +41,7 @@ interface UnifiedWorkItem {
   notes?: string;
 }
 
-const DEFAULT_MAINTENANCE_LOGS: MaintenanceLog[] = [
-  { id: 'm1', title: 'Lavaggio esterno completo', date: '2026-09-01', category: 'Generica', description: 'Lavaggio profondo della carrozzeria esterna.', cost: 30, completed: true },
-  { id: 'm2', title: 'Lucidatura carrozzeria', date: '2026-09-05', category: 'Estetica', description: 'Trattamento protettivo con cera lucidante.', cost: 50, completed: true },
-  { id: 'm3', title: 'Grafitaggio sottoscocca', date: '2026-09-10', category: 'Riparazioni', description: 'Applicazione protettivo grafitato per sottoscocca.', cost: 70, completed: true },
-  { id: 'm4', title: 'Sostituzione luci interne', date: '2026-09-20', category: 'Installazioni', description: 'Conversione illuminazione cellula a basso consumo.', cost: 40, completed: true }
-];
+const DEFAULT_MAINTENANCE_LOGS: MaintenanceLog[] = [];
 
 export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
   const settings = useAppSettings();
@@ -58,11 +56,32 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
     return DEFAULT_MAINTENANCE_LOGS;
   });
 
-  // State to refresh local storage when changed
+  // Subscribe to Firestore user_data/maintenance_logs so WorkLogTab stays synced with Cloud
+  React.useEffect(() => {
+    const docRef = doc(db, "user_data", "maintenance_logs");
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data.logs)) {
+          const sanitized = sanitizeMaintenanceLogs(data.logs);
+          setMaintenanceLogs(sanitized);
+          try {
+            localStorage.setItem('camper_maintenance_logs', JSON.stringify(sanitized));
+          } catch (e) {}
+        }
+      }
+    }, () => {});
+    return unsubscribe;
+  }, []);
+
+  // State to refresh local storage and Firestore when changed
   const saveMaintenanceLogs = (logsList: MaintenanceLog[]) => {
     const clean = sanitizeMaintenanceLogs(logsList);
     setMaintenanceLogs(clean);
     localStorage.setItem('camper_maintenance_logs', JSON.stringify(clean));
+    const docRef = doc(db, "user_data", "maintenance_logs");
+    const payload = sanitizeForFirestore({ logs: clean });
+    setDoc(docRef, payload, { merge: true }).catch(() => {});
     // Trigger storage event so other tabs sync up
     window.dispatchEvent(new Event('storage'));
   };

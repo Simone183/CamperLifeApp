@@ -170,15 +170,17 @@ export default function EventsTab({
   onNavigateFullscreen,
   onShowOnMap,
 }: EventsTabProps) {
-  const isAdmin = Boolean(
-    isAdminOverride ||
-      currentUser?.role === 'admin' ||
-      currentUser?.isModerator ||
-      (currentUser?.email &&
-        ['sambucci.simone@gmail.com', 'viacamperapp@gmail.com'].includes(
-          currentUser.email.toLowerCase().trim()
-        ))
-  );
+  const isAdmin =
+    typeof isAdminOverride === 'boolean'
+      ? isAdminOverride
+      : Boolean(
+          currentUser?.role === 'admin' ||
+            currentUser?.isModerator ||
+            (currentUser?.email &&
+              ['sambucci.simone@gmail.com', 'viacamperapp@gmail.com'].includes(
+                currentUser.email.toLowerCase().trim()
+              ))
+        );
 
   const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'ai_search'>('explore');
   const [allSagre, setAllSagre] = useState<SagraEvent[]>(() => getAllSagreEvents());
@@ -218,6 +220,7 @@ export default function EventsTab({
   const [formFlyerDataUri, setFormFlyerDataUri] = useState<string>('');
   const [formExtraPhotos, setFormExtraPhotos] = useState<string[]>([]);
   const [webFlyerCandidates, setWebFlyerCandidates] = useState<string[]>([]);
+  const [webFlyerSearchMsg, setWebFlyerSearchMsg] = useState<string | null>(null);
   const [isSearchingWebFlyers, setIsSearchingWebFlyers] = useState(false);
   const [isAutoFillingAi, setIsAutoFillingAi] = useState(false);
   const [isSavingSagra, setIsSavingSagra] = useState(false);
@@ -292,6 +295,7 @@ export default function EventsTab({
       setFormExtraPhotos([]);
       setWebFlyerCandidates([]);
     }
+    setWebFlyerSearchMsg(null);
     setShowAddSagraModal(true);
   };
 
@@ -326,10 +330,13 @@ export default function EventsTab({
 
   const handleFindFlyersOnWebForForm = async () => {
     if (!formTitle.trim() && !formLocationName.trim()) {
-      setLiveApiStatusMsg('⚠️ Inserisci prima il Nome della Sagra e il Comune per cercare le locandine sul web.');
+      const msg = '⚠️ Inserisci prima il Nome della Sagra e il Comune per cercare le locandine sul web.';
+      setWebFlyerSearchMsg(msg);
+      setLiveApiStatusMsg(msg);
       return;
     }
     setIsSearchingWebFlyers(true);
+    setWebFlyerSearchMsg(null);
     try {
       const res = await fetch(resolveApiUrl('/api/sagre-find-flyers'), {
         method: 'POST',
@@ -351,12 +358,27 @@ export default function EventsTab({
           if (!formFlyerDataUri || !formFlyerDataUri.startsWith('data:image/')) {
             setFormFlyerDataUri(compressedAll[0]);
           }
+          setWebFlyerSearchMsg(
+            `✅ Trovate ${compressedAll.length} locandine sul web! Clicca su una miniatura qui sotto per sceglierla.`
+          );
         } else {
-          setLiveApiStatusMsg('ℹ️ Nessuna locandina trovata automaticamente sul web per questo titolo.');
+          setWebFlyerCandidates([]);
+          const noResMsg =
+            '⚠️ Nessun risultato trovato per questa locandina. Prova a semplificare il nome della sagra oppure carica la foto dal dispositivo.';
+          setWebFlyerSearchMsg(noResMsg);
+          setLiveApiStatusMsg(noResMsg);
         }
+      } else {
+        setWebFlyerCandidates([]);
+        setWebFlyerSearchMsg(
+          '⚠️ Nessun risultato trovato per questa locandina. Prova a semplificare il nome della sagra oppure carica la foto dal dispositivo.'
+        );
       }
     } catch {
-      // ignore
+      setWebFlyerCandidates([]);
+      setWebFlyerSearchMsg(
+        '⚠️ Nessun risultato trovato per questa locandina. Prova a semplificare il nome della sagra oppure carica la foto dal dispositivo.'
+      );
     } finally {
       setIsSearchingWebFlyers(false);
     }
@@ -1499,6 +1521,25 @@ export default function EventsTab({
                   </div>
                 </div>
 
+                {webFlyerSearchMsg && (
+                  <div
+                    className={`rounded-xl px-3 py-2 text-[11px] font-bold flex items-center justify-between gap-2 border ${
+                      webFlyerSearchMsg.startsWith('✅')
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        : 'bg-amber-50 border-amber-300 text-amber-900'
+                    }`}
+                  >
+                    <span>{webFlyerSearchMsg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setWebFlyerSearchMsg(null)}
+                      className="text-[10px] font-black underline shrink-0 cursor-pointer"
+                    >
+                      Chiudi
+                    </button>
+                  </div>
+                )}
+
                 {/* Web Flyer Candidates Picker */}
                 {webFlyerCandidates.length > 0 && (
                   <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-2.5 space-y-1.5">
@@ -2126,6 +2167,7 @@ export function AdminSagreModerationSection({
   const [formFlyerDataUri, setFormFlyerDataUri] = useState<string>('');
   const [formExtraPhotos, setFormExtraPhotos] = useState<string[]>([]);
   const [webFlyerCandidates, setWebFlyerCandidates] = useState<string[]>([]);
+  const [webFlyerSearchMsg, setWebFlyerSearchMsg] = useState<string | null>(null);
   const [isSearchingWebFlyers, setIsSearchingWebFlyers] = useState(false);
   const [isBatchFindingFlyers, setIsBatchFindingFlyers] = useState(false);
   const [findingSagraId, setFindingSagraId] = useState<string | null>(null);
@@ -2189,15 +2231,19 @@ export function AdminSagreModerationSection({
       setFormExtraPhotos([]);
       setWebFlyerCandidates([]);
     }
+    setWebFlyerSearchMsg(null);
     setShowForm(true);
   };
 
   const handleFindFlyersOnWebInAdminForm = async () => {
     if (!formTitle.trim() && !formLocationName.trim()) {
-      setStatusMsg('⚠️ Inserisci almeno il Titolo e il Comune per cercare le locandine sul web.');
+      const msg = '⚠️ Inserisci almeno il Titolo e il Comune per cercare le locandine sul web.';
+      setWebFlyerSearchMsg(msg);
+      setStatusMsg(msg);
       return;
     }
     setIsSearchingWebFlyers(true);
+    setWebFlyerSearchMsg(null);
     try {
       const res = await fetch(resolveApiUrl('/api/sagre-find-flyers'), {
         method: 'POST',
@@ -2219,13 +2265,29 @@ export function AdminSagreModerationSection({
           if (!formFlyerDataUri || !formFlyerDataUri.startsWith('data:image/')) {
             setFormFlyerDataUri(compressedAll[0]);
           }
-          setStatusMsg(`✅ Trovate ${compressedAll.length} locandine sul web! La prima è stata impostata come principale.`);
+          const okMsg = `✅ Trovate ${compressedAll.length} locandine sul web! La prima è stata impostata come principale.`;
+          setWebFlyerSearchMsg(okMsg);
+          setStatusMsg(okMsg);
         } else {
-          setStatusMsg('ℹ️ Nessuna locandina trovata automaticamente per questo titolo.');
+          setWebFlyerCandidates([]);
+          const noResMsg =
+            '⚠️ Nessun risultato trovato per questa locandina. Prova a semplificare il nome della sagra oppure carica la foto dal dispositivo.';
+          setWebFlyerSearchMsg(noResMsg);
+          setStatusMsg(noResMsg);
         }
+      } else {
+        setWebFlyerCandidates([]);
+        const noResMsg =
+          '⚠️ Nessun risultato trovato per questa locandina. Prova a semplificare il nome della sagra oppure carica la foto dal dispositivo.';
+        setWebFlyerSearchMsg(noResMsg);
+        setStatusMsg(noResMsg);
       }
     } catch {
-      setStatusMsg('⚠️ Errore durante la ricerca locandine sul web.');
+      setWebFlyerCandidates([]);
+      const errMsg =
+        '⚠️ Nessun risultato trovato per questa locandina. Prova a semplificare il nome della sagra oppure carica la foto dal dispositivo.';
+      setWebFlyerSearchMsg(errMsg);
+      setStatusMsg(errMsg);
     } finally {
       setIsSearchingWebFlyers(false);
     }
@@ -2690,6 +2752,25 @@ export function AdminSagreModerationSection({
                     </div>
                   </div>
                 </div>
+
+                {webFlyerSearchMsg && (
+                  <div
+                    className={`rounded-xl px-3 py-2 text-[11px] font-bold flex items-center justify-between gap-2 border ${
+                      webFlyerSearchMsg.startsWith('✅')
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        : 'bg-amber-50 border-amber-300 text-amber-900'
+                    }`}
+                  >
+                    <span>{webFlyerSearchMsg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setWebFlyerSearchMsg(null)}
+                      className="text-[10px] font-black underline shrink-0 cursor-pointer"
+                    >
+                      Chiudi
+                    </button>
+                  </div>
+                )}
 
                 {webFlyerCandidates.length > 0 && (
                   <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-2.5 space-y-1.5">

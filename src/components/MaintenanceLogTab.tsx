@@ -39,15 +39,17 @@ export interface MaintenanceLog {
   km?: number;
 }
 
-const DEFAULT_LOGS: MaintenanceLog[] = [
-  { id: 'm1', title: 'Lavaggio esterno completo', date: '2026-09-01', category: 'Generica', description: 'Lavaggio profondo della carrozzeria esterna.', cost: 30, completed: true },
-  { id: 'm2', title: 'Lucidatura carrozzeria', date: '2026-09-05', category: 'Estetica', description: 'Trattamento protettivo con cera lucidante.', cost: 50, completed: true },
-  { id: 'm3', title: 'Grafitaggio sottoscocca', date: '2026-09-10', category: 'Riparazioni', description: 'Applicazione protettivo grafitato per sottoscocca.', cost: 70, completed: true },
-  { id: 'm4', title: 'Sostituzione luci interne', date: '2026-09-20', category: 'Installazioni', description: 'Conversione illuminazione cellula a basso consumo.', cost: 40, completed: true }
-];
+const DEFAULT_LOGS: MaintenanceLog[] = [];
+
+const DEMO_DEFAULT_IDS_AND_TITLES: Record<string, string> = {
+  m1: 'lavaggio esterno completo',
+  m2: 'lucidatura carrozzeria',
+  m3: 'grafitaggio sottoscocca',
+  m4: 'sostituzione luci interne',
+};
 
 export function sanitizeMaintenanceLogs(logsList: MaintenanceLog[]): MaintenanceLog[] {
-  if (!Array.isArray(logsList) || logsList.length === 0) return DEFAULT_LOGS;
+  if (!Array.isArray(logsList) || logsList.length === 0) return [];
   const legacyKeywords = [
     'Test di Umidità',
     'Trattamento Igienizzante',
@@ -62,15 +64,12 @@ export function sanitizeMaintenanceLogs(logsList: MaintenanceLog[]): Maintenance
     'Tetto & Oblo',
     'pannello solare',
     "Ioni D'argento",
-    'acido citrico',
-    'Revisione',
-    'Assicurazione',
-    'Bollo',
-    'Tagliando'
+    'acido citrico'
   ];
   const cleaned = logsList.filter(item => {
     if (!item || !item.title) return false;
-    const t = item.title.toLowerCase();
+    const t = item.title.toLowerCase().trim();
+    if (DEMO_DEFAULT_IDS_AND_TITLES[item.id] === t) return false;
     return !legacyKeywords.some(kw => t.includes(kw.toLowerCase()));
   }).map(item => {
     const logItem: any = { ...item };
@@ -83,9 +82,6 @@ export function sanitizeMaintenanceLogs(logsList: MaintenanceLog[]): Maintenance
     return logItem as MaintenanceLog;
   });
 
-  if (cleaned.length === 0) {
-    return DEFAULT_LOGS;
-  }
   return cleaned;
 }
 

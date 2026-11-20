@@ -2615,9 +2615,15 @@ Restituisci ESCLUSIVAMENTE un array JSON valido (senza commenti) con oggetti ave
     const cleanCity = String(locationName || "")
       .replace(/\([A-Z]{2}\)/gi, "")
       .trim();
+    const shortTitle = String(title || "")
+      .split(/\s*[&–—-]\s*/)[0]
+      .trim();
     const searchQueries = [
       `${title} ${cleanCity} locandina -site:trovasagre.com`,
       `${title} ${cleanCity} programma volantino -site:trovasagre.com`,
+      ...(shortTitle && shortTitle !== title.trim()
+        ? [`${shortTitle} ${cleanCity} locandina -site:trovasagre.com`]
+        : []),
     ];
 
     const candidateUrls: string[] = [];

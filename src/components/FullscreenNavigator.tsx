@@ -122,7 +122,7 @@ export default function FullscreenNavigator({
   const [showStopsOnRoute, setShowStopsOnRoute] = React.useState<boolean>(false);
   const [showOsmObstacles, setShowOsmObstacles] = React.useState<boolean>(true);
   const [showTrafficFlow, setShowTrafficFlow] = React.useState<boolean>(true);
-  const [navMapStyle, setNavMapStyle] = React.useState<'nav-night' | 'roadmap' | 'satellite' | 'terrain'>('nav-night');
+  const [navMapStyle, setNavMapStyle] = React.useState<'nav-night' | 'roadmap' | 'satellite' | 'terrain'>('roadmap');
   const [autoCenter, setAutoCenter] = React.useState<boolean>(true);
 
   const [voiceEnabled, setVoiceEnabled] = React.useState<boolean>(false);
@@ -4709,8 +4709,8 @@ out center;`;
                   </span>
                   <div className="grid grid-cols-2 gap-1.5">
                     {([
-                      { id: 'nav-night', label: '🌙 Navigazione (Notte)' },
                       { id: 'roadmap', label: '🛣️ Stradale' },
+                      { id: 'nav-night', label: '🌙 Navigazione (Notte)' },
                       { id: 'satellite', label: '🛰️ Satellite' },
                       { id: 'terrain', label: '⛰️ Rilievo' }
                     ] as const).map((st) => {
@@ -4982,61 +4982,9 @@ out center;`;
         )}
 
         {/* Floating Controls Overlay */}
-        {((navigationMode === 'internal' && !isGPSEnabled) || navigationMode === 'google') && (
+        {navigationMode === 'google' && (
           <div className="absolute bottom-20 sm:bottom-22 inset-x-0 mx-auto flex justify-center z-10 pointer-events-none">
             <div className="flex bg-[#0b0f19]/95 backdrop-blur-md rounded-3xl p-1.5 sm:p-2 shadow-2xl border border-slate-800/90 pointer-events-auto gap-2">
-              {navigationMode === 'internal' && !isGPSEnabled && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setIsDriving(!isDriving)}
-                    className={`px-5 py-3.5 text-white font-extrabold text-xs sm:text-sm rounded-2xl border flex items-center gap-2 transition-all shadow-md cursor-pointer ${
-                      isDriving 
-                      ? 'bg-amber-600/90 border-amber-500 hover:bg-amber-700' 
-                      : 'bg-emerald-600/90 border-emerald-500 hover:bg-emerald-700'
-                    }`}
-                    title={isDriving ? "Pausa simulatore di guida" : "Avvia simulatore di guida"}
-                  >
-                    {isDriving ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white" />}
-                    <span>{isDriving ? "PAUSA" : "SIMULA"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Offset position along a branch direction to simulate taking a wrong turn onto a new road
-                      const curIdx = Math.min(simRouteIndex, displayedRouteCoordinates.length - 1);
-                      const currNode = displayedRouteCoordinates[curIdx] || startLoc;
-                      const nextNode = displayedRouteCoordinates[Math.min(curIdx + 1, displayedRouteCoordinates.length - 1)] || currNode;
-                      
-                      const currHeading = getBearing(currNode, nextNode);
-                      const branchHeading = (currHeading + 35) % 360; // 35 degrees offset onto mistaken road
-                      const devRad = branchHeading * Math.PI / 180;
-                      
-                      // Offset position ~40m forward along the mistaken road vector
-                      const devLat = currNode[0] + (0.00038 * Math.cos(devRad));
-                      const devLng = currNode[1] + (0.00038 * Math.sin(devRad));
-                      
-                      vehicleHeadingRef.current = Math.round(branchHeading);
-                      
-                      speakInstruction("Ricalcolo del percorso", 'immediate');
-                      window.dispatchEvent(new CustomEvent('show-toast', {
-                        detail: { message: "📍 Ricalcolo del percorso", duration: 4000 }
-                      }));
-                      
-                      isRecalculatedRef.current = true;
-                      setCurrentStartLoc([devLat, devLng]);
-                      lastRecalcPos.current = [devLat, devLng];
-                      setSimRouteIndex(0);
-                    }}
-                    className="px-4 py-3.5 bg-rose-600/90 border border-rose-500 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
-                    title="Simula errore di percorso per testare il ricalcolo a 20m con annuncio vocale"
-                  >
-                    <RefreshCw className="w-4 h-4 text-white" />
-                    <span>DEVIA STRADA</span>
-                  </button>
-                </>
-              )}
               {navigationMode === 'google' && (
                 <button
                   type="button"

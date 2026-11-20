@@ -46,7 +46,7 @@ import MapTab from "./components/MapTab";
 import { MovementLog } from "./components/MovementLog";
 import NavTab from "./components/NavTab";
 import ChecklistTab, { sanitizeChecklistItems } from "./components/ChecklistTab";
-import DeadlinesTab, { sanitizeDeadlines } from "./components/DeadlinesTab";
+import DeadlinesTab, { sanitizeDeadlines, mergeUserDeadlines, isDefaultDeadlinesList } from "./components/DeadlinesTab";
 import CommunityTab from "./components/CommunityTab";
 import VehicleSettings from "./components/VehicleSettings";
 import DiaryTab from "./components/DiaryTab";
@@ -89,6 +89,7 @@ import { FamilyCrewProvider } from "./context/FamilyCrewContext";
 import { FamilyCrewModal } from "./components/FamilyCrewModal";
 import { AppPermissionModal } from "./components/AppPermissionModal";
 import { AdminNotificationSchedulerWidget } from "./components/AdminNotificationSchedulerWidget";
+import { VideoRecordingModeOverlay } from "./components/VideoRecordingModeOverlay";
 
 // Icons
 import {
@@ -158,6 +159,7 @@ import {
   Copy,
   Navigation,
   Key,
+  Video,
 } from "lucide-react";
 
 import { ClientFirestoreAdapter } from "./client-firestore";
@@ -558,18 +560,18 @@ export default function App() {
     try {
       const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
       const key = cleanEmail ? `camper_deadlines_${cleanEmail}` : "camper_deadlines_guest";
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        const parsed: Deadline[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return sanitizeDeadlines(parsed);
-        }
-      }
+      const savedScoped = localStorage.getItem(key);
+      const savedGlobal = localStorage.getItem("camper_deadlines");
+      const parsedScoped: Deadline[] = savedScoped ? JSON.parse(savedScoped) : [];
+      const parsedGlobal: Deadline[] = savedGlobal ? JSON.parse(savedGlobal) : [];
+      return mergeUserDeadlines(parsedScoped, parsedGlobal);
     } catch (e) {
       console.error("Error reading camper_deadlines:", e);
     }
     return INITIAL_DEADLINES;
   });
+
+  const deadlinesCloudLoadedRef = React.useRef<boolean>(false);
 
   // Persistent Favorites State from LocalStorage
   const [favoriteIds, setFavoriteIds] = React.useState<string[]>(() => {
@@ -587,6 +589,7 @@ export default function App() {
   React.useEffect(() => {
     setLoadedFromFirestore(false);
     lastSavedTripsJsonRef.current = "";
+    deadlinesCloudLoadedRef.current = false;
   }, [currentUser?.email]);
   React.useEffect(() => {
     const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
@@ -595,13 +598,11 @@ export default function App() {
         const savedChecklist = localStorage.getItem(`camper_checklist_${cleanEmail}`);
         setChecklistItems(savedChecklist ? sanitizeChecklistItems(JSON.parse(savedChecklist)) : DEFAULT_CHECKLIST);
         
-        const savedDeadlines = localStorage.getItem(`camper_deadlines_${cleanEmail}`);
-        if (savedDeadlines) {
-          const parsedDeadlines: Deadline[] = JSON.parse(savedDeadlines);
-          setDeadlines(sanitizeDeadlines(parsedDeadlines));
-        } else {
-          setDeadlines(INITIAL_DEADLINES);
-        }
+        const savedScoped = localStorage.getItem(`camper_deadlines_${cleanEmail}`);
+        const savedGlobal = localStorage.getItem("camper_deadlines");
+        const parsedScoped: Deadline[] = savedScoped ? JSON.parse(savedScoped) : [];
+        const parsedGlobal: Deadline[] = savedGlobal ? JSON.parse(savedGlobal) : [];
+        setDeadlines(mergeUserDeadlines(parsedScoped, parsedGlobal));
 
         const savedFavs = localStorage.getItem(`camper_favorites_${cleanEmail}`);
         setFavoriteIds(savedFavs ? JSON.parse(savedFavs) : []);
@@ -610,9 +611,54 @@ export default function App() {
       }
     } else {
       setChecklistItems(DEFAULT_CHECKLIST);
-      setDeadlines(INITIAL_DEADLINES);
+      const savedGlobal = localStorage.getItem("camper_deadlines");
+      if (savedGlobal) {
+        try {
+          setDeadlines(sanitizeDeadlines(JSON.parse(savedGlobal)));
+        } catch (e) {
+          setDeadlines(INITIAL_DEADLINES);
+        }
+      } else {
+        setDeadlines(INITIAL_DEADLINES);
+      }
       setFavoriteIds([]);
     }
+
+    // Load and merge deadlines from Firestore (user_data/deadlines + users/<email>/backups/latest)
+    let cancelled = false;
+    (async () => {
+      try {
+        const [udSnap, backupSnap] = await Promise.all([
+          getDoc(doc(db, "user_data", "deadlines")).catch(() => null),
+          cleanEmail
+            ? getDoc(doc(db, "users", cleanEmail, "backups", "latest")).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        const udDeadlines: Deadline[] =
+          udSnap && udSnap.exists() && Array.isArray(udSnap.data()?.deadlines)
+            ? udSnap.data().deadlines
+            : [];
+        const backupDeadlines: Deadline[] =
+          backupSnap && backupSnap.exists() && Array.isArray(backupSnap.data()?.deadlines)
+            ? backupSnap.data().deadlines
+            : [];
+        const cloudMerged = mergeUserDeadlines(backupDeadlines, udDeadlines);
+        if (!isDefaultDeadlinesList(cloudMerged)) {
+          setDeadlines((prev) => mergeUserDeadlines(cloudMerged, prev));
+        }
+      } catch (err) {
+        console.warn("Error loading deadlines from Firestore:", err);
+      } finally {
+        if (!cancelled) {
+          deadlinesCloudLoadedRef.current = true;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentUser?.email]);
 
   React.useEffect(() => {
@@ -630,6 +676,18 @@ export default function App() {
       const cleanEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
       const key = cleanEmail ? `camper_deadlines_${cleanEmail}` : "camper_deadlines_guest";
       localStorage.setItem(key, JSON.stringify(deadlines));
+      localStorage.setItem("camper_deadlines", JSON.stringify(deadlines));
+      if (deadlinesCloudLoadedRef.current && !isDefaultDeadlinesList(deadlines)) {
+        const cloudPayload = sanitizeForFirestore({ deadlines, updatedAt: new Date().toISOString() });
+        setDoc(doc(db, "user_data", "deadlines"), cloudPayload, { merge: true }).catch(() => {});
+        if (cleanEmail) {
+          setDoc(
+            doc(db, "users", cleanEmail, "backups", "latest"),
+            sanitizeForFirestore({ deadlines }),
+            { merge: true }
+          ).catch(() => {});
+        }
+      }
     } catch (e) {
       console.error("Error saving camper_deadlines:", e);
     }
@@ -1642,6 +1700,10 @@ export default function App() {
       ))
     )
   );
+
+  // --- VIDEO RECORDING / DEMO MODE (Admin screen recording helper) ---
+  const [isVideoRecordingMode, setIsVideoRecordingMode] = React.useState<boolean>(false);
+  const [hideTopBannersInVideoMode, setHideTopBannersInVideoMode] = React.useState<boolean>(true);
 
   // --- ADMIN MODERATION STATES ---
   const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState<boolean>(() => {
@@ -5440,7 +5502,10 @@ out center;`;
       )}
 
       {/* Top Warning Banner if any safety checkpoints are uncompleted */}
-      {currentUser && dashboardSettings.showTopNotifications !== false && incompleteChecklistCount > 0 && (
+      {currentUser &&
+        !(isVideoRecordingMode && hideTopBannersInVideoMode) &&
+        dashboardSettings.showTopNotifications !== false &&
+        incompleteChecklistCount > 0 && (
         <div className="bg-[#A45C40] text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-[#A45C40]/20 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
           <ShieldAlert className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
           <span className="leading-tight truncate sm:whitespace-normal">
@@ -5459,7 +5524,7 @@ out center;`;
       )}
 
       {/* Top Warning Banner for pending user registrations (Admin/Moderator only) */}
-      {isSuperAdminOrModerator && adminUsers.filter(u => u.approved === false).length > 0 && (
+      {!isVideoRecordingMode && isSuperAdminOrModerator && adminUsers.filter(u => u.approved === false).length > 0 && (
         <div className="bg-amber-600 text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-amber-700/30 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
           <Users className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
           <span className="leading-tight truncate sm:whitespace-normal">
@@ -5482,7 +5547,7 @@ out center;`;
       )}
 
       {/* Top Warning Banner for pending place proposals (Admin/Moderator only) */}
-      {isSuperAdminOrModerator && pendingPlaces.length > 0 && (
+      {!isVideoRecordingMode && isSuperAdminOrModerator && pendingPlaces.length > 0 && (
         <div className="bg-[#3E4A35] text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-[#3E4A35]/30 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
           <MapPin className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-emerald-300 shrink-0 animate-pulse" />
           <span className="leading-tight truncate sm:whitespace-normal">
@@ -5835,8 +5900,8 @@ out center;`;
                   onGPSEnabledChange={handleGPSEnabledChange}
                   isManualCamperLocation={isManualCamperLocation}
                   manualCamperPlaceId={manualCamperPlaceId}
-                  hasSafetyBanner={Boolean(currentUser) && incompleteChecklistCount > 0}
-                  isAdmin={isAdminLoggedIn || isSuperAdminOrModerator}
+                  hasSafetyBanner={Boolean(currentUser) && !(isVideoRecordingMode && hideTopBannersInVideoMode) && incompleteChecklistCount > 0}
+                  isAdmin={!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator)}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={handleToggleFavorite}
                   focusedPlaceId={focusedPlaceId}
@@ -6659,13 +6724,18 @@ out center;`;
                                   {currentUser.nickname?.[0] || 'U'}
                                 </div>
                               )}
-                              <span>Profilo: {currentUser.nickname}</span>
+                              <span>
+                                Profilo:{" "}
+                                {isVideoRecordingMode
+                                  ? "Equipaggio ViaCamper"
+                                  : currentUser.nickname}
+                              </span>
                             </>
                           ) : (
                             <span>Ospite (Storage Locale)</span>
                           )}
                         </div>
-                        {currentUser && (
+                        {currentUser && !isVideoRecordingMode && (
                           <button
                             type="button"
                             onClick={() => setSettingsSubTab("delete_account")}
@@ -6740,26 +6810,37 @@ out center;`;
                       <span className="truncate">Tutela & Licenza</span>
                     </button>
 
-                    {(isAdminLoggedIn || isSuperAdminOrModerator) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isSuperAdminOrModerator) {
-                            setIsAdminLoggedIn(true);
-                          }
-                          fetchPendingPlaces();
-                          fetchFeedbacks();
-                          fetchAdminUsers();
-                          fetchPendingCommunityItineraries();
-                          fetchAdminNotifications();
-                          fetchOsmReports();
-                          setShowAdminPanel(true);
-                        }}
-                        className="px-3 py-2.5 bg-slate-50 hover:bg-slate-200/60 text-slate-700 border border-slate-250/50 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1"
-                      >
-                        <Shield className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                        <span className="truncate">Moderazione</span>
-                      </button>
+                    {!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isSuperAdminOrModerator) {
+                              setIsAdminLoggedIn(true);
+                            }
+                            fetchPendingPlaces();
+                            fetchFeedbacks();
+                            fetchAdminUsers();
+                            fetchPendingCommunityItineraries();
+                            fetchAdminNotifications();
+                            fetchOsmReports();
+                            setShowAdminPanel(true);
+                          }}
+                          className="px-3 py-2.5 bg-slate-50 hover:bg-slate-200/60 text-slate-700 border border-slate-250/50 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1"
+                        >
+                          <Shield className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span className="truncate">Moderazione</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsVideoRecordingMode(true)}
+                          className="px-3 py-2.5 bg-rose-600 hover:bg-rose-700 text-white border border-rose-700 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 w-full col-span-2 sm:col-span-1 shadow-xs"
+                        >
+                          <Video className="w-3.5 h-3.5 text-white shrink-0 animate-pulse" />
+                          <span className="truncate">🎥 Modalità Video</span>
+                        </button>
+                      </>
                     )}
                   </div>
 
@@ -7001,7 +7082,7 @@ out center;`;
                     <CommunityTab
                       messages={communityMessages}
                       onChange={handleCommunityChange}
-                      isAdmin={isAdminLoggedIn || isSuperAdminOrModerator}
+                      isAdmin={!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator)}
                       onOpenChallenges={() => setSettingsSubTab("challenges")}
                       currentUser={currentUser}
                       challengeSubmissions={challengeSubmissions}
@@ -7783,7 +7864,7 @@ out center;`;
                       onBack={() => setSettingsSubTab("hub")}
                       userLocation={userLocation}
                       currentUser={currentUser}
-                      isAdminOverride={isAdminLoggedIn || isSuperAdminOrModerator}
+                      isAdminOverride={!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator)}
                       onNavigateFullscreen={(place) => {
                         setNavDestination(place);
                         setIsFullscreenNav(true);
@@ -11554,6 +11635,22 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
           </div>
         </div>
       )}
+
+      {/* Studio Registrazione Video (Clean Mode + Sottotitoli TV + Touch Highlighter) */}
+      <VideoRecordingModeOverlay
+        isActive={isVideoRecordingMode}
+        onClose={() => setIsVideoRecordingMode(false)}
+        hideTopBanners={hideTopBannersInVideoMode}
+        onToggleHideTopBanners={setHideTopBannersInVideoMode}
+        onNavigateToSection={(tab, subTab) => {
+          setActiveTab(tab);
+          if (tab === "map_nav" && subTab) {
+            setMapNavSubTab(subTab as any);
+          } else if (tab === "settings_tools" && subTab) {
+            setSettingsSubTab(subTab as any);
+          }
+        }}
+      />
     </div>
     </FamilyCrewProvider>
   );
