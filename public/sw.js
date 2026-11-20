@@ -1,4 +1,4 @@
-const CACHE_NAME = 'viacamper-cache-v2026-v20525';
+const CACHE_NAME = 'viacamper-cache-v2026-v20526';
 const ASSETS_TO_CACHE = [
   '/manifest.json',
   '/logo.png',

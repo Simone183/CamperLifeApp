@@ -406,10 +406,10 @@ export const ToolsTab: React.FC<ToolsTabProps> = ({
         </div>
 
         <div className="pt-3 border-t border-slate-300/80 dark:border-slate-800 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-          <span>ViaCamper v2.5.25</span>
+          <span>ViaCamper v2.5.26</span>
           <span>•</span>
           <span className="font-mono bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-md border border-slate-300/80 dark:border-slate-700">
-            Version Code: 20525
+            Version Code: 20526
           </span>
         </div>
       </div>

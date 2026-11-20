@@ -1160,10 +1160,10 @@ export default function GeneralSettingsTab({
 
       {/* Version & Version Code Footer */}
       <div className="pt-4 pb-2 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 dark:text-slate-500 select-all">
-        <span>ViaCamper v2.5.25</span>
+        <span>ViaCamper v2.5.26</span>
         <span>•</span>
         <span className="font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
-          Version Code: 20525
+          Version Code: 20526
         </span>
       </div>
 
