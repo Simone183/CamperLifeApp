@@ -41,6 +41,8 @@ import {
   deleteSagraEverywhere,
 } from '../data/sagreData';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
+import { buildCalendarDraftFromSagra } from '../utils/googleCalendar';
+import { openGoogleCalendarModal } from './GoogleCalendarModal';
 
 export { CURRENT_NOV_SAGRE, SAGRE_PLACES };
 export type { SagraEvent };
@@ -1231,6 +1233,17 @@ export default function EventsTab({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            openGoogleCalendarModal(buildCalendarDraftFromSagra(sagra));
+                          }}
+                          className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-2xs flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+                          title="Salva sagra su Google Calendar"
+                        >
+                          <Calendar className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setLikedIds((prev) => ({ ...prev, [sagra.id]: !prev[sagra.id] }));
                           }}
                           className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
@@ -1962,11 +1975,23 @@ export default function EventsTab({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200">
-                  <Calendar className="w-4 h-4 text-emerald-700 shrink-0" />
-                  <div className="text-xs font-bold text-emerald-950">
-                    Date: <span className="font-extrabold text-emerald-800">{selectedSagra.dates}</span>
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <div className="text-xs font-bold text-emerald-950">
+                      Date: <span className="font-extrabold text-emerald-800">{selectedSagra.dates}</span>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openGoogleCalendarModal(buildCalendarDraftFromSagra(selectedSagra))
+                    }
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Salva su Google Calendar</span>
+                  </button>
                 </div>
 
                 <div>

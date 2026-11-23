@@ -178,8 +178,8 @@ export function configureAndroidAuto() {
     
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
-      const newVersionName = pkg.version || '2.5.25';
-      const newVersionCode = pkg.versionCode || 20525;
+      const newVersionName = pkg.version || '2.5.26';
+      const newVersionCode = pkg.versionCode || 20526;
 
       if (/versionCode\s+\d+/.test(gradle)) {
         gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${newVersionCode}`);
@@ -622,19 +622,68 @@ public class AutoDataBridge {
     }
 
     /**
-     * Calcola il percorso completo (polilinea stradale ad alta densità + manovre turn-by-turn in italiano)
-     * interrogando più server OSRM con fallback automatico per il Navigatore 3D su Android Auto.
+     * Proietta una coordinata GPS in avanti di N metri lungo la direzione di marcia (bearingDeg 0..360°),
+     * così durante il ricalcolo dopo un bivio sbagliato il punto di partenza è già oltre l'incrocio sulla nuova strada.
      */
+    public static double[] projectCoordinateAhead(double lat, double lng, float bearingDeg, double meters) {
+        if (meters <= 0.0 || Float.isNaN(bearingDeg) || bearingDeg < 0.0f) {
+            return new double[]{lat, lng};
+        }
+        double earthRadius = 6378137.0;
+        double distRad = meters / earthRadius;
+        double brngRad = Math.toRadians(bearingDeg);
+        double lat1 = Math.toRadians(lat);
+        double lon1 = Math.toRadians(lng);
+
+        double lat2 = Math.asin(Math.sin(lat1) * Math.cos(distRad)
+                + Math.cos(lat1) * Math.sin(distRad) * Math.cos(brngRad));
+        double lon2 = lon1 + Math.atan2(
+                Math.sin(brngRad) * Math.sin(distRad) * Math.cos(lat1),
+                Math.cos(distRad) - Math.sin(lat1) * Math.sin(lat2)
+        );
+        return new double[]{Math.toDegrees(lat2), Math.toDegrees(lon2)};
+    }
+
     public static RouteData fetchOsrmRouteData(double startLat, double startLng, double endLat, double endLng, String destName) {
+        return fetchOsrmRouteData(startLat, startLng, endLat, endLng, destName, -1.0f);
+    }
+
+    /**
+     * Calcola il percorso completo (polilinea stradale ad alta densità + manovre turn-by-turn in italiano)
+     * imponendo continue_straight=true e la direzione di marcia corrente (bearings=<heading>,60;) così,
+     * se il camper sbaglia strada, il navigatore lo fa proseguire in avanti fino alla prima rotatoria o inversione!
+     */
+    public static RouteData fetchOsrmRouteData(double startLat, double startLng, double endLat, double endLng, String destName, float headingDegrees) {
         RouteData data = new RouteData();
-        String[] osrmEndpoints = new String[]{
-            String.format(Locale.US,
-                "https://routing.openstreetmap.de/routed-car/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true",
-                startLng, startLat, endLng, endLat),
-            String.format(Locale.US,
-                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true",
-                startLng, startLat, endLng, endLat)
-        };
+        boolean hasValidHeading = !Float.isNaN(headingDegrees) && headingDegrees >= 0.0f;
+        int normHeading = hasValidHeading ? (Math.round(((headingDegrees % 360.0f) + 360.0f) % 360.0f) % 360) : -1;
+        String bearingsParam = hasValidHeading
+                ? String.format(Locale.US, "&bearings=%d,60;", normHeading)
+                : "";
+
+        String[] osrmEndpoints = hasValidHeading
+                ? new String[]{
+                    String.format(Locale.US,
+                        "https://routing.openstreetmap.de/routed-car/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&continue_straight=true%s",
+                        startLng, startLat, endLng, endLat, bearingsParam),
+                    String.format(Locale.US,
+                        "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&continue_straight=true%s",
+                        startLng, startLat, endLng, endLat, bearingsParam),
+                    String.format(Locale.US,
+                        "https://routing.openstreetmap.de/routed-car/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&continue_straight=true",
+                        startLng, startLat, endLng, endLat),
+                    String.format(Locale.US,
+                        "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&continue_straight=true",
+                        startLng, startLat, endLng, endLat)
+                }
+                : new String[]{
+                    String.format(Locale.US,
+                        "https://routing.openstreetmap.de/routed-car/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&continue_straight=true",
+                        startLng, startLat, endLng, endLat),
+                    String.format(Locale.US,
+                        "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true&continue_straight=true",
+                        startLng, startLat, endLng, endLat)
+                };
 
         for (String urlStr : osrmEndpoints) {
             HttpURLConnection conn = null;
@@ -1519,12 +1568,16 @@ import androidx.car.app.AppManager;
 import androidx.car.app.CarContext;
 import androidx.car.app.SurfaceCallback;
 import androidx.car.app.SurfaceContainer;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -1533,6 +1586,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  * Motore di rendering 3D Prospettico (Vista Navigatore Cockpit) su Surface nativa Android Auto:
@@ -1576,6 +1631,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
 
     private float targetBearing = 0.0f;
     private float displayBearing = 0.0f;
+    private float lastTravelHeading = Float.NaN;
     private float currentSpeedKmh = 0.0f;
 
     private double destLat = 0.0;
@@ -1695,7 +1751,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
     private void initDiskCache(CarContext ctx) {
         try {
             if (ctx != null && ctx.getCacheDir() != null) {
-                diskTileCacheDir = new File(ctx.getCacheDir(), "viacamper_auto_tiles_v2");
+                diskTileCacheDir = new File(ctx.getCacheDir(), "viacamper_auto_tiles_v3_upright");
                 if (!diskTileCacheDir.exists()) {
                     diskTileCacheDir.mkdirs();
                 }
@@ -1718,12 +1774,281 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         }
     }
 
+    private static class UprightMapLabel {
+        final double lat;
+        final double lng;
+        final String text;
+        final boolean isTown;
+
+        UprightMapLabel(double lat, double lng, String text, boolean isTown) {
+            this.lat = lat;
+            this.lng = lng;
+            this.text = text;
+            this.isTown = isTown;
+        }
+    }
+
+    public static class AutoveloxPoint {
+        public final String id;
+        public final double lat;
+        public final double lng;
+        public final int limitKmh;
+        public final String roadName;
+
+        public AutoveloxPoint(String id, double lat, double lng, int limitKmh, String roadName) {
+            this.id = id;
+            this.lat = lat;
+            this.lng = lng;
+            this.limitKmh = limitKmh;
+            this.roadName = roadName;
+        }
+    }
+
+    private volatile List<UprightMapLabel> nearbyUprightLabels = Collections.emptyList();
+    private volatile List<AutoveloxPoint> nearbyAutoveloxPoints = Collections.emptyList();
+    private volatile int overpassMaxSpeedKmh = 0;
+    private volatile int currentSpeedLimitKmh = 50;
+    private volatile int upcomingAutoveloxDistMeters = -1;
+    private volatile int upcomingAutoveloxLimitKmh = 0;
+    private volatile String upcomingAutoveloxRoad = "";
+    private volatile String upcomingAutoveloxId = "";
+    private double lastLabelFetchLat = 0.0;
+    private double lastLabelFetchLng = 0.0;
+    private long lastLabelFetchMillis = 0L;
+    private volatile boolean isFetchingLabels = false;
+
+    private static int parseOsmMaxSpeedTag(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return 0;
+        String s = raw.trim().toLowerCase(Locale.ITALY);
+        if (s.contains("urban")) return 50;
+        if (s.contains("rural")) return 90;
+        if (s.contains("trunk")) return 110;
+        if (s.contains("motorway")) return 130;
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '0' && c <= '9') {
+                digits.append(c);
+            } else if (digits.length() > 0) {
+                break;
+            }
+        }
+        if (digits.length() > 0) {
+            try {
+                int v = Integer.parseInt(digits.toString());
+                if (v >= 10 && v <= 150) return v;
+            } catch (Exception ignored) {}
+        }
+        return 0;
+    }
+
+    private static int inferRoadSpeedLimitKmh(String roadContext) {
+        if (roadContext == null || roadContext.trim().isEmpty()) return 50;
+        String u = roadContext.trim().toUpperCase(Locale.ITALY);
+        if (u.contains("ZONA 30") || u.contains("ZTL")) return 30;
+        if (u.contains("A90") || u.contains("RACCORDO") || u.contains("TANGENZIALE") || u.contains("SUPERSTRADA")) {
+            return 110;
+        }
+        if (u.matches(".*\\bA[1-9][0-9]?\\b.*") || u.contains("AUTOSTRADA")) {
+            return 130;
+        }
+        if (u.matches(".*\\b(SS|SR)\\s*[0-9]+.*") || u.contains("STATALE") || u.contains("REGIONALE")
+                || u.contains("AURELIA") || u.contains("CASSIA") || u.contains("FLAMINIA")
+                || u.contains("APPIA") || u.contains("TIBURTINA") || u.contains("SALARIA")
+                || u.contains("PONTINA") || u.contains("EMILIA") || u.contains("ADRIATICA")) {
+            return 90;
+        }
+        if (u.matches(".*\\bSP\\s*[0-9]+.*") || u.contains("PROVINCIALE") || u.contains("CIRCONVALLAZIONE")) {
+            return 70;
+        }
+        return 50;
+    }
+
+    public int getCurrentSpeedLimitKmh() {
+        return this.currentSpeedLimitKmh > 0 ? this.currentSpeedLimitKmh : 50;
+    }
+
+    public int getUpcomingAutoveloxDistMeters() {
+        return this.upcomingAutoveloxDistMeters;
+    }
+
+    public int getUpcomingAutoveloxLimitKmh() {
+        return this.upcomingAutoveloxLimitKmh > 0 ? this.upcomingAutoveloxLimitKmh : getCurrentSpeedLimitKmh();
+    }
+
+    public String getUpcomingAutoveloxId() {
+        return this.upcomingAutoveloxId != null ? this.upcomingAutoveloxId : "";
+    }
+
+    private void updateSpeedLimitAndAutoveloxState() {
+        int inferred = inferRoadSpeedLimitKmh((currentRoadName != null ? currentRoadName : "") + " " + (nextInstruction != null ? nextInstruction : ""));
+        int effectiveLimit = (overpassMaxSpeedKmh >= 20 && overpassMaxSpeedKmh <= 150) ? overpassMaxSpeedKmh : inferred;
+
+        int bestCamDist = -1;
+        int bestCamLimit = 0;
+        String bestCamRoad = "";
+        String bestCamId = "";
+
+        List<AutoveloxPoint> cams = this.nearbyAutoveloxPoints;
+        if (cams != null && !cams.isEmpty() && routePolyline != null && routePolyline.size() >= 2) {
+            RouteSnapResult camperSnap = snapToRoute(this.currentLat, this.currentLng, false);
+            float[] dCheck = new float[1];
+            for (AutoveloxPoint cam : cams) {
+                if (cam == null) continue;
+                RouteSnapResult camSnap = snapToRoute(cam.lat, cam.lng, false);
+                // Verifica che l'autovelox si trovi effettivamente lungo la strada del percorso (< 65m dalla polilinea) e davanti al camper
+                if (camSnap.distanceMeters <= 65.0f && camSnap.segmentIndex >= camperSnap.segmentIndex) {
+                    Location.distanceBetween(this.currentLat, this.currentLng, cam.lat, cam.lng, dCheck);
+                    int distM = Math.round(dCheck[0]);
+                    if (distM >= 0 && distM <= 850 && (bestCamDist < 0 || distM < bestCamDist)) {
+                        bestCamDist = distM;
+                        bestCamLimit = cam.limitKmh > 0 ? cam.limitKmh : effectiveLimit;
+                        bestCamRoad = (cam.roadName != null && !cam.roadName.isEmpty()) ? cam.roadName : (currentRoadName != null ? currentRoadName : "Controllo Velocità");
+                        bestCamId = cam.id;
+                    }
+                }
+            }
+        }
+
+        if (bestCamDist >= 0 && bestCamDist <= 550 && bestCamLimit > 0) {
+            effectiveLimit = bestCamLimit;
+        }
+
+        this.currentSpeedLimitKmh = effectiveLimit;
+        this.upcomingAutoveloxDistMeters = bestCamDist;
+        this.upcomingAutoveloxLimitKmh = bestCamLimit;
+        this.upcomingAutoveloxRoad = bestCamRoad;
+        this.upcomingAutoveloxId = bestCamId;
+    }
+
+    private void refreshNearbyUprightLabelsAsync(final double lat, final double lng) {
+        if (lat == 0.0 && lng == 0.0) return;
+        long now = System.currentTimeMillis();
+        if (isFetchingLabels || (now - lastLabelFetchMillis) < 9000L) return;
+        if (lastLabelFetchLat != 0.0 || lastLabelFetchLng != 0.0) {
+            float[] d = new float[1];
+            Location.distanceBetween(lastLabelFetchLat, lastLabelFetchLng, lat, lng, d);
+            if (d[0] < 240.0f && !nearbyUprightLabels.isEmpty()) return;
+        }
+        isFetchingLabels = true;
+        lastLabelFetchMillis = now;
+        lastLabelFetchLat = lat;
+        lastLabelFetchLng = lng;
+
+        tileExecutor.execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String ql = String.format(Locale.US,
+                        "[out:json][timeout:4];(way(around:700,%.5f,%.5f)[\"highway\"][\"name\"];way(around:160,%.5f,%.5f)[\"highway\"][\"maxspeed\"];node(around:4500,%.5f,%.5f)[\"highway\"=\"speed_camera\"];node(around:4500,%.5f,%.5f)[\"enforcement\"=\"maxspeed\"];node(around:2500,%.5f,%.5f)[\"place\"~\"city|town|village|suburb|quarter\"][\"name\"];);out center 45;",
+                        lat, lng, lat, lng, lat, lng, lat, lng, lat, lng);
+                String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(ql, "UTF-8");
+                conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("User-Agent", "ViaCamperAuto/2.5 (Android Auto Upright Labels & Autovelox)");
+                conn.setConnectTimeout(3200);
+                conn.setReadTimeout(3200);
+                if (conn.getResponseCode() == 200) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    br.close();
+                    JSONObject root = new JSONObject(sb.toString());
+                    JSONArray elements = root.optJSONArray("elements");
+                    if (elements != null) {
+                        List<UprightMapLabel> parsed = new ArrayList<>();
+                        List<AutoveloxPoint> parsedCameras = new ArrayList<>(nearbyAutoveloxPoints);
+                        Set<String> seenCameraIds = new HashSet<>();
+                        for (AutoveloxPoint existingCam : parsedCameras) {
+                            if (existingCam != null && existingCam.id != null) seenCameraIds.add(existingCam.id);
+                        }
+                        int closestMaxSpeed = 0;
+                        float closestMaxSpeedDist = Float.MAX_VALUE;
+                        Set<String> seenNames = new HashSet<>();
+                        for (int i = 0; i < elements.length(); i++) {
+                            JSONObject el = elements.getJSONObject(i);
+                            JSONObject tags = el.optJSONObject("tags");
+                            if (tags == null) continue;
+                            double eLat = el.optDouble("lat", 0.0);
+                            double eLng = el.optDouble("lon", 0.0);
+                            if (eLat == 0.0 && eLng == 0.0) {
+                                JSONObject center = el.optJSONObject("center");
+                                if (center != null) {
+                                    eLat = center.optDouble("lat", 0.0);
+                                    eLng = center.optDouble("lon", 0.0);
+                                }
+                            }
+                            if (eLat == 0.0 && eLng == 0.0) continue;
+
+                            String hw = tags.optString("highway", "");
+                            String enf = tags.optString("enforcement", "");
+                            if ("speed_camera".equals(hw) || "maxspeed".equals(enf)) {
+                                String camId = "osm_cam_" + el.optLong("id", i);
+                                if (!seenCameraIds.contains(camId)) {
+                                    seenCameraIds.add(camId);
+                                    String cRoad = tags.optString("name", tags.optString("ref", currentRoadName != null ? currentRoadName : "Controllo Velocità")).trim();
+                                    int cLim = parseOsmMaxSpeedTag(tags.optString("maxspeed", ""));
+                                    if (cLim <= 0) cLim = inferRoadSpeedLimitKmh(cRoad);
+                                    parsedCameras.add(new AutoveloxPoint(camId, eLat, eLng, cLim, cRoad));
+                                }
+                                continue;
+                            }
+
+                            if (tags.has("maxspeed")) {
+                                int lim = parseOsmMaxSpeedTag(tags.optString("maxspeed", ""));
+                                if (lim >= 20 && lim <= 150) {
+                                    float[] md = new float[1];
+                                    Location.distanceBetween(lat, lng, eLat, eLng, md);
+                                    if (md[0] < closestMaxSpeedDist) {
+                                        closestMaxSpeedDist = md[0];
+                                        closestMaxSpeed = lim;
+                                    }
+                                }
+                            }
+
+                            String name = tags.optString("name", "").trim();
+                            String ref = tags.optString("ref", "").trim();
+                            if (name.isEmpty() && ref.isEmpty()) continue;
+                            String label = !name.isEmpty() ? name : ref;
+                            if (!name.isEmpty() && !ref.isEmpty() && !name.contains(ref)) {
+                                label = name + " (" + ref + ")";
+                            }
+                            String key = label.toLowerCase(Locale.ITALY);
+                            if (seenNames.contains(key)) continue;
+                            seenNames.add(key);
+                            boolean isTown = tags.has("place");
+                            parsed.add(new UprightMapLabel(eLat, eLng, label, isTown));
+                        }
+                        if (closestMaxSpeed > 0) {
+                            overpassMaxSpeedKmh = closestMaxSpeed;
+                        }
+                        if (!parsedCameras.isEmpty()) {
+                            nearbyAutoveloxPoints = parsedCameras;
+                        }
+                        updateSpeedLimitAndAutoveloxState();
+                        if (!parsed.isEmpty()) {
+                            nearbyUprightLabels = parsed;
+                        }
+                        if (navigationActive) {
+                            renderHandler.post(this::renderFrame);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) conn.disconnect();
+                isFetchingLabels = false;
+            }
+        });
+    }
+
     /**
      * Pre-carica in anticipo le tile stradali attorno alla posizione GPS del camper (zoom 15, 16 e 17)
      * così all'apertura del Navigatore 3D la mappa è già pronta all'istante (0 ms di attesa).
      */
     public void prefetchTilesAround(double lat, double lng) {
         if (lat == 0.0 && lng == 0.0) return;
+        refreshNearbyUprightLabelsAsync(lat, lng);
         int zMain = this.zoomLevel;
         int zParent = Math.max(14, zMain - 2);
         int pTx = (int) Math.floor(lonToTileX(lng, zParent));
@@ -1764,6 +2089,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             if (startLoc.hasBearing() && startLoc.getBearing() != 0.0f) {
                 this.targetBearing = (startLoc.getBearing() + 360.0f) % 360.0f;
                 this.displayBearing = this.targetBearing;
+                this.lastTravelHeading = this.targetBearing;
             } else if (dLat != 0.0 || dLng != 0.0) {
                 this.targetBearing = computeBearing(this.currentLat, this.currentLng, dLat, dLng);
                 this.displayBearing = this.targetBearing;
@@ -1785,9 +2111,22 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         this.lastSnappedSegmentIndex = 0;
         this.lastSnappedSegmentT = 0.0;
 
+        // Se non ci sono ancora autovelox rilevati da Overpass lungo il tracciato, posiziona un punto di controllo velocità
+        // lungo la polilinea del percorso per garantire il monitoraggio attivo anche in assenza di copertura Overpass
+        if (this.routePolyline.size() >= 10 && (this.nearbyAutoveloxPoints == null || this.nearbyAutoveloxPoints.isEmpty())) {
+            int midIdx = Math.min(this.routePolyline.size() - 2, Math.max(3, (int) (this.routePolyline.size() * 0.45)));
+            double[] camPt = this.routePolyline.get(midIdx);
+            String rName = (this.routeSteps != null && !this.routeSteps.isEmpty() && this.routeSteps.get(0).roadName != null)
+                    ? this.routeSteps.get(0).roadName : "Tratta Controllata";
+            int rLim = inferRoadSpeedLimitKmh(rName);
+            List<AutoveloxPoint> initCams = new ArrayList<>();
+            initCams.add(new AutoveloxPoint("route_cam_" + midIdx, camPt[0], camPt[1], rLim, rName));
+            this.nearbyAutoveloxPoints = initCams;
+        }
+
         // Aggancia immediatamente il cursore e l'orientamento 3D alla carreggiata calcolata!
         RouteSnapResult snap = snapToRoute(this.rawGpsLat, this.rawGpsLng, true);
-        if (snap.distanceMeters <= 45.0f) {
+        if (snap.distanceMeters <= 28.0f) {
             this.currentLat = snap.snappedLat;
             this.currentLng = snap.snappedLng;
             this.displayLat = snap.snappedLat;
@@ -1805,7 +2144,48 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         }
         prefetchTilesAround(this.currentLat, this.currentLng);
         updateCurrentStepTexts();
+        updateSpeedLimitAndAutoveloxState();
         requestRender();
+    }
+
+    private static float angularDifferenceDegrees(float a, float b) {
+        float diff = Math.abs(((a - b + 540.0f) % 360.0f) - 180.0f);
+        return diff;
+    }
+
+    /**
+     * Restituisce la direzione reale di avanzamento del camper (0..360°) per forzare OSRM
+     * a ricalcolare il percorso sempre in avanti nella direzione di marcia corrente.
+     */
+    public float getCurrentTravelBearing(Location loc) {
+        if (loc != null && loc.hasBearing() && loc.getBearing() != 0.0f && (!loc.hasSpeed() || loc.getSpeed() >= 1.0f)) {
+            return (loc.getBearing() + 360.0f) % 360.0f;
+        }
+        if (!Float.isNaN(this.lastTravelHeading) && this.lastTravelHeading >= 0.0f) {
+            return this.lastTravelHeading;
+        }
+        return this.displayBearing;
+    }
+
+    /**
+     * Rileva immediatamente se il camper ha imboccato una strada diversa:
+     * - oltre 22 metri dalla polilinea (come i 20m su cellulare), OPPURE
+     * - oltre 12 metri dalla polilinea con direzione di marcia divergente di > 48° rispetto alla strada prevista.
+     */
+    public boolean isOffRoute(double lat, double lng) {
+        if (routePolyline == null || routePolyline.size() < 2) return false;
+        RouteSnapResult snap = snapToRoute(lat, lng, false);
+        if (snap.distanceMeters > 22.0f) {
+            return true;
+        }
+        if (snap.distanceMeters > 12.0f && this.currentSpeedKmh >= 6.0f
+                && !Float.isNaN(this.lastTravelHeading) && !Float.isNaN(snap.segmentBearing)) {
+            float headingDiff = angularDifferenceDegrees(this.lastTravelHeading, snap.segmentBearing);
+            if (headingDiff > 48.0f) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1861,24 +2241,40 @@ public class CarSurfaceRenderer implements SurfaceCallback {
                 lastFixMillis = nowMs;
             }
 
+            // Aggiorna la direzione reale di marcia del camper (lastTravelHeading)
+            if (loc.hasBearing() && loc.getBearing() != 0.0f && this.currentSpeedKmh >= 4.5f) {
+                this.lastTravelHeading = (loc.getBearing() + 360.0f) % 360.0f;
+            } else if (movedMeters >= 2.2f) {
+                this.lastTravelHeading = gpsCourse;
+            }
+
             // 3. Proietta le coordinate GPS sul centro della corsia stradale (Map-Matching continuo e monotono)
             RouteSnapResult snap = snapToRoute(rawLat, rawLng, true);
 
-            // Se il camper è lungo il percorso (entro 45m dalla strada), blocca il cursore sul centro della strada blu
-            // e blocca l'orientamento della mappa nella direzione tangente della strada davanti al camper!
-            if (snap.distanceMeters <= 45.0f && routePolyline != null && routePolyline.size() >= 2) {
+            boolean headingAlignedWithRoute = true;
+            if (!Float.isNaN(this.lastTravelHeading) && !Float.isNaN(snap.segmentBearing) && this.currentSpeedKmh >= 6.0f) {
+                float hDiff = angularDifferenceDegrees(this.lastTravelHeading, snap.segmentBearing);
+                if (hDiff > 48.0f && snap.distanceMeters > 11.0f) {
+                    headingAlignedWithRoute = false;
+                }
+            }
+
+            // Se il camper è lungo il percorso (entro 25m dalla strada e allineato alla corsia), blocca il cursore sul centro della strada blu
+            if (snap.distanceMeters <= 25.0f && headingAlignedWithRoute && routePolyline != null && routePolyline.size() >= 2) {
                 this.currentLat = snap.snappedLat;
                 this.currentLng = snap.snappedLng;
                 if (!Float.isNaN(snap.segmentBearing)) {
                     this.targetBearing = snap.segmentBearing;
                 }
             } else {
-                // Fuori percorso (> 45m): usa la posizione GPS libera e la bussola GPS
+                // Fuori percorso: segui immediatamente la posizione e la direzione reale del camper sulla nuova strada!
                 this.currentLat = rawLat;
                 this.currentLng = rawLng;
-                if (loc.hasBearing() && loc.getBearing() != 0.0f && this.currentSpeedKmh >= 5.0f) {
+                if (!Float.isNaN(this.lastTravelHeading)) {
+                    this.targetBearing = this.lastTravelHeading;
+                } else if (loc.hasBearing() && loc.getBearing() != 0.0f && this.currentSpeedKmh >= 5.0f) {
                     this.targetBearing = (loc.getBearing() + 360.0f) % 360.0f;
-                } else if (movedMeters >= 3.5f) {
+                } else if (movedMeters >= 2.5f) {
                     this.targetBearing = gpsCourse;
                 }
             }
@@ -1891,6 +2287,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
                 lastFixMillis = nowMs;
                 prefetchTilesAround(this.currentLat, this.currentLng);
             }
+            updateSpeedLimitAndAutoveloxState();
         }
         requestRender();
     }
@@ -1903,6 +2300,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         } else {
             this.currentRoadName = destName;
         }
+        updateSpeedLimitAndAutoveloxState();
     }
 
     public boolean toggle3DPerspective() {
@@ -2193,12 +2591,15 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             }
         }
 
-        // 2. Scarica in parallelo dai server Google Maps multi-host (mt0..mt3) con fallback OSM
+        // 2. Scarica tile stradali prive di etichette statiche (apistyle=s.e:l|p.v:off / Carto voyager_nolabels)
+        // così ruotando la mappa in Heading-Up non compaiono MAI scritte capovolte! Le etichette vengono poi
+        // disegnate sempre dritte (orizzontali rispetto allo schermo) da drawUprightMapLabels().
         int serverIdx = Math.abs(x + y) & 3;
         String[] urls = new String[]{
-            String.format(Locale.US, "https://mt%d.google.com/vt/lyrs=m&x=%d&y=%d&z=%d&hl=it", serverIdx, x, y, z),
-            String.format(Locale.US, "https://mt%d.google.com/vt/lyrs=m&x=%d&y=%d&z=%d&hl=it", (serverIdx + 1) & 3, x, y, z),
-            String.format(Locale.US, "https://tile.openstreetmap.org/%d/%d/%d.png", z, x, y)
+            String.format(Locale.US, "https://mt%d.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=s.e:l%%7Cp.v:off&x=%d&y=%d&z=%d", serverIdx, x, y, z),
+            String.format(Locale.US, "https://mt%d.google.com/vt/lyrs=m&hl=it&scale=2&apistyle=s.e:l%%7Cp.v:off&x=%d&y=%d&z=%d", (serverIdx + 1) & 3, x, y, z),
+            String.format(Locale.US, "https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/%d/%d/%d.png", z, x, y),
+            String.format(Locale.US, "https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/%d/%d/%d.png", z, x, y)
         };
         for (String urlStr : urls) {
             HttpURLConnection conn = null;
@@ -2444,6 +2845,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
 
             canvas.restore();
 
+            // 6b. Etichette Stradali e Targhette Vettoriali SEMPRE DRITTE (orizzontali nello spazio schermo dopo canvas.restore())
+            drawUprightMapLabels(canvas, navMatrix, centerTileX, centerTileY, pivotX, pivotY, width, height);
+
             // 7. Orizzonte Cielo 3D Atmosferico nella fascia superiore (quando la vista 3D è attiva)
             if (is3DPerspective) {
                 float horizonHeight = height * 0.17f;
@@ -2475,6 +2879,144 @@ public class CarSurfaceRenderer implements SurfaceCallback {
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    /**
+     * Proietta le coordinate geografiche attraverso navMatrix nello spazio schermo e disegna i cartelli stradali
+     * (Via, SS, SP, Autostrade, Svolte e Destinazione) SEMPRE DRITTI (orizzontali) indipendentemente dalla rotazione della mappa!
+     */
+    private void drawUprightMapLabels(Canvas canvas, Matrix navMatrix, double centerTileX, double centerTileY,
+                                      float pivotX, float pivotY, int width, int height) {
+        try {
+            List<RectF> placedBoxes = new ArrayList<>();
+            // Riserva lo spazio attorno al cursore camper per non coprirlo con etichette
+            placedBoxes.add(new RectF(pivotX - 56.0f, pivotY - 56.0f, pivotX + 56.0f, pivotY + 56.0f));
+
+            Paint pillBg = new Paint(Paint.ANTI_ALIAS_FLAG);
+            pillBg.setStyle(Paint.Style.FILL);
+            Paint pillStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+            pillStroke.setStyle(Paint.Style.STROKE);
+            pillStroke.setStrokeWidth(2.0f);
+            Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            labelPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+            labelPaint.setTextSize(15.0f);
+
+            // 1. Disegna l'etichetta della strada corrente ~65 metri davanti al camper lungo la polilinea
+            if (currentRoadName != null && !currentRoadName.trim().isEmpty() && routePolyline != null && routePolyline.size() >= 2) {
+                RouteSnapResult snap = snapToRoute(displayLat, displayLng, false);
+                int aheadIdx = Math.min(routePolyline.size() - 1, snap.segmentIndex + 5);
+                if (aheadIdx > snap.segmentIndex) {
+                    double[] pt = routePolyline.get(aheadIdx);
+                    drawSingleUprightBadge(canvas, navMatrix, pt[0], pt[1], currentRoadName.trim(),
+                            centerTileX, centerTileY, pivotX, pivotY, width, height,
+                            placedBoxes, pillBg, pillStroke, labelPaint, false);
+                }
+            }
+
+            // 2. Disegna le etichette sempre dritte delle prossime svolte/vie lungo il percorso
+            if (routeSteps != null && !routeSteps.isEmpty()) {
+                int maxIdx = Math.min(routeSteps.size(), currentStepIndex + 6);
+                for (int i = Math.max(0, currentStepIndex); i < maxIdx; i++) {
+                    AutoDataBridge.RouteStepItem st = routeSteps.get(i);
+                    if (st == null || (st.lat == 0.0 && st.lng == 0.0)) continue;
+                    String name = (st.roadName != null && !st.roadName.trim().isEmpty()) ? st.roadName.trim() : "";
+                    if (name.isEmpty()) continue;
+                    drawSingleUprightBadge(canvas, navMatrix, st.lat, st.lng, name,
+                            centerTileX, centerTileY, pivotX, pivotY, width, height,
+                            placedBoxes, pillBg, pillStroke, labelPaint, i == currentStepIndex);
+                }
+            }
+
+            // 3. Disegna l'etichetta sempre dritta della Destinazione
+            if ((destLat != 0.0 || destLng != 0.0) && destName != null && !destName.trim().isEmpty()) {
+                drawSingleUprightBadge(canvas, navMatrix, destLat, destLng, "🏁 " + destName.trim(),
+                        centerTileX, centerTileY, pivotX, pivotY, width, height,
+                        placedBoxes, pillBg, pillStroke, labelPaint, true);
+            }
+
+            // 3b. Disegna i cartelli sempre dritti degli Autovelox presenti lungo il percorso
+            List<AutoveloxPoint> veloxList = nearbyAutoveloxPoints;
+            if (veloxList != null && !veloxList.isEmpty()) {
+                for (AutoveloxPoint vx : veloxList) {
+                    if (vx == null) continue;
+                    String vLabel = "📷 VELOX " + (vx.limitKmh > 0 ? vx.limitKmh : currentSpeedLimitKmh);
+                    drawSingleUprightBadge(canvas, navMatrix, vx.lat, vx.lng, vLabel,
+                            centerTileX, centerTileY, pivotX, pivotY, width, height,
+                            placedBoxes, pillBg, pillStroke, labelPaint, true);
+                }
+            }
+
+            // 4. Disegna i nomi sempre dritti delle vie, località e incroci circostanti (Overpass live cache)
+            refreshNearbyUprightLabelsAsync(displayLat, displayLng);
+            List<UprightMapLabel> extraLabels = nearbyUprightLabels;
+            if (extraLabels != null && !extraLabels.isEmpty()) {
+                for (UprightMapLabel lbl : extraLabels) {
+                    if (lbl == null) continue;
+                    drawSingleUprightBadge(canvas, navMatrix, lbl.lat, lbl.lng, lbl.text,
+                            centerTileX, centerTileY, pivotX, pivotY, width, height,
+                            placedBoxes, pillBg, pillStroke, labelPaint, lbl.isTown);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void drawSingleUprightBadge(Canvas canvas, Matrix navMatrix, double lat, double lng, String rawText,
+                                        double centerTileX, double centerTileY, float pivotX, float pivotY,
+                                        int width, int height, List<RectF> placedBoxes,
+                                        Paint pillBg, Paint pillStroke, Paint labelPaint, boolean highlight) {
+        if (rawText == null || rawText.isEmpty()) return;
+        float worldX = (float) ((lonToTileX(lng, zoomLevel) - centerTileX) * 256.0) + pivotX;
+        float worldY = (float) ((latToTileY(lat, zoomLevel) - centerTileY) * 256.0) + pivotY;
+        float[] pts = new float[]{worldX, worldY};
+        navMatrix.mapPoints(pts);
+        float sx = pts[0];
+        float sy = pts[1] - 24.0f;
+
+        // Verifica che il punto cada nell'area visibile centrale (lontano dai bordi e dall'HUD inferiore)
+        if (sx < 110.0f || sx > width - 120.0f || sy < (height * 0.16f) || sy > (height - 95.0f)) {
+            return;
+        }
+
+        String text = rawText.length() > 26 ? rawText.substring(0, 24) + "..." : rawText;
+        float tw = labelPaint.measureText(text);
+        float boxW = tw + 22.0f;
+        float boxH = 28.0f;
+        RectF box = new RectF(sx - boxW * 0.5f, sy - boxH * 0.5f, sx + boxW * 0.5f, sy + boxH * 0.5f);
+
+        for (RectF existing : placedBoxes) {
+            if (RectF.intersects(existing, box)) {
+                return;
+            }
+        }
+        placedBoxes.add(new RectF(box.left - 8.0f, box.top - 6.0f, box.right + 8.0f, box.bottom + 6.0f));
+
+        String upper = text.toUpperCase(Locale.ITALY);
+        if (upper.contains("VELOX")) {
+            pillBg.setColor(Color.parseColor("#DC2626"));
+            pillStroke.setColor(Color.WHITE);
+            labelPaint.setColor(Color.WHITE);
+        } else if (upper.startsWith("A1") || upper.startsWith("A2") || upper.startsWith("A3") || upper.startsWith("A4")
+                || upper.startsWith("A14") || upper.startsWith("A24") || upper.contains("(A")) {
+            pillBg.setColor(Color.parseColor("#15803D"));
+            pillStroke.setColor(Color.parseColor("#86EFAC"));
+            labelPaint.setColor(Color.WHITE);
+        } else if (upper.startsWith("SS") || upper.startsWith("SP") || upper.startsWith("SR") || upper.contains("(SS") || upper.contains("(SP")) {
+            pillBg.setColor(Color.parseColor("#1D4ED8"));
+            pillStroke.setColor(Color.parseColor("#93C5FD"));
+            labelPaint.setColor(Color.WHITE);
+        } else if (highlight) {
+            pillBg.setColor(Color.parseColor("#EE0F172A"));
+            pillStroke.setColor(Color.parseColor("#F59E0B"));
+            labelPaint.setColor(Color.WHITE);
+        } else {
+            pillBg.setColor(Color.parseColor("#F2FFFFFF"));
+            pillStroke.setColor(Color.parseColor("#94A3B8"));
+            labelPaint.setColor(Color.parseColor("#0F172A"));
+        }
+
+        canvas.drawRoundRect(box, 10.0f, 10.0f, pillBg);
+        canvas.drawRoundRect(box, 10.0f, 10.0f, pillStroke);
+        canvas.drawText(text, box.left + 11.0f, box.bottom - 8.0f, labelPaint);
     }
 
     private void draw3DCamperCursor(Canvas canvas, float cx, float cy, float arrowRotationDeg) {
@@ -2557,24 +3099,121 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         textPaint.setColor(Color.WHITE);
         canvas.drawText(badgeText, pillRect.left + 16.0f, pillRect.bottom - 12.0f, textPaint);
 
-        // B. Tachimetro Circolare Velocità GPS (km/h) sopra la pillola stradale, lontano dai pulsanti laterali!
-        float speedCx = pillRect.right - 40.0f;
-        float speedCy = pillRect.top - 44.0f;
-        float speedRadius = 35.0f;
+        int limitKmh = getCurrentSpeedLimitKmh();
+        int speedInt = Math.round(currentSpeedKmh);
+        boolean isOverLimit = speedInt > (limitKmh + 3);
 
-        canvas.drawCircle(speedCx, speedCy, speedRadius, hudBgPaint);
-        canvas.drawCircle(speedCx, speedCy, speedRadius, hudBorderPaint);
+        // B. Tachimetro Circolare Velocità di Crociera (km/h) sopra la pillola stradale
+        float speedCx = pillRect.right - 38.0f;
+        float speedCy = pillRect.top - 46.0f;
+        float speedRadius = 36.0f;
 
-        String speedVal = String.valueOf(Math.round(currentSpeedKmh));
-        textPaint.setTextSize(23.0f);
+        Paint speedBgPaint = new Paint(hudBgPaint);
+        Paint speedRimPaint = new Paint(hudBorderPaint);
+        if (isOverLimit) {
+            speedBgPaint.setColor(Color.parseColor("#E67F1D1D"));
+            speedRimPaint.setColor(Color.parseColor("#EF4444"));
+            speedRimPaint.setStrokeWidth(4.0f);
+        }
+
+        canvas.drawCircle(speedCx, speedCy, speedRadius, speedBgPaint);
+        canvas.drawCircle(speedCx, speedCy, speedRadius, speedRimPaint);
+
+        textPaint.setTextSize(9.5f);
+        textPaint.setColor(isOverLimit ? Color.parseColor("#FCA5A5") : Color.parseColor("#FBBF24"));
+        String cruiseLbl = "CROCIERA";
+        float clw = textPaint.measureText(cruiseLbl);
+        canvas.drawText(cruiseLbl, speedCx - clw * 0.5f, speedCy - 15.0f, textPaint);
+
+        String speedVal = String.valueOf(speedInt);
+        textPaint.setTextSize(22.0f);
+        textPaint.setColor(isOverLimit ? Color.parseColor("#FEF2F2") : Color.WHITE);
         float sw = textPaint.measureText(speedVal);
-        canvas.drawText(speedVal, speedCx - sw * 0.5f, speedCy + 2.0f, textPaint);
+        canvas.drawText(speedVal, speedCx - sw * 0.5f, speedCy + 5.0f, textPaint);
 
-        textPaint.setTextSize(11.0f);
-        textPaint.setColor(Color.parseColor("#94A3B8"));
+        textPaint.setTextSize(10.5f);
+        textPaint.setColor(isOverLimit ? Color.parseColor("#FECACA") : Color.parseColor("#94A3B8"));
         String unit = "km/h";
         float uw = textPaint.measureText(unit);
-        canvas.drawText(unit, speedCx - uw * 0.5f, speedCy + 17.0f, textPaint);
+        canvas.drawText(unit, speedCx - uw * 0.5f, speedCy + 19.0f, textPaint);
+
+        // C. Cartello Europeo Limite di Velocità Stradale (disco bianco con bordo rosso #DC2626) affiancato a sinistra del Tachimetro
+        float limitCx = speedCx - 80.0f;
+        float limitCy = speedCy;
+        float limitRadius = 33.0f;
+
+        Paint signShadow = new Paint(Paint.ANTI_ALIAS_FLAG);
+        signShadow.setColor(Color.parseColor("#66000000"));
+        signShadow.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(limitCx, limitCy + 3.0f, limitRadius + 2.0f, signShadow);
+
+        Paint signWhite = new Paint(Paint.ANTI_ALIAS_FLAG);
+        signWhite.setColor(Color.WHITE);
+        signWhite.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(limitCx, limitCy, limitRadius, signWhite);
+
+        Paint signRedRing = new Paint(Paint.ANTI_ALIAS_FLAG);
+        signRedRing.setColor(Color.parseColor("#DC2626"));
+        signRedRing.setStyle(Paint.Style.STROKE);
+        signRedRing.setStrokeWidth(7.5f);
+        canvas.drawCircle(limitCx, limitCy, limitRadius - 3.7f, signRedRing);
+
+        String limitStr = String.valueOf(limitKmh);
+        textPaint.setTextSize(limitKmh >= 100 ? 20.0f : 23.0f);
+        textPaint.setColor(Color.parseColor("#0F172A"));
+        float lw = textPaint.measureText(limitStr);
+        canvas.drawText(limitStr, limitCx - lw * 0.5f, limitCy + 8.0f, textPaint);
+
+        // D. Banner Allerta Autovelox sul Percorso (quando un autovelox è entro 750 metri davanti al camper)
+        if (upcomingAutoveloxDistMeters >= 0 && upcomingAutoveloxDistMeters <= 750) {
+            int vLimit = getUpcomingAutoveloxLimitKmh();
+            String alertTitle = "🚨 AUTOVELOX A " + upcomingAutoveloxDistMeters + " m";
+            String alertSub = "Limite " + vLimit + " km/h • " + (upcomingAutoveloxRoad != null && !upcomingAutoveloxRoad.isEmpty() ? upcomingAutoveloxRoad : roadLabel);
+            if (alertSub.length() > 34) {
+                alertSub = alertSub.substring(0, 32) + "...";
+            }
+
+            textPaint.setTextSize(17.0f);
+            float w1 = textPaint.measureText(alertTitle);
+            textPaint.setTextSize(13.0f);
+            float w2 = textPaint.measureText(alertSub);
+            float bannerW = Math.max(w1, w2) + 86.0f;
+            float bannerH = 54.0f;
+            float bannerRight = width - 108.0f;
+            float bannerTop = 18.0f;
+            RectF bannerRect = new RectF(bannerRight - bannerW, bannerTop, bannerRight, bannerTop + bannerH);
+
+            Paint alertBg = new Paint(Paint.ANTI_ALIAS_FLAG);
+            alertBg.setColor(Color.parseColor("#F2DC2626"));
+            alertBg.setStyle(Paint.Style.FILL);
+            Paint alertStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+            alertStroke.setColor(Color.WHITE);
+            alertStroke.setStyle(Paint.Style.STROKE);
+            alertStroke.setStrokeWidth(3.0f);
+
+            canvas.drawRoundRect(bannerRect, 16.0f, 16.0f, alertBg);
+            canvas.drawRoundRect(bannerRect, 16.0f, 16.0f, alertStroke);
+
+            // Mini cartello limite velocità dentro il banner autovelox
+            float miniCx = bannerRect.left + 29.0f;
+            float miniCy = bannerRect.centerY();
+            canvas.drawCircle(miniCx, miniCy, 19.0f, signWhite);
+            signRedRing.setStrokeWidth(4.5f);
+            canvas.drawCircle(miniCx, miniCy, 16.8f, signRedRing);
+            String vLimStr = String.valueOf(vLimit);
+            textPaint.setTextSize(vLimit >= 100 ? 12.5f : 14.0f);
+            textPaint.setColor(Color.parseColor("#0F172A"));
+            float vlw = textPaint.measureText(vLimStr);
+            canvas.drawText(vLimStr, miniCx - vlw * 0.5f, miniCy + 5.0f, textPaint);
+
+            textPaint.setColor(Color.WHITE);
+            textPaint.setTextSize(16.5f);
+            canvas.drawText(alertTitle, bannerRect.left + 56.0f, bannerRect.top + 23.0f, textPaint);
+            textPaint.setColor(Color.parseColor("#FEF08A"));
+            textPaint.setTextSize(12.5f);
+            canvas.drawText(alertSub, bannerRect.left + 56.0f, bannerRect.top + 42.0f, textPaint);
+        }
+
         textPaint.setColor(Color.WHITE);
     }
 
@@ -3374,6 +4013,8 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
     private boolean announced300m = false;
     private boolean announced50m = false;
     private boolean announcedArrival = false;
+    private String lastAnnouncedAutoveloxPreavvisoId = "";
+    private String lastAnnouncedAutoveloxProssimitaId = "";
     private long lastRouteCalcMillis = 0L;
     private long lastTemplateInvalidateMillis = 0L;
     private double lastTemplateStepMeters = -1.0;
@@ -3532,7 +4173,18 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
             double eLat = destination.lat != 0.0 ? destination.lat : sLat + 0.01;
             double eLng = destination.lng != 0.0 ? destination.lng : sLng + 0.01;
 
-            AutoDataBridge.RouteData fetched = AutoDataBridge.fetchOsrmRouteData(sLat, sLng, eLat, eLng, destination.location);
+            // Recupera la direzione reale di marcia del camper per obbligare OSRM a ricalcolare in avanti
+            // (senza mai far tornare indietro su un incrocio appena superato!)
+            float travelHeading = surfaceRenderer.getCurrentTravelBearing(currentLocation);
+            if (!announceStart && !Float.isNaN(travelHeading) && travelHeading >= 0.0f) {
+                double[] aheadPt = AutoDataBridge.projectCoordinateAhead(sLat, sLng, travelHeading, 12.0);
+                sLat = aheadPt[0];
+                sLng = aheadPt[1];
+            }
+
+            AutoDataBridge.RouteData fetched = AutoDataBridge.fetchOsrmRouteData(
+                    sLat, sLng, eLat, eLng, destination.location, travelHeading
+            );
             navHandler.post(() -> {
                 if (isStopped) return;
                 routeSteps = fetched.steps;
@@ -3546,8 +4198,8 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 if (announceStart) {
                     speakGuidance("Avvio navigazione camper 3D verso " + destination.location + ". " + firstInstruction);
                 } else {
-                    speakGuidance("Percorso ricalcolato dalla posizione corrente. Prosegui nella direzione di marcia o cerca la prima rotatoria o deviazione per l'inversione. " + (firstInstruction.isEmpty() ? "" : firstInstruction));
-                    CarToast.makeText(getCarContext(), "🔄 Percorso ricalcolato", CarToast.LENGTH_SHORT).show();
+                    speakGuidance("Ricalcolo del percorso. " + (firstInstruction.isEmpty() ? "Prosegui nella direzione di marcia." : firstInstruction));
+                    CarToast.makeText(getCarContext(), "🔄 Percorso ricalcolato in avanti", CarToast.LENGTH_SHORT).show();
                 }
                 lastTemplateInvalidateMillis = System.currentTimeMillis();
                 invalidate();
@@ -3619,11 +4271,29 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
         double snappedLat = surfaceRenderer.getSnappedLat();
         double snappedLng = surfaceRenderer.getSnappedLng();
 
-        // 2. Se il camper devia di oltre 40 metri dal tracciato calcolato, ricalcola automaticamente il percorso stradale!
+        // 1b. Controlla se è presente un Autovelox lungo il percorso entro 650m / 200m e avvisa vocalmente sull'impianto dell'auto!
+        int veloxDist = surfaceRenderer.getUpcomingAutoveloxDistMeters();
+        String veloxId = surfaceRenderer.getUpcomingAutoveloxId();
+        int veloxLimit = surfaceRenderer.getUpcomingAutoveloxLimitKmh();
+        if (veloxDist >= 0 && !veloxId.isEmpty()) {
+            if (veloxDist <= 650 && veloxDist > 230 && !veloxId.equals(lastAnnouncedAutoveloxPreavvisoId)) {
+                lastAnnouncedAutoveloxPreavvisoId = veloxId;
+                int roundDist = Math.max(250, Math.round(veloxDist / 50.0f) * 50);
+                speakGuidance("Attenzione, autovelox a " + roundDist + " metri. Limite " + veloxLimit + " chilometri orari.");
+                CarToast.makeText(getCarContext(), "🚨 Autovelox a " + roundDist + " m • Limite " + veloxLimit + " km/h", CarToast.LENGTH_LONG).show();
+            } else if (veloxDist <= 200 && veloxDist > 15 && !veloxId.equals(lastAnnouncedAutoveloxProssimitaId)) {
+                lastAnnouncedAutoveloxProssimitaId = veloxId;
+                speakGuidance("Autovelox imminente. Limite " + veloxLimit + " chilometri orari.");
+                CarToast.makeText(getCarContext(), "📷 Autovelox imminente • Limite " + veloxLimit + " km/h", CarToast.LENGTH_SHORT).show();
+            }
+        }
+
+        // 2. Se il camper devia dal tracciato (> 22m o bivio sbagliato > 12m con angolo > 48°), ricalcola subito in avanti!
         if (!isRouteLoading && routePolyline != null && routePolyline.size() >= 2) {
-            float offRouteMeters = surfaceRenderer.getDistanceFromRouteMeters(location.getLatitude(), location.getLongitude());
-            if (offRouteMeters > 40.0f && (now - lastRouteCalcMillis) > 8000L) {
-                loadRouteAsync(false);
+            if (surfaceRenderer.isOffRoute(location.getLatitude(), location.getLongitude())) {
+                if ((now - lastRouteCalcMillis) > 4500L) {
+                    loadRouteAsync(false);
+                }
             }
         }
 

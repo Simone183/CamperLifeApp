@@ -8,7 +8,7 @@ try {
 } catch (e) {}
 
 // Initialize standard Firebase default app if it doesn't exist
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Get the Firestore instance with the correct database ID
 const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)"

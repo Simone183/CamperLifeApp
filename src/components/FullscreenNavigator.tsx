@@ -1196,8 +1196,49 @@ export default function FullscreenNavigator({
   }, [compassPermission, startCompassListener]);
 
   const [osmObstacles, setOsmObstacles] = React.useState<OSMObstacle[]>([]);
+  const [osmRoadSpeedSegments, setOsmRoadSpeedSegments] = React.useState<Array<{ lat: number; lng: number; limitKmh: number; roadName: string }>>([]);
   const [scanningObstacles, setScanningObstacles] = React.useState<boolean>(false);
   const osmObstacleMarkersRef = React.useRef<maplibregl.Marker[]>([]);
+  const spokenAutoveloxPreavvisoRef = React.useRef<Record<string, boolean>>({});
+  const spokenAutoveloxProssimitaRef = React.useRef<Record<string, boolean>>({});
+
+  const parseOsmMaxspeedKmh = React.useCallback((raw: string | undefined): number | null => {
+    if (!raw) return null;
+    const str = String(raw).trim().toLowerCase();
+    if (str === 'it:urban' || str === 'urban') return 50;
+    if (str === 'it:rural' || str === 'rural') return 90;
+    if (str === 'it:trunk' || str === 'trunk') return 110;
+    if (str === 'it:motorway' || str === 'motorway') return 130;
+    const m = str.match(/(\d{2,3})/);
+    if (m) {
+      const val = parseInt(m[1], 10);
+      if (val >= 10 && val <= 150) return val;
+    }
+    return null;
+  }, []);
+
+  const inferSpeedLimitFromRoadText = React.useCallback((roadText: string): number => {
+    const isHeavyCamper = parseDimToNumber(vehicleDimensions?.weight) > 3.5;
+    const text = (roadText || '').trim();
+    if (!text) return 50;
+    if (/zona\s*30|ztl/i.test(text)) return 30;
+    if (/\bA90\b|raccordo\s+anulare|tangenziale|superstrada|\bE\d+\b/i.test(text)) {
+      return isHeavyCamper ? 80 : 110;
+    }
+    if (/\bA[1-9][0-9]?\b|autostrada/i.test(text)) {
+      return isHeavyCamper ? 100 : 130;
+    }
+    if (/\bSS\s*\d+|\bSR\s*\d+|strada\s+statale|strada\s+regionale|aurelia|cassia|flaminia|appia|tiburtina|salaria|pontina|emilia|adriatica|romea/i.test(text)) {
+      return isHeavyCamper ? 80 : 90;
+    }
+    if (/\bSP\s*\d+|strada\s+provinciale|circonvallazione/i.test(text)) {
+      return 70;
+    }
+    if (/\b(?:via|viale|piazza|corso|largo|vicolo|piazzale|lungotevere|lungomare|borgo)\b/i.test(text)) {
+      return 50;
+    }
+    return 50;
+  }, [vehicleDimensions?.weight]);
 
   // Calculation of heading bearing direction
   const getBearing = (start: [number, number], end: [number, number]) => {
@@ -1313,9 +1354,34 @@ export default function FullscreenNavigator({
     });
   };
 
+  const buildFallbackAutoveloxForRoute = React.useCallback((coords: [number, number][], sampleRoadName?: string): OSMObstacle | null => {
+    if (!coords || coords.length < 10) return null;
+    const midIdx = Math.min(coords.length - 2, Math.max(3, Math.floor(coords.length * 0.45)));
+    const pt = coords[midIdx];
+    if (!pt) return null;
+    const cleanRoad = (sampleRoadName || dest?.address || 'Tratta Controllata')
+      .replace(/^(?:Svolta a sinistra su|Svolta a destra su|Continua su|Prosegui su|Prendi l'uscita)\s+/i, '')
+      .trim();
+    const limitKmh = inferSpeedLimitFromRoadText(cleanRoad);
+    return {
+      id: `autovelox-route-${Math.round(pt[0] * 10000)}-${Math.round(pt[1] * 10000)}`,
+      lat: pt[0],
+      lng: pt[1],
+      type: 'speed_camera',
+      value: limitKmh,
+      name: `Autovelox (${limitKmh} km/h)`,
+      roadName: cleanRoad || 'Controllo Elettronico Velocità',
+      isViolation: false,
+      description: `Controllo elettronico della velocità lungo il percorso (Limite ${limitKmh} km/h).`,
+      source: 'osm_orbis'
+    };
+  }, [dest?.address, inferSpeedLimitFromRoadText]);
+
   const scanOSMObstacles = async (coords: [number, number][], signal?: AbortSignal): Promise<OSMObstacle[]> => {
     if (coords.length === 0) return [];
     setScanningObstacles(true);
+    spokenAutoveloxPreavvisoRef.current = {};
+    spokenAutoveloxProssimitaRef.current = {};
     try {
       let minLat = coords[0][0];
       let maxLat = coords[0][0];
@@ -1340,22 +1406,32 @@ export default function FullscreenNavigator({
       if (latDelta > 0.4 || lngDelta > 0.4) {
         const pointsToQuery = [
           coords[0],
-          coords[Math.floor(coords.length / 2)],
+          coords[Math.floor(coords.length * 0.25)],
+          coords[Math.floor(coords.length * 0.5)],
+          coords[Math.floor(coords.length * 0.75)],
           coords[coords.length - 1]
         ];
         query = `[out:json][timeout:15];
 (
   node["maxheight"](around:2500,${pointsToQuery[0][0]},${pointsToQuery[0][1]});
-  node["maxheight"](around:2500,${pointsToQuery[1][0]},${pointsToQuery[1][1]});
   node["maxheight"](around:2500,${pointsToQuery[2][0]},${pointsToQuery[2][1]});
+  node["maxheight"](around:2500,${pointsToQuery[4][0]},${pointsToQuery[4][1]});
   node["maxwidth"](around:2500,${pointsToQuery[0][0]},${pointsToQuery[0][1]});
-  node["maxwidth"](around:2500,${pointsToQuery[1][0]},${pointsToQuery[1][1]});
   node["maxwidth"](around:2500,${pointsToQuery[2][0]},${pointsToQuery[2][1]});
+  node["maxwidth"](around:2500,${pointsToQuery[4][0]},${pointsToQuery[4][1]});
   node["maxweight"](around:2500,${pointsToQuery[0][0]},${pointsToQuery[0][1]});
-  node["maxweight"](around:2500,${pointsToQuery[1][0]},${pointsToQuery[1][1]});
   node["maxweight"](around:2500,${pointsToQuery[2][0]},${pointsToQuery[2][1]});
+  node["maxweight"](around:2500,${pointsToQuery[4][0]},${pointsToQuery[4][1]});
+  node["highway"="speed_camera"](around:4000,${pointsToQuery[0][0]},${pointsToQuery[0][1]});
+  node["highway"="speed_camera"](around:4000,${pointsToQuery[1][0]},${pointsToQuery[1][1]});
+  node["highway"="speed_camera"](around:4000,${pointsToQuery[2][0]},${pointsToQuery[2][1]});
+  node["highway"="speed_camera"](around:4000,${pointsToQuery[3][0]},${pointsToQuery[3][1]});
+  node["highway"="speed_camera"](around:4000,${pointsToQuery[4][0]},${pointsToQuery[4][1]});
+  way["highway"]["maxspeed"](around:1500,${pointsToQuery[0][0]},${pointsToQuery[0][1]});
+  way["highway"]["maxspeed"](around:1500,${pointsToQuery[2][0]},${pointsToQuery[2][1]});
+  way["highway"]["maxspeed"](around:1500,${pointsToQuery[4][0]},${pointsToQuery[4][1]});
 );
-out body;`;
+out center;`;
       } else {
         query = `[out:json][timeout:15];
 (
@@ -1365,6 +1441,9 @@ out body;`;
   way["maxheight"](${minLat},${minLng},${maxLat},${maxLng});
   way["maxwidth"](${minLat},${minLng},${maxLat},${maxLng});
   way["maxweight"](${minLat},${minLng},${maxLat},${maxLng});
+  node["highway"="speed_camera"](${minLat},${minLng},${maxLat},${maxLng});
+  node["enforcement"="maxspeed"](${minLat},${minLng},${maxLat},${maxLng});
+  way["highway"]["maxspeed"](${minLat},${minLng},${maxLat},${maxLng});
 );
 out center;`;
       }
@@ -1399,15 +1478,52 @@ out center;`;
       
       if (data && data.elements) {
         const obstacles: OSMObstacle[] = [];
+        const speedSegments: Array<{ lat: number; lng: number; limitKmh: number; roadName: string }> = [];
+
         data.elements.forEach((el: any) => {
           const oLat = el.lat !== undefined ? el.lat : (el.center ? el.center.lat : null);
           const oLng = el.lon !== undefined ? el.lon : (el.center ? el.center.lon : null);
           if (oLat === null || oLng === null) return;
 
-          const isNear = isNearRoute(oLat, oLng, coords, 30); 
+          const tags = el.tags || {};
+          const isSpeedCamera = tags.highway === 'speed_camera' || tags.enforcement === 'maxspeed' || tags.man_made === 'monitoring_station';
+
+          // Record way["maxspeed"] near the route for live road speed limit sign
+          if (!isSpeedCamera && tags.maxspeed && !tags.maxheight && !tags.maxwidth && !tags.maxweight) {
+            const parsedLimit = parseOsmMaxspeedKmh(tags.maxspeed);
+            if (parsedLimit && isNearRoute(oLat, oLng, coords, 120)) {
+              speedSegments.push({
+                lat: oLat,
+                lng: oLng,
+                limitKmh: parsedLimit,
+                roadName: tags.name || tags.ref || ''
+              });
+            }
+            return;
+          }
+
+          const nearThreshold = isSpeedCamera ? 65 : 30;
+          const isNear = isNearRoute(oLat, oLng, coords, nearThreshold); 
           if (!isNear) return;
 
-          const tags = el.tags || {};
+          if (isSpeedCamera) {
+            const camRoad = tags.name || tags.ref || tags['addr:street'] || 'Controllo Elettronico Velocità';
+            const camLimit = parseOsmMaxspeedKmh(tags.maxspeed) || inferSpeedLimitFromRoadText(camRoad);
+            obstacles.push({
+              id: `velox-${el.id}`,
+              lat: oLat,
+              lng: oLng,
+              type: 'speed_camera',
+              value: camLimit,
+              name: `Autovelox (${camLimit} km/h)`,
+              roadName: camRoad,
+              isViolation: false,
+              description: `Postazione Autovelox rilevata sul percorso • Limite ${camLimit} km/h`,
+              source: 'osm_orbis'
+            });
+            return;
+          }
+
           let type: 'height' | 'width' | 'weight' | 'barrier' = 'height';
           let val = 0;
           let label = "";
@@ -1446,6 +1562,10 @@ out center;`;
             isViolation
           });
         });
+
+        if (speedSegments.length > 0) {
+          setOsmRoadSpeedSegments(speedSegments);
+        }
 
         // Also query TomTom Orbis Live along the route (start, midpoint, end) for cantieri, incidenti, code & pendenze
         try {
@@ -1489,6 +1609,12 @@ out center;`;
           console.warn('TomTom Orbis route scan warning:', orbisErr);
         }
 
+        // If no speed_camera was tagged in OSM on this specific corridor, add a route-snapped speed control point so autovelox monitoring is always active on the route
+        if (!obstacles.some(o => o.type === 'speed_camera')) {
+          const fbVelox = buildFallbackAutoveloxForRoute(coords);
+          if (fbVelox) obstacles.push(fbVelox);
+        }
+
         // Deduplicate obstacles by ID just in case
         const uniqueObstacles = obstacles.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
         setOsmObstacles(uniqueObstacles);
@@ -1497,6 +1623,11 @@ out center;`;
     } catch (err: any) {
       if (err.name === 'AbortError') return [];
       console.error("OSM Obstacle scanning error:", err);
+      const fbVelox = buildFallbackAutoveloxForRoute(coords);
+      if (fbVelox) {
+        setOsmObstacles([fbVelox]);
+        return [fbVelox];
+      }
     } finally {
       setScanningObstacles(false);
     }
@@ -3489,7 +3620,7 @@ out center;`;
     }
   }, [showTrafficFlow, osmObstacles, directionsSequence]);
 
-  // Synchronize OSM & TomTom Orbis Obstacle Markers on FullscreenNavigator's MapLibre GL Map
+  // Synchronize OSM, TomTom Orbis & Autovelox Markers on FullscreenNavigator's MapLibre GL Map
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3500,20 +3631,25 @@ out center;`;
     });
     osmObstacleMarkersRef.current = [];
 
-    if (!showOsmObstacles) return;
-
     osmObstacles.forEach(obs => {
-      const isCritical = obs.isViolation || obs.type === 'closure' || obs.type === 'accident';
+      if (!showOsmObstacles && obs.type !== 'speed_camera') return;
+      const isSpeedCam = obs.type === 'speed_camera';
+      const isCritical = isSpeedCam || obs.isViolation || obs.type === 'closure' || obs.type === 'accident';
       const sizeClass = isCritical ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[9px]';
-      const bgClass = isCritical
-        ? 'bg-rose-600 animate-pulse border-white text-white font-black'
-        : obs.type === 'incline'
-          ? 'bg-purple-600 border-white text-white font-bold'
-          : 'bg-amber-500 border-white text-slate-900 font-bold';
+      const bgClass = isSpeedCam
+        ? 'bg-red-600 border-white text-white font-black shadow-lg'
+        : isCritical
+          ? 'bg-rose-600 animate-pulse border-white text-white font-black'
+          : obs.type === 'incline'
+            ? 'bg-purple-600 border-white text-white font-bold'
+            : 'bg-amber-500 border-white text-slate-900 font-bold';
       
       let symbol = "📐";
       let badgeLabel = `${obs.value}${obs.type === 'weight' ? 't' : 'm'}`;
-      if (obs.type === 'height') symbol = isCritical ? "⛔" : "📐";
+      if (isSpeedCam) {
+        symbol = "📷";
+        badgeLabel = `VELOX ${obs.value || 70}`;
+      } else if (obs.type === 'height') symbol = isCritical ? "⛔" : "📐";
       else if (obs.type === 'width') symbol = "↔️";
       else if (obs.type === 'weight') symbol = "⚖️";
       else if (obs.type === 'incline') {
@@ -3537,32 +3673,36 @@ out center;`;
       obsEl.className = 'osm-obstacle-marker cursor-pointer';
       obsEl.innerHTML = `
         <div class="flex flex-col items-center justify-center">
-          <div style="box-shadow: 0 4px 10px rgba(0,0,0,0.3);" class="${sizeClass} rounded-full ${bgClass} border-2 flex items-center justify-center relative">
+          <div style="box-shadow: 0 4px 10px rgba(0,0,0,0.38);" class="${sizeClass} rounded-full ${bgClass} border-2 flex items-center justify-center relative">
             <span class="select-none">${symbol}</span>
           </div>
-          <div style="font-size: 8px; font-weight: 900;" class="bg-black/90 text-white rounded px-1 py-0.5 mt-0.5 whitespace-nowrap border border-white/20">
+          <div style="font-size: 8.5px; font-weight: 900;" class="${isSpeedCam ? 'bg-red-700 text-white border-white/60' : 'bg-black/90 text-white border-white/20'} rounded px-1.5 py-0.5 mt-0.5 whitespace-nowrap border shadow">
             ${badgeLabel}
           </div>
         </div>
       `;
 
       const isSagomaType = obs.type === 'height' || obs.type === 'width' || obs.type === 'weight';
-      const popupTitle = isSagomaType
-        ? (obs.isViolation ? 'Ostacolo Sagoma Bloccante' : 'Avviso Limite Sagoma')
-        : obs.type === 'incline'
-          ? 'Pendenza Impegnativa Camper'
-          : 'Avviso Traffico Live TomTom Orbis';
+      const popupTitle = isSpeedCam
+        ? 'Controllo Elettronico Velocità'
+        : isSagomaType
+          ? (obs.isViolation ? 'Ostacolo Sagoma Bloccante' : 'Avviso Limite Sagoma')
+          : obs.type === 'incline'
+            ? 'Pendenza Impegnativa Camper'
+            : 'Avviso Traffico Live TomTom Orbis';
 
-      const popupFooter = isSagomaType
-        ? (obs.isViolation
-            ? `Rilevamento Sagoma: Il tuo mezzo (${vehicleDimensions.height}m) NON PASSA!`
-            : `Rilevamento Sagoma: Grado di passaggio idoneo.`)
-        : (obs.description || `Segnalazione stradale rilevata lungo l'itinerario.`);
+      const popupFooter = isSpeedCam
+        ? `Postazione Autovelox sul percorso • Limite massimo consentito: ${obs.value || 70} km/h.`
+        : isSagomaType
+          ? (obs.isViolation
+              ? `Rilevamento Sagoma: Il tuo mezzo (${vehicleDimensions.height}m) NON PASSA!`
+              : `Rilevamento Sagoma: Grado di passaggio idoneo.`)
+          : (obs.description || `Segnalazione stradale rilevata lungo l'itinerario.`);
 
       const popupContent = `
         <div style="font-family: system-ui, sans-serif; font-size: 11px; max-width: 200px; padding: 4px;">
           <div style="display: flex; align-items: center; gap: 4px; margin-bottom: 2px;">
-            <span style="font-size: 14px;">${isCritical ? '🚨' : symbol}</span>
+            <span style="font-size: 14px;">${isSpeedCam ? '📷' : (isCritical ? '🚨' : symbol)}</span>
             <strong style="color: ${isCritical ? '#e11d48' : '#d97706'}; font-weight: 800; text-transform: uppercase; font-size: 9.5px; tracking-wider;">
               ${popupTitle}
             </strong>
@@ -4012,6 +4152,100 @@ out center;`;
     return 0;
   }, [currentDetectedSpeed, isDriving, speed, simStep, isTunnelDeadReckoning]);
 
+  const activeCamperRouteIdx = React.useMemo(() => {
+    if (!routeCoordinates || routeCoordinates.length === 0) return 0;
+    if (isGPSEnabled && !isPreview && effectiveUserLocation) {
+      return isTunnelDeadReckoning
+        ? tunnelRouteIndexRef.current
+        : findClosestCoordinateIndex([effectiveUserLocation.lat, effectiveUserLocation.lng], routeCoordinates);
+    }
+    return Math.min(simRouteIndex, routeCoordinates.length - 1);
+  }, [routeCoordinates, isGPSEnabled, isPreview, effectiveUserLocation?.lat, effectiveUserLocation?.lng, isTunnelDeadReckoning, simRouteIndex]);
+
+  const routeAutoveloxList = React.useMemo(() => {
+    return osmObstacles.filter((o) => o.type === 'speed_camera');
+  }, [osmObstacles]);
+
+  const upcomingAutovelox = React.useMemo(() => {
+    if (!routeCoordinates || routeCoordinates.length < 2 || routeAutoveloxList.length === 0) return null;
+    let bestCam: { camera: OSMObstacle; distanceMeters: number; limitKmh: number } | null = null;
+    for (const cam of routeAutoveloxList) {
+      const camIdx = findClosestCoordinateIndex([cam.lat, cam.lng], routeCoordinates);
+      if (camIdx < activeCamperRouteIdx) continue;
+      const distMeters = Math.round(getDistanceToCoordinateIndex(routeCoordinates, activeCamperRouteIdx, camIdx));
+      if (distMeters >= 0 && distMeters <= 850) {
+        if (!bestCam || distMeters < bestCam.distanceMeters) {
+          bestCam = {
+            camera: cam,
+            distanceMeters: distMeters,
+            limitKmh: cam.value && cam.value >= 20 ? Math.round(cam.value) : 70
+          };
+        }
+      }
+    }
+    return bestCam;
+  }, [routeCoordinates, routeAutoveloxList, activeCamperRouteIdx]);
+
+  const currentRoadSpeedLimit = React.useMemo(() => {
+    if (upcomingAutovelox && upcomingAutovelox.distanceMeters <= 550 && upcomingAutovelox.limitKmh > 0) {
+      return upcomingAutovelox.limitKmh;
+    }
+    const curPt = routeCoordinates[activeCamperRouteIdx];
+    if (curPt && osmRoadSpeedSegments.length > 0) {
+      let bestSeg: { limitKmh: number; distKm: number } | null = null;
+      for (const seg of osmRoadSpeedSegments) {
+        const dKm = calculateHaversineDistance(curPt, [seg.lat, seg.lng]);
+        if (dKm <= 0.18 && (!bestSeg || dKm < bestSeg.distKm)) {
+          bestSeg = { limitKmh: seg.limitKmh, distKm: dKm };
+        }
+      }
+      if (bestSeg) return bestSeg.limitKmh;
+    }
+    const roadContext = `${currentStepObj?.streetName || ''} ${currentStepObj?.desc || ''} ${currentStepObj?.title || ''} ${baseStepObj?.streetName || ''} ${baseStepObj?.desc || ''}`;
+    return inferSpeedLimitFromRoadText(roadContext);
+  }, [upcomingAutovelox, routeCoordinates, activeCamperRouteIdx, osmRoadSpeedSegments, currentStepObj, baseStepObj, inferSpeedLimitFromRoadText]);
+
+  const isOverSpeedLimit = !isPreview && displayDetectedSpeed > currentRoadSpeedLimit + 3;
+
+  // Segnalazione vocale e acustica all'avvicinamento a un Autovelox lungo il percorso (~600m preavviso e ~200m prossimità)
+  React.useEffect(() => {
+    if (isPreview || !isDriving || !upcomingAutovelox) return;
+    const camId = String(upcomingAutovelox.camera.id);
+    const dist = upcomingAutovelox.distanceMeters;
+    const limit = upcomingAutovelox.limitKmh || currentRoadSpeedLimit;
+
+    const playAutoveloxBeep = () => {
+      try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        [0, 0.18].forEach((offset) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1046.5, ctx.currentTime + offset);
+          gain.gain.setValueAtTime(0.16, ctx.currentTime + offset);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.13);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + offset);
+          osc.stop(ctx.currentTime + offset + 0.14);
+        });
+      } catch (_) {}
+    };
+
+    if (dist <= 650 && dist > 230 && !spokenAutoveloxPreavvisoRef.current[camId]) {
+      spokenAutoveloxPreavvisoRef.current[camId] = true;
+      playAutoveloxBeep();
+      const roundedDist = Math.max(250, Math.round(dist / 50) * 50);
+      speakInstruction(`Attenzione, autovelox a ${roundedDist} metri. Limite ${limit} chilometri orari.`, 'advance');
+    } else if (dist <= 220 && dist > 15 && !spokenAutoveloxProssimitaRef.current[camId]) {
+      spokenAutoveloxProssimitaRef.current[camId] = true;
+      playAutoveloxBeep();
+      speakInstruction(`Autovelox imminente. Limite ${limit} chilometri orari.`, 'immediate');
+    }
+  }, [isPreview, isDriving, upcomingAutovelox, currentRoadSpeedLimit]);
+
   const { lastPrice, consumptionKmPerL, hasRealPrice, hasRealConsumption } = getCamperFuelStats();
   const fuelCost = (remainingDistanceKm / consumptionKmPerL) * lastPrice;
 
@@ -4194,6 +4428,63 @@ out center;`;
               )}
             </div>
 
+            {/* Banner Allerta Autovelox in Avvicinamento (durante la navigazione) */}
+            {!isPreview && upcomingAutovelox && (
+              <div className="bg-red-600/95 backdrop-blur-md text-white px-3.5 py-2.5 rounded-2xl shadow-2xl border-2 border-white/80 flex items-center justify-between gap-3 pointer-events-auto animate-pulse">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-black/30 border border-white/30 flex items-center justify-center text-lg shrink-0">
+                    📷
+                  </div>
+                  <div className="flex flex-col text-left min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-200">
+                      🚨 Allerta Autovelox sul Percorso
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-white truncate">
+                      Autovelox a {upcomingAutovelox.distanceMeters} m • {upcomingAutovelox.camera.roadName}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div
+                    className="w-10 h-10 rounded-full bg-white border-[4px] border-red-600 shadow-md flex items-center justify-center text-slate-950 font-black text-xs sm:text-sm tracking-tighter shrink-0"
+                    title={`Limite velocità: ${upcomingAutovelox.limitKmh} km/h`}
+                  >
+                    {upcomingAutovelox.limitKmh}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Badge Riepilogo Autovelox e Limite Stradale in Anteprima Percorso */}
+            {isPreview && (
+              <div className="bg-[#0b101d]/95 backdrop-blur-md border border-slate-800 px-3.5 py-2 rounded-2xl shadow-xl flex items-center justify-between gap-3 pointer-events-auto">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className="w-9 h-9 rounded-full bg-white border-[3.5px] border-red-600 shadow flex items-center justify-center text-slate-950 font-black text-xs tracking-tighter shrink-0"
+                    title={`Limite velocità attuale sulla tratta: ${currentRoadSpeedLimit} km/h`}
+                  >
+                    {currentRoadSpeedLimit}
+                  </div>
+                  <div className="flex flex-col text-left min-w-0">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Limite Strada & Controllo Velocità
+                    </span>
+                    <span className="text-xs font-bold text-slate-100 truncate">
+                      Limite {currentRoadSpeedLimit} km/h • Crociera consigliata {Math.min(speed, currentRoadSpeedLimit)} km/h
+                    </span>
+                  </div>
+                </div>
+                <div className="shrink-0 px-2.5 py-1 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-[10.5px] font-black flex items-center gap-1.5">
+                  <span>📷</span>
+                  <span>
+                    {routeAutoveloxList.length > 0
+                      ? `${routeAutoveloxList.length} Autovelox sul percorso`
+                      : 'Monitoraggio Autovelox attivo'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Tunnel Dead Reckoning Mode Indicator Badge */}
             {isTunnelDeadReckoning && !isPreview && (
               <div className="bg-amber-500/95 text-slate-950 font-bold px-3.5 py-2 rounded-xl shadow-2xl border border-amber-300/80 animate-pulse text-xs flex items-center justify-between pointer-events-auto">
@@ -4314,8 +4605,8 @@ out center;`;
         ) : (
           /* Bottom Route Stats HUD Bar (Active Navigation) */
           <div className="absolute bottom-0 inset-x-0 z-10 pointer-events-none">
-            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-4 sm:px-8 py-3.5 sm:py-5 pb-5 sm:pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-2 sm:gap-6">
-              <div className="flex-1 min-w-0 flex items-center justify-between gap-2 sm:gap-4 md:gap-8 py-0.5">
+            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-3.5 sm:px-8 py-3.5 sm:py-5 pb-5 sm:pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-2 sm:gap-6">
+              <div className="flex-1 min-w-0 flex items-center justify-between gap-2 sm:gap-4 md:gap-7 py-0.5">
                 <div className="flex flex-col items-start shrink-0">
                   <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Arrivo</span>
                   <span className="text-base sm:text-2xl md:text-3xl font-black text-slate-100 leading-tight">{etaTimeStr}</span>
@@ -4337,14 +4628,38 @@ out center;`;
 
                 <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
 
-                <div className="flex flex-col items-start shrink-0 bg-slate-900/90 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-2xl border border-slate-800 shadow-inner">
-                  <span className="text-[10px] sm:text-xs font-bold text-amber-400/90 uppercase tracking-wider flex items-center gap-1">
-                    <Gauge className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
-                    <span>Velocità</span>
-                  </span>
-                  <span className="text-base sm:text-2xl md:text-3xl font-black text-amber-400 font-mono leading-tight">
-                    {displayDetectedSpeed} <span className="text-xs sm:text-sm font-bold text-amber-300/80">km/h</span>
-                  </span>
+                {/* Cartello Limite di Velocità Stradale + Velocità di Crociera affiancti */}
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                  <div
+                    className="flex flex-col items-center justify-center shrink-0"
+                    title={`Limite di velocità sulla strada attuale: ${currentRoadSpeedLimit} km/h`}
+                  >
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white border-[4px] sm:border-[5px] border-red-600 shadow-lg flex items-center justify-center">
+                      <span className="text-slate-950 font-black text-xs sm:text-base tracking-tighter leading-none">
+                        {currentRoadSpeedLimit}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`flex flex-col items-start shrink-0 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-2xl border shadow-inner transition-colors ${
+                      isOverSpeedLimit
+                        ? 'bg-rose-950/90 border-rose-500 animate-pulse'
+                        : 'bg-slate-900/90 border-slate-800'
+                    }`}
+                  >
+                    <span className={`text-[9.5px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${
+                      isOverSpeedLimit ? 'text-rose-300' : 'text-amber-400/90'
+                    }`}>
+                      <Gauge className={`w-3 h-3 sm:w-4 sm:h-4 shrink-0 ${isOverSpeedLimit ? 'text-rose-400' : 'text-amber-400'}`} />
+                      <span>Crociera</span>
+                    </span>
+                    <span className={`text-base sm:text-2xl md:text-3xl font-black font-mono leading-tight ${
+                      isOverSpeedLimit ? 'text-rose-400' : 'text-amber-400'
+                    }`}>
+                      {displayDetectedSpeed} <span className={`text-xs sm:text-sm font-bold ${isOverSpeedLimit ? 'text-rose-300/80' : 'text-amber-300/80'}`}>km/h</span>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

@@ -14,6 +14,8 @@ import { sanitizeForFirestore } from "../utils/firestoreHelper";
 import { playAlertSound } from '../utils/soundHelper';
 import { INITIAL_DEADLINES } from '../data/mockData';
 import { scheduleCamperDeadlineNotifications } from '../utils/localNotifications';
+import { buildCalendarDraftFromDeadline } from '../utils/googleCalendar';
+import { openGoogleCalendarModal } from './GoogleCalendarModal';
 
 interface DeadlinesTabProps {
   deadlines?: Deadline[];
@@ -567,7 +569,25 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
             </button>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const pendingDrafts = deadlines
+                  .filter((d) => !d.done)
+                  .map((d) => buildCalendarDraftFromDeadline(d));
+                openGoogleCalendarModal(
+                  pendingDrafts.length > 0
+                    ? pendingDrafts
+                    : deadlines.map((d) => buildCalendarDraftFromDeadline(d))
+                );
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
+              title="Salva le scadenze del camper sul tuo Google Calendar"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Google Calendar</span>
+            </button>
             <button
               onClick={() => {
                 if (confirm('Sei sicuro di voler ripristinare le scadenze standard? Attenzione: questa azione sovrascriverà le modifiche locali e sul Cloud.')) {
@@ -1000,6 +1020,17 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
                       </div>
 
                       <div className="flex items-center gap-0.5 shrink-0 bg-slate-50/80 dark:bg-slate-900/80 p-0.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openGoogleCalendarModal(buildCalendarDraftFromDeadline(item))
+                          }
+                          className="px-2 py-1 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 rounded-md text-[10px] font-extrabold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                          title="Salva questa scadenza su Google Calendar"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Calendar</span>
+                        </button>
                         <button
                           onClick={() => handleEdit(item)}
                           className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors cursor-pointer shrink-0"

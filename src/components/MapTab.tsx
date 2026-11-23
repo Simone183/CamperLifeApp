@@ -19,6 +19,7 @@ import {
 } from "../types";
 import { detectPlaceCategoryAndLabel, getPlaceBadgeText, isCityOrLocality, resolvePlaceServiceSubtype } from "../utils/placeCategoryHelper";
 import {
+  Calendar,
   MapPin,
   Heart,
   Star,
@@ -86,9 +87,12 @@ import {
 import { fetchOsrmRoute, getCachedOsrmRoute } from "../utils/routing";
 import {
   getAllSagrePlaces,
+  getAllSagreEvents,
   doesSagraMatchDateFilter,
   fetchLiveSagreUniversal,
 } from "../data/sagreData";
+import { buildCalendarDraftFromSagra } from "../utils/googleCalendar";
+import { openGoogleCalendarModal } from "./GoogleCalendarModal";
 import {
   APIProvider,
   Map,
@@ -8352,6 +8356,34 @@ out center;`;
                         <p className="whitespace-pre-line text-xs">{selectedPlace.description}</p>
                       </div>
                     )}
+
+                  {selectedPlace.category === "sagra" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const matchedSagra = getAllSagreEvents().find(
+                          (s) => s.id === selectedPlace.id || s.title === selectedPlace.name
+                        );
+                        if (matchedSagra) {
+                          openGoogleCalendarModal(buildCalendarDraftFromSagra(matchedSagra));
+                        } else {
+                          openGoogleCalendarModal(
+                            buildCalendarDraftFromSagra({
+                              id: selectedPlace.id,
+                              title: selectedPlace.name,
+                              dates: selectedPlace.priceInfo,
+                              locationName: selectedPlace.address,
+                              description: selectedPlace.description,
+                            })
+                          );
+                        }
+                      }}
+                      className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-md uppercase text-xs sm:text-sm tracking-wider cursor-pointer"
+                    >
+                      <Calendar className="w-4 h-4 text-white" />
+                      <span>Salva Sagra su Google Calendar</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"

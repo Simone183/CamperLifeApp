@@ -90,6 +90,7 @@ import { FamilyCrewModal } from "./components/FamilyCrewModal";
 import { AppPermissionModal } from "./components/AppPermissionModal";
 import { AdminNotificationSchedulerWidget } from "./components/AdminNotificationSchedulerWidget";
 import { VideoRecordingModeOverlay } from "./components/VideoRecordingModeOverlay";
+import GoogleCalendarModal from "./components/GoogleCalendarModal";
 
 // Icons
 import {
@@ -11651,6 +11652,7 @@ Per favore analizza questo bug nel codice della nostra applicazione e applica la
           }
         }}
       />
+      <GoogleCalendarModal />
     </div>
     </FamilyCrewProvider>
   );

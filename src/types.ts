@@ -370,8 +370,8 @@ export interface OSMObstacle {
   id: number | string;
   lat: number;
   lng: number;
-  type: 'height' | 'width' | 'weight' | 'barrier' | 'roadworks' | 'accident' | 'jam' | 'incline' | 'closure';
-  value: number; // e.g. 2.8 (m or t or % incline or delay min)
+  type: 'height' | 'width' | 'weight' | 'barrier' | 'roadworks' | 'accident' | 'jam' | 'incline' | 'closure' | 'speed_camera';
+  value: number; // e.g. 2.8 (m or t or % incline or delay min or km/h speed limit)
   name: string;
   roadName: string;
   isViolation: boolean;
