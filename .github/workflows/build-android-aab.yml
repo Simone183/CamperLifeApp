@@ -104,8 +104,8 @@ jobs:
 
       - name: Set Android Version and VersionCode
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version || '2.5.25'")
-          VCODE=$(node -p "require('./package.json').versionCode || 20525")
+          PKG_VERSION=$(node -p "require('./package.json').version || '2.5.27'")
+          VCODE=$(node -p "require('./package.json').versionCode || 20527")
           echo "Package version: $PKG_VERSION"
           if [ -f "android/app/build.gradle" ]; then
             echo "Computed versionCode: $VCODE, versionName: $PKG_VERSION"
