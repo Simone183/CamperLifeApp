@@ -1849,16 +1849,16 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         if (u.contains("A90") || u.contains("RACCORDO") || u.contains("TANGENZIALE") || u.contains("SUPERSTRADA")) {
             return 110;
         }
-        if (u.matches(".*\\bA[1-9][0-9]?\\b.*") || u.contains("AUTOSTRADA")) {
+        if (u.matches(".*\\\\bA[1-9][0-9]?\\\\b.*") || u.contains("AUTOSTRADA")) {
             return 130;
         }
-        if (u.matches(".*\\b(SS|SR)\\s*[0-9]+.*") || u.contains("STATALE") || u.contains("REGIONALE")
+        if (u.matches(".*\\\\b(SS|SR)\\\\s*[0-9]+.*") || u.contains("STATALE") || u.contains("REGIONALE")
                 || u.contains("AURELIA") || u.contains("CASSIA") || u.contains("FLAMINIA")
                 || u.contains("APPIA") || u.contains("TIBURTINA") || u.contains("SALARIA")
                 || u.contains("PONTINA") || u.contains("EMILIA") || u.contains("ADRIATICA")) {
             return 90;
         }
-        if (u.matches(".*\\bSP\\s*[0-9]+.*") || u.contains("PROVINCIALE") || u.contains("CIRCONVALLAZIONE")) {
+        if (u.matches(".*\\\\bSP\\\\s*[0-9]+.*") || u.contains("PROVINCIALE") || u.contains("CIRCONVALLAZIONE")) {
             return 70;
         }
         return 50;
@@ -1939,7 +1939,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             HttpURLConnection conn = null;
             try {
                 String ql = String.format(Locale.US,
-                        "[out:json][timeout:4];(way(around:700,%.5f,%.5f)[\"highway\"][\"name\"];way(around:160,%.5f,%.5f)[\"highway\"][\"maxspeed\"];node(around:4500,%.5f,%.5f)[\"highway\"=\"speed_camera\"];node(around:4500,%.5f,%.5f)[\"enforcement\"=\"maxspeed\"];node(around:2500,%.5f,%.5f)[\"place\"~\"city|town|village|suburb|quarter\"][\"name\"];);out center 45;",
+                        "[out:json][timeout:4];(way(around:700,%.5f,%.5f)[\\\"highway\\\"][\\\"name\\\"];way(around:160,%.5f,%.5f)[\\\"highway\\\"][\\\"maxspeed\\\"];node(around:4500,%.5f,%.5f)[\\\"highway\\\"=\\\"speed_camera\\\"];node(around:4500,%.5f,%.5f)[\\\"enforcement\\\"=\\\"maxspeed\\\"];node(around:2500,%.5f,%.5f)[\\\"place\\\"~\\\"city|town|village|suburb|quarter\\\"][\\\"name\\\"];);out center 45;",
                         lat, lng, lat, lng, lat, lng, lat, lng, lat, lng);
                 String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(ql, "UTF-8");
                 conn = (HttpURLConnection) new URL(urlStr).openConnection();
