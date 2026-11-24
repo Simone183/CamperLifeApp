@@ -502,68 +502,47 @@ export default function AIItineraryTab({
   };
 
   return (
-    <div className="space-y-5 font-sans">
+    <div className="space-y-2.5 font-sans">
 
-      {/* Prominent Large Rolly & Community Itineraries Feature Banner */}
+      {/* Compact Rolly & Community Itineraries Feature Banner */}
       <div 
         onClick={() => setShowCommunityItinerariesModal(true)}
-        className="group relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] p-5 sm:p-6 text-white shadow-lg border border-emerald-500/30 cursor-pointer hover:shadow-xl hover:border-emerald-400/60 transition-all duration-300 transform active:scale-[0.99]"
+        className="group relative overflow-hidden rounded-xl bg-gradient-to-r from-[#1C3D2B] via-[#2D5A40] to-[#3E4A35] px-3.5 py-2.5 text-white shadow-sm border border-emerald-500/30 cursor-pointer hover:border-emerald-400/60 transition-all space-y-1"
       >
-        {/* Decorative background image / gradient overlay */}
-        <div className="absolute -right-8 -bottom-10 opacity-20 group-hover:opacity-30 transition-opacity duration-500 pointer-events-none">
-          <Compass className="w-64 h-64 text-emerald-200 animate-[spin_40s_linear_infinite]" />
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <h3 className="text-sm sm:text-base font-black tracking-tight text-white group-hover:text-amber-200 transition-colors leading-snug">
+            🗺️ Itinerari Rolly & Community
+          </h3>
+
+          <button
+            type="button"
+            className="shrink-0 px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-900" />
+            <span>Esplora</span>
+            <ChevronRight className="w-3.5 h-3.5 text-stone-900" />
+          </button>
         </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-2 max-w-2xl">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="bg-amber-400 text-stone-950 font-black text-[11px] uppercase tracking-wider px-3 py-1 rounded-full shadow-xs flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-900 animate-bounce" />
-                <span>Consigliati da Rolly AI & Community</span>
-              </span>
-              <span className="bg-white/15 text-emerald-100 font-bold text-[11px] px-3 py-1 rounded-full backdrop-blur-xs border border-white/10">
-                🌟 Nuova Tappa Ogni Settimana
-              </span>
-            </div>
-
-            <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white group-hover:text-amber-200 transition-colors">
-              🗺️ Itinerari Creati da Rolly e dalla Community
-            </h3>
-
-            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed font-medium">
-              Sfoglia gli itinerari creati da Rolly per tutta l'Italia, oppure proponi il tuo viaggio per la community!
-            </p>
-          </div>
-
-          <div className="shrink-0 pt-2 md:pt-0">
-            <button
-              type="button"
-              className="w-full sm:w-auto px-6 py-3.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-black text-sm rounded-2xl shadow-md flex items-center justify-center gap-2.5 transition-all group-hover:scale-105 active:scale-95 cursor-pointer"
-            >
-              <Sparkles className="w-5 h-5 text-amber-900" />
-              <span>Esplora gli Itinerari ora</span>
-              <ChevronRight className="w-5 h-5 text-stone-900 group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-        </div>
+        <p className="relative z-10 text-[11.5px] text-emerald-100/90 leading-snug">
+          Sfoglia gli itinerari pronti per tutta Italia o proponi il tuo viaggio!
+        </p>
       </div>
 
-      {/* Quick Itineraries Toolbar */}
-      <div className="bg-white dark:bg-stone-850 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-3">
-        {/* Full-width button: I Miei Salvati */}
+      {/* Compact Quick Itineraries Toolbar */}
+      <div className="bg-white dark:bg-stone-850 p-2 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1.5">
         <button
           type="button"
           onClick={() => setShowSavedModal(true)}
-          className="w-full px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center text-center gap-2 cursor-pointer active:scale-95"
+          className="w-full px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs font-bold rounded-lg transition-all flex items-center justify-center text-center gap-1.5 cursor-pointer active:scale-95"
         >
-          <FolderHeart className="w-4 h-4 text-amber-600 shrink-0" />
+          <FolderHeart className="w-3.5 h-3.5 text-amber-600 shrink-0" />
           <span>I Miei Salvati ({savedItineraries.length})</span>
         </button>
 
         {result && (
-          <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-700 bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 px-3 py-1.5 rounded-xl w-full text-center">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="text-[11px] text-emerald-950 dark:text-emerald-300 truncate">
+          <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 px-2.5 py-1 rounded-lg w-full text-center">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="text-[10.5px] text-emerald-950 dark:text-emerald-300 truncate">
               Attivo: <strong>{result.title}</strong>
             </span>
           </div>

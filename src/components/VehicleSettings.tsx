@@ -346,15 +346,13 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
   const isVeryLong = parseDimToNumber(localDims.length) >= 7.0;
 
   return (
-    <div id="vehicle-settings" className="space-y-6">
-      {/* --- HERO CAMPER CARD HEADER --- */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#2A3324] rounded-3xl p-6 text-white shadow-xl border border-slate-700/60">
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-[#5A6B4E]/20 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
+    <div id="vehicle-settings" className="space-y-2.5">
+      {/* --- COMPACT HERO CAMPER CARD HEADER --- */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#2A3324] rounded-xl p-3 sm:p-4 text-white shadow-md border border-slate-700/60">
+        <div className="flex items-center gap-3 sm:gap-4 relative z-10">
           {/* Cover Photo / Avatar */}
           <div className="relative group shrink-0">
-            <div className="w-32 h-32 md:w-36 md:h-36 rounded-2xl overflow-hidden bg-slate-800 border-2 border-white/20 shadow-xl flex items-center justify-center relative">
+            <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-slate-800 border border-white/20 shadow-md flex items-center justify-center relative">
               {localDims.mainPhotoUrl ? (
                 <img
                   src={localDims.mainPhotoUrl}
@@ -362,19 +360,19 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
               ) : (
-                <div className="flex flex-col items-center text-slate-400 gap-1 p-4 text-center">
-                  <Truck className="w-10 h-10 text-slate-500" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider">Aggiungi Foto</span>
+                <div className="flex flex-col items-center text-slate-400 gap-0.5 p-2 text-center">
+                  <Truck className="w-6 h-6 text-slate-500" />
+                  <span className="text-[8px] uppercase font-bold tracking-wider">Foto</span>
                 </div>
               )}
             </div>
             <button
               type="button"
               onClick={() => mainPhotoFileRef.current?.click()}
-              className="absolute -bottom-2 -right-2 p-2.5 bg-[#5A6B4E] hover:bg-[#6c805d] active:scale-95 text-white rounded-xl shadow-lg border border-white/20 transition-all cursor-pointer flex items-center justify-center"
+              className="absolute -bottom-1 -right-1 p-1.5 bg-[#5A6B4E] hover:bg-[#6c805d] active:scale-95 text-white rounded-lg shadow-md border border-white/20 transition-all cursor-pointer flex items-center justify-center"
               title="Cambia Foto Copertina"
             >
-              <Camera className="w-4 h-4" />
+              <Camera className="w-3 h-3" />
             </button>
             <input
               type="file"
@@ -386,98 +384,97 @@ export default function VehicleSettings({ dimensions, onChange, onNavigateToDead
           </div>
 
           {/* Title & Key Badge Info */}
-          <div className="flex-1 text-center md:text-left space-y-2">
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-              <span className="px-2.5 py-1 bg-[#5A6B4E]/40 border border-[#5A6B4E]/60 text-emerald-300 text-[11px] font-black uppercase tracking-wider rounded-lg">
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="px-2 py-0.5 bg-[#5A6B4E]/40 border border-[#5A6B4E]/60 text-emerald-300 text-[10px] font-black uppercase tracking-wider rounded-md">
                 {localDims.vehicleType || 'Camper'}
               </span>
               {localDims.brand && (
-                <span className="px-2.5 py-1 bg-white/10 text-slate-200 text-[11px] font-bold uppercase tracking-wider rounded-lg border border-white/10">
+                <span className="px-2 py-0.5 bg-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-md border border-white/10">
                   {localDims.brand}
                 </span>
               )}
               {localDims.licensePlate && (
-                <span className="px-2 py-0.5 bg-yellow-400 text-slate-950 font-mono font-black text-xs rounded border border-yellow-500 shadow-sm uppercase tracking-widest">
+                <span className="px-1.5 py-0.2 bg-yellow-400 text-slate-950 font-mono font-black text-[10.5px] rounded border border-yellow-500 shadow-2xs uppercase tracking-widest">
                   {localDims.licensePlate}
                 </span>
               )}
               {localDims.euroCategory && (
-                <span className="px-2.5 py-1 bg-sky-500/20 text-sky-300 border border-sky-400/30 text-[10px] font-extrabold uppercase rounded-lg">
+                <span className="px-2 py-0.5 bg-sky-500/20 text-sky-300 border border-sky-400/30 text-[9.5px] font-extrabold uppercase rounded-md">
                   {localDims.euroCategory}
                 </span>
               )}
             </div>
 
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
+            <h1 className="text-sm sm:text-xl font-black tracking-tight text-white leading-tight">
               {localDims.modelName || 'Il Mio Camper'}
             </h1>
 
-            <p className="text-xs text-slate-300 font-medium max-w-xl leading-relaxed">
+            <p className="text-[11px] text-slate-300 font-medium leading-snug">
               {localDims.chassisBrand ? `${localDims.chassisBrand} · ` : ''}
               {localDims.displacementHpKw ? `${localDims.displacementHpKw} · ` : ''}
               {localDims.registrationYear ? `Anno ${localDims.registrationYear}` : 'Scheda Informativa e Sagoma per Navigatore'}
             </p>
 
             {/* Quick Metrics Bar */}
-            <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-3 text-xs font-mono font-semibold text-slate-200">
-              <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
-                <span className="text-slate-400 text-[10px] font-sans">Alt:</span>
+            <div className="pt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-mono font-semibold text-slate-200">
+              <div className="bg-white/10 px-2 py-0.5 rounded-lg border border-white/10 flex items-center gap-1">
+                <span className="text-slate-400 text-[9.5px] font-sans">Alt:</span>
                 <span className="text-amber-300 font-extrabold">{localDims.height ?? '-'} {getDimensionUnit(settings)}</span>
               </div>
-              <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
-                <span className="text-slate-400 text-[10px] font-sans">Lun:</span>
+              <div className="bg-white/10 px-2 py-0.5 rounded-lg border border-white/10 flex items-center gap-1">
+                <span className="text-slate-400 text-[9.5px] font-sans">Lun:</span>
                 <span className="text-emerald-300 font-extrabold">{localDims.length ?? '-'} {getDimensionUnit(settings)}</span>
               </div>
-              <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
-                <span className="text-slate-400 text-[10px] font-sans">Lar:</span>
+              <div className="bg-white/10 px-2 py-0.5 rounded-lg border border-white/10 flex items-center gap-1">
+                <span className="text-slate-400 text-[9.5px] font-sans">Lar:</span>
                 <span>{localDims.width ?? '-'} {getDimensionUnit(settings)}</span>
               </div>
-              <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
-                <span className="text-slate-400 text-[10px] font-sans">Peso:</span>
+              <div className="bg-white/10 px-2 py-0.5 rounded-lg border border-white/10 flex items-center gap-1">
+                <span className="text-slate-400 text-[9.5px] font-sans">Peso:</span>
                 <span>{localDims.weight ?? '-'} {getWeightUnitTonnes(settings)}</span>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Action Buttons: Scadenze, Passport & Save */}
-          <div className="shrink-0 flex flex-col gap-2 w-full md:w-auto">
-            {onNavigateToDeadlines && (
-              <button
-                type="button"
-                onClick={onNavigateToDeadlines}
-                className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/35 active:scale-95 text-amber-200 text-xs font-extrabold rounded-xl border border-amber-400/40 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm group"
-                title="Apri lo Scadenziere per vedere revisioni, tagliandi, manutenzioni e lavori fatti o da fare"
-              >
-                <Calendar className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-                <span>Scadenze & Manutenzioni</span>
-                <ArrowRight className="w-3.5 h-3.5 opacity-80 group-hover:translate-x-0.5 transition-transform" />
-              </button>
-            )}
-
+        {/* Compact Action Buttons Row: Scadenze, Passport & Save */}
+        <div className="grid grid-cols-3 gap-1.5 mt-2.5 pt-2 border-t border-white/10 relative z-10">
+          {onNavigateToDeadlines && (
             <button
               type="button"
-              onClick={() => setShowPassportModal(true)}
-              className="px-4 py-2.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-extrabold rounded-xl border border-white/20 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+              onClick={onNavigateToDeadlines}
+              className="h-7 px-2 bg-amber-500/20 hover:bg-amber-500/35 active:scale-95 text-amber-200 text-[10.5px] font-extrabold rounded-lg border border-amber-400/40 transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs truncate"
+              title="Apri lo Scadenziere per vedere revisioni, tagliandi, manutenzioni e lavori fatti o da fare"
             >
-              <FileText className="w-4 h-4 text-emerald-400" />
-              <span>Carta d'Identità Camper</span>
+              <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="truncate">Scadenze</span>
             </button>
+          )}
 
-            <button
-              type="button"
-              onClick={() => handleSubmit()}
-              className="px-4 py-2.5 bg-[#5A6B4E] hover:bg-[#6c805d] active:scale-95 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Check className="w-4 h-4" />
-              <span>Salva Modifiche</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowPassportModal(true)}
+            className="h-7 px-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[10.5px] font-extrabold rounded-lg border border-white/20 transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs truncate"
+          >
+            <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">Carta Identità</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSubmit()}
+            className="h-7 px-2 bg-[#5A6B4E] hover:bg-[#6c805d] active:scale-95 text-white text-[10.5px] font-bold rounded-lg shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1 truncate"
+          >
+            <Check className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Salva</span>
+          </button>
         </div>
       </div>
 
-      {/* --- SUB-TAB NAVIGATION BAR (STACKED VERTICALLY FOR MOBILE FIT) --- */}
-      <div className="w-full pb-2 border-b border-slate-200">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 w-full">
+      {/* --- SUB-TAB NAVIGATION BAR (COMPACT MULTI-COLUMN GRID) --- */}
+      <div className="w-full pb-1.5 border-b border-slate-200">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 w-full">
           {[
             { id: 'anagrafica', label: 'Anagrafica', icon: FileText },
             { id: 'misure', label: 'Misure & Sagoma', icon: Truck },

@@ -39,6 +39,7 @@ import {
   saveSagraToFirestore,
   approvePendingSagraInFirestore,
   deleteSagraEverywhere,
+  getSagraSourceAttribution,
 } from '../data/sagreData';
 import { resolveApiUrl } from '../utils/resolveMediaUrl';
 import { buildCalendarDraftFromSagra } from '../utils/googleCalendar';
@@ -172,7 +173,7 @@ export default function EventsTab({
   onNavigateFullscreen,
   onShowOnMap,
 }: EventsTabProps) {
-  const isAdmin =
+  const isRealAdmin =
     typeof isAdminOverride === 'boolean'
       ? isAdminOverride
       : Boolean(
@@ -183,6 +184,31 @@ export default function EventsTab({
                 currentUser.email.toLowerCase().trim()
               ))
         );
+
+  const [hideAdminMode, setHideAdminMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      localStorage.getItem('viacamper_hide_admin_ui') === '1' ||
+      localStorage.getItem('viacamper_sagre_hide_admin') === '1'
+    );
+  });
+
+  useEffect(() => {
+    const syncAdminVisibility = () => {
+      try {
+        setHideAdminMode(
+          localStorage.getItem('viacamper_hide_admin_ui') === '1' ||
+            localStorage.getItem('viacamper_sagre_hide_admin') === '1'
+        );
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('viacamper-admin-ui-changed', syncAdminVisibility);
+    return () => window.removeEventListener('viacamper-admin-ui-changed', syncAdminVisibility);
+  }, []);
+
+  const isAdmin = isRealAdmin && !hideAdminMode;
 
   const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'ai_search'>('explore');
   const [allSagre, setAllSagre] = useState<SagraEvent[]>(() => getAllSagreEvents());
@@ -198,6 +224,8 @@ export default function EventsTab({
   const [showDateFilterPanel, setShowDateFilterPanel] = useState<boolean>(false);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSourceFilter, setSelectedSourceFilter] = useState<'all' | 'trovasagre' | 'community'>('all');
+  const [showPartnerInfoModal, setShowPartnerInfoModal] = useState(false);
   const [selectedSagra, setSelectedSagra] = useState<SagraEvent | null>(null);
   const [zoomedPosterUrl, setZoomedPosterUrl] = useState<string | null>(null);
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
@@ -221,6 +249,8 @@ export default function EventsTab({
   const [formCamperParking, setFormCamperParking] = useState('');
   const [formFlyerDataUri, setFormFlyerDataUri] = useState<string>('');
   const [formExtraPhotos, setFormExtraPhotos] = useState<string[]>([]);
+  const [formSourceProvider, setFormSourceProvider] = useState<'trovasagre' | 'viacamper' | 'community' | 'proloco'>('trovasagre');
+  const [formSourceUrl, setFormSourceUrl] = useState<string>('');
   const [webFlyerCandidates, setWebFlyerCandidates] = useState<string[]>([]);
   const [webFlyerSearchMsg, setWebFlyerSearchMsg] = useState<string | null>(null);
   const [isSearchingWebFlyers, setIsSearchingWebFlyers] = useState(false);
@@ -277,6 +307,9 @@ export default function EventsTab({
       setFormCamperParking(sagraToEdit.camperParking || '');
       setFormFlyerDataUri(sagraToEdit.fullFlyerUrl || sagraToEdit.imageUrl || '');
       setFormExtraPhotos(Array.isArray(sagraToEdit.extraPhotos) ? sagraToEdit.extraPhotos : []);
+      const attr = getSagraSourceAttribution(sagraToEdit);
+      setFormSourceProvider(sagraToEdit.sourceProvider || attr.provider);
+      setFormSourceUrl(sagraToEdit.sourceUrl || '');
       setWebFlyerCandidates([]);
     } else {
       const today = getTodayIsoDate();
@@ -295,6 +328,8 @@ export default function EventsTab({
       setFormCamperParking('');
       setFormFlyerDataUri('');
       setFormExtraPhotos([]);
+      setFormSourceProvider(isAdmin ? 'trovasagre' : 'community');
+      setFormSourceUrl('');
       setWebFlyerCandidates([]);
     }
     setWebFlyerSearchMsg(null);
@@ -539,6 +574,20 @@ export default function EventsTab({
             : dInfo.month === 12
             ? 'natale'
             : 'weekend',
+        sourceProvider: isAdmin ? formSourceProvider : 'community',
+        sourceName:
+          (isAdmin ? formSourceProvider : 'community') === 'trovasagre'
+            ? 'TrovaSagre.com'
+            : (isAdmin ? formSourceProvider : 'community') === 'proloco'
+            ? 'Pro Loco / Comune'
+            : (isAdmin ? formSourceProvider : 'community') === 'community'
+            ? 'Community ViaCamper'
+            : 'ViaCamper',
+        sourceUrl:
+          formSourceUrl.trim() ||
+          ((isAdmin ? formSourceProvider : 'community') === 'trovasagre'
+            ? 'https://www.trovasagre.com'
+            : undefined),
         submittedByEmail: currentUser?.email || 'anonimo',
         submittedByName: currentUser?.name || currentUser?.username || 'Camperista',
       };
@@ -708,6 +757,12 @@ export default function EventsTab({
     });
     if (!matchesPeriodAndDate) return false;
 
+    if (selectedSourceFilter !== 'all') {
+      const attr = getSagraSourceAttribution(s);
+      if (selectedSourceFilter === 'trovasagre' && !attr.isTrovaSagre) return false;
+      if (selectedSourceFilter === 'community' && attr.isTrovaSagre) return false;
+    }
+
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -755,37 +810,60 @@ export default function EventsTab({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 relative max-w-full overflow-x-hidden">
-      {/* Header */}
-      <div className="bg-[#3E4A35] text-white p-3 sm:p-4 shrink-0 shadow-md relative z-10">
-        <div className="flex items-center justify-between mb-1.5 gap-2">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1.5 text-white/80 hover:text-white transition-colors cursor-pointer text-xs font-bold"
-          >
-            <CalendarDays className="w-4 h-4" />
-            <span>Torna indietro</span>
-          </button>
+      {/* Compact Full-Width Header (Zero wasted green space) */}
+      <div className="bg-[#3E4A35] text-white px-3 py-2.5 shrink-0 shadow-md relative z-10 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm sm:text-base font-black tracking-tight truncate">
+            🎪 Sagre, Fiere & Locandine d&apos;Italia
+          </h2>
 
-          <div className="flex items-center gap-1.5">
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => openNewSagraModal()}
+                className="px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+              >
+                <Plus className="w-3 h-3 stroke-[2.5]" />
+                <span>Aggiungi Sagra</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <p className="text-[10.5px] text-white/80 font-medium leading-tight">
+            Eventi gastronomici confermati, filtro vacanza e mappa.
+          </p>
+
+          {/* Compact Official TrovaSagre.com Partner Pill */}
+          <div className="inline-flex items-center gap-1.5 bg-white/15 hover:bg-white/20 border border-amber-300/45 rounded-xl px-2 py-1 backdrop-blur-xs transition-all">
             <button
               type="button"
-              onClick={() => openNewSagraModal()}
-              className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10.5px] font-black flex items-center gap-1 shadow-sm cursor-pointer transition-all"
+              onClick={() => setShowPartnerInfoModal(true)}
+              className="flex items-center gap-1.5 text-left cursor-pointer"
+              title="Informazioni sulla collaborazione con TrovaSagre.com"
             >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>{isAdmin ? 'Aggiungi Sagra + Locandina (Admin)' : 'Segnala una Sagra'}</span>
+              <span className="w-4.5 h-4.5 rounded-md bg-amber-400 text-slate-950 font-black text-[9.5px] flex items-center justify-center shadow-2xs shrink-0">
+                TS
+              </span>
+              <span className="text-[10px] font-extrabold text-amber-200 whitespace-nowrap">
+                Fonte: <strong className="text-white font-black">TrovaSagre.com</strong>
+              </span>
+              <CheckCircle2 className="w-3 h-3 text-amber-300 shrink-0" />
             </button>
-            <span className="text-[10px] font-black bg-emerald-500/25 border border-emerald-300/40 px-2 py-0.5 rounded-full text-emerald-100 hidden sm:inline-block">
-              {filteredSagres.length} Attive
-            </span>
+            <a
+              href="https://www.trovasagre.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="p-0.5 rounded-md bg-white/10 hover:bg-white/25 text-amber-200 hover:text-white transition-colors shrink-0"
+              title="Visita TrovaSagre.com"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
         </div>
-        <h2 className="text-base sm:text-lg font-black tracking-tight flex items-center gap-1.5">
-          🎪 Sagre, Fiere & Locandine d&apos;Italia
-        </h2>
-        <p className="text-[11px] text-white/75 mt-0.5 font-medium leading-snug">
-          Eventi gastronomici confermati, filtro per weekend o vacanza e posizione sulla mappa.
-        </p>
       </div>
 
       {/* Quick Period & Season Filter Bar */}
@@ -793,17 +871,32 @@ export default function EventsTab({
         <button
           onClick={() => {
             setSelectedPeriodFilter('all');
+            setSelectedSourceFilter('all');
             setSelectedMonth(0);
             setFilterStartDate('');
             setFilterEndDate('');
           }}
           className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold whitespace-nowrap transition-all cursor-pointer ${
-            selectedPeriodFilter === 'all' && !selectedMonth && !filterStartDate
+            selectedPeriodFilter === 'all' && selectedSourceFilter === 'all' && !selectedMonth && !filterStartDate
               ? 'bg-[#3E4A35] text-white shadow-sm'
               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
           🔥 Tutte ({allSagre.length})
+        </button>
+
+        <button
+          onClick={() =>
+            setSelectedSourceFilter((prev) => (prev === 'trovasagre' ? 'all' : 'trovasagre'))
+          }
+          className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
+            selectedSourceFilter === 'trovasagre'
+              ? 'bg-orange-600 text-white shadow-sm'
+              : 'bg-orange-50 text-orange-900 border border-orange-200 hover:bg-orange-100'
+          }`}
+          title="Mostra gli eventi con fonte TrovaSagre.com"
+        >
+          <span>🏆 Fonte: TrovaSagre.com</span>
         </button>
 
         <button
@@ -1120,14 +1213,16 @@ export default function EventsTab({
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => openNewSagraModal()}
-                  className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-full text-[11px] font-black flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
-                  <span>{isAdmin ? '+ Nuova Sagra' : 'Segnala Sagra'}</span>
-                </button>
+                {!hideAdminMode && (
+                  <button
+                    type="button"
+                    onClick={() => openNewSagraModal()}
+                    className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-full text-[11px] font-black flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+                    <span>{isAdmin ? 'Nuova Sagra' : 'Segnala Sagra'}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1189,6 +1284,7 @@ export default function EventsTab({
                 const distKm = calcDistanceKm(refLat, refLng, sagra.lat, sagra.lng);
                 const resolvedThumb = resolveApiUrl(sagra.imageUrl);
                 const isLiked = Boolean(likedIds[sagra.id]);
+                const sourceAttr = getSagraSourceAttribution(sagra);
 
                 return (
                   <div
@@ -1196,39 +1292,13 @@ export default function EventsTab({
                     onClick={() => setSelectedSagra(sagra)}
                     className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col cursor-pointer group min-w-0"
                   >
-                    {/* Dedicated Top Bar: Full Date on Left (never truncated), Edit/Delete/Favorite on Right */}
-                    <div className="px-1.5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-1 shrink-0">
-                      <span className="bg-emerald-700 text-white px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-black leading-tight whitespace-nowrap shrink-0 shadow-2xs">
+                    {/* Dedicated Top Bar: Full Date on Left, Calendar & Favorite on Right (never overflows even with long dates) */}
+                    <div className="px-1.5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-1 shrink-0 min-w-0">
+                      <span className="bg-emerald-700 text-white px-1.5 sm:px-2 py-0.5 rounded-md text-[9.5px] sm:text-[11px] font-black leading-tight whitespace-nowrap truncate shadow-2xs">
                         {sagra.dateBadge}
                       </span>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        {isAdmin && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openNewSagraModal(sagra);
-                              }}
-                              className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-2xs flex items-center justify-center cursor-pointer transition-transform active:scale-90"
-                              title="Admin: Cambia locandina o modifica sagra"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteSagra(sagra);
-                              }}
-                              className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-2xs flex items-center justify-center cursor-pointer transition-transform active:scale-90"
-                              title="Admin: Elimina sagra"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </>
-                        )}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1258,7 +1328,7 @@ export default function EventsTab({
                       </div>
                     </div>
 
-                    {/* VERTICAL 3:4 POSTER FLYER (Top of flyer is 100% uncovered) */}
+                    {/* VERTICAL 3:4 POSTER FLYER */}
                     <div className="relative aspect-[3/4] w-full bg-slate-900 overflow-hidden">
                       <img
                         src={resolvedThumb}
@@ -1275,11 +1345,39 @@ export default function EventsTab({
                         className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                       />
 
+                      {/* Floating Admin Quick Edit/Delete in top-right of poster (only when Admin mode is active) */}
+                      {isAdmin && (
+                        <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 bg-black/55 backdrop-blur-2xs p-1 rounded-full">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openNewSagraModal(sagra);
+                            }}
+                            className="w-5.5 h-5.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-xs flex items-center justify-center cursor-pointer transition-transform active:scale-90"
+                            title="Admin: Cambia locandina o modifica sagra"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSagra(sagra);
+                            }}
+                            className="w-5.5 h-5.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center justify-center cursor-pointer transition-transform active:scale-90"
+                            title="Admin: Elimina sagra"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+
                       <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/95 via-black/65 to-transparent pointer-events-none" />
 
                       {/* Bottom Poster Overlay */}
                       <div className="absolute bottom-2 left-2 right-2 text-white">
-                        <div className="flex items-center gap-1 mb-1">
+                        <div className="flex flex-wrap items-center gap-1 mb-1">
                           <span className="inline-block bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded-md text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider shadow-xs truncate">
                             {sagra.categoryLabel}
                           </span>
@@ -1296,6 +1394,23 @@ export default function EventsTab({
                           {distKm} km · {sagra.locationName}
                         </p>
                       </div>
+                    </div>
+
+                    {/* Official Source Recognition Strip (sized so '🏆 Fonte: TrovaSagre.com' fits in full on mobile) */}
+                    <div
+                      className={`px-1.5 py-1 text-[8.5px] sm:text-[10px] font-black tracking-tight flex items-center justify-between gap-0.5 border-t ${
+                        sourceAttr.isTrovaSagre
+                          ? 'bg-orange-50/95 text-orange-950 border-orange-200/80'
+                          : 'bg-slate-50 text-slate-600 border-slate-100'
+                      }`}
+                    >
+                      <span className="flex items-center gap-0.5 min-w-0 whitespace-nowrap">
+                        <span className="shrink-0">{sourceAttr.badgeEmoji}</span>
+                        <span className="truncate">{sourceAttr.label}</span>
+                      </span>
+                      {sourceAttr.isTrovaSagre && (
+                        <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-orange-600 shrink-0" />
+                      )}
                     </div>
 
                     {/* 2-Column Grid Action Footer: Mappa & Naviga always visible in full without truncation */}
@@ -1773,6 +1888,43 @@ export default function EventsTab({
                   </div>
                 </div>
 
+                {/* Fonte Evento & Link Originale (TrovaSagre.com / Community / Pro Loco) */}
+                {isAdmin && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-orange-50/70 border border-orange-200 rounded-2xl p-2.5">
+                    <div>
+                      <label className="block font-extrabold text-orange-950 text-[10.5px] mb-0.5">
+                        🏆 Fonte Ufficiale dell&apos;Evento
+                      </label>
+                      <select
+                        value={formSourceProvider}
+                        onChange={(e) =>
+                          setFormSourceProvider(
+                            e.target.value as 'trovasagre' | 'viacamper' | 'community' | 'proloco'
+                          )
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-orange-200 bg-white font-bold text-slate-800 text-[11px] outline-none"
+                      >
+                        <option value="trovasagre">🏆 Partner: TrovaSagre.com</option>
+                        <option value="viacamper">🚐 Redazione ViaCamper</option>
+                        <option value="proloco">🏛️ Pro Loco / Comune</option>
+                        <option value="community">👥 Community Camperisti</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-extrabold text-orange-950 text-[10.5px] mb-0.5">
+                        🔗 Link Scheda Fonte (opzionale)
+                      </label>
+                      <input
+                        type="url"
+                        value={formSourceUrl}
+                        onChange={(e) => setFormSourceUrl(e.target.value)}
+                        placeholder="https://www.trovasagre.com/..."
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-orange-200 bg-white font-medium text-slate-800 text-[11px] outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* 6. Additional Flyers / Menu / Event Photos at the bottom */}
                 <div className="bg-amber-50/60 border-2 border-dashed border-amber-400 rounded-2xl p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -2057,17 +2209,67 @@ export default function EventsTab({
                   </div>
                 )}
 
-                {selectedSagra.sourceUrl && !selectedSagra.sourceUrl.includes('trovasagre.com') && (
-                  <a
-                    href={selectedSagra.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline pb-1"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    <span>Fonte ufficiale evento</span>
-                  </a>
-                )}
+                {/* Official Source Attribution Box (TrovaSagre.com Partner or Community/Pro Loco) */}
+                {(() => {
+                  const detailSource = getSagraSourceAttribution(selectedSagra);
+                  return (
+                    <div
+                      className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2.5 ${
+                        detailSource.isTrovaSagre
+                          ? 'bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 border-orange-300'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
+                            detailSource.isTrovaSagre
+                              ? 'bg-orange-600 text-white'
+                              : 'bg-[#3E4A35] text-white'
+                          }`}
+                        >
+                          {detailSource.isTrovaSagre ? 'TS' : detailSource.badgeEmoji}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-orange-800 flex items-center gap-1">
+                            <span>Riconoscimento Fonte Evento</span>
+                            {detailSource.isTrovaSagre && (
+                              <CheckCircle2 className="w-3 h-3 text-orange-600 shrink-0" />
+                            )}
+                          </div>
+                          <div className="text-xs font-black text-slate-900 truncate">
+                            {detailSource.label}
+                          </div>
+                          <div className="text-[10.5px] text-slate-600 font-medium leading-tight">
+                            {detailSource.isTrovaSagre
+                              ? 'Dati evento in collaborazione con il portale TrovaSagre.com'
+                              : 'Evento verificato per la community dei camperisti ViaCamper'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {detailSource.partnerUrl && (
+                        <a
+                          href={detailSource.partnerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`px-3 py-1.5 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 shadow-2xs transition-all shrink-0 ${
+                            detailSource.isTrovaSagre
+                              ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                              : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-300'
+                          }`}
+                        >
+                          <span>
+                            {detailSource.isTrovaSagre
+                              ? 'Vedi su TrovaSagre.com'
+                              : 'Fonte ufficiale'}
+                          </span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Sticky Bottom Action Footer */}
@@ -2151,6 +2353,95 @@ export default function EventsTab({
           </div>,
           document.body
         )}
+
+      {/* TROVASAGRE.COM OFFICIAL PARTNERSHIP & ATTRIBUTION MODAL */}
+      {showPartnerInfoModal &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            onClick={() => setShowPartnerInfoModal(false)}
+            className="fixed inset-0 z-[100001] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            >
+              <div className="bg-gradient-to-r from-[#3E4A35] to-orange-700 text-white p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-950 font-black text-sm flex items-center justify-center shadow-md shrink-0">
+                    TS
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-200">
+                      Collaborazione & Fonte Dati
+                    </div>
+                    <h3 className="text-sm sm:text-base font-black leading-tight">
+                      ViaCamper × TrovaSagre.com
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPartnerInfoModal(false)}
+                  className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 text-xs text-slate-700 leading-relaxed">
+                <p className="font-semibold text-slate-900">
+                  La sezione Sagre & Eventi di <strong>ViaCamper</strong> riconosce ufficialmente{' '}
+                  <strong>TrovaSagre.com</strong> come fonte partner di riferimento per le sagre ed
+                  eventi enogastronomici in Italia.
+                </p>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 space-y-1.5">
+                  <div className="font-black text-orange-950 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-orange-600 shrink-0" />
+                    <span>Come funziona l&apos;integrazione</span>
+                  </div>
+                  <ul className="list-disc pl-4 space-y-1 text-[11px] text-orange-900 font-medium">
+                    <li>
+                      Ogni sagra proveniente dal circuito riporta il bollino{' '}
+                      <strong>&ldquo;🏆 Fonte: TrovaSagre.com&rdquo;</strong> sulla scheda e sulla
+                      Mappa.
+                    </li>
+                    <li>
+                      Dal dettaglio di ogni evento puoi aprire direttamente la scheda originale su{' '}
+                      <strong>TrovaSagre.com</strong>, avviare il <strong>Navigatore Camper</strong>{' '}
+                      o salvare le date su <strong>Google Calendar</strong>.
+                    </li>
+                    <li>
+                      Affianca le segnalazioni verificate inviate dalla{' '}
+                      <strong>Community dei camperisti ViaCamper</strong>.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowPartnerInfoModal(false)}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    Chiudi
+                  </button>
+                  <a
+                    href="https://www.trovasagre.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-black text-xs inline-flex items-center gap-1.5 shadow-sm"
+                  >
+                    <span>Visita TrovaSagre.com</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -2173,6 +2464,31 @@ export function AdminSagreModerationSection({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAdminUiHiddenInApp, setIsAdminUiHiddenInApp] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('viacamper_hide_admin_ui') === '1';
+  });
+
+  const handleToggleGlobalAdminUiHidden = () => {
+    setIsAdminUiHiddenInApp((prev) => {
+      const next = !prev;
+      try {
+        if (next) {
+          localStorage.setItem('viacamper_hide_admin_ui', '1');
+          localStorage.setItem('viacamper_sagre_hide_admin', '1');
+        } else {
+          localStorage.removeItem('viacamper_hide_admin_ui');
+          localStorage.removeItem('viacamper_sagre_hide_admin');
+        }
+        window.dispatchEvent(
+          new CustomEvent('viacamper-admin-ui-changed', { detail: { hidden: next } })
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   // Add / Edit Form state inside Admin Panel
   const [showForm, setShowForm] = useState(false);
@@ -2620,6 +2936,22 @@ export function AdminSagreModerationSection({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleToggleGlobalAdminUiHidden}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all border ${
+              isAdminUiHiddenInApp
+                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 border-amber-500'
+                : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-300'
+            }`}
+            title="Nasconde tutti i pulsanti Admin nell'app (Sagre, Mappa, Community) per fare screenshot puliti"
+          >
+            <span>
+              {isAdminUiHiddenInApp
+                ? '👁️ Vista Utente Attiva (Tocca per Riattivare Admin)'
+                : '👁️ Nascondi Pulsanti Admin nell\'App (Screenshot)'}
+            </span>
+          </button>
           <button
             type="button"
             onClick={handleBatchAutoAttachAllMissingFlyers}

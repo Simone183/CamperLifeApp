@@ -316,77 +316,73 @@ export default function WorkLogTab({ deadlines, onChange }: WorkLogTabProps) {
     : 0;
 
   return (
-    <div className="space-y-6 animate-fade-in" id="work-log-tab">
+    <div className="space-y-2.5 animate-fade-in" id="work-log-tab">
       
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+      {/* Compact KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {/* KPI 1: Costo Totale */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-3 sm:p-4.5 shadow-sm flex items-center gap-2.5 sm:gap-4">
-          <div className="p-2 sm:p-3 bg-emerald-50 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-300 rounded-xl shrink-0">
-            <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
+        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 sm:p-3.5 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="p-1.5 sm:p-2 bg-emerald-50 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-300 rounded-lg shrink-0">
+            <DollarSign className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider truncate">Costo Totale Lavori</h3>
-            <p className="text-base sm:text-xl font-black text-slate-800 dark:text-slate-100 mt-0.5 truncate">
+            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">Costo Totale</h3>
+            <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-slate-100 leading-tight truncate">
               {getCurrencySymbol(settings)}{totalCost.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
             </p>
-            <p className="text-[8.5px] sm:text-[9px] text-slate-400 dark:text-slate-500 truncate hidden xs:block">Sincronizzato dai registri</p>
           </div>
         </div>
 
         {/* KPI 2: Totale Lavori */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-3 sm:p-4.5 shadow-sm flex items-center gap-2.5 sm:gap-4">
-          <div className="p-2 sm:p-3 bg-[#3E4A35]/10 text-[#3E4A35] dark:text-emerald-300 rounded-xl shrink-0">
-            <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 sm:p-3.5 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="p-1.5 sm:p-2 bg-[#3E4A35]/10 text-[#3E4A35] dark:text-emerald-300 rounded-lg shrink-0">
+            <Wrench className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider truncate">Lavori Tracciati</h3>
-            <p className="text-base sm:text-xl font-black text-slate-800 dark:text-slate-100 mt-0.5 truncate">
-              {completedJobs} / {totalJobs} <span className="text-xs font-normal text-slate-400">fatti</span>
+            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">Lavori Tracciati</h3>
+            <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-slate-100 leading-tight truncate">
+              {completedJobs} / {totalJobs} <span className="text-[11px] font-normal text-slate-400">fatti</span>
             </p>
-            <p className="text-[8.5px] sm:text-[9px] text-slate-400 dark:text-slate-500 truncate hidden xs:block">Ordina scadenze e cellula</p>
           </div>
         </div>
 
         {/* KPI 3: Media Spesa */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-3 sm:p-4.5 shadow-sm flex items-center gap-2.5 sm:gap-4">
-          <div className="p-2 sm:p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 rounded-xl shrink-0">
-            <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
+        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 sm:p-3.5 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="p-1.5 sm:p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 rounded-lg shrink-0">
+            <TrendingUp className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider truncate">Costo Medio Lavoro</h3>
-            <p className="text-base sm:text-xl font-black text-slate-800 dark:text-slate-100 mt-0.5 truncate">
+            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">Costo Medio</h3>
+            <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-slate-100 leading-tight truncate">
               {getCurrencySymbol(settings)}{averageCost.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </p>
-            <p className="text-[8.5px] sm:text-[9px] text-slate-400 dark:text-slate-500 truncate hidden xs:block">Su interventi con costo</p>
           </div>
         </div>
 
         {/* KPI 4: Info Chilometri */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-3 sm:p-4.5 shadow-sm flex items-center gap-2.5 sm:gap-4">
-          <div className="p-2 sm:p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-xl shrink-0">
-            <Gauge className="w-4 h-4 sm:w-5 sm:h-5" />
+        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 sm:p-3.5 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="p-1.5 sm:p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-lg shrink-0">
+            <Gauge className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider truncate">Chilometri Max</h3>
-            <p className="text-base sm:text-xl font-black text-slate-800 dark:text-slate-100 mt-0.5 truncate">
+            <h3 className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">Chilometri Max</h3>
+            <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-slate-100 leading-tight truncate">
               {combinedItems.filter(c => c.km).length > 0 
                 ? `${Math.max(...combinedItems.map(c => c.km || 0)).toLocaleString('it-IT')} ${getDistanceUnit(settings)}` 
                 : 'Nessun km'}
             </p>
-            <p className="text-[8.5px] sm:text-[9px] text-slate-400 dark:text-slate-500 truncate hidden xs:block">Max registrato</p>
           </div>
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm p-3.5 sm:p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs p-3 sm:p-5">
         
         {/* Header Actions */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 sm:gap-4 mb-4 sm:mb-6 pb-4 sm:pb-5 border-b border-slate-50 dark:border-slate-700">
-          <div className="space-y-1">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2.5 sm:gap-4 mb-3 sm:mb-4 pb-3 border-b border-slate-50 dark:border-slate-700">
+          <div>
             <h2 className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-100">Registro lavori fatti</h2>
-            <p className="text-[11px] sm:text-xs text-slate-400 dark:text-slate-400">Storico unificato interventi di manutenzione e lavori straordinari.</p>
+            <p className="text-[11px] text-slate-400">Storico unificato interventi di manutenzione e lavori straordinari.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">

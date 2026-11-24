@@ -42,10 +42,10 @@ export function CamperSecurityTab({ currentUser, userLocation }: { currentUser: 
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-5 font-sans select-none animate-fade-in">
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/60 dark:border-slate-700 p-5 space-y-4 shadow-sm">
-        <h3 className="font-bold text-[#3E4A35] dark:text-emerald-400 text-sm flex items-center gap-2 border-b border-stone-100 dark:border-slate-700 pb-2.5">
-          <Compass className="w-4.5 h-4.5 text-[#3E4A35] dark:text-emerald-400" />
+    <div className="w-full space-y-2.5 font-sans select-none animate-fade-in">
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/60 dark:border-slate-700 p-3.5 sm:p-5 space-y-3.5 shadow-xs">
+        <h3 className="font-bold text-[#3E4A35] dark:text-emerald-400 text-sm flex items-center gap-2 border-b border-stone-100 dark:border-slate-700 pb-2">
+          <Compass className="w-4 h-4 text-[#3E4A35] dark:text-emerald-400" />
           Generatore Messaggio SOS Istantaneo
         </h3>
 

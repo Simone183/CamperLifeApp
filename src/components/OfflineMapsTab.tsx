@@ -304,86 +304,85 @@ export default function OfflineMapsTab({ userEmail }: OfflineMapsTabProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Upper header section with persistent storage badge */}
-      <div className="bg-slate-50 border border-slate-200/80 p-4 sm:p-5 rounded-2xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-[#3E4A35]/10 rounded-2xl text-[#3E4A35]">
-              <MapIcon className="w-6 h-6" />
+    <div className="space-y-2.5">
+      {/* Compact Upper header section with persistent storage badge */}
+      <div className="bg-slate-50 border border-slate-200/80 p-3 sm:p-4 rounded-xl space-y-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <div className="p-2 bg-[#3E4A35]/10 rounded-xl text-[#3E4A35] shrink-0 mt-0.5">
+              <MapIcon className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="font-extrabold text-[#3E4A35] text-lg leading-tight">Mappe Cartografiche Offline</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Navigazione GPS e consultazione soste libera senza copertura internet.</p>
+            <div className="min-w-0 space-y-0.5">
+              <h3 className="font-extrabold text-[#3E4A35] text-sm sm:text-base leading-snug">Mappe Cartografiche Offline</h3>
+              <p className="text-[11.5px] text-slate-600 leading-snug">Navigazione GPS e consultazione soste senza internet.</p>
             </div>
           </div>
 
           {/* Persistent status badge & controls */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             {storageStatus.isPersisted ? (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold shadow-2xs">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Memoria Protetta da Pulizie OS</span>
+              <div className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-[10.5px] font-bold shadow-2xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="hidden sm:inline">Memoria Protetta</span>
               </div>
             ) : (
               <button
                 onClick={handleRequestPersistence}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer shadow-2xs"
                 title="Richiedi al browser di non cancellare mai le mappe"
               >
-                <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>Attiva Protezione Memoria</span>
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Proteggi</span>
               </button>
             )}
 
             <button
               onClick={refreshStorageData}
               disabled={isLoadingStats}
-              className="p-2 text-slate-600 hover:text-[#3E4A35] bg-white border border-slate-200 rounded-xl transition-all cursor-pointer shadow-2xs"
+              className="p-1.5 text-slate-600 hover:text-[#3E4A35] bg-white border border-slate-200 rounded-lg transition-all cursor-pointer shadow-2xs"
               title="Ricarica stato memoria"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoadingStats ? 'animate-spin text-[#3E4A35]' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingStats ? 'animate-spin text-[#3E4A35]' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Storage stats grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
-          <div className="bg-white border border-slate-200/70 rounded-xl p-3 flex items-center gap-3 shadow-2xs">
-            <Database className="w-5 h-5 text-[#5A6B4E] shrink-0" />
+        {/* Compact 3-column storage stats grid */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3 pt-2 border-t border-slate-200/60">
+          <div className="bg-white border border-slate-200/70 rounded-xl p-2 sm:p-3 flex items-center gap-2 shadow-2xs min-w-0">
+            <Database className="w-4 h-4 text-[#5A6B4E] shrink-0 hidden xs:block" />
             <div className="min-w-0">
-              <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Mappe Scaricate</div>
-              <div className="text-sm font-black text-[#3E4A35] truncate">
-                {storageStatus.sizeMB} MB ({storageStatus.count} tasselli)
+              <div className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider truncate">Scaricate</div>
+              <div className="text-xs sm:text-sm font-black text-[#3E4A35] truncate">
+                {storageStatus.sizeMB} MB
               </div>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200/70 rounded-xl p-3 flex items-center gap-3 shadow-2xs">
-            <HardDrive className="w-5 h-5 text-blue-600 shrink-0" />
+          <div className="bg-white border border-slate-200/70 rounded-xl p-2 sm:p-3 flex items-center gap-2 shadow-2xs min-w-0">
+            <HardDrive className="w-4 h-4 text-blue-600 shrink-0 hidden xs:block" />
             <div className="min-w-0">
-              <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Spazio Totale Dispositivo</div>
-              <div className="text-sm font-black text-slate-800 truncate">
-                {storageStatus.quotaMB > 0 ? `${(storageStatus.quotaMB / 1024).toFixed(1)} GB liberi` : 'Illimitato'}
+              <div className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider truncate">Spazio</div>
+              <div className="text-xs sm:text-sm font-black text-slate-800 truncate">
+                {storageStatus.quotaMB > 0 ? `${(storageStatus.quotaMB / 1024).toFixed(1)} GB` : 'Illimitato'}
               </div>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200/70 rounded-xl p-3 flex items-center justify-between gap-2 shadow-2xs">
+          <div className="bg-white border border-slate-200/70 rounded-xl p-2 sm:p-3 flex items-center justify-between gap-1 shadow-2xs min-w-0">
             <div className="min-w-0">
-              <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Gestione Cache</div>
-              <div className="text-xs font-semibold text-slate-600 truncate">
-                {downloadedMeta.length} aree registrate
+              <div className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider truncate">Cache</div>
+              <div className="text-xs font-bold text-slate-600 truncate">
+                {downloadedMeta.length} aree
               </div>
             </div>
             {storageStatus.count > 0 && !downloadingRegionId && (
               <button
                 onClick={handleClearCache}
-                className="px-2.5 py-1 text-xs font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                className="p-1.5 text-[10px] font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-all cursor-pointer flex items-center shrink-0 shadow-2xs"
                 title="Svuota cache mappe offline"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Svuota
+                <Trash2 className="w-3 h-3" />
               </button>
             )}
           </div>

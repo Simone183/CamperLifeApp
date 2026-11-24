@@ -443,42 +443,35 @@ export function ChallengesTab({
   };
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-200">
-      {/* Top Banner Card */}
-      <div className="bg-gradient-to-br from-[#1C3D2B] via-[#2A543B] to-[#142E20] rounded-3xl p-5 sm:p-7 text-white shadow-xl relative overflow-hidden border border-emerald-800/50">
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-48 h-48 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
-        
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2 max-w-xl">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                <Trophy className="w-3.5 h-3.5" /> Gamification &amp; Concorsi
+    <div className="space-y-2.5 pb-10 animate-in fade-in duration-200">
+      {/* Compact Top Banner Card */}
+      <div className="bg-gradient-to-br from-[#1C3D2B] via-[#2A543B] to-[#142E20] rounded-xl p-3 sm:p-4 text-white shadow-sm relative overflow-hidden border border-emerald-800/50">
+        <div className="flex items-start justify-between gap-3 relative z-10">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9.5px] uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                <Trophy className="w-3 h-3" /> Concorsi
               </span>
-              <RollyOnboardingGuide sectionKey="challenges" autoShow={false} className="!bg-white/10 !text-white !border-white/20 hover:!bg-white/20" />
+              <h2 className="text-sm sm:text-base font-black text-white tracking-tight leading-snug">
+                Sfide &amp; Badge Camperisti 🏆
+              </h2>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-              Sfide, Concorsi &amp; Badge Camperisti 🏆
-            </h2>
-            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              Partecipa alle sfide fotografiche, aggiungi e recensisci aree sosta. Guadagna punti XP, sblocca badge di livello e partecipa all'estrazione dei premi mensili per la community!
+            <p className="text-[11.5px] text-emerald-100/90 leading-snug">
+              Partecipa alle sfide foto, recensisci soste, guadagna XP e sblocca badge!
             </p>
           </div>
 
-          {/* User Score Stats Widget */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 flex items-center gap-4 shrink-0 shadow-lg">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-200 text-slate-950 font-black text-xl flex items-center justify-center shadow-md">
+          {/* Compact User Score Stats Widget */}
+          <div className="bg-white/10 backdrop-blur-md rounded-xl px-2.5 py-1.5 border border-white/15 flex items-center gap-2 shrink-0 shadow-xs">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-400 to-amber-200 text-slate-950 font-black text-xs flex items-center justify-center shadow-2xs">
               TU
             </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-xs text-amber-300 font-bold">
-                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                <span>Livello 4 - Explorer</span>
+            <div>
+              <div className="text-[10px] text-amber-300 font-bold leading-tight">
+                Lv. 4 Explorer
               </div>
-              <div className="text-xl font-black text-white leading-none">
-                {userXp} <span className="text-xs font-normal text-emerald-200">XP</span>
-              </div>
-              <div className="text-[10px] text-emerald-100/80 font-medium">
-                #4 in Classifica della Community
+              <div className="text-sm font-black text-white leading-tight">
+                {userXp} <span className="text-[10px] font-normal text-emerald-200">XP</span>
               </div>
             </div>
           </div>
@@ -486,7 +479,7 @@ export function ChallengesTab({
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="grid grid-cols-3 gap-1.5 sm:gap-2 border-b border-stone-200 dark:border-slate-800 pb-2">
+      <div className="grid grid-cols-3 gap-1.5 border-b border-stone-200 dark:border-slate-800 pb-1.5">
         <button
           type="button"
           onClick={() => setActiveTab('sfide')}

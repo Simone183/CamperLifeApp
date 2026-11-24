@@ -480,59 +480,54 @@ export default function DeadlinesTab({ deadlines: propDeadlines, setDeadlines: p
   const urgentCount = deadlines.filter(d => !d.done && (getDaysRemaining(d.dueDate) <= 30 || (d.km && currentOdometer > 0 && d.km - currentOdometer <= 1000))).length;
 
   return (
-    <div className="space-y-6 font-sans">
-      {/* Dynamic Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="space-y-2.5 font-sans">
+      {/* Compact Dynamic Summary Cards (3 columns even on mobile) */}
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
         {/* Total expenses */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-xl">
-            <DollarSign className="w-6 h-6" />
+        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="p-1.5 sm:p-2.5 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-lg shrink-0">
+            <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Spesa Manutenzioni</h3>
-            <p className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-0.5">
+          <div className="min-w-0">
+            <h3 className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">Spesa</h3>
+            <p className="text-sm sm:text-xl font-black text-slate-800 dark:text-slate-100 leading-tight truncate">
               {getCurrencySymbol(settings)}{(deadlines.filter(d => d.done && d.price).reduce((acc, curr) => acc + (curr.price || 0), 0)).toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
             </p>
-            <p className="text-[10px] text-slate-400">Totale investito nei controlli salvati</p>
           </div>
         </div>
 
         {/* Deadlines coming */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 rounded-xl">
-            <Clock className="w-6 h-6" />
+        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="p-1.5 sm:p-2.5 bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 rounded-lg shrink-0">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Scadenze in Arrivo</h3>
-            <p className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-0.5">{pendingCount} da fare</p>
-            <p className="text-[10px] text-slate-400">Revisioni, bolli e tagliandi da effettuare</p>
+          <div className="min-w-0">
+            <h3 className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">Scadenze</h3>
+            <p className="text-sm sm:text-xl font-black text-slate-800 dark:text-slate-100 leading-tight truncate">{pendingCount} da fare</p>
           </div>
         </div>
 
         {/* Urgent Alert */}
-        <div className={`border rounded-2xl p-5 shadow-sm flex items-center gap-4 ${
+        <div className={`border rounded-xl p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3 min-w-0 ${
           urgentCount > 0 ? 'bg-rose-50 dark:bg-rose-900/30 border-rose-100 dark:border-rose-800 text-rose-900 dark:text-rose-100' : 'bg-emerald-50/50 dark:bg-emerald-900/30 border-emerald-100 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100'
         }`}>
-          <div className={`p-3 rounded-xl ${
+          <div className={`p-1.5 sm:p-2.5 rounded-lg shrink-0 ${
             urgentCount > 0 ? 'bg-rose-100 dark:bg-rose-800 text-rose-600 dark:text-rose-200' : 'bg-emerald-100 dark:bg-emerald-800 text-emerald-600 dark:text-emerald-200'
           }`}>
-            <AlertTriangle className="w-6 h-6" />
+            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <h3 className="text-xs font-bold opacity-65 uppercase tracking-wider">Allerta Critica</h3>
-            <p className="text-2xl font-black mt-0.5">
-              {urgentCount > 0 ? `${urgentCount} Urgente` : 'Nessuna Urgenza'}
-            </p>
-            <p className="text-[10px] opacity-75">
-              {urgentCount > 0 ? 'Entro 30 giorni o alla soglia km!' : 'Tutti i controlli sono in regola!'}
+          <div className="min-w-0">
+            <h3 className="text-[9px] sm:text-xs font-bold opacity-65 uppercase tracking-wider truncate">Allerta</h3>
+            <p className="text-sm sm:text-xl font-black leading-tight truncate">
+              {urgentCount > 0 ? `${urgentCount} Urgente` : 'In Regola'}
             </p>
           </div>
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-5 border-b border-slate-50 dark:border-slate-700">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs p-3 sm:p-5">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 pb-3 border-b border-slate-50 dark:border-slate-700">
           {/* Tabs */}
           <div className="flex flex-wrap gap-2">
             <button

@@ -157,48 +157,43 @@ export function BubbleLevelTab() {
   const rearRampHeight = activePitch > 0.5 ? Math.abs(pitchDiffCm) : 0;
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="space-y-2.5 font-sans">
       
-      {/* Visual Level Dashboard */}
-      <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-32 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none"></div>
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1">
-            <span className="text-[10px] uppercase font-black tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-full inline-block">
-              Strumento di Sosta
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight">Livella Digitale Camper</h2>
-            <p className="text-xs text-stone-300 max-w-lg leading-relaxed">
-              Trova l’orizzonte perfetto per dormire sodo, far defluire gli scarichi d'acqua in bagno e far funzionare il frigorifero trivalente al massimo delle sue prestazioni.
+      {/* Compact Visual Level Dashboard */}
+      <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-xl p-3 sm:p-4 text-white shadow-sm relative overflow-hidden">
+        <div className="flex items-start justify-between gap-2 relative z-10">
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-black tracking-tight leading-snug">🧭 Livella Digitale Camper</h2>
+            <p className="text-[11.5px] text-stone-200 leading-snug mt-0.5">
+              Allinea il camper per dormire in piano, scarichi bagno e frigo trivalente.
             </p>
           </div>
 
           {/* Sound Controls & Taratura buttons */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => setSoundEnabled(!soundEnabled)}
-              className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
                 soundEnabled 
-                  ? 'bg-emerald-500 border-transparent text-white shadow-md' 
+                  ? 'bg-emerald-500 border-transparent text-white shadow-xs' 
                   : 'bg-white/10 border-white/20 text-stone-300 hover:bg-white/15'
               }`}
               title={soundEnabled ? "Disattiva Beep Acustico" : "Attiva Beep Acustico"}
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4 animate-bounce" /> : <VolumeX className="w-4 h-4" />}
+              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 animate-bounce" /> : <VolumeX className="w-3.5 h-3.5" />}
             </button>
             <button
               onClick={calibrate}
-              className="px-3.5 py-2.5 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider"
-              title="Tarasulla posizione corrente"
+              className="px-2.5 py-1 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-[10.5px] font-black rounded-lg transition-all shadow-2xs cursor-pointer flex items-center gap-1 uppercase tracking-wider"
+              title="Tara sulla posizione corrente"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3 h-3" />
               <span>Calibra</span>
             </button>
             {(offsetPitch !== 0 || offsetRoll !== 0) && (
               <button
                 onClick={resetCalibration}
-                className="p-2.5 bg-red-900/40 hover:bg-red-950/60 border border-red-500/30 rounded-xl text-red-200 text-xs font-bold transition-all cursor-pointer"
+                className="px-2 py-1 bg-red-900/40 hover:bg-red-950/60 border border-red-500/30 rounded-lg text-red-200 text-[10.5px] font-bold transition-all cursor-pointer"
                 title="Resetta Taratura"
               >
                 Reset
@@ -207,106 +202,96 @@ export function BubbleLevelTab() {
           </div>
         </div>
 
-        {/* Big visual indicators row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 pt-6 border-t border-white/10 items-stretch">
+        {/* Compact 3-column visual indicators row */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3 mt-2.5 pt-2.5 border-t border-white/10 items-stretch">
           {/* Pitch metric */}
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-mono">
-                Assetto Longitudinale (Pitch)
+          <div className="bg-white/5 rounded-xl p-2 sm:p-3 border border-white/5 flex flex-col justify-between min-w-0">
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider font-mono truncate">
+                Pitch (Long.)
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse shrink-0"></span>
             </div>
-            <div className="mt-3 flex items-baseline gap-1">
-              <span className="text-3xl font-black font-mono tracking-tight text-white">
+            <div className="mt-1 flex items-baseline gap-1">
+              <span className="text-lg sm:text-2xl font-black font-mono tracking-tight text-white">
                 {activePitch > 0 ? `+${activePitch}` : activePitch}°
               </span>
-              <span className="text-xs text-stone-400 font-bold">Beccheggio</span>
             </div>
-            <div className="text-[10px] text-stone-300 font-medium mt-2 flex items-center gap-1.5">
+            <div className="text-[9.5px] text-stone-300 font-medium mt-1 flex items-center gap-1 truncate">
               {activePitch === 0 ? (
-                <span className="text-emerald-450 font-bold">✓ Bilanciato</span>
+                <span className="text-emerald-300 font-bold">✓ In bolla</span>
               ) : activePitch > 0 ? (
                 <>
-                  <ArrowDown className="w-3.5 h-3.5 text-red-300 shrink-0" />
-                  <span>Inclinato verso il Retro</span>
+                  <ArrowDown className="w-3 h-3 text-red-300 shrink-0" />
+                  <span className="truncate">Retro</span>
                 </>
               ) : (
                 <>
-                  <ArrowUp className="w-3.5 h-3.5 text-red-300 shrink-0" />
-                  <span>Inclinato verso il Fronte</span>
+                  <ArrowUp className="w-3 h-3 text-red-300 shrink-0" />
+                  <span className="truncate">Fronte</span>
                 </>
               )}
             </div>
           </div>
 
           {/* Roll metric */}
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-mono">
-                Assetto Trasversale (Roll)
+          <div className="bg-white/5 rounded-xl p-2 sm:p-3 border border-white/5 flex flex-col justify-between min-w-0">
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider font-mono truncate">
+                Roll (Lat.)
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0"></span>
             </div>
-            <div className="mt-3 flex items-baseline gap-1">
-              <span className="text-3xl font-black font-mono tracking-tight text-white">
+            <div className="mt-1 flex items-baseline gap-1">
+              <span className="text-lg sm:text-2xl font-black font-mono tracking-tight text-white">
                 {activeRoll > 0 ? `+${activeRoll}` : activeRoll}°
               </span>
-              <span className="text-xs text-stone-400 font-bold">Rollio</span>
             </div>
-            <div className="text-[10px] text-stone-300 font-medium mt-2 flex items-center gap-1.5">
+            <div className="text-[9.5px] text-stone-300 font-medium mt-1 flex items-center gap-1 truncate">
               {activeRoll === 0 ? (
-                <span className="text-emerald-450 font-bold">✓ Bilanciato</span>
+                <span className="text-emerald-300 font-bold">✓ In bolla</span>
               ) : activeRoll > 0 ? (
                 <>
-                  <ArrowRight className="w-3.5 h-3.5 text-red-300 shrink-0" />
-                  <span>Inclinato a Destra</span>
+                  <ArrowRight className="w-3 h-3 text-red-300 shrink-0" />
+                  <span className="truncate">Destra</span>
                 </>
               ) : (
                 <>
-                  <ArrowLeft className="w-3.5 h-3.5 text-red-300 shrink-0" />
-                  <span>Inclinato a Sinistra</span>
+                  <ArrowLeft className="w-3 h-3 text-red-300 shrink-0" />
+                  <span className="truncate">Sinistra</span>
                 </>
               )}
             </div>
           </div>
 
           {/* Global Diagnosis */}
-          <div className={`rounded-2xl p-4 border flex flex-col justify-between transition-all ${
+          <div className={`rounded-xl p-2 sm:p-3 border flex flex-col justify-between min-w-0 transition-all ${
             isPerfectLevel 
-              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-250' 
-              : 'bg-amber-505/10 bg-[#A45C40]/10 border-[#A45C40]/25 text-orange-200'
+              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-200' 
+              : 'bg-[#A45C40]/15 border-[#A45C40]/30 text-orange-200'
           }`}>
-            <span className="text-[10px] font-bold uppercase tracking-widest font-mono">
-              Diagnosi di Sosta
+            <span className="text-[9px] font-bold uppercase tracking-wider font-mono truncate">
+              Diagnosi
             </span>
-            <div className="mt-3 flex items-center gap-2.5">
+            <div className="mt-1 flex items-center gap-1.5">
               {isPerfectLevel ? (
-                <CheckCircle className="w-8 h-8 text-emerald-400 shrink-0 animate-bounce" />
+                <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0" />
               ) : (
-                <AlertTriangle className="w-8 h-8 text-[#A45C40] shrink-0 animate-pulse" />
+                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-[#A45C40] shrink-0" />
               )}
-              <div>
-                <h4 className="font-extrabold text-sm text-white">
-                  {isPerfectLevel ? 'Sosta in Bolla!' : 'Necessari Ralle/Cunei'}
-                </h4>
-                <p className="text-[10px] text-stone-300 leading-snug mt-0.5">
-                  {isPerfectLevel 
-                    ? 'Mezzo perfettamente allineato. Goditi la cena e il sonno in piano.'
-                    : 'Il camper pende leggermente. Segui il piano cunei sottostante per compensare.'}
-                </p>
-              </div>
+              <span className="font-extrabold text-[11px] sm:text-xs text-white leading-tight truncate">
+                {isPerfectLevel ? 'In Bolla!' : 'Usa Cunei'}
+              </span>
             </div>
-            <div className="text-[9px] text-[#F2EFE9] opacity-80 font-mono mt-2 font-bold">
-              Tol. di tolleranza raccomandata: ±0.5°
+            <div className="text-[9px] text-[#F2EFE9]/80 font-mono mt-1 font-bold truncate">
+              Tol: ±0.5°
             </div>
           </div>
         </div>
-
       </div>
 
       {/* Main Content Area: Interactive Spirit Level & Camper Silhouette Tilters */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         
         {/* TAB 1: Real-time Concentric Bubble Tube Level */}
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4 flex flex-col items-center justify-center">

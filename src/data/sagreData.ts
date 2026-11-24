@@ -31,10 +31,85 @@ export interface SagraEvent {
   isRealFlyer?: boolean;
   section: 'vicino' | 'weekend' | 'natale' | 'primavera' | 'estate' | 'tutte';
   sourceUrl?: string;
+  sourceProvider?: 'trovasagre' | 'viacamper' | 'community' | 'proloco';
+  sourceName?: string;
+  externalId?: string;
+  lastSyncedAt?: string;
   status?: 'approved' | 'pending';
   submittedByEmail?: string;
   submittedByName?: string;
   createdAt?: string;
+}
+
+export interface SagraSourceAttribution {
+  provider: 'trovasagre' | 'viacamper' | 'community' | 'proloco';
+  label: string;
+  shortLabel: string;
+  badgeEmoji: string;
+  isTrovaSagre: boolean;
+  partnerUrl: string;
+}
+
+export function getSagraSourceAttribution(sagra: Partial<SagraEvent>): SagraSourceAttribution {
+  const rawUrl = (sagra.sourceUrl || '').trim();
+  const lowerUrl = rawUrl.toLowerCase();
+  const id = (sagra.id || '').trim();
+  const submitter = (sagra.submittedByEmail || '').toLowerCase().trim();
+
+  if (
+    sagra.sourceProvider === 'trovasagre' ||
+    lowerUrl.includes('trovasagre.com') ||
+    id.startsWith('ts_') ||
+    (id.startsWith('vc_') && !sagra.sourceProvider)
+  ) {
+    return {
+      provider: 'trovasagre',
+      label: 'Fonte: TrovaSagre.com',
+      shortLabel: 'TrovaSagre.com',
+      badgeEmoji: '🏆',
+      isTrovaSagre: true,
+      partnerUrl: rawUrl && lowerUrl.includes('trovasagre.com') ? rawUrl : 'https://www.trovasagre.com',
+    };
+  }
+
+  if (sagra.sourceProvider === 'proloco') {
+    return {
+      provider: 'proloco',
+      label: sagra.sourceName ? `Fonte: ${sagra.sourceName}` : 'Fonte: Pro Loco / Comune',
+      shortLabel: sagra.sourceName || 'Pro Loco',
+      badgeEmoji: '🏛️',
+      isTrovaSagre: false,
+      partnerUrl: rawUrl || '',
+    };
+  }
+
+  if (
+    sagra.sourceProvider === 'community' ||
+    (submitter &&
+      !submitter.includes('admin') &&
+      !submitter.includes('sambucci.simone') &&
+      !submitter.includes('viacamper'))
+  ) {
+    return {
+      provider: 'community',
+      label: sagra.submittedByName
+        ? `Segnalata da ${sagra.submittedByName} (Community)`
+        : 'Segnalata dalla Community ViaCamper',
+      shortLabel: 'Community',
+      badgeEmoji: '👥',
+      isTrovaSagre: false,
+      partnerUrl: rawUrl || '',
+    };
+  }
+
+  return {
+    provider: 'viacamper',
+    label: 'Fonte: Redazione ViaCamper',
+    shortLabel: 'ViaCamper',
+    badgeEmoji: '🚐',
+    isTrovaSagre: false,
+    partnerUrl: rawUrl || '',
+  };
 }
 
 export function getTodayIsoDate(): string {
@@ -493,6 +568,7 @@ function sanitizeSagraItem(item: SagraEvent): SagraEvent {
   const cleanUrl = isDataUri
     ? item.imageUrl
     : normalizeSagraFlyerUrl(item.imageUrl, `${item.title} ${item.categoryLabel}`);
+  const attr = getSagraSourceAttribution(item);
   return {
     ...item,
     imageUrl: cleanUrl,
@@ -500,7 +576,9 @@ function sanitizeSagraItem(item: SagraEvent): SagraEvent {
       ? item.fullFlyerUrl
       : cleanUrl,
     extraPhotos: Array.isArray(item.extraPhotos) ? item.extraPhotos.filter(Boolean) : [],
-    sourceUrl: item.sourceUrl && item.sourceUrl.includes('trovasagre.com') ? undefined : item.sourceUrl,
+    sourceProvider: item.sourceProvider || attr.provider,
+    sourceName: item.sourceName || attr.shortLabel,
+    sourceUrl: item.sourceUrl || (attr.isTrovaSagre ? 'https://www.trovasagre.com' : undefined),
   };
 }
 
@@ -696,8 +774,64 @@ export async function deleteSagraEverywhere(sagraId: string): Promise<void> {
   }
 }
 
+export interface TrovaSagreSyncStatus {
+  apiConfigured: boolean;
+  fromCache?: boolean;
+  lastSyncedAt?: string | null;
+  nextSyncAt?: string | null;
+  cacheTtlHours: number;
+  count: number;
+  sagre: SagraEvent[];
+}
+
 /**
- * Fetches ONLY confirmed live sagre via `/api/sagre-live` (Google Search Grounding) + Firestore.
+ * Fetches the server-cached TrovaSagre.com Partner Feed (`/api/trovasagre/feed`).
+ * The backend caches the response for 12 hours (max 2 requests/day to TrovaSagre.com),
+ * preventing any traffic spikes from mobile clients.
+ */
+export async function fetchTrovaSagrePartnerFeed(forceRefresh = false): Promise<TrovaSagreSyncStatus> {
+  try {
+    const endpoint = forceRefresh ? '/api/trovasagre/feed?refresh=1' : '/api/trovasagre/feed';
+    const res = await fetch(resolveApiUrl(endpoint));
+    if (res.ok) {
+      const data = await res.json();
+      const rawList = Array.isArray(data.sagre) ? data.sagre : [];
+      const valid = rawList
+        .map((item: SagraEvent) =>
+          sanitizeSagraItem({
+            ...item,
+            sourceProvider: 'trovasagre',
+            sourceName: 'TrovaSagre.com',
+          })
+        )
+        .filter((s: SagraEvent) => !isSagraExpired(s));
+      if (valid.length > 0) {
+        saveLiveSagre(valid);
+      }
+      return {
+        apiConfigured: Boolean(data.apiConfigured),
+        fromCache: Boolean(data.fromCache),
+        lastSyncedAt: data.lastSyncedAt || null,
+        nextSyncAt: data.nextSyncAt || null,
+        cacheTtlHours: Number(data.cacheTtlHours) || 12,
+        count: valid.length,
+        sagre: valid,
+      };
+    }
+  } catch {
+    // ignore offline/network errors
+  }
+  return {
+    apiConfigured: false,
+    cacheTtlHours: 12,
+    count: 0,
+    sagre: [],
+  };
+}
+
+/**
+ * Fetches ONLY confirmed live sagre via `/api/trovasagre/feed` (Server-Cached Partner Feed),
+ * `/api/sagre-live` (Google Search Grounding) + Firestore.
  * Never invents or rolls dates forward.
  */
 export async function fetchLiveSagreUniversal(params: {
@@ -719,8 +853,11 @@ export async function fetchLiveSagreUniversal(params: {
   const uLng = typeof params.userLng === 'number' ? params.userLng : 12.65;
   const fetchAllItaly = Boolean(params.fetchAllItaly);
 
-  // 1. Always sync custom/admin sagre from Firestore first
-  const { approved: firestoreApproved } = await syncSagreFromFirestore();
+  // 1. Always sync custom/admin sagre from Firestore + cached TrovaSagre Partner Feed first
+  const [{ approved: firestoreApproved }, partnerFeed] = await Promise.all([
+    syncSagreFromFirestore(),
+    fetchTrovaSagrePartnerFeed(false),
+  ]);
 
   // 2. Query confirmed web sagre via backend Google Search Grounding
   try {
@@ -744,8 +881,9 @@ export async function fetchLiveSagreUniversal(params: {
       if (Array.isArray(data.sagre) && data.sagre.length > 0) {
         const valid = data.sagre.map(sanitizeSagraItem).filter((s: SagraEvent) => !isSagraExpired(s));
         if (valid.length > 0) {
-          saveLiveSagre([...firestoreApproved, ...valid]);
-          return [...firestoreApproved, ...valid];
+          const combined = [...firestoreApproved, ...partnerFeed.sagre, ...valid];
+          saveLiveSagre(combined);
+          return combined;
         }
       }
     }
@@ -753,10 +891,11 @@ export async function fetchLiveSagreUniversal(params: {
     // Fall through
   }
 
-  return firestoreApproved;
+  return [...firestoreApproved, ...partnerFeed.sagre];
 }
 
 export function sagraToPlace(s: SagraEvent): Place {
+  const attr = getSagraSourceAttribution(s);
   return {
     id: s.id,
     name: s.title,
@@ -764,17 +903,17 @@ export function sagraToPlace(s: SagraEvent): Place {
     lat: Number(s.lat),
     lng: Number(s.lng),
     address: s.locationName,
-    description: `📅 ${s.dates}\n\n${s.description}\n\n🍽️ Specialità: ${(s.specialties || []).join(', ')}\n🏕️ Sosta Camper: ${s.camperParking}`,
+    description: `📅 ${s.dates}\n${attr.badgeEmoji} ${attr.label}\n\n${s.description}\n\n🍽️ Specialità: ${(s.specialties || []).join(', ')}\n🏕️ Sosta Camper: ${s.camperParking}`,
     rating: 9.8,
     reviews: [],
     priceInfo: s.dates,
     priceEuro: 0,
-    facilities: ['Sosta Camper', ...(s.specialties || []).slice(0, 3)],
+    facilities: ['Sosta Camper', attr.shortLabel, ...(s.specialties || []).slice(0, 3)],
     imageUrl: s.imageUrl,
     verified: true,
     feeStatus: 'free',
     phone: '',
-    source: 'Eventi Ufficiali',
+    source: attr.shortLabel,
     categoryLabel: `${s.categoryLabel} (${s.dateBadge})`,
     eventStartDate: s.startDate,
     eventEndDate: s.endDate,

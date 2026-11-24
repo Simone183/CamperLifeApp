@@ -81,26 +81,22 @@ export const DeleteAccountTab: React.FC<DeleteAccountTabProps> = ({
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 py-2 px-1 sm:px-3">
-      {/* Top Header Card */}
-      <div className="bg-gradient-to-br from-red-600 via-rose-700 to-red-800 text-white rounded-2xl p-5 sm:p-6 shadow-md relative overflow-hidden">
-        <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none" />
-        <div className="flex items-center gap-3.5 mb-3">
-          <div className="w-11 h-11 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shrink-0 shadow-xs">
-            <UserX className="w-6 h-6 text-white" />
+    <div className="w-full space-y-2.5 py-1">
+      {/* Compact Top Header Card */}
+      <div className="bg-gradient-to-br from-red-600 via-rose-700 to-red-800 text-white rounded-xl px-3.5 py-2.5 shadow-sm relative overflow-hidden">
+        <div className="flex items-start gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shrink-0 mt-0.5">
+            <UserX className="w-4 h-4 text-white" />
           </div>
-          <div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-red-200 block">
-              Gestione Account & Privacy (GDPR Art. 17)
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Cancellazione Definitiva Account
+          <div className="min-w-0 space-y-0.5">
+            <h2 className="text-sm sm:text-base font-black tracking-tight text-white leading-snug">
+              Cancellazione Definitiva Account (GDPR)
             </h2>
+            <p className="text-[11.5px] text-red-100 leading-snug">
+              Elimina in qualsiasi momento il tuo profilo utente e i dati personali salvati su ViaCamper.
+            </p>
           </div>
         </div>
-        <p className="text-xs text-red-100 leading-relaxed font-medium">
-          In questa sezione puoi esercitare il tuo Diritto all'Oblio ed eliminare in qualsiasi momento il tuo profilo utente e tutti i dati personali salvati su ViaCamper.
-        </p>
       </div>
 
       {/* User Info Bar */}

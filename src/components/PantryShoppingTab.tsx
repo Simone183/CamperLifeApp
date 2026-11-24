@@ -843,45 +843,38 @@ export function PantryShoppingTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   });
 
   return (
-    <div id="pantry-shopping-container" className="space-y-6 font-sans">
+    <div id="pantry-shopping-container" className="space-y-2.5 font-sans">
       
       {/* Family Crew Tab Banner */}
       <FamilyCrewTabBanner moduleName="Cambusa & Lista Spesa" onOpenCrewModal={onOpenCrewModal} />
 
-      {/* Tab Visual Header */}
-      <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-32 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none"></div>
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1">
-            <span className="text-[10px] uppercase font-black tracking-widest bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2.5 py-1 rounded-full inline-block">
-              Provviste & Cucina Outdoor
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
-              <ShoppingBag className="w-6 h-6 text-yellow-300" />
-              Gestione Cambusa & Spesa Intelligente
-            </h2>
-            <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
-              Tieni sotto controllo i viveri stipati negli armadietti del camper, consulta ricette veloci calcolate su bassi consumi di gas e acqua potabile, e genera liste spesa dinamiche con reintegro automatico.
-            </p>
-          </div>
+      {/* Compact Tab Visual Header */}
+      <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-xl px-3.5 py-2.5 text-white shadow-sm relative overflow-hidden space-y-1">
+        <div className="flex items-center justify-between gap-2 relative z-10">
+          <h2 className="text-[13px] sm:text-base font-black tracking-tight flex items-center gap-1.5 leading-tight">
+            <ShoppingBag className="w-4 h-4 text-yellow-300 shrink-0" />
+            <span>Cambusa & Spesa Intelligente</span>
+          </h2>
 
           <button
             onClick={handleResetPantryToDefault}
-            className="px-3 py-1.5 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 uppercase tracking-wider shrink-0"
+            className="px-2.5 py-1 bg-[#A45C40] hover:bg-[#8D4A30] active:scale-95 text-white text-[10px] font-black rounded-lg transition-all shadow-2xs cursor-pointer flex items-center gap-1 uppercase tracking-wider shrink-0"
             title="Ripristina scorta iniziale"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Scorte</span>
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset</span>
           </button>
         </div>
+        <p className="text-[11px] text-stone-300 leading-snug relative z-10">
+          Viveri a bordo, ricette salva-risorse e lista spesa con reintegro automatico.
+        </p>
 
         {/* Interior Navigation Tabs Row */}
-        <div className="flex border-b border-white/10 mt-6 gap-1 relative z-10">
+        <div className="flex border-t border-white/10 mt-2 pt-1.5 gap-1 relative z-10">
           <button
             id="pantry-tab-btn"
             onClick={() => setActiveSubTab('pantry')}
-            className={`px-2 sm:px-4 py-2 text-[10px] sm:text-xs font-extrabold uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2 sm:px-4 py-1.5 text-[10px] sm:text-xs font-extrabold uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
               activeSubTab === 'pantry' 
                 ? 'border-yellow-400 text-yellow-300 bg-white/10 dark:bg-black/20' 
                 : 'border-transparent text-stone-200 hover:text-white hover:bg-white/10 dark:hover:bg-black/10'

@@ -2721,6 +2721,198 @@ Restituisci ESCLUSIVAMENTE un array JSON valido (senza commenti) con oggetti ave
     }
   });
 
+  // ============================================================================
+  // TROVASAGRE.COM OFFICIAL PARTNER FEED & ANTI-OVERLOAD SERVER-SIDE CACHE
+  // ============================================================================
+  // Architecture:
+  // - Mobile/Web users NEVER query TrovaSagre.com directly.
+  // - The ViaCamper server fetches the feed at most once every 12 hours (2 req/day)
+  //   and serves all users from in-memory cache + Firestore.
+  // - Concurrent cache misses share a single in-flight Promise (deduplication).
+  // - Manual admin refresh enforces a 15-minute cooldown to protect upstream bandwidth.
+  const TROVASAGRE_SYNC_HOURS = Math.max(1, Number(process.env.TROVASAGRE_SYNC_INTERVAL_HOURS) || 12);
+  const TROVASAGRE_TTL_MS = TROVASAGRE_SYNC_HOURS * 60 * 60 * 1000;
+  const TROVASAGRE_MIN_COOLDOWN_MS = 15 * 60 * 1000; // 15 min hard floor between upstream calls
+
+  let trovaSagreCachedEvents: any[] = [];
+  let trovaSagreLastSyncMs = 0;
+  let trovaSagreInFlight: Promise<any[]> | null = null;
+
+  function normalizeTrovaSagreApiItem(raw: any, index: number): any | null {
+    if (!raw || typeof raw !== "object") return null;
+    const title = String(raw.title || raw.titolo || raw.nome || raw.name || "").trim();
+    if (!title) return null;
+
+    const city = String(raw.city || raw.comune || raw.localita || raw.locationName || raw.location || "Italia").trim();
+    const province = String(raw.province || raw.provincia || "").trim();
+    const locationName = province && !city.includes(`(${province})`) ? `${city} (${province})` : city;
+    const region = String(raw.region || raw.regione || "Italia").trim();
+
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const startDate = String(raw.startDate || raw.start_date || raw.data_inizio || raw.date_start || todayIso).slice(0, 10);
+    const endDate = String(raw.endDate || raw.end_date || raw.data_fine || raw.date_end || startDate).slice(0, 10);
+    const month = parseInt(startDate.slice(5, 7), 10) || 11;
+    const season =
+      month >= 6 && month <= 9
+        ? "estate"
+        : month >= 3 && month <= 5
+        ? "primavera"
+        : month === 12 || month <= 2
+        ? "inverno"
+        : "autunno";
+
+    const lat = Number(raw.lat ?? raw.latitude ?? raw.latitudine ?? 41.9028);
+    const lng = Number(raw.lng ?? raw.lon ?? raw.longitude ?? raw.longitudine ?? 12.4964);
+    const extId = String(raw.id || raw.external_id || raw.slug || index);
+    const imageUrl = String(
+      raw.imageUrl ||
+        raw.image_url ||
+        raw.locandina ||
+        raw.poster ||
+        raw.poster_url ||
+        raw.flyer ||
+        "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=900&q=80"
+    ).trim();
+
+    const rawSpecs = raw.specialties || raw.specialita || raw.tags || raw.piatti;
+    const specialties = Array.isArray(rawSpecs)
+      ? rawSpecs.map((s: any) => String(s).trim()).filter(Boolean)
+      : typeof rawSpecs === "string" && rawSpecs.trim()
+      ? rawSpecs.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
+      : ["Stand Gastronomici", "Prodotti Tipici"];
+
+    return {
+      id: `ts_${extId.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+      externalId: extId,
+      title,
+      category: String(raw.category || "sagra"),
+      categoryLabel: String(raw.categoryLabel || raw.categoria || "Sagra & Gastronomia"),
+      locationName,
+      region,
+      dates: String(raw.dates || `${startDate} / ${endDate}`),
+      dateBadge: String(raw.dateBadge || startDate.slice(5)),
+      startDate,
+      endDate: endDate >= startDate ? endDate : startDate,
+      month,
+      season,
+      lat: Number.isFinite(lat) ? lat : 41.9028,
+      lng: Number.isFinite(lng) ? lng : 12.4964,
+      description: String(raw.description || raw.descrizione || `Evento gastronomico a ${locationName}.`).trim(),
+      specialties,
+      camperParking: String(
+        raw.camperParking || raw.sosta_camper || `Area sosta o parcheggio camper nei pressi di ${locationName}.`
+      ).trim(),
+      imageUrl,
+      fullFlyerUrl: String(raw.fullFlyerUrl || raw.locandina_hd || imageUrl).trim(),
+      isRealFlyer: Boolean(raw.locandina || raw.poster || raw.imageUrl),
+      section: season === "estate" ? "estate" : month === 12 ? "natale" : "weekend",
+      sourceProvider: "trovasagre",
+      sourceName: "TrovaSagre.com",
+      sourceUrl: String(raw.sourceUrl || raw.url || raw.link || "https://www.trovasagre.com").trim(),
+      lastSyncedAt: new Date().toISOString(),
+      status: "approved",
+    };
+  }
+
+  app.get("/api/trovasagre/feed", async (req, res) => {
+    const apiUrl = String(process.env.TROVASAGRE_API_URL || "").trim();
+    const apiKey = String(process.env.TROVASAGRE_API_KEY || "").trim();
+    const forceRefresh = req.query.refresh === "1";
+    const now = Date.now();
+
+    if (!apiUrl) {
+      return res.json({
+        apiConfigured: false,
+        partner: "TrovaSagre.com",
+        cacheTtlHours: TROVASAGRE_SYNC_HOURS,
+        status: "ready_for_api_credentials",
+        lastSyncedAt: null,
+        nextSyncAt: null,
+        sagre: [],
+      });
+    }
+
+    const ageMs = now - trovaSagreLastSyncMs;
+    const isCacheFresh = trovaSagreCachedEvents.length > 0 && ageMs < TROVASAGRE_TTL_MS;
+    const isWithinCooldown = trovaSagreCachedEvents.length > 0 && ageMs < TROVASAGRE_MIN_COOLDOWN_MS;
+
+    if ((isCacheFresh && !forceRefresh) || isWithinCooldown) {
+      return res.json({
+        apiConfigured: true,
+        partner: "TrovaSagre.com",
+        fromCache: true,
+        cacheTtlHours: TROVASAGRE_SYNC_HOURS,
+        lastSyncedAt: new Date(trovaSagreLastSyncMs).toISOString(),
+        nextSyncAt: new Date(trovaSagreLastSyncMs + TROVASAGRE_TTL_MS).toISOString(),
+        sagre: trovaSagreCachedEvents,
+      });
+    }
+
+    try {
+      if (!trovaSagreInFlight) {
+        trovaSagreInFlight = (async () => {
+          const headers: Record<string, string> = {
+            Accept: "application/json",
+            "User-Agent": "ViaCamper-PartnerSync/2.5 (+https://viacamper.app; Partner: TrovaSagre.com)",
+          };
+          if (apiKey) {
+            headers["Authorization"] = apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`;
+            headers["X-API-Key"] = apiKey;
+          }
+          const upstream = await fetch(apiUrl, {
+            method: "GET",
+            headers,
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!upstream.ok) {
+            throw new Error(`TrovaSagre API responded with HTTP ${upstream.status}`);
+          }
+          const payload = await upstream.json();
+          const rawArray = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.sagre)
+            ? payload.sagre
+            : Array.isArray(payload?.events)
+            ? payload.events
+            : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
+          const normalized = rawArray
+            .map((item: any, idx: number) => normalizeTrovaSagreApiItem(item, idx))
+            .filter(Boolean);
+          trovaSagreCachedEvents = normalized;
+          trovaSagreLastSyncMs = Date.now();
+          return normalized;
+        })().finally(() => {
+          trovaSagreInFlight = null;
+        });
+      }
+
+      const freshEvents = await trovaSagreInFlight;
+      return res.json({
+        apiConfigured: true,
+        partner: "TrovaSagre.com",
+        fromCache: false,
+        cacheTtlHours: TROVASAGRE_SYNC_HOURS,
+        lastSyncedAt: new Date(trovaSagreLastSyncMs).toISOString(),
+        nextSyncAt: new Date(trovaSagreLastSyncMs + TROVASAGRE_TTL_MS).toISOString(),
+        sagre: freshEvents,
+      });
+    } catch (err: any) {
+      // Serve stale cache if upstream is temporarily unavailable
+      return res.json({
+        apiConfigured: true,
+        partner: "TrovaSagre.com",
+        fromCache: true,
+        staleFallback: true,
+        cacheTtlHours: TROVASAGRE_SYNC_HOURS,
+        lastSyncedAt: trovaSagreLastSyncMs ? new Date(trovaSagreLastSyncMs).toISOString() : null,
+        error: err?.message || "Errore temporaneo sincronizzazione TrovaSagre",
+        sagre: trovaSagreCachedEvents,
+      });
+    }
+  });
+
   app.post("/api/sagre-live", async (req, res) => {
     const royaltyFreeCulinaryPosters = [
       "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=900&q=80",

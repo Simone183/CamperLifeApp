@@ -103,24 +103,21 @@ export default function FavoritesTab({
   };
 
   return (
-    <div className="space-y-6" id="favorites-section">
-      {/* Bento Header */}
-      <div className="bg-gradient-to-br from-rose-50 to-rose-100/60 dark:from-rose-950 dark:to-rose-900 border border-rose-200 dark:border-rose-900 rounded-3xl p-6 relative overflow-hidden shadow-xs">
-        <div className="relative z-10 space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase font-black tracking-widest bg-rose-600/10 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2.5 py-1 rounded-full border border-rose-250/20 dark:border-rose-900 flex items-center gap-1">
-              <Heart className="w-3.5 h-3.5 fill-current text-rose-600 dark:text-rose-400 animate-pulse" />
-              I Miei Preferiti ({favoritePlaces.length})
-            </span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Le Tue Soste del Cuore</h2>
-          <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xl leading-relaxed">
-            Gestisci la lista personalizzata delle aree sosta, campeggi e parcheggi che hai salvato. Clicca su "Mostra sulla Mappa" per aprirli istantaneamente nel navigatore di bordo e pianificare la rotta.
-          </p>
+    <div className="space-y-2.5" id="favorites-section">
+      {/* Compact Header */}
+      <div className="bg-gradient-to-br from-rose-50 to-rose-100/60 dark:from-rose-950 dark:to-rose-900 border border-rose-200 dark:border-rose-900 rounded-xl px-3.5 py-2.5 relative overflow-hidden shadow-2xs space-y-1">
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <h2 className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-1.5 leading-snug">
+            <Heart className="w-4 h-4 fill-current text-rose-600 dark:text-rose-400 shrink-0" />
+            <span>Le Tue Soste del Cuore</span>
+          </h2>
+          <span className="text-[10px] uppercase font-black tracking-wider bg-rose-600/10 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-full border border-rose-250/20 shrink-0">
+            {favoritePlaces.length} Salvati
+          </span>
         </div>
-        <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
-          <Heart className="w-48 h-48 text-rose-600 fill-current" />
-        </div>
+        <p className="relative z-10 text-[11.5px] text-slate-600 dark:text-slate-400 leading-snug">
+          Aree sosta, campeggi e parcheggi salvati • Tocca "Mostra sulla Mappa" per navigare.
+        </p>
       </div>
 
       {favoritePlaces.length === 0 ? (

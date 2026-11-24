@@ -1015,37 +1015,37 @@ export default function GeneralSettingsTab({
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 animate-fade-in pb-24">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-[#3E4A35]/10 text-[#3E4A35] dark:bg-slate-700 dark:text-slate-200 rounded-2xl">
-            <Settings className="w-6 h-6" />
+    <div className="space-y-2.5 animate-fade-in pb-16 w-full">
+      {/* Compact Top Header */}
+      <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white rounded-xl px-3.5 py-2.5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="p-1.5 bg-white/15 rounded-lg text-white shrink-0 mt-0.5">
+            <Settings className="w-4 h-4" />
           </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-[#2D2926] dark:text-white tracking-tight">
+          <div className="min-w-0 space-y-0.5">
+            <h2 className="text-sm sm:text-base font-black text-white tracking-tight leading-snug">
               {language === 'en' ? 'General Settings' : language === 'fr' ? 'Paramètres Généraux' : 'Impostazioni Generali'}
             </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-[11.5px] text-white/90 leading-snug">
               Scegli una categoria per gestire le preferenze dell'app
             </p>
           </div>
         </div>
 
         {/* Search bar */}
-        <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="relative w-full sm:w-60 shrink-0">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cerca impostazione..."
-            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 pl-9 pr-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-xl outline-none focus:border-[#3E4A35] dark:focus:border-[#5A6B4E]"
+            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 pl-8 pr-7 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-lg outline-none focus:border-[#3E4A35]"
           />
           {searchQuery && (
             <button 
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-bold"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-bold"
             >
               ✕
             </button>

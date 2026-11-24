@@ -287,32 +287,26 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
   const totalInvestment = logs.reduce((sum, current) => sum + (current.cost || 0), 0);
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="space-y-2.5 font-sans">
       
       {/* Family Crew Banner */}
       <FamilyCrewTabBanner moduleName="Manutenzione & Scadenziere" onOpenCrewModal={onOpenCrewModal} />
 
-      {/* Banner Header */}
-      <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-32 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none"></div>
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1">
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
-              <Wrench className="w-6 h-6 text-yellow-300" />
-              Registro lavori fatti
-            </h2>
-            <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
-              Registra i lavori effettuati su tutto il mezzo e la spesa sostenuta.
-            </p>
-            <div className="mt-4 bg-white/10 rounded-xl p-3 border border-white/10 inline-block">
-              <span className="block text-[10px] text-stone-350 font-bold uppercase tracking-widest text-center">Spesa Totale</span>
-              <span className="text-xl font-mono font-black text-rose-300 leading-tight block text-center">{getCurrencySymbol(settings)}{totalInvestment.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
-            </div>
+      {/* Compact Banner Header */}
+      <div className="bg-gradient-to-br from-[#3E4A35] to-[#2B3523] rounded-xl px-3.5 py-2.5 text-white shadow-sm relative overflow-hidden space-y-1">
+        <div className="flex items-center justify-between gap-2 relative z-10">
+          <h2 className="text-sm sm:text-base font-black tracking-tight flex items-center gap-1.5 text-white leading-snug">
+            <Wrench className="w-4 h-4 text-yellow-300 shrink-0" />
+            <span>Registro lavori fatti</span>
+          </h2>
+          <div className="bg-white/10 rounded-lg px-2.5 py-1 border border-white/10 shrink-0 text-right">
+            <span className="block text-[9px] text-stone-300 font-bold uppercase tracking-wider">Spesa Totale</span>
+            <span className="text-sm font-mono font-black text-rose-300 leading-tight block">{getCurrencySymbol(settings)}{totalInvestment.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
           </div>
         </div>
-
-
+        <p className="relative z-10 text-[11.5px] text-stone-200 leading-snug">
+          Registra i lavori effettuati sul mezzo e la spesa sostenuta.
+        </p>
       </div>
 
       {showIgrometro && (
@@ -321,7 +315,7 @@ export function MaintenanceLogTab({ onOpenCrewModal }: { onOpenCrewModal?: () =>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
         
         {/* LEFT COLUMN (7/12) - Add New Entry Form & Checklist History */}
         <div className="lg:col-span-7 space-y-6">

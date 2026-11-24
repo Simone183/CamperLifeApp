@@ -1705,6 +1705,42 @@ export default function App() {
   // --- VIDEO RECORDING / DEMO MODE (Admin screen recording helper) ---
   const [isVideoRecordingMode, setIsVideoRecordingMode] = React.useState<boolean>(false);
   const [hideTopBannersInVideoMode, setHideTopBannersInVideoMode] = React.useState<boolean>(true);
+  const [isAdminUiHidden, setIsAdminUiHidden] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem("viacamper_hide_admin_ui") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleAdminUiHidden = React.useCallback(() => {
+    setIsAdminUiHidden((prev) => {
+      const next = !prev;
+      try {
+        if (next) {
+          localStorage.setItem("viacamper_hide_admin_ui", "1");
+        } else {
+          localStorage.removeItem("viacamper_hide_admin_ui");
+        }
+        window.dispatchEvent(new CustomEvent("viacamper-admin-ui-changed", { detail: { hidden: next } }));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const syncAdminHidden = () => {
+      try {
+        setIsAdminUiHidden(localStorage.getItem("viacamper_hide_admin_ui") === "1");
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("viacamper-admin-ui-changed", syncAdminHidden);
+    return () => window.removeEventListener("viacamper-admin-ui-changed", syncAdminHidden);
+  }, []);
 
   // --- ADMIN MODERATION STATES ---
   const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState<boolean>(() => {
@@ -5525,7 +5561,7 @@ out center;`;
       )}
 
       {/* Top Warning Banner for pending user registrations (Admin/Moderator only) */}
-      {!isVideoRecordingMode && isSuperAdminOrModerator && adminUsers.filter(u => u.approved === false).length > 0 && (
+      {!isVideoRecordingMode && !isAdminUiHidden && isSuperAdminOrModerator && adminUsers.filter(u => u.approved === false).length > 0 && (
         <div className="bg-amber-600 text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-amber-700/30 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
           <Users className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-white shrink-0 animate-pulse" />
           <span className="leading-tight truncate sm:whitespace-normal">
@@ -5548,7 +5584,7 @@ out center;`;
       )}
 
       {/* Top Warning Banner for pending place proposals (Admin/Moderator only) */}
-      {!isVideoRecordingMode && isSuperAdminOrModerator && pendingPlaces.length > 0 && (
+      {!isVideoRecordingMode && !isAdminUiHidden && isSuperAdminOrModerator && pendingPlaces.length > 0 && (
         <div className="bg-[#3E4A35] text-white font-bold px-2 min-[360px]:px-3 sm:px-4 py-1.5 sm:py-2.5 text-center text-[10px] min-[360px]:text-xs sm:text-base md:text-lg flex gap-1.5 sm:gap-3.5 items-center justify-center border-b border-[#3E4A35]/30 active:opacity-90 shadow-sm sticky top-0 z-40 max-w-full overflow-hidden">
           <MapPin className="w-3.5 h-3.5 min-[360px]:w-4 min-[360px]:h-4 sm:w-[1.5rem] sm:h-[1.5rem] text-emerald-300 shrink-0 animate-pulse" />
           <span className="leading-tight truncate sm:whitespace-normal">
@@ -5810,7 +5846,7 @@ out center;`;
         className={`relative z-10 isolate flex-1 min-h-0 flex flex-col max-w-7xl w-full mx-auto md:px-8 ${
           activeTab === "map_nav"
             ? "p-0 md:pt-3 md:pb-2.5 overflow-hidden"
-            : "px-4 sm:px-6 lg:px-8 pt-4 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
+            : "px-1.5 sm:px-5 lg:px-8 pt-1.5 pb-20 md:pb-4 overflow-y-auto overflow-x-hidden"
         }`}
       >
         {/* Render Category 1: Mappa & Navigatore with sub segmentation (Available without login as Guest Navigator) */}
@@ -5902,7 +5938,7 @@ out center;`;
                   isManualCamperLocation={isManualCamperLocation}
                   manualCamperPlaceId={manualCamperPlaceId}
                   hasSafetyBanner={Boolean(currentUser) && !(isVideoRecordingMode && hideTopBannersInVideoMode) && incompleteChecklistCount > 0}
-                  isAdmin={!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator)}
+                  isAdmin={!isVideoRecordingMode && !isAdminUiHidden && (isAdminLoggedIn || isSuperAdminOrModerator)}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={handleToggleFavorite}
                   focusedPlaceId={focusedPlaceId}
@@ -6069,43 +6105,37 @@ out center;`;
               </div>
             </div>
           ) : (
-          <div className="space-y-6">
+          <div className="space-y-2.5">
             {settingsSubTab === "hub" ? (
-              <div className="space-y-6">
-                {/* Clean introductory tile with bento flavor */}
-                <div className="bg-gradient-to-br from-[#3E4A35] to-[#5A6B4E] rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
-                  <div className="relative z-10 space-y-2">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-[10px] uppercase font-black tracking-widest bg-white/20 px-2.5 py-1 rounded-full text-white">
-                        {appLang === 'en' ? 'Onboard Dashboard' : appLang === 'fr' ? 'Tableau de bord' : 'Pannello Strumenti di Bordo'}
-                      </span>
-                      <RollyOnboardingGuide sectionKey="tools_hub" autoShow={false} />
+              <div className="space-y-2.5">
+                {/* Compact introductory tile - full text readable without truncation */}
+                <div className="bg-gradient-to-br from-[#3E4A35] to-[#5A6B4E] rounded-xl px-3.5 py-2.5 text-white shadow-xs relative overflow-hidden">
+                  <div className="relative z-10 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-[13px] sm:text-base font-black tracking-tight leading-tight">
+                        {appLang === 'en' ? '🎛️ Camper Management & Setup' : appLang === 'fr' ? '🎛️ Gestion & Configuration' : '🎛️ Gestione & Configurazione Camper'}
+                      </h2>
+                      <RollyOnboardingGuide sectionKey="tools_hub" autoShow={false} className="!h-6 !px-2 !text-[10px] !rounded-lg shrink-0" />
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                      {appLang === 'en' ? 'Camper Management & Setup' : appLang === 'fr' ? 'Gestion & Configuration' : 'Gestione & Configurazione Camper'}
-                    </h2>
-                    <p className="text-xs text-white/80 max-w-xl leading-relaxed">
-                      {appLang === 'en' ? 'Monitor maintenance, manage dimensions for the smart navigator, pre-departure checks and pitch tools.' : appLang === 'fr' ? 'Gérez vos ressources, navigation, sécurité et outils de halte.' : 'Monitora lo stato di manutenzione, gestisci le dimensioni per il navigatore sagomato, controlla la sicurezza pre-partenza, scopri sagre con locandina ufficiale e usa gli strumenti per la vita in piazzola.'}
+                    <p className="text-[11px] text-white/85 leading-snug">
+                      {appLang === 'en' ? 'Maintenance, navigator dimensions, pre-departure safety, festivals & pitch tools.' : appLang === 'fr' ? 'Ressources, navigation, sécurité et outils de halte.' : 'Manutenzione, misure navigatore, sicurezza pre-partenza, sagre e strumenti piazzola.'}
                     </p>
-                  </div>
-                  <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
-                    <Sliders className="w-48 h-48" />
                   </div>
                 </div>
 
-                {/* Category Quick Filter Pills */}
-                <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-slate-700">
+                {/* Compact Category Quick Filter Pills */}
+                <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/50 dark:border-slate-700">
                   <button
                     onClick={() => setToolsCategory("all")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
+                    className={`sm:flex-1 text-center py-1.5 px-1.5 rounded-lg text-[10.5px] sm:text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1 truncate ${
                       toolsCategory === "all"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
+                        ? "bg-[#3E4A35] text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    <span>{appLang === 'en' ? '🎛️ All' : appLang === 'fr' ? '🎛️ Tous' : '🎛️ Tutti'}</span>
+                    <span className="truncate">{appLang === 'en' ? '🎛️ All' : appLang === 'fr' ? '🎛️ Tous' : '🎛️ Tutti'}</span>
                     {totalWarnings > 0 && (
-                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                      <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full leading-tight shrink-0 ${
                         toolsCategory === "all" ? "bg-[#E56B38] text-white" : "bg-orange-100 text-orange-800"
                       }`}>
                         {totalWarnings}
@@ -6114,15 +6144,15 @@ out center;`;
                   </button>
                   <button
                     onClick={() => setToolsCategory("safety")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
+                    className={`sm:flex-1 text-center py-1.5 px-1.5 rounded-lg text-[10.5px] sm:text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1 truncate ${
                       toolsCategory === "safety"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
+                        ? "bg-[#3E4A35] text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    <span>{appLang === 'en' ? '🛡️ Crew & Dep.' : appLang === 'fr' ? '🛡️ Équipage' : '🛡️ Equipaggio & Partenza'}</span>
+                    <span className="truncate">{appLang === 'en' ? '🛡️ Crew' : appLang === 'fr' ? '🛡️ Équipage' : '🛡️ Partenza'}</span>
                     {incompleteChecklistCount > 0 && (
-                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                      <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full leading-tight shrink-0 ${
                         toolsCategory === "safety" ? "bg-[#E56B38] text-white" : "bg-orange-100 text-orange-800"
                       }`}>
                         {incompleteChecklistCount}
@@ -6131,15 +6161,15 @@ out center;`;
                   </button>
                   <button
                     onClick={() => setToolsCategory("planning")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1.5 ${
+                    className={`sm:flex-1 text-center py-1.5 px-1.5 rounded-lg text-[10.5px] sm:text-xs font-black transition-all cursor-pointer select-none relative flex items-center justify-center gap-1 truncate ${
                       toolsCategory === "planning"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
+                        ? "bg-[#3E4A35] text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    <span>{appLang === 'en' ? '📊 Onboard Resources' : appLang === 'fr' ? '📊 Ressources' : '📊 Risorse di Bordo'}</span>
+                    <span className="truncate">{appLang === 'en' ? '📊 Resources' : appLang === 'fr' ? '📊 Ressources' : '📊 Risorse'}</span>
                     {urgentDeadlinesCount > 0 && (
-                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                      <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full leading-tight shrink-0 ${
                         toolsCategory === "planning" ? "bg-[#E56B38] text-white" : "bg-orange-100 text-orange-800"
                       }`}>
                         {urgentDeadlinesCount}
@@ -6148,38 +6178,38 @@ out center;`;
                   </button>
                   <button
                     onClick={() => setToolsCategory("itinerary")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`sm:flex-1 text-center py-1.5 px-1.5 rounded-lg text-[10.5px] sm:text-xs font-black transition-all cursor-pointer select-none truncate ${
                       toolsCategory === "itinerary"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
+                        ? "bg-[#3E4A35] text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '🗺️ Route & Explore' : appLang === 'fr' ? '🗺️ Itinéraire' : '🗺️ Rotta & Esplorazione'}
+                    {appLang === 'en' ? '🗺️ Explore' : appLang === 'fr' ? '🗺️ Itinéraire' : '🗺️ Esplora'}
                   </button>
                   <button
                     onClick={() => setToolsCategory("camping")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`sm:flex-1 text-center py-1.5 px-1.5 rounded-lg text-[10.5px] sm:text-xs font-black transition-all cursor-pointer select-none truncate ${
                       toolsCategory === "camping"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
+                        ? "bg-[#3E4A35] text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '🏕️ Camping Life' : appLang === 'fr' ? '🏕️ Vie en Camping' : '🏕️ Vita in Piazzola'}
+                    {appLang === 'en' ? '🏕️ Pitch' : appLang === 'fr' ? '🏕️ Camping' : '🏕️ Piazzola'}
                   </button>
                   <button
                     onClick={() => setToolsCategory("settings")}
-                    className={`flex-1 min-w-[100px] text-center py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                    className={`sm:flex-1 text-center py-1.5 px-1.5 rounded-lg text-[10.5px] sm:text-xs font-black transition-all cursor-pointer select-none truncate ${
                       toolsCategory === "settings"
-                        ? "bg-[#3E4A35] text-white shadow-sm"
+                        ? "bg-[#3E4A35] text-white shadow-2xs"
                         : "text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {appLang === 'en' ? '⚙️ Settings' : appLang === 'fr' ? '⚙️ Paramètres' : '⚙️ Impostazioni'}
+                    {appLang === 'en' ? '⚙️ Settings' : appLang === 'fr' ? '⚙️ Paramètres' : '⚙️ Opzioni'}
                   </button>
                 </div>
 
-                {/* High-density, elegant Grouped List Layout instead of massive dispersive Bento Grid */}
-                <div className="space-y-4.5">
+                {/* High-density, elegant Grouped List Layout */}
+                <div className="space-y-2.5">
                   {/* Category 1: Safety & Vehicle */}
                   {(toolsCategory === "all" || toolsCategory === "safety") &&
                     (dashboardSettings.showChecklists ||
@@ -6856,26 +6886,26 @@ out center;`;
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                {/* Page Breadcrumb / Navigation back bar */}
+              <div className="space-y-1.5">
+                {/* Compact, transparent Page Breadcrumb / Navigation back bar */}
                 {!currentUser && settingsSubTab === "dimensions" && (
-                  <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-3 shadow-xs">
+                  <div className="flex flex-row justify-between items-center px-1 py-0.5">
                     <button
                       onClick={() => setActiveTab("map_nav")}
-                      className="flex items-center gap-2 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-xs transition-all py-2 px-3.5 bg-slate-50 rounded-xl border border-slate-200/60 cursor-pointer select-none active:scale-95"
+                      className="flex items-center gap-1.5 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-[11px] transition-all h-6 px-2.5 bg-white/80 hover:bg-white rounded-lg border border-stone-300/70 shadow-2xs cursor-pointer select-none active:scale-95"
                     >
-                      <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
+                      <ArrowLeft className="w-3 h-3 transition-transform group-hover:-translate-x-0.5" />
                       <span>Torna alla Mappa</span>
                     </button>
-                    <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 tracking-wider pr-2">
-                      Misure Mezzo (Salvato in locale)
+                    <span className="text-[9.5px] font-black uppercase text-[#3E4A35]/70 tracking-wider pr-1">
+                      Misure Mezzo
                     </span>
                   </div>
                 )}
                 {currentUser && hasAcceptedTerms && (
-                  <div className="flex flex-row justify-between items-center bg-white rounded-2xl border border-slate-100 p-2.5 sm:p-3 shadow-xs">
+                  <div className="flex flex-row justify-between items-center px-1 py-0.5">
                     {settingsSubTab === "community" ? (
-                      <div className="flex items-center gap-2 px-2 py-1">
+                      <div className="flex items-center gap-1.5 px-1">
                         <span className="text-xs sm:text-sm font-black text-[#3E4A35] tracking-tight">
                           {communityViewMode === "challenges"
                             ? "🏆 Sfide, Concorsi & Badge"
@@ -6887,16 +6917,16 @@ out center;`;
                     ) : (
                       <button
                         onClick={() => setSettingsSubTab("hub")}
-                        className="flex items-center gap-2 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-xs transition-all py-2 px-3.5 bg-slate-50 rounded-xl border border-slate-200/60 cursor-pointer select-none active:scale-95"
+                        className="flex items-center gap-1.5 group text-[#3E4A35] hover:text-[#5A6B4E] font-black text-[11px] transition-all h-6 px-2.5 bg-white/80 hover:bg-white rounded-lg border border-stone-300/70 shadow-2xs cursor-pointer select-none active:scale-95"
                       >
-                        <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
+                        <ArrowLeft className="w-3 h-3 transition-transform group-hover:-translate-x-0.5" />
                         <span>Torna a Strumenti</span>
                       </button>
                     )}
 
                     {/* Small heading telling where we are & Rolly Guide button */}
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 pr-2 hidden xs:flex">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 pr-1 hidden sm:flex">
                         {settingsSubTab !== "community" && (
                           <span className="text-[10px] font-black uppercase text-[#3E4A35]/65 tracking-wider">
                             Strumenti &gt;{" "}
@@ -6961,6 +6991,7 @@ out center;`;
                         )}
                       </div>
                       <RollyOnboardingGuide
+                        className="!h-6 !px-2 !text-[10px] !rounded-lg"
                         sectionKey={
                           settingsSubTab === "community"
                             ? communityViewMode === "challenges"
@@ -6985,8 +7016,14 @@ out center;`;
                   </div>
                 )}
 
-                {/* The actual view content inside the subtab */}
-                <div className="bg-white rounded-2xl border border-stone-250/30 p-2 sm:p-5 shadow-xs">
+                {/* The actual view content inside the subtab (full width utilization across all pages) */}
+                <div
+                  className={
+                    settingsSubTab === "login" || settingsSubTab === "registration" || settingsSubTab === "copyright"
+                      ? "bg-white rounded-2xl border border-stone-250/30 shadow-xs overflow-hidden p-3 sm:p-4"
+                      : "w-full"
+                  }
+                >
                   {settingsSubTab === "dimensions" && (
                     <VehicleSettings
                       dimensions={vehicleDimensions}
@@ -7083,7 +7120,7 @@ out center;`;
                     <CommunityTab
                       messages={communityMessages}
                       onChange={handleCommunityChange}
-                      isAdmin={!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator)}
+                      isAdmin={!isVideoRecordingMode && !isAdminUiHidden && (isAdminLoggedIn || isSuperAdminOrModerator)}
                       onOpenChallenges={() => setSettingsSubTab("challenges")}
                       currentUser={currentUser}
                       challengeSubmissions={challengeSubmissions}
@@ -7360,30 +7397,20 @@ out center;`;
                   )}
 
                   {settingsSubTab === "feedback" && (
-                    <div className="space-y-6 max-w-4xl mx-auto p-4 sm:p-6 font-sans">
-                      {/* Header block with elegant colors */}
-                      <div className="bg-[#3E4A35] text-white p-6 rounded-2xl shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
-                        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-48 h-48 bg-[#5A6B4E]/20 rounded-full blur-2xl pointer-events-none" />
-                        <div>
-                          <span className="text-[#F2EFE9]/70 text-[9px] font-black uppercase tracking-wider block">
-                            Supporto & Idee
-                          </span>
-                          <h2 className="text-xl font-bold mt-0.5">
-                            Suggerimenti ed Opinioni
-                          </h2>
-                          <p className="text-xs text-[#F2EFE9]/80 mt-1">
-                            La tua voce è fondamentale per far crescere
-                            ViaCamper. Raccontaci la tua esperienza o segnala
-                            problemi.
-                          </p>
-                        </div>
-                        <div className="p-3 bg-[#5A6B4E]/40 border border-[#F2EFE9]/10 rounded-2xl text-amber-200 shrink-0">
-                          <Send className="w-6 h-6 animate-pulse" />
-                        </div>
+                    <div className="space-y-3 font-sans">
+                      {/* Compact Header block */}
+                      <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white px-3.5 py-2.5 rounded-xl shadow-xs space-y-1 relative overflow-hidden">
+                        <h2 className="text-[13px] sm:text-base font-black leading-tight flex items-center gap-1.5">
+                          <Send className="w-4 h-4 text-amber-200 shrink-0" />
+                          <span>Suggerimenti ed Opinioni</span>
+                        </h2>
+                        <p className="text-[11px] text-[#F2EFE9]/85 leading-snug">
+                          Raccontaci la tua esperienza o segnala problemi per far crescere ViaCamper.
+                        </p>
                       </div>
 
                       {/* Main feedback submitting form */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
                         {/* Form area (Left Side) */}
                         <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-xs">
                           <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -7865,7 +7892,7 @@ out center;`;
                       onBack={() => setSettingsSubTab("hub")}
                       userLocation={userLocation}
                       currentUser={currentUser}
-                      isAdminOverride={!isVideoRecordingMode && (isAdminLoggedIn || isSuperAdminOrModerator)}
+                      isAdminOverride={!isVideoRecordingMode && !isAdminUiHidden && (isAdminLoggedIn || isSuperAdminOrModerator)}
                       onNavigateFullscreen={(place) => {
                         setNavDestination(place);
                         setIsFullscreenNav(true);
@@ -8113,6 +8140,28 @@ out center;`;
 
             {/* Admin Controls */}
             <div className="p-4 border-b border-slate-100 bg-slate-50 space-y-2">
+              <button
+                type="button"
+                onClick={toggleAdminUiHidden}
+                className={`w-full px-3 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-2 border shadow-xs ${
+                  isAdminUiHidden
+                    ? "bg-amber-400 text-slate-950 border-amber-500 hover:bg-amber-300"
+                    : "bg-indigo-50 text-indigo-950 border-indigo-200 hover:bg-indigo-100"
+                }`}
+                title="Nasconde tutti i pulsanti di aggiunta/modifica Admin su Sagre, Mappa e Community per fare screenshot puliti"
+              >
+                {isAdminUiHidden ? (
+                  <>
+                    <Eye className="w-4 h-4 shrink-0 text-slate-950" />
+                    <span>Vista Utente / Screenshot ATTIVA (Pulsanti Admin Nascosti) — Tocca per Riattivare Admin</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-4 h-4 shrink-0 text-indigo-700" />
+                    <span>Nascondi Pulsanti Admin nell&apos;App (Modalità Vista Utente / Screenshot)</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={toggleSimulatedOffline}
                 className={`w-full px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center gap-1.5 border ${

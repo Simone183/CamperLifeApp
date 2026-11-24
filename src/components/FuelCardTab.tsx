@@ -966,29 +966,30 @@ export default function FuelCardTab({ currentUser, trips: propsTrips, onOpenCrew
   }
 
   return (
-    <div className="space-y-4 font-sans max-w-2xl mx-auto">
-      {/* Settings / Title Area */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-            <Fuel className="w-5 h-5 text-emerald-600" />
+    <div className="space-y-2.5 font-sans w-full">
+      {/* Compact Settings / Title Area */}
+      <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white rounded-xl px-3.5 py-2.5 shadow-xs flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+            <Fuel className="w-4 h-4 text-emerald-300" />
           </div>
-          <div>
-            <h2 className="text-lg sm:text-xl font-black text-[#3E4A35] tracking-tight leading-none">
-              Carta Carburante
+          <div className="min-w-0">
+            <h2 className="text-[13px] sm:text-base font-black text-white tracking-tight leading-tight">
+              Carta Carburante & Consumi
             </h2>
-            <p className="text-[#3E4A35]/60 text-[11px] sm:text-xs font-bold mt-1">
-              Cloud Sync attivo per <span className="text-emerald-700">{currentUser.email}</span>
+            <p className="text-white/80 text-[11px] font-medium leading-snug break-all sm:break-normal">
+              Cloud Sync attivo • <span className="text-emerald-200 font-bold">{currentUser.email}</span>
             </p>
           </div>
         </div>
         {!logAction && (
           <button
             onClick={() => setLogAction('add')}
-            className="w-10 h-10 rounded-xl bg-[#3E4A35] hover:bg-[#5A6B4E] text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer shrink-0"
+            className="h-8 px-2.5 rounded-lg bg-orange-200 hover:bg-orange-300 text-[#3E4A35] font-black text-[11px] flex items-center justify-center gap-1 transition-colors shadow-2xs cursor-pointer shrink-0"
             title="Aggiungi Rifornimento"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-3.5 h-3.5" />
+            <span>Aggiungi</span>
           </button>
         )}
       </div>

@@ -1536,7 +1536,7 @@ export default function CommunityTab({
   }).length;
 
   return (
-    <div className="bg-[#edf0e8] dark:bg-slate-950 p-3 sm:p-5 rounded-3xl min-h-screen border border-stone-300/70 dark:border-slate-800/80 space-y-4 shadow-inner">
+    <div className="bg-[#edf0e8] dark:bg-slate-950 p-1.5 sm:p-3 rounded-2xl min-h-screen border border-stone-300/70 dark:border-slate-800/80 space-y-2.5 shadow-inner">
       {/* Hidden Profile Photo Input */}
       <input
         type="file"
@@ -1552,17 +1552,17 @@ export default function CommunityTab({
       />
 
       {/* Main Mode Navigation Bar: compact 6-column grid for Social, Forum, Chat, Sfide, Viaggi, SOS */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-1.5 sm:p-2.5 shadow-md">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-300 dark:border-slate-700/80 border-t-2 border-t-[#5A6B4E] dark:border-t-[#A3B896] p-1 sm:p-1.5 shadow-sm">
         <div className="grid grid-cols-6 gap-1">
           <button
             onClick={() => setViewMode('social')}
-            className={`py-2 px-0.5 sm:px-1 rounded-xl text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
+            className={`py-1.5 px-0.5 sm:px-1 rounded-lg text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 text-center cursor-pointer ${
               viewMode === 'social'
                 ? 'bg-[#3E4A35] text-white dark:bg-[#A3B896] dark:text-slate-950 shadow-xs'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
-            <Camera className="w-4 h-4 shrink-0" />
+            <Camera className="w-3.5 h-3.5 shrink-0" />
             <span className="text-[9.5px] sm:text-xs leading-tight">Social</span>
           </button>
 

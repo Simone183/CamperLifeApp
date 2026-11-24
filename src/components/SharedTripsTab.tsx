@@ -94,17 +94,18 @@ export default function SharedTripsTab({ trips, onViewTrip, setTrips }: Props) {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-          <Share2 className="text-[#3E4A35]" />
-          <span>Viaggi Condivisi dalla Community</span>
-        </h2>
-        <RollyOnboardingGuide sectionKey="shared_trips" autoShow={false} />
+    <div className="p-1 sm:p-2 space-y-2.5">
+      <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white rounded-xl px-3.5 py-2.5 shadow-xs flex items-center justify-between gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <h2 className="text-sm sm:text-base font-black flex items-center gap-1.5 leading-snug">
+            <Share2 className="w-4 h-4 text-emerald-200 shrink-0" />
+            <span>Viaggi Condivisi dalla Community</span>
+          </h2>
+          <p className="text-[11.5px] text-white/90 leading-snug">
+            Esplora i diari di bordo condivisi dagli altri camperisti e gestisci le tue condivisioni.
+          </p>
+        </div>
       </div>
-      <p className="text-xs sm:text-sm text-gray-600">
-        Esplora i diari di bordo condivisi dagli altri camperisti nella sezione Social e gestisci le tue condivisioni.
-      </p>
 
       {sharedTrips.length === 0 ? (
         <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300">

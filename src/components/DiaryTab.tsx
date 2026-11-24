@@ -3842,47 +3842,49 @@ export default function DiaryTab({
   };
 
   return (
-    <div id="diary-container" className="space-y-6">
+    <div id="diary-container" className="space-y-2.5">
       {/* Family Crew Banner */}
       <FamilyCrewTabBanner moduleName="Diari di Viaggio" onOpenCrewModal={onOpenCrewModal} />
 
-      {/* Top Welcome Panel */}
+      {/* Compact Top Welcome Panel */}
       {diarySubTab !== "details" && !showAddTrip && (
-        <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white p-5 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <span className="text-white/70 text-xs font-bold uppercase tracking-wider">
-              Memorie On The Road
-            </span>
-            <h1 className="text-2xl font-bold flex items-center gap-2 mt-1">
-              <BookOpen className="w-6 h-6 text-orange-200" />
-              Diario di Bordo & Viaggi
+        <div className="bg-gradient-to-r from-[#3E4A35] to-[#5A6B4E] text-white px-3.5 py-2.5 rounded-xl shadow-xs space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-[13px] sm:text-base font-black flex items-center gap-1.5 leading-tight">
+              <BookOpen className="w-4 h-4 text-orange-200 shrink-0" />
+              <span>Diario di Bordo & Viaggi</span>
             </h1>
-            <p className="text-white/80 text-xs mt-1 max-w-xl">
-              Tieni traccia delle tappe indimenticabili, dei tuoi percorsi,
-              archivia scatti fotografici panoramici e tieni sotto controllo il
-              budget delle spese di viaggio.
-            </p>
+            <RollyOnboardingGuide
+              sectionKey="diary"
+              className="!h-6 !px-2 !text-[10px] !rounded-lg shrink-0"
+            />
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:gap-2.5 w-full md:w-auto md:min-w-[340px] shrink-0 mt-2 md:mt-0">
-            {/* Colonna Sinistra - In Alto: Guida */}
-            <div className="w-full flex">
-              <RollyOnboardingGuide
-                sectionKey="diary"
-                className="!w-full !h-full !min-h-[40px] !py-2.5 !rounded-xl !justify-center shadow-xs"
-              />
-            </div>
+          <p className="text-white/85 text-[11px] leading-snug">
+            Tappe, percorsi, foto panoramiche e budget spese di viaggio.
+          </p>
 
-            {/* Colonna Destra - In Alto: Sincronizza Cloud */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {/* 1. Nuovo Viaggio */}
+            <button
+              onClick={() => {
+                setDiarySubTab("list");
+                setShowAddTrip(true);
+              }}
+              className="h-7 px-2 bg-orange-200 hover:bg-orange-300 text-[#3E4A35] dark:bg-orange-600 dark:hover:bg-orange-700 dark:text-white font-black rounded-lg text-[11px] transition-transform flex items-center justify-center gap-1 shadow-2xs active:scale-95 cursor-pointer truncate"
+            >
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Nuovo Viaggio</span>
+            </button>
+
+            {/* 2. Sincronizza Cloud */}
             <button
               onClick={handleCloudSyncClick}
               disabled={isSyncingCloud}
-              className={`w-full min-h-[40px] px-2.5 py-2.5 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-xs active:scale-95 cursor-pointer disabled:opacity-80 ${
+              className={`h-7 px-2 font-bold rounded-lg text-[11px] transition-all flex items-center justify-center gap-1 shadow-2xs active:scale-95 cursor-pointer disabled:opacity-80 truncate ${
                 autoSyncState === "saving" || isSyncingCloud
                   ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
                   : autoSyncState === "offline"
                   ? "bg-stone-700/80 hover:bg-stone-700 text-amber-200 border border-amber-300/30"
-                  : autoSyncState === "synced"
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                   : "bg-emerald-600 hover:bg-emerald-700 text-white"
               }`}
               title={
@@ -3897,50 +3899,38 @@ export default function DiaryTab({
             >
               {autoSyncState === "saving" || isSyncingCloud ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                  <span>Salvo... ☁️</span>
+                  <RefreshCw className="w-3 h-3 animate-spin text-white shrink-0" />
+                  <span className="truncate">Salvo...</span>
                 </>
               ) : autoSyncState === "offline" ? (
                 <>
-                  <CloudOff className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Offline 📴</span>
+                  <CloudOff className="w-3 h-3 text-amber-300 shrink-0" />
+                  <span className="truncate">Offline</span>
                 </>
               ) : autoSyncState === "synced" ? (
                 <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
-                  <span>Cloud ✓ {lastSyncedTime ? `(${lastSyncedTime})` : ""}</span>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-200 shrink-0" />
+                  <span className="truncate">Cloud ✓</span>
                 </>
               ) : (
                 <>
-                  <Cloud className="w-3.5 h-3.5 text-white" />
-                  <span>Sincronizza Cloud ☁️</span>
+                  <Cloud className="w-3 h-3 text-white shrink-0" />
+                  <span className="truncate">Sincronizza</span>
                 </>
               )}
             </button>
 
-            {/* Colonna Sinistra - In Basso: Nuovo Viaggio */}
-            <button
-              onClick={() => {
-                setDiarySubTab("list");
-                setShowAddTrip(true);
-              }}
-              className="w-full min-h-[40px] px-3 py-2.5 bg-orange-200 hover:bg-orange-300 text-[#3E4A35] dark:bg-orange-600 dark:hover:bg-orange-700 dark:text-white font-black rounded-xl text-xs transition-transform flex items-center justify-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nuovo Viaggio</span>
-            </button>
-
-            {/* Colonna Destra - In Basso: Backup & Ripristino */}
+            {/* 3. Backup & Ripristino */}
             <button
               onClick={() => {
                 checkCloudStatus();
                 setShowSyncModal(true);
               }}
-              className="w-full min-h-[40px] px-3 py-2.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-xs active:scale-95 cursor-pointer backdrop-blur-xs"
+              className="h-7 px-2 bg-white/20 hover:bg-white/30 text-white font-bold rounded-lg text-[11px] transition-all flex items-center justify-center gap-1 shadow-2xs active:scale-95 cursor-pointer backdrop-blur-xs truncate"
               title="Apri centro di backup, esportazione file e sincronizzazione Cloud"
             >
-              <Database className="w-3.5 h-3.5" />
-              <span>Backup & Ripristino</span>
+              <Database className="w-3 h-3 shrink-0" />
+              <span className="truncate">Backup</span>
             </button>
           </div>
         </div>
@@ -3948,30 +3938,30 @@ export default function DiaryTab({
 
       {/* View Switcher: Viaggi vs Album */}
       {diarySubTab !== "details" && !showAddTrip && (
-        <div className="flex border-b border-slate-200/80 pb-px gap-6 font-sans select-none animate-fade-in">
+        <div className="flex border-b border-slate-200/80 pb-px gap-5 font-sans select-none animate-fade-in px-1">
           <button
             onClick={() => setDiarySubTab("list")}
-            className={`pb-3 text-xs font-black tracking-wider uppercase transition-all relative flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2 text-[11px] font-black tracking-wider uppercase transition-all relative flex items-center gap-1.5 cursor-pointer ${
               diarySubTab === "list"
                 ? "text-[#3E4A35] font-black border-b-2 border-[#3E4A35]"
                 : "text-slate-400 hover:text-slate-600"
             }`}
           >
-            <BookOpen className="w-4 h-4" />
+            <BookOpen className="w-3.5 h-3.5" />
             I Miei Viaggi
           </button>
           <button
             onClick={() => setDiarySubTab("album")}
-            className={`pb-3 text-xs font-black tracking-wider uppercase transition-all relative flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2 text-[11px] font-black tracking-wider uppercase transition-all relative flex items-center gap-1.5 cursor-pointer ${
               diarySubTab === "album"
                 ? "text-[#3E4A35] font-black border-b-2 border-[#3E4A35]"
                 : "text-slate-400 hover:text-slate-600"
             }`}
           >
-            <ImageIcon className="w-4 h-4" />
+            <ImageIcon className="w-3.5 h-3.5" />
             Foto e ricordi
             {allPhotos.length > 0 && (
-              <span className="ml-1 bg-[#3E4A35]/10 text-[#3E4A35] text-[10px] px-2 py-0.5 rounded-full font-bold">
+              <span className="ml-0.5 bg-[#3E4A35]/10 text-[#3E4A35] text-[9.5px] px-1.5 py-0.2 rounded-full font-bold">
                 {allPhotos.length}
               </span>
             )}
