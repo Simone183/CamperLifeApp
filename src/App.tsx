@@ -6877,10 +6877,10 @@ out center;`;
 
                   {/* Version & Version Code Footer */}
                   <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] font-bold text-slate-400 select-all">
-                    <span>ViaCamper v2.5.27</span>
+                    <span>ViaCamper v2.5.28</span>
                     <span>•</span>
                     <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/70">
-                      Version Code: 20527
+                      Version Code: 20528
                     </span>
                   </div>
                 </div>
@@ -7472,7 +7472,7 @@ out center;`;
 
                                   if (isSharingAnonymousData) {
                                     payload.anonymousMetadata = {
-                                      appVersion: "2.5.27",
+                                      appVersion: "2.5.28",
                                       language: appLang,
                                       userAgent: navigator.userAgent,
                                       screenResolution: `${window.innerWidth}x${window.innerHeight}`,

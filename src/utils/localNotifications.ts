@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PROMO_MESSAGES } from '../data/promoMessages';
 
-const CURRENT_APP_VERSION = '2.5.27-clean-v2';
+const CURRENT_APP_VERSION = '2.5.28-clean-v2';
 const PROMO_MESSAGES_SIGNATURE = `${CURRENT_APP_VERSION}_${PROMO_MESSAGES.map((m) => m.title).join('|').length}`;
 
 /**
