@@ -6,202 +6,202 @@ export interface PromoMessage {
 export const PROMO_MESSAGES: PromoMessage[] = [
   {
     title: "🗺️ Evita ponti bassi e strettoie!",
-    body: "Calcola percorsi sicuri adatti alle dimensioni del tuo camper con il nostro navigatore speciale!"
+    body: "Calcola percorsi sicuri adatti alle dimensioni del tuo camper con il nostro navigatore vocale 3D sagomato!"
   },
   {
     title: "🚨 Richiesta S.O.S. in tempo reale",
-    body: "Hai un guasto o un'emergenza in viaggio? Lancia un S.O.S. per avvisare all'istante i camperisti vicini!"
+    body: "Hai un guasto o un'emergenza in viaggio? Usa il canale SOS in Social o il Generatore Messaggio SOS con coordinate GPS!"
   },
   {
-    title: "⚖️ Troppo carico? Evita le multe!",
-    body: "Usa il Calcolatore dei Pesi prima di partire per verificare di essere entro i limiti consentiti."
+    title: "🎪 Sagre e Feste con Locandina Ufficiale!",
+    body: "Scopri gli eventi enogastronomici in Eventi Camper, apri la locandina ufficiale e naviga verso l'area sosta più vicina!"
   },
   {
-    title: "🚐 Scopri nuove aree sosta nella Community",
-    body: "Centinaia di punti sosta approvati e recensiti da veri camperisti per te. Trova la tua prossima meta!"
+    title: "🚐 Scopri nuove aree sosta sulla Mappa",
+    body: "Migliaia di punti sosta, campeggi e agricampeggi approvati e recensiti da veri camperisti. Trova la tua prossima meta!"
   },
   {
     title: "📅 Scadenze sotto controllo!",
-    body: "Registra bollo, assicurazione e revisione nello Scadenziario e ricevi avvisi automatici prima della scadenza!"
+    body: "Registra bollo, assicurazione, tagliando e revisione nello Scadenziere manutenzioni e ricevi avvisi prima della scadenza!"
   },
   {
-    title: "🛠️ Registro di Manutenzione del Camper",
-    body: "Tieni traccia dei tagliandi, del cambio filtri e dei lavori eseguiti sul tuo veicolo ricreazionale."
+    title: "🛠️ Registro lavori fatti & Manutenzioni",
+    body: "Tieni traccia dei tagliandi, dei costi e dello storico lavori eseguiti sul tuo camper nella sezione Strumenti."
   },
   {
     title: "📖 Diario di Bordo: Scrivi le tue avventure!",
-    body: "Immortala i tuoi viaggi con tappe, foto e note nel tuo diario di viaggio digitale personale."
+    body: "Immortala i tuoi viaggi con tappe, foto, spese e note nel tuo Diario di Bordo digitale ed esportalo in PDF."
   },
   {
-    title: "🤖 Itinerario personalizzato con l'AI!",
-    body: "Lasciati ispirare! Chiedi alla nostra Intelligenza Artificiale di creare la tua prossima vacanza ideale."
+    title: "🤖 Generatore Itinerari AI Rolly!",
+    body: "Lasciati ispirare! Chiedi a Rolly di creare il tuo itinerario su misura completo di tappe e aree sosta camper."
   },
   {
-    title: "⛽ Monitora le spese di carburante",
-    body: "Segna ogni rifornimento e analizza l'andamento dei consumi del tuo camper nel tempo."
+    title: "⛽ Carta Carburante & Consumi km/L",
+    body: "Registra ogni rifornimento nella Carta Carburante Sincronizzata e scopri subito la media reale in km/L del tuo camper."
   },
   {
-    title: "🧺 Cambia marcia alla tua dispensa!",
-    body: "Usa l'organizzatore della dispensa e della lista spesa per non dimenticare mai nulla prima della partenza."
+    title: "🛒 Dispensa & Spesa Smart a bordo!",
+    body: "Organizza i viveri in cambusa, scopri le ricette salva-risorse e aggiorna la lista della spesa condivisa prima di partire."
   },
   {
-    title: "🗺️ ViaCamper è ora su Android Auto!",
-    body: "Trova aree sosta e avvia la navigazione protetta direttamente dallo schermo della tua autoradio!"
+    title: "🗺️ ViaCamper è anche su Android Auto!",
+    body: "Trova aree sosta vicine e avvia la navigazione direttamente dallo schermo della tua autoradio!"
   },
   {
-    title: "💬 Chiacchiera con altri camperisti!",
-    body: "Entra nella sezione Community, scambia consigli in bacheca e scopri trucchi per il fai-da-te."
+    title: "💬 Social, Forum & Chat Live Camperisti!",
+    body: "Entra nella sezione Social per pubblicare foto, partecipare alle discussioni nel Forum e scrivere nella Chat in tempo reale."
   },
   {
     title: "🌦️ Meteo in tempo reale sulle soste",
-    body: "Prima di partire, controlla le previsioni meteo aggiornate direttamente sulla scheda del punto sosta."
+    body: "Prima di partire, controlla le previsioni meteo aggiornate e le allerte vento direttamente sulla mappa."
   },
   {
     title: "📍 Proponi un nuovo punto sosta!",
-    body: "Hai trovato un posto da sogno? Condividilo con la community proponendo una nuova sosta sulla mappa."
+    body: "Hai trovato un posto speciale? Condividilo con la community proponendo una nuova sosta sulla mappa e guadagna punti XP!"
   },
   {
-    title: "🚦 Traffico e info stradali",
-    body: "Visualizza in tempo reale le condizioni del traffico sul navigatore per pianificare al meglio i tuoi tempi."
+    title: "⛽ Prezzi Carburante aggiornati su Mappa!",
+    body: "Attiva il filtro Distributori sulla mappa per confrontare i prezzi di Diesel, Benzina e GPL intorno a te e risparmiare sul pieno!"
   },
   {
-    title: "🔋 Camper Service: dove scaricare?",
-    body: "Filtra la mappa per trovare subito i punti con acqua potabile e scarico acque grigie/nere più vicini."
+    title: "💧 Camper Service: dove scaricare?",
+    body: "Filtra la mappa per trovare subito i punti con acqua potabile e scarico acque grigie e nere più vicini a te."
   },
   {
-    title: "🌲 Campeggi immersi nella natura",
-    body: "Cerca strutture attrezzate e campeggi sul nostro database per soste in totale comfort e relax."
+    title: "🌲 Campeggi e Agricampeggi nella natura",
+    body: "Filtra campeggi e agricampeggi sulla mappa per soste in totale comfort, relax e contatto con la natura."
   },
   {
-    title: "🍝 Ricette salvavita da camper",
-    body: "Scopri nella bacheca della community le ricette preferite dai viaggiatori, veloci e gustose!"
+    title: "🍝 Ricette Salva-Risorse da camper",
+    body: "Scopri in Dispensa & Spesa Smart le ricette veloci studiate per cucinare con una sola pentola risparmiando acqua e gas!"
   },
   {
-    title: "🔒 Soste sicure e videosorvegliate",
-    body: "Leggi le recensioni dei camperisti per scoprire quali aree offrono sbarra automatica o telecamere."
+    title: "🔒 Soste sicure e recensite",
+    body: "Leggi le recensioni e i voti dei camperisti sulla mappa per scegliere le aree sosta più tranquille e attrezzate."
   },
   {
     title: "🔌 Allaccio elettrico 220V disponibile?",
-    body: "Verifica con un clic i servizi inclusi in ogni sosta: elettricità, docce calde, barbecue o area cani."
+    body: "Verifica con un tocco i servizi presenti in ogni sosta: elettricità, carico acqua, scarico, docce o area cani."
   },
   {
-    title: "📈 Statistiche di viaggio",
-    body: "Scopri quanti chilometri hai percorso quest'anno e qual è la tua spesa media per chilometro."
+    title: "📈 Riepilogo Spese e Statistiche di Viaggio",
+    body: "Controlla nel Diario di Bordo quanti chilometri hai percorso e il riepilogo dettagliato delle spese di ogni viaggio."
   },
   {
-    title: "🎒 Checklist di partenza rapida",
-    body: "Cunei messi? Finestre chiuse? Gradino rientrato? Segui la checklist interattiva prima di girare la chiave!"
+    title: "☑️ Checklist Pre-partenza rapida",
+    body: "Oblò chiusi? Gradino rientrato? Gas chiuso? Controlla la Checklist Pre-partenza in Strumenti prima di girare la chiave!"
   },
   {
     title: "🦮 In viaggio con i tuoi amici a 4 zampe?",
-    body: "Filtra le aree sosta e i campeggi che accolgono gli animali per vacanze senza pensieri con il tuo cane."
+    body: "Crea una checklist su misura o cerca le aree sosta e i campeggi ideali per viaggiare con il tuo cane."
   },
   {
     title: "🗺️ Cambia lo stile della mappa!",
-    body: "Passa alla visualizzazione satellitare, topografica o stradale classica per esplorare ogni dettaglio del territorio."
+    body: "Passa alla visualizzazione satellitare o stradale sulla mappa per osservare dall'alto gli spazi di manovra delle aree sosta."
   },
   {
-    title: "🚲 Porta con te le bici!",
-    body: "Cerca aree sosta adiacenti a piste ciclabili leggendo i tag descrittivi inseriti dalla nostra community."
+    title: "🚲 Esplora i dintorni della sosta!",
+    body: "Usa la funzione 'Intorno Sosta' sulla mappa per scoprire attrazioni, piste, ristoranti e servizi vicino al tuo parcheggio."
   },
   {
-    title: "🐚 Idee weekend: le spiagge più belle",
-    body: "Filtra i punti sosta situati a meno di 100 metri dal mare per svegliarti guardando le onde!"
+    title: "🐚 Idee weekend: soste vicino al mare",
+    body: "Esplora la mappa lungo la costa o chiedi al Generatore Itinerari AI Rolly un percorso panoramico sul mare!"
   },
   {
-    title: "❄️ Sosta invernale? Nessun timore!",
-    body: "Trova le aree ideali per il campeggio sulla neve, vicino agli impianti di risalita e con servizi riscaldati."
+    title: "❄️ Viaggio in montagna in camper?",
+    body: "Usa la Checklist Intelligente AI selezionando 'Montagna' per generare tutti i controlli invernali prima della partenza."
   },
   {
-    title: "🏰 Borghi d'Italia in camper",
-    body: "Segui gli itinerari storici proposti nella sezione Community per esplorare piccoli tesori nascosti."
+    title: "🏰 Borghi d'Italia & Itinerari Rolly",
+    body: "Sfoglia gli Itinerari Rolly & Community in Strumenti per scoprire i borghi storici più belli d'Italia con sosta camper."
   },
   {
-    title: "💻 Lavorare in camper in Smart Working",
-    body: "Leggi le recensioni degli utenti sulla copertura 4G/5G o sulla presenza del Wi-Fi in piazzola."
+    title: "🎫 Tessere Soci & Convenzioni in digitale",
+    body: "Salva le tue tessere club e i codici QR nella scheda 'Il Mio Camper > Tessere & Club' per averle sempre pronte al check-in!"
   },
   {
-    title: "🔧 Pronto Soccorso Camper: Guide Utile",
-    body: "Consulta la sezione tecnica per consigli su come sbloccare una pompa dell'acqua o ricaricare le bombole."
+    title: "🧭 Livella Digitale Camper & Calcolo Cunei",
+    body: "Appena arrivi in piazzola, apri la Livella Digitale in Strumenti per mettere il camper in bolla e calcolare i cm dei cunei!"
   },
   {
-    title: "🌍 Condividi la tua posizione in sicurezza",
-    body: "Invia ad amici o parenti le coordinate esatte di dove hai parcheggiato la notte con la condivisione rapida."
+    title: "🚨 Generatore Messaggio SOS Istantaneo",
+    body: "In caso di emergenza, genera in un tocco in Strumenti un messaggio con le tue coordinate GPS esatte pronto da inviare."
   },
   {
-    title: "🛒 Non restare senza bombola del gas!",
-    body: "Trova i punti vendita o di ricarica di propano più vicini segnalati dai nostri utenti."
+    title: "👨‍👩‍👧‍👦 Equipaggio Famiglia Sincronizzato!",
+    body: "Collega il partner o i familiari nelle Impostazioni Generali per condividere in tempo reale Diario, Checklist, Dispensa e Carburante!"
   },
   {
-    title: "🌟 Diventa un Utente Top della Community!",
-    body: "Condividi foto, recensioni e rispondi ai forum per guadagnare punti reputazione e scalare la classifica!"
+    title: "🌟 Scala la Classifica della Community!",
+    body: "Segnala nuove soste e partecipa ai concorsi in Social > Sfide per guadagnare punti XP e sbloccare i badge esclusivi!"
   },
   {
-    title: "🗺️ Navigazione Offline integrata",
-    body: "Salva i tuoi itinerari preferiti per consultarli anche quando il segnale cellulare è assente in montagna."
+    title: "📥 Mappe Cartografiche Offline Regionali",
+    body: "Scarica le mappe delle regioni italiane in Strumenti > Mappe Offline per consultare mappa e soste anche senza internet!"
   },
   {
-    title: "💡 Trucchi per risparmiare energia",
-    body: "Scopri come massimizzare la durata delle tue batterie dei servizi con i post tecnici della community."
+    title: "💬 Consigli Tecnici nel Forum Camperisti",
+    body: "Hai dubbi su impianti, accessori o tappe? Apri il Forum nella sezione Social e confrontati con gli altri equipaggi!"
   },
   {
     title: "🥪 Dispensa vuota? Spesa al volo!",
-    body: "Aggiungi al volo gli ingredienti mancanti alla tua lista della spesa smart interna di ViaCamper."
+    body: "Sposta con un tocco i prodotti esauriti dalla Dispensa alla Lista della Spesa condivisa in Strumenti."
   },
   {
-    title: "🍂 Autunno in camper: i colori del foliage",
-    body: "Lasciati guidare dagli itinerari autunnali consigliati per percorsi panoramici mozzafiato."
+    title: "🍂 Weekend fuori porta in camper",
+    body: "Apri Eventi Camper o il Generatore Itinerari AI Rolly per trovare subito idee per il tuo prossimo fine settimana!"
   },
   {
-    title: "🧼 Come pulire i serbatoi delle acque grigie",
-    body: "Trova guide e discussioni sulla sanificazione dei serbatoi per eliminare i cattivi odori."
+    title: "🗺️ Viaggi Condivisi dalla Community",
+    body: "Esplora nella sezione Social > Viaggi i diari di bordo reali pubblicati dagli altri camperisti, completi di tappe e foto!"
   },
   {
     title: "⛺ Sosta libera o Area Attrezzata?",
-    body: "Leggi i regolamenti locali e le esperienze degli altri camperisti per evitare sanzioni sulla sosta libera."
+    body: "Filtra sulla mappa Spot Natura, Parcheggi, Aree Sosta o Campeggi per scegliere la soluzione perfetta per la notte."
   },
   {
-    title: "🍷 Itinerari Enogastronomici",
-    body: "Abbina la passione del camper alle eccellenze del territorio: scopri aree sosta vicino ad agriturismi e cantine!"
+    title: "🍷 Sagre & Itinerari Enogastronomici",
+    body: "Abbina il viaggio in camper ai sapori del territorio: scopri le sagre sulla mappa e le aree sosta vicino alle feste di paese!"
   },
   {
-    title: "🔋 Manutenzione Pannello Solare",
-    body: "Il tuo pannello carica al massimo? Leggi i suggerimenti dei nostri esperti per tenerlo sempre pulito ed efficiente."
+    title: "❤️ Le Tue Soste del Cuore sempre con te",
+    body: "Salva con il cuore le tue aree sosta e i campeggi preferiti sulla mappa per ritrovarli subito in Strumenti > Soste Preferite!"
   },
   {
-    title: "🎒 Sfide e Obiettivi di Viaggio",
-    body: "Completa le sfide di ViaCamper, visita nuovi borghi e sblocca i badge esclusivi nel tuo profilo!"
+    title: "🏆 Concorsi Fotografici, Sfide & Badge",
+    body: "Partecipa alle sfide fotografiche in Social > Sfide, vota gli scatti più belli della community e sblocca i tuoi riconoscimenti!"
   },
   {
     title: "🚐 Pronto per il prossimo ponte festivo?",
-    body: "Pianifica in anticipo tappe ed aree di sosta per non rischiare di trovare tutto esaurito."
+    body: "Filtra le sagre e gli eventi per le date della tua vacanza in Eventi Camper e pianifica le tue soste in anticipo."
   },
   {
-    title: "🗺️ \"Google Maps Plus\" è eccezionale!",
-    body: "Esporta l'itinerario sicuro calcolato da ViaCamper direttamente nell'app di Google Maps con un semplice clic."
+    title: "🧭 Navigatore Vocale 3D Sagomato per Camper",
+    body: "Imposta altezza, lunghezza, larghezza e peso ne 'Il Mio Camper' e viaggia con la guida vocale 3D evitando sottopassi e divieti!"
   },
   {
-    title: "⚖️ Peso del camper sotto controllo?",
-    body: "Inserisci stoviglie, serbatoi d'acqua, bombole e passeggeri per stimare il peso totale prima di partire."
+    title: "📍 Scopri cosa c'è Intorno alla Sosta!",
+    body: "Seleziona un'area sosta sulla mappa e tocca 'Intorno Sosta' per trovare subito supermercati, ristoranti, farmacie e attrazioni!"
   },
   {
-    title: "🚨 Segnala un ostacolo sulla strada",
-    body: "Aiuta gli altri camperisti segnalando ponti bassi o divieti non presenti in mappa direttamente dall'app."
+    title: "🚨 Segnala un limite di sagoma o sottopasso",
+    body: "Aiuta gli altri camperisti segnalando ponti bassi, strettoie o divieti camper direttamente sulla mappa!"
   },
   {
-    title: "🧼 Lavanderia self-service vicina?",
-    body: "Cerca i punti sosta che dispongono di lavatrici ed asciugatrici interne per i viaggi a lungo raggio."
+    title: "📋 Carta d'Identità del tuo Camper",
+    body: "Conserva targa, telaio, misure, codice vernice e dati pneumatici sempre a portata di mano nella scheda 'Il Mio Camper'."
   },
   {
     title: "🏞️ Soste camper panoramiche",
-    body: "Trova piazzole con viste spettacolari su laghi, montagne o scogliere per risvegli da favola."
+    body: "Esplora le foto reali caricate dagli utenti nelle schede dei punti sosta e nel Social Feed per scegliere piazzole da sogno."
   },
   {
-    title: "👶 Viaggiare in camper con i bambini",
-    body: "Scopri le aree sosta con parco giochi, piscine e animazione recensite dalle altre famiglie."
+    title: "👨‍👩‍👧 Viaggiare in camper in famiglia",
+    body: "Usa la Checklist Intelligente AI selezionando 'Famiglia con Bambini' per preparare tutto l'occorrente prima di partire!"
   },
   {
-    title: "🗺️ ViaCamper: Il tuo copilota perfetto",
-    body: "Sfrutta al massimo tutte le funzioni: l'app all-in-one creata appositamente da camperisti per camperisti!"
+    title: "🗺️ ViaCamper: Il tuo copilota di viaggio",
+    body: "Mappa soste, prezzi carburante, sagre con locandina, diario di bordo, social e strumenti: buona strada con ViaCamper!"
   }
 ];

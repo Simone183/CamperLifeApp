@@ -1509,10 +1509,12 @@ out center;`;
           if (isSpeedCamera) {
             const camRoad = tags.name || tags.ref || tags['addr:street'] || 'Controllo Elettronico Velocità';
             const camLimit = parseOsmMaxspeedKmh(tags.maxspeed) || inferSpeedLimitFromRoadText(camRoad);
+            const closestRouteIdx = findClosestCoordinateIndex([oLat, oLng], coords);
+            const snappedPt = coords[closestRouteIdx] || [oLat, oLng];
             obstacles.push({
               id: `velox-${el.id}`,
-              lat: oLat,
-              lng: oLng,
+              lat: snappedPt[0],
+              lng: snappedPt[1],
               type: 'speed_camera',
               value: camLimit,
               name: `Autovelox (${camLimit} km/h)`,
@@ -3671,16 +3673,33 @@ out center;`;
 
       const obsEl = document.createElement('div');
       obsEl.className = 'osm-obstacle-marker cursor-pointer';
-      obsEl.innerHTML = `
-        <div class="flex flex-col items-center justify-center">
-          <div style="box-shadow: 0 4px 10px rgba(0,0,0,0.38);" class="${sizeClass} rounded-full ${bgClass} border-2 flex items-center justify-center relative">
-            <span class="select-none">${symbol}</span>
+      if (isSpeedCam) {
+        obsEl.innerHTML = `
+          <div class="flex flex-col items-center justify-center select-none" title="Autovelox (${obs.value || 70} km/h)">
+            <svg width="34" height="44" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 4px 8px rgba(0,0,0,0.45));">
+              <path d="M17 2C9.268 2 3 8.268 3 16C3 25.25 17 38.5 17 38.5C17 38.5 31 25.25 31 16C31 8.268 24.732 2 17 2Z" fill="#DC2626" stroke="#FFFFFF" stroke-width="2.5" stroke-linejoin="round"/>
+              <circle cx="17" cy="15.5" r="9.5" fill="#FFFFFF"/>
+              <rect x="11.5" y="12.2" width="11" height="7.6" rx="1.8" fill="#0F172A"/>
+              <path d="M14.2 12.2L15.1 10.6H18.9L19.8 12.2H14.2Z" fill="#0F172A"/>
+              <circle cx="17" cy="16" r="2.6" fill="#FFFFFF"/>
+              <circle cx="17" cy="16" r="1.3" fill="#DC2626"/>
+              <circle cx="20.4" cy="13.7" r="0.8" fill="#EF4444"/>
+              <circle cx="17" cy="40" r="3" fill="#DC2626" stroke="#FFFFFF" stroke-width="1.5"/>
+            </svg>
           </div>
-          <div style="font-size: 8.5px; font-weight: 900;" class="${isSpeedCam ? 'bg-red-700 text-white border-white/60' : 'bg-black/90 text-white border-white/20'} rounded px-1.5 py-0.5 mt-0.5 whitespace-nowrap border shadow">
-            ${badgeLabel}
+        `;
+      } else {
+        obsEl.innerHTML = `
+          <div class="flex flex-col items-center justify-center">
+            <div style="box-shadow: 0 4px 10px rgba(0,0,0,0.38);" class="${sizeClass} rounded-full ${bgClass} border-2 flex items-center justify-center relative">
+              <span class="select-none">${symbol}</span>
+            </div>
+            <div style="font-size: 8.5px; font-weight: 900;" class="bg-black/90 text-white border-white/20 rounded px-1.5 py-0.5 mt-0.5 whitespace-nowrap border shadow">
+              ${badgeLabel}
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      }
 
       const isSagomaType = obs.type === 'height' || obs.type === 'width' || obs.type === 'weight';
       const popupTitle = isSpeedCam
@@ -3718,7 +3737,10 @@ out center;`;
       const popup = new maplibregl.Popup({ offset: 15 })
         .setHTML(popupContent);
 
-      const marker = new maplibregl.Marker({ element: obsEl })
+      const marker = new maplibregl.Marker({
+        element: obsEl,
+        anchor: isSpeedCam ? 'bottom' : 'center'
+      })
         .setLngLat([obs.lng, obs.lat])
         .setPopup(popup)
         .addTo(map);
@@ -4322,10 +4344,32 @@ out center;`;
 
   // Minimized Mode Floating Active Widget Overlay (Compact Pill Button)
   
+  const [showOverlayControlsOnTap, setShowOverlayControlsOnTap] = React.useState(false);
+  const overlayControlsTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleScreenTapForControls = React.useCallback(() => {
+    setShowOverlayControlsOnTap(true);
+    if (overlayControlsTimerRef.current) {
+      clearTimeout(overlayControlsTimerRef.current);
+    }
+    overlayControlsTimerRef.current = setTimeout(() => {
+      setShowOverlayControlsOnTap(false);
+    }, 4500);
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (overlayControlsTimerRef.current) {
+        clearTimeout(overlayControlsTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
     <>
       <div 
       id="fullscreen-nav-hud"
+      onPointerDown={handleScreenTapForControls}
       className={isMinimized 
         ? "fixed inset-0 pointer-events-none z-[99999] font-sans" 
         : "fixed inset-0 bg-[#070A13] text-slate-100 z-[99999] font-sans transition-all overflow-hidden"
@@ -4428,32 +4472,7 @@ out center;`;
               )}
             </div>
 
-            {/* Banner Allerta Autovelox in Avvicinamento (durante la navigazione) */}
-            {!isPreview && upcomingAutovelox && (
-              <div className="bg-red-600/95 backdrop-blur-md text-white px-3.5 py-2.5 rounded-2xl shadow-2xl border-2 border-white/80 flex items-center justify-between gap-3 pointer-events-auto animate-pulse">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-black/30 border border-white/30 flex items-center justify-center text-lg shrink-0">
-                    📷
-                  </div>
-                  <div className="flex flex-col text-left min-w-0">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-200">
-                      🚨 Allerta Autovelox sul Percorso
-                    </span>
-                    <span className="text-xs sm:text-sm font-black text-white truncate">
-                      Autovelox a {upcomingAutovelox.distanceMeters} m • {upcomingAutovelox.camera.roadName}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div
-                    className="w-10 h-10 rounded-full bg-white border-[4px] border-red-600 shadow-md flex items-center justify-center text-slate-950 font-black text-xs sm:text-sm tracking-tighter shrink-0"
-                    title={`Limite velocità: ${upcomingAutovelox.limitKmh} km/h`}
-                  >
-                    {upcomingAutovelox.limitKmh}
-                  </div>
-                </div>
-              </div>
-            )}
+
 
             {/* Badge Riepilogo Autovelox e Limite Stradale in Anteprima Percorso */}
             {isPreview && (
@@ -4605,69 +4624,78 @@ out center;`;
         ) : (
           /* Bottom Route Stats HUD Bar (Active Navigation) */
           <div className="absolute bottom-0 inset-x-0 z-10 pointer-events-none">
-            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-3.5 sm:px-8 py-3.5 sm:py-5 pb-5 sm:pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-2 sm:gap-6">
-              <div className="flex-1 min-w-0 flex items-center justify-between gap-2 sm:gap-4 md:gap-7 py-0.5">
-                <div className="flex flex-col items-start shrink-0">
+            <div className="bg-[#0b101d]/98 backdrop-blur-md border-t border-slate-800/90 rounded-t-3xl px-4 sm:px-8 py-3.5 sm:py-5 pb-5 sm:pb-7 shadow-[0_-8px_30px_rgb(0,0,0,0.5)] flex items-center justify-between pointer-events-auto font-sans gap-2 sm:gap-6">
+              <div className="flex-1 min-w-0 flex items-center justify-around gap-2 sm:gap-6 py-0.5">
+                <div className="flex flex-col items-center sm:items-start shrink-0">
                   <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Arrivo</span>
                   <span className="text-base sm:text-2xl md:text-3xl font-black text-slate-100 leading-tight">{etaTimeStr}</span>
                 </div>
 
                 <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
 
-                <div className="flex flex-col items-start shrink-0">
+                <div className="flex flex-col items-center sm:items-start shrink-0">
                   <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Distanza</span>
                   <span className="text-base sm:text-2xl md:text-3xl font-black text-emerald-400 font-mono leading-tight">{remainingDistanceKm.toFixed(1)} <span className="text-xs sm:text-base font-bold text-emerald-400/80">km</span></span>
                 </div>
 
                 <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
 
-                <div className="flex flex-col items-start shrink-0">
+                <div className="flex flex-col items-center sm:items-start shrink-0">
                   <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Tempo</span>
                   <span className="text-base sm:text-2xl md:text-3xl font-black text-slate-100 leading-tight">{formatDuration(remainingMinutes)}</span>
-                </div>
-
-                <div className="h-8 sm:h-10 w-px bg-slate-800/80 shrink-0" />
-
-                {/* Cartello Limite di Velocità Stradale + Velocità di Crociera affiancti */}
-                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                  <div
-                    className="flex flex-col items-center justify-center shrink-0"
-                    title={`Limite di velocità sulla strada attuale: ${currentRoadSpeedLimit} km/h`}
-                  >
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white border-[4px] sm:border-[5px] border-red-600 shadow-lg flex items-center justify-center">
-                      <span className="text-slate-950 font-black text-xs sm:text-base tracking-tighter leading-none">
-                        {currentRoadSpeedLimit}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`flex flex-col items-start shrink-0 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-2xl border shadow-inner transition-colors ${
-                      isOverSpeedLimit
-                        ? 'bg-rose-950/90 border-rose-500 animate-pulse'
-                        : 'bg-slate-900/90 border-slate-800'
-                    }`}
-                  >
-                    <span className={`text-[9.5px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${
-                      isOverSpeedLimit ? 'text-rose-300' : 'text-amber-400/90'
-                    }`}>
-                      <Gauge className={`w-3 h-3 sm:w-4 sm:h-4 shrink-0 ${isOverSpeedLimit ? 'text-rose-400' : 'text-amber-400'}`} />
-                      <span>Crociera</span>
-                    </span>
-                    <span className={`text-base sm:text-2xl md:text-3xl font-black font-mono leading-tight ${
-                      isOverSpeedLimit ? 'text-rose-400' : 'text-amber-400'
-                    }`}>
-                      {displayDetectedSpeed} <span className={`text-xs sm:text-sm font-bold ${isOverSpeedLimit ? 'text-rose-300/80' : 'text-amber-300/80'}`}>km/h</span>
-                    </span>
-                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Floating Right Map Controls (Music, Compass & Recenter) */}
-        <div className="absolute bottom-28 right-4 z-20 flex flex-col-reverse gap-3 pointer-events-none items-end">
+        {/* Vertical Stack on Right: Speed Limit & Cruising Speed (overlapped by Map Controls when screen is tapped) */}
+        {!isPreview && (
+          <div
+            className="absolute bottom-24 sm:bottom-28 right-3.5 z-10 flex flex-col items-center gap-2.5 pointer-events-none select-none"
+            aria-label="Limite di velocità e velocità di crociera"
+          >
+            {/* Cartello Limite di Velocità Stradale (in alto nella colonna destra) */}
+            <div
+              className="w-[54px] h-[54px] sm:w-[60px] sm:h-[60px] rounded-full bg-white border-[5px] sm:border-[6px] border-red-600 shadow-2xl flex items-center justify-center shrink-0"
+              title={`Limite di velocità sulla strada attuale: ${currentRoadSpeedLimit} km/h`}
+            >
+              <span className="text-slate-950 font-black text-base sm:text-lg tracking-tighter leading-none">
+                {currentRoadSpeedLimit}
+              </span>
+            </div>
+
+            {/* Indicatore Velocità di Crociera (in basso sotto il limite nella colonna destra) */}
+            <div
+              className={`w-[58px] h-[58px] sm:w-[64px] sm:h-[64px] rounded-full border-2 shadow-2xl flex flex-col items-center justify-center shrink-0 transition-colors ${
+                isOverSpeedLimit
+                  ? 'bg-rose-950/95 border-rose-500 animate-pulse'
+                  : 'bg-[#0b101d]/95 border-emerald-500/80'
+              }`}
+              title={`Velocità di crociera: ${displayDetectedSpeed} km/h`}
+            >
+              <span className={`text-base sm:text-xl font-black font-mono leading-none ${
+                isOverSpeedLimit ? 'text-rose-400' : 'text-white'
+              }`}>
+                {displayDetectedSpeed}
+              </span>
+              <span className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight mt-0.5 ${
+                isOverSpeedLimit ? 'text-rose-300' : 'text-emerald-400'
+              }`}>
+                km/h
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Right Map Controls (appear overlapping the right-side speed stack when screen is tapped) */}
+        <div
+          className={`absolute bottom-24 sm:bottom-28 right-3.5 z-20 flex flex-col-reverse gap-3 items-center transition-opacity duration-200 ${
+            isPreview || showOverlayControlsOnTap || !autoCenter || isMusicPlayerOpen
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none'
+          }`}
+        >
           {/* Recenter Button (bottom-most in the right stack if shown) */}
           {!autoCenter && (
             <button
@@ -4696,7 +4724,7 @@ out center;`;
                   });
                 }
               }}
-              className="p-3 bg-slate-900/90 border border-slate-700 rounded-2xl shadow-xl pointer-events-auto hover:bg-slate-800 transition-all text-emerald-400"
+              className="w-[54px] h-[54px] sm:w-[58px] sm:h-[58px] bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl pointer-events-auto hover:bg-slate-800 transition-all text-emerald-400 flex items-center justify-center"
               title="Centra mappa"
             >
               <Locate className="w-6 h-6" />
@@ -4707,12 +4735,12 @@ out center;`;
           <button
             type="button"
             onClick={() => setIsMusicPlayerOpen(!isMusicPlayerOpen)}
-            className={`w-[52px] h-[52px] rounded-xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
+            className={`w-[54px] h-[54px] sm:w-[58px] sm:h-[58px] rounded-2xl border shadow-2xl transition-all duration-200 pointer-events-auto cursor-pointer flex items-center justify-center relative ${
               isAudioPlaying 
-                ? 'border-emerald-500/80 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
+                ? 'border-emerald-500/80 bg-[#0b101d]/95 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.25)]' 
                 : isMusicPlayerOpen
                   ? 'border-emerald-500/50 bg-[#0b101d]/95 text-emerald-400'
-                  : 'border-slate-800 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-700'
+                  : 'border-slate-700 bg-[#0b101d]/95 text-white hover:bg-slate-800 hover:border-slate-600'
             }`}
             title="Cockpit Audio Camper (Radio & Playlist)"
           >
@@ -4751,7 +4779,7 @@ out center;`;
                 }));
               }
             }}
-            className={`w-[52px] h-[52px] rounded-xl border ${useCompass ? 'border-emerald-500 bg-slate-900/95' : 'border-slate-800 bg-[#0b101d]/95'} shadow-2xl hover:bg-slate-800 hover:border-slate-700 transition-all pointer-events-auto cursor-pointer flex items-center justify-center`}
+            className={`w-[54px] h-[54px] sm:w-[58px] sm:h-[58px] rounded-2xl border ${useCompass ? 'border-emerald-500 bg-slate-900/95' : 'border-slate-700 bg-[#0b101d]/95'} shadow-2xl hover:bg-slate-800 hover:border-slate-600 transition-all pointer-events-auto cursor-pointer flex items-center justify-center`}
             title="Allinea mappa con la bussola reale del telefono"
           >
             <div 

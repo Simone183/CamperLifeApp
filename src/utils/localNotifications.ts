@@ -2,7 +2,8 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PROMO_MESSAGES } from '../data/promoMessages';
 
-const CURRENT_APP_VERSION = '2.5.27';
+const CURRENT_APP_VERSION = '2.5.27-clean-v2';
+const PROMO_MESSAGES_SIGNATURE = `${CURRENT_APP_VERSION}_${PROMO_MESSAGES.map((m) => m.title).join('|').length}`;
 
 /**
  * Helper to schedule notifications safely on Android 12+ (API 31+) without USE_EXACT_ALARM.
@@ -197,8 +198,8 @@ export async function scheduleLocalPromoNotifications(force = false) {
     const lastVersion = localStorage.getItem('camper_last_scheduled_app_version');
 
     let shouldForce = force;
-    if (lastVersion !== CURRENT_APP_VERSION) {
-      console.log(`[LocalPush] Play Store app update detected (${lastVersion || 'none'} -> ${CURRENT_APP_VERSION}). Forcing fresh reschedule!`);
+    if (lastVersion !== PROMO_MESSAGES_SIGNATURE) {
+      console.log(`[LocalPush] App or promo messages update detected (${lastVersion || 'none'} -> ${PROMO_MESSAGES_SIGNATURE}). Forcing fresh reschedule!`);
       shouldForce = true;
     }
 
@@ -242,7 +243,7 @@ export async function scheduleLocalPromoNotifications(force = false) {
 
     await scheduleNotificationsSafely(notifications);
     try {
-      localStorage.setItem('camper_last_scheduled_app_version', CURRENT_APP_VERSION);
+      localStorage.setItem('camper_last_scheduled_app_version', PROMO_MESSAGES_SIGNATURE);
     } catch (e) {}
     console.log('[LocalPush] Scheduled 50 local promo notifications successfully!');
     return { success: true, count: notifications.length, action: 'scheduled_50' };

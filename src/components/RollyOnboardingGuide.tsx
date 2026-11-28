@@ -74,7 +74,7 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       {
         icon: '📸',
         title: 'Album Fotografico & Racconto',
-        description: 'Carica le foto ricordo ordinate per data, scrivi il racconto di bordo o digitalizza gli appunti scritti a mano tramite scansione foto.'
+        description: 'Carica le foto ricordo ordinate per data e scrivi il racconto delle tue giornate di viaggio in camper.'
       },
       {
         icon: '📄',
@@ -212,9 +212,9 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
         description: 'Registra tagliandi motore, sostituzione cinghia, freni, pneumatici, sigillature o migliorie fai-da-te con data, km e spesa.'
       },
       {
-        icon: '💧',
-        title: 'Controllo Infiltrazioni & Igrometro',
-        description: 'Annota i controlli annuali della scocca e i valori di umidità rilevati nei punti critici della cellula abitativa.'
+        icon: '🔄',
+        title: 'Sincronizzato con lo Scadenziere',
+        description: 'Quando segni come completata una manutenzione nello Scadenziere, puoi salvarla automaticamente nello storico del Registro Lavori.'
       },
       {
         icon: '📊',
@@ -274,7 +274,7 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
   },
   bubble_level: {
     key: 'bubble_level',
-    badge: '⚖️ Livella Camper',
+    badge: '🧭 Livella Camper',
     title: 'Livella Digitale Camper',
     subtitle: 'Metti perfettamente in bolla il camper in piazzola usando i sensori del telefono.',
     features: [
@@ -365,19 +365,19 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
   },
   maintenance_log: {
     key: 'maintenance_log',
-    badge: '🔧 Manutenzione Cellula',
-    title: 'Registro Manutenzione Cellula & Infiltrazioni',
-    subtitle: 'Monitora lo stato della scocca, gli impianti di bordo e le rilevazioni di umidità.',
+    badge: '🔧 Registro Lavori',
+    title: 'Registro Lavori Fatti & Manutenzioni',
+    subtitle: 'Monitora tutti gli interventi meccanici, i tagliandi e i lavori eseguiti sulla cellula.',
     features: [
       {
         icon: '🛠️',
-        title: 'Storico Interventi Cellula',
-        description: 'Annota controlli sigillature, impianti acqua/gas, oblò e accessori installati sulla cellula.'
+        title: 'Storico Interventi Meccanica & Cellula',
+        description: 'Annota tagliandi, sigillature, impianti acqua/gas, pneumatici e accessori installati sul camper con data, km e spesa.'
       },
       {
-        icon: '💧',
-        title: 'Controllo Umidità & Infiltrazioni',
-        description: 'Registra le misurazioni dell\'igrometro nei punti critici per prevenire infiltrazioni nel tempo.'
+        icon: '📊',
+        title: 'Riepilogo Costi & Ricerca Rapida',
+        description: 'Tieni sotto controllo il totale speso per la cura del mezzo e filtra gli interventi per categoria o anno.'
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Lubrificare periodicamente le guarnizioni di oblò e finestre con spray al silicone le mantiene morbide e a tenuta stagna!'
@@ -385,8 +385,8 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
   dimensions: {
     key: 'dimensions',
     badge: '🚐 Il Mio Camper',
-    title: 'Il Mio Camper: Misure, Info & Carta d\'Identità',
-    subtitle: 'Configura altezza, lunghezza, larghezza e peso per il navigatore sagomato e conserva i dati del mezzo.',
+    title: 'Il Mio Camper: Misure, Info & Tessere',
+    subtitle: 'Configura altezza, lunghezza, larghezza e massa per il navigatore sagomato e conserva dati tecnici e tessere.',
     features: [
       {
         icon: '📏',
@@ -395,13 +395,13 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
       },
       {
         icon: '📋',
-        title: 'Carta d\'Identità & Dati Tecnici',
-        description: 'Conserva modello, targa, anno, motorizzazione, telaio e dotazioni del veicolo sempre a portata di mano.'
+        title: 'Carta d\'Identità, Impianti & Serbatoi',
+        description: 'Conserva modello, targa, telaio, dotazioni impianti e capacità dei serbatoi sempre a portata di mano.'
       },
       {
-        icon: '🛞',
-        title: 'Passo e Carreggiata per Livella',
-        description: 'I dati dimensionali aiutano anche la Livella Digitale a calcolare i centimetri esatti per i cunei.'
+        icon: '💳',
+        title: 'Tessere Soci, Convenzioni & Codici QR',
+        description: 'Salva in digitale le tue tessere club o sconti camperisti con foto e codice QR/barre pronte da mostrare alle casse.'
       }
     ],
     rollyTip: '💡 Consiglio di Rolly: Quando inserisci l\'altezza del camper, aggiungi sempre 10-15 cm di margine per climatizzatore a tetto, parabola o oblò!'
@@ -486,8 +486,8 @@ export const ROLLY_GUIDES: Record<string, SectionGuideData> = {
     features: [
       {
         icon: '⛽',
-        title: 'Registra Pieno o Scansiona Scontrino',
-        description: 'Inserisci litri, prezzo al litro, costo totale e chilometri odometro, oppure leggi i dati dallo scontrino.'
+        title: 'Registra Rifornimento Rapido',
+        description: 'Inserisci litri, prezzo al litro, costo totale e chilometri odometro a ogni sosta dal benzinaio.'
       },
       {
         icon: '📊',

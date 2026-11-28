@@ -795,7 +795,7 @@ export default function GeneralSettingsTab({
       <div className="bg-slate-50 dark:bg-slate-800/80 px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <LayoutDashboard className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-          <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm uppercase tracking-wider">Moduli Visibili in Home</h3>
+          <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm uppercase tracking-wider">Moduli Visibili in Strumenti</h3>
         </div>
         <button onClick={toggleAllDashboardSettings} className="text-xs font-bold text-[#3E4A35] dark:text-emerald-400 hover:opacity-80">
           {allSelected ? "Disattiva Tutti" : "Attiva Tutti"}
@@ -804,17 +804,17 @@ export default function GeneralSettingsTab({
       <div className="p-5 space-y-4">
         {[
           { key: 'showChecklists', label: 'Checklist Pre-partenza', icon: CheckSquare },
-          { key: 'showAIItinerary', label: 'Itinerario AI', icon: LayoutDashboard },
-          { key: 'showBubbleLevel', label: 'Livella', icon: LayoutDashboard },
+          { key: 'showPantryShopping', label: 'Dispensa & Spesa Smart', icon: LayoutDashboard },
+          { key: 'showFuelCard', label: 'Carta Carburante Sincronizzata', icon: LayoutDashboard },
+          { key: 'showDeadlines', label: 'Scadenziere manutenzioni', icon: LayoutDashboard },
+          { key: 'showMaintenanceLog', label: 'Registro lavori fatti', icon: LayoutDashboard },
+          { key: 'showAIItinerary', label: 'Generatore Itinerari AI', icon: LayoutDashboard },
+          { key: 'showFavorites', label: 'Soste & Aree Preferite', icon: Heart },
+          { key: 'showEvents', label: 'Eventi Camper (Sagre & Fiere)', icon: CloudSun },
+          { key: 'showBubbleLevel', label: 'Livella Digitale Camper', icon: LayoutDashboard },
           { key: 'showCamperSecurity', label: 'Generatore Messaggio SOS', icon: AlertTriangle },
-          { key: 'showPantryShopping', label: 'Dispensa & Spesa', icon: LayoutDashboard },
-          { key: 'showMaintenanceLog', label: 'Registro Manutenzione', icon: LayoutDashboard },
-          { key: 'showFavorites', label: 'Preferiti', icon: Heart },
-          { key: 'showFuelCard', label: 'Carta Carburante', icon: LayoutDashboard },
-          { key: 'showEvents', label: 'Eventi', icon: CloudSun },
-          { key: 'showOfflineMaps', label: 'Mappe Offline', icon: LayoutDashboard },
-          { key: 'showDeadlines', label: 'Scadenziere', icon: LayoutDashboard },
           { key: 'showDimensions', label: 'Il Mio Camper, misure e info', icon: LayoutDashboard },
+          { key: 'showOfflineMaps', label: 'Mappe Cartografiche Offline', icon: LayoutDashboard },
         ].map(({ key, label, icon: Icon }, index) => {
           const isChecked = dashboardSettings[key as keyof DashboardSettings];
           return (

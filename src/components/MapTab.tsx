@@ -589,7 +589,13 @@ interface MapTabProps {
       | "checklist"
       | "bubble_level"
       | "fuel_card"
-      | "dimensions",
+      | "dimensions"
+      | "pantry_shopping"
+      | "deadlines"
+      | "camper_security"
+      | "work_log"
+      | "favorites"
+      | "offline_maps",
   ) => void;
   hasActiveTrip?: boolean;
   onNavigateToExpenses?: () => void;
@@ -803,8 +809,24 @@ export default function MapTab({
         target: "checklist" as const,
       },
       {
-        text: "⚖️ Sei arrivato in piazzola? Usa la *Livella Digitale* per mettere il camper in bolla!",
+        text: "🧭 Sei arrivato in piazzola? Usa la *Livella Digitale* per mettere il camper in bolla!",
         target: "bubble_level" as const,
+      },
+      {
+        text: "📊 Registra i rifornimenti nella *Carta Carburante* per calcolare la media reale in km/L!",
+        target: "fuel_card" as const,
+      },
+      {
+        text: "🛒 Organizza viveri e lista acquisti condivisa in *Dispensa & Spesa Smart*!",
+        target: "pantry_shopping" as const,
+      },
+      {
+        text: "📅 Tieni sotto controllo bollo, assicurazione e revisione nello *Scadenziere*!",
+        target: "deadlines" as const,
+      },
+      {
+        text: "🚐 Imposta le misure del tuo mezzo in *Il Mio Camper* per il navigatore sagomato!",
+        target: "dimensions" as const,
       },
     ],
     [],

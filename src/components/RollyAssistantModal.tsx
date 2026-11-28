@@ -11,7 +11,7 @@ export const RollyAssistantModal: React.FC<RollyAssistantModalProps> = ({ vehicl
   const [messages, setMessages] = useState<Array<{ sender: 'ai' | 'user'; text: string }>>([
     {
       sender: 'ai',
-      text: `Ciao! Sono Rolly, il tuo assistente di bordo ViaCamper 🚐✨\nPosso aiutarti con consigli sulla sosta libera, calcolo consumi gas/batterie o raccomandazioni per itinerari panorami.`
+      text: `Ciao! Sono Rolly, il tuo assistente di bordo ViaCamper 🚐✨\nPosso aiutarti a pianificare itinerari su misura, trovare aree sosta e sagre, o darti consigli pratici per i tuoi viaggi in camper.`
     }
   ]);
   const [inputText, setInputText] = useState('');

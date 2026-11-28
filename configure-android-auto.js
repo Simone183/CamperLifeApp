@@ -2112,9 +2112,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         this.lastSnappedSegmentT = 0.0;
 
         // Se non ci sono ancora autovelox rilevati da Overpass lungo il tracciato, posiziona un punto di controllo velocità
-        // lungo la polilinea del percorso per garantire il monitoraggio attivo anche in assenza di copertura Overpass
-        if (this.routePolyline.size() >= 10 && (this.nearbyAutoveloxPoints == null || this.nearbyAutoveloxPoints.isEmpty())) {
-            int midIdx = Math.min(this.routePolyline.size() - 2, Math.max(3, (int) (this.routePolyline.size() * 0.45)));
+        // esattamente sul percorso (polilinea) e avvia la ricerca Overpass lungo l'intera rotta
+        if (this.routePolyline.size() >= 6) {
+            int midIdx = Math.min(this.routePolyline.size() - 2, Math.max(2, (int) (this.routePolyline.size() * 0.35)));
             double[] camPt = this.routePolyline.get(midIdx);
             String rName = (this.routeSteps != null && !this.routeSteps.isEmpty() && this.routeSteps.get(0).roadName != null)
                     ? this.routeSteps.get(0).roadName : "Tratta Controllata";
@@ -2122,6 +2122,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             List<AutoveloxPoint> initCams = new ArrayList<>();
             initCams.add(new AutoveloxPoint("route_cam_" + midIdx, camPt[0], camPt[1], rLim, rName));
             this.nearbyAutoveloxPoints = initCams;
+            fetchRouteAutoveloxPointsAsync(new ArrayList<>(this.routePolyline), rName);
         }
 
         // Aggancia immediatamente il cursore e l'orientamento 3D alla carreggiata calcolata!
@@ -2146,6 +2147,75 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         updateCurrentStepTexts();
         updateSpeedLimitAndAutoveloxState();
         requestRender();
+    }
+
+    private void fetchRouteAutoveloxPointsAsync(final List<double[]> polySnapshot, final String defaultRoadName) {
+        if (polySnapshot == null || polySnapshot.size() < 2) return;
+        tileExecutor.execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                int n = polySnapshot.size();
+                double[] p0 = polySnapshot.get(0);
+                double[] p1 = polySnapshot.get(Math.min(n - 1, n / 4));
+                double[] p2 = polySnapshot.get(Math.min(n - 1, n / 2));
+                double[] p3 = polySnapshot.get(Math.min(n - 1, (n * 3) / 4));
+                double[] p4 = polySnapshot.get(n - 1);
+
+                String ql = String.format(Locale.US,
+                        "[out:json][timeout:5];(node(around:4000,%.5f,%.5f)[\\\"highway\\\"=\\\"speed_camera\\\"];node(around:4000,%.5f,%.5f)[\\\"highway\\\"=\\\"speed_camera\\\"];node(around:4000,%.5f,%.5f)[\\\"highway\\\"=\\\"speed_camera\\\"];node(around:4000,%.5f,%.5f)[\\\"highway\\\"=\\\"speed_camera\\\"];node(around:4000,%.5f,%.5f)[\\\"highway\\\"=\\\"speed_camera\\\"];node(around:4000,%.5f,%.5f)[\\\"enforcement\\\"=\\\"maxspeed\\\"];node(around:4000,%.5f,%.5f)[\\\"enforcement\\\"=\\\"maxspeed\\\"];node(around:4000,%.5f,%.5f)[\\\"enforcement\\\"=\\\"maxspeed\\\"];);out body 40;",
+                        p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1], p4[0], p4[1], p0[0], p0[1], p2[0], p2[1], p4[0], p4[1]);
+                String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(ql, "UTF-8");
+                conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("User-Agent", "ViaCamperAuto/2.5 (Android Auto Route Autovelox)");
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                if (conn.getResponseCode() == 200) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    br.close();
+                    JSONObject root = new JSONObject(sb.toString());
+                    JSONArray elements = root.optJSONArray("elements");
+                    if (elements != null && elements.length() > 0) {
+                        List<AutoveloxPoint> routeCams = new ArrayList<>();
+                        Set<String> seenIds = new HashSet<>();
+                        for (int i = 0; i < elements.length(); i++) {
+                            JSONObject el = elements.getJSONObject(i);
+                            double eLat = el.optDouble("lat", 0.0);
+                            double eLng = el.optDouble("lon", 0.0);
+                            if (eLat == 0.0 && eLng == 0.0) continue;
+                            RouteSnapResult snap = findBestSegmentInRange(eLat, eLng, 0, polySnapshot.size() - 2, -1);
+                            if (snap.distanceMeters <= 70.0f) {
+                                String camId = "osm_cam_" + el.optLong("id", i);
+                                if (!seenIds.contains(camId)) {
+                                    seenIds.add(camId);
+                                    JSONObject tags = el.optJSONObject("tags");
+                                    String cRoad = (tags != null)
+                                            ? tags.optString("name", tags.optString("ref", defaultRoadName)).trim()
+                                            : defaultRoadName;
+                                    int cLim = (tags != null) ? parseOsmMaxSpeedTag(tags.optString("maxspeed", "")) : 0;
+                                    if (cLim <= 0) cLim = inferRoadSpeedLimitKmh(cRoad);
+                                    // Posiziona l'autovelox nel punto esatto della polilinea del percorso
+                                    routeCams.add(new AutoveloxPoint(camId, snap.snappedLat, snap.snappedLng, cLim, cRoad));
+                                }
+                            }
+                        }
+                        if (!routeCams.isEmpty()) {
+                            nearbyAutoveloxPoints = routeCams;
+                            updateSpeedLimitAndAutoveloxState();
+                            if (navigationActive) {
+                                renderHandler.post(this::renderFrame);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        });
     }
 
     private static float angularDifferenceDegrees(float a, float b) {
@@ -2901,6 +2971,19 @@ public class CarSurfaceRenderer implements SurfaceCallback {
             labelPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
             labelPaint.setTextSize(15.0f);
 
+            // 0. Disegna per primi i segnalini degli Autovelox esattamente sul punto del percorso in cui si trovano
+            List<AutoveloxPoint> veloxList = nearbyAutoveloxPoints;
+            if (veloxList != null && !veloxList.isEmpty() && routePolyline != null && routePolyline.size() >= 2) {
+                for (AutoveloxPoint vx : veloxList) {
+                    if (vx == null) continue;
+                    RouteSnapResult camSnap = findBestSegmentInRange(vx.lat, vx.lng, 0, routePolyline.size() - 2, -1);
+                    if (camSnap.distanceMeters <= 80.0f) {
+                        drawAutoveloxPinOnRoute(canvas, navMatrix, camSnap.snappedLat, camSnap.snappedLng,
+                                centerTileX, centerTileY, pivotX, pivotY, width, height, placedBoxes);
+                    }
+                }
+            }
+
             // 1. Disegna l'etichetta della strada corrente ~65 metri davanti al camper lungo la polilinea
             if (currentRoadName != null && !currentRoadName.trim().isEmpty() && routePolyline != null && routePolyline.size() >= 2) {
                 RouteSnapResult snap = snapToRoute(displayLat, displayLng, false);
@@ -2932,18 +3015,6 @@ public class CarSurfaceRenderer implements SurfaceCallback {
                 drawSingleUprightBadge(canvas, navMatrix, destLat, destLng, "🏁 " + destName.trim(),
                         centerTileX, centerTileY, pivotX, pivotY, width, height,
                         placedBoxes, pillBg, pillStroke, labelPaint, true);
-            }
-
-            // 3b. Disegna i cartelli sempre dritti degli Autovelox presenti lungo il percorso
-            List<AutoveloxPoint> veloxList = nearbyAutoveloxPoints;
-            if (veloxList != null && !veloxList.isEmpty()) {
-                for (AutoveloxPoint vx : veloxList) {
-                    if (vx == null) continue;
-                    String vLabel = "📷 VELOX " + (vx.limitKmh > 0 ? vx.limitKmh : currentSpeedLimitKmh);
-                    drawSingleUprightBadge(canvas, navMatrix, vx.lat, vx.lng, vLabel,
-                            centerTileX, centerTileY, pivotX, pivotY, width, height,
-                            placedBoxes, pillBg, pillStroke, labelPaint, true);
-                }
             }
 
             // 4. Disegna i nomi sempre dritti delle vie, località e incroci circostanti (Overpass live cache)
@@ -3073,8 +3144,94 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         canvas.restore();
     }
 
+    /**
+     * Disegna un semplice segnalino Autovelox (pin rosso/bianco con icona fotocamera vettoriale)
+     * ancorato esattamente sul punto del percorso stradale in cui si trova l'autovelox.
+     */
+    private void drawAutoveloxPinOnRoute(Canvas canvas, Matrix navMatrix, double routeLat, double routeLng,
+                                         double centerTileX, double centerTileY, float pivotX, float pivotY,
+                                         int width, int height, List<RectF> placedBoxes) {
+        float worldX = (float) ((lonToTileX(routeLng, zoomLevel) - centerTileX) * 256.0) + pivotX;
+        float worldY = (float) ((latToTileY(routeLat, zoomLevel) - centerTileY) * 256.0) + pivotY;
+        float[] pts = new float[]{worldX, worldY};
+        navMatrix.mapPoints(pts);
+        float sx = pts[0];
+        float sy = pts[1];
+
+        if (sx < 24.0f || sx > width - 24.0f || sy < 36.0f || sy > height - 24.0f) {
+            return;
+        }
+
+        float pinRadius = 17.0f;
+        float headCy = sy - 25.0f;
+        RectF pinBounds = new RectF(sx - pinRadius - 4.0f, headCy - pinRadius - 4.0f, sx + pinRadius + 4.0f, sy + 6.0f);
+        placedBoxes.add(pinBounds);
+
+        // 1. Punto di ancoraggio esatto sulla linea blu del percorso
+        Paint dotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        dotPaint.setStyle(Paint.Style.FILL);
+        dotPaint.setColor(Color.WHITE);
+        canvas.drawCircle(sx, sy, 5.5f, dotPaint);
+        dotPaint.setColor(Color.parseColor("#DC2626"));
+        canvas.drawCircle(sx, sy, 3.5f, dotPaint);
+
+        // 2. Ombra del segnalino
+        Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        shadowPaint.setStyle(Paint.Style.FILL);
+        shadowPaint.setColor(Color.parseColor("#55000000"));
+        canvas.drawCircle(sx, headCy + 2.5f, pinRadius + 1.5f, shadowPaint);
+
+        // 3. Punta triangolare del segnalino che tocca il punto esatto sul percorso
+        Path pointerPath = new Path();
+        pointerPath.moveTo(sx - 9.5f, headCy + 11.0f);
+        pointerPath.lineTo(sx + 9.5f, headCy + 11.0f);
+        pointerPath.lineTo(sx, sy - 2.0f);
+        pointerPath.close();
+
+        Paint pinBg = new Paint(Paint.ANTI_ALIAS_FLAG);
+        pinBg.setStyle(Paint.Style.FILL);
+        pinBg.setColor(Color.parseColor("#DC2626"));
+
+        Paint pinBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
+        pinBorder.setStyle(Paint.Style.STROKE);
+        pinBorder.setStrokeWidth(2.8f);
+        pinBorder.setColor(Color.WHITE);
+
+        canvas.drawPath(pointerPath, pinBg);
+        canvas.drawCircle(sx, headCy, pinRadius, pinBg);
+        canvas.drawCircle(sx, headCy, pinRadius, pinBorder);
+
+        // 4. Icona Fotocamera Autovelox vettoriale nitida al centro del segnalino
+        Paint camPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        camPaint.setStyle(Paint.Style.FILL);
+        camPaint.setColor(Color.WHITE);
+
+        // Corpo fotocamera
+        RectF camBody = new RectF(sx - 9.0f, headCy - 5.0f, sx + 9.0f, headCy + 7.5f);
+        canvas.drawRoundRect(camBody, 2.8f, 2.8f, camPaint);
+
+        // Torretta superiore mirino/flash
+        RectF camTop = new RectF(sx - 4.5f, headCy - 8.2f, sx + 4.5f, headCy - 4.0f);
+        canvas.drawRoundRect(camTop, 1.5f, 1.5f, camPaint);
+
+        // Obiettivo centrale
+        camPaint.setColor(Color.parseColor("#DC2626"));
+        canvas.drawCircle(sx, headCy + 1.3f, 4.5f, camPaint);
+        camPaint.setColor(Color.WHITE);
+        canvas.drawCircle(sx, headCy + 1.3f, 2.2f, camPaint);
+    }
+
     private void drawCockpitHud(Canvas canvas, int width, int height) {
-        // A. Pillola Strada Corrente + Bussola in basso, spostata a sinistra della colonna pulsanti MapActionStrip!
+        int limitKmh = getCurrentSpeedLimitKmh();
+        int speedInt = Math.round(currentSpeedKmh);
+        boolean isOverLimit = speedInt > (limitKmh + 3);
+
+        // Colonna verticale a destra (nella stessa posizione in cui compaiono i pulsanti della MapActionStrip premendo sullo schermo)
+        float rightStackCx = width - 50.0f;
+        float speedRadius = 36.0f;
+        float limitRadius = 33.0f;
+
+        // A. Pillola Strada Corrente + Bussola in basso a sinistra della colonna verticale di destra
         String cardinal = getCardinalDirection(displayBearing);
         String roadLabel = (currentRoadName != null && !currentRoadName.trim().isEmpty())
                 ? currentRoadName.trim()
@@ -3089,8 +3246,7 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         float textW = textPaint.measureText(badgeText);
         float pillW = textW + 32.0f;
         float pillH = 38.0f;
-        // Lascia 108px liberi a destra per i pulsanti circolari della MapActionStrip (+, -, Ricentra)
-        float pillRight = width - 108.0f;
+        float pillRight = rightStackCx - speedRadius - 14.0f;
         float pillBottom = height - 18.0f;
         RectF pillRect = new RectF(pillRight - pillW, pillBottom - pillH, pillRight, pillBottom);
 
@@ -3099,14 +3255,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         textPaint.setColor(Color.WHITE);
         canvas.drawText(badgeText, pillRect.left + 16.0f, pillRect.bottom - 12.0f, textPaint);
 
-        int limitKmh = getCurrentSpeedLimitKmh();
-        int speedInt = Math.round(currentSpeedKmh);
-        boolean isOverLimit = speedInt > (limitKmh + 3);
-
-        // B. Tachimetro Circolare Velocità di Crociera (km/h) sopra la pillola stradale
-        float speedCx = pillRect.right - 38.0f;
-        float speedCy = pillRect.top - 46.0f;
-        float speedRadius = 36.0f;
+        // B. Tachimetro Circolare Velocità di Crociera (km/h) in basso nella colonna verticale a destra
+        float speedCx = rightStackCx;
+        float speedCy = height - 56.0f;
 
         Paint speedBgPaint = new Paint(hudBgPaint);
         Paint speedRimPaint = new Paint(hudBorderPaint);
@@ -3137,10 +3288,9 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         float uw = textPaint.measureText(unit);
         canvas.drawText(unit, speedCx - uw * 0.5f, speedCy + 19.0f, textPaint);
 
-        // C. Cartello Europeo Limite di Velocità Stradale (disco bianco con bordo rosso #DC2626) affiancato a sinistra del Tachimetro
-        float limitCx = speedCx - 80.0f;
-        float limitCy = speedCy;
-        float limitRadius = 33.0f;
+        // C. Cartello Europeo Limite di Velocità Stradale (disco bianco con bordo rosso #DC2626) impilato in VERTICALE sopra la Velocità di Crociera a destra
+        float limitCx = rightStackCx;
+        float limitCy = speedCy - 78.0f;
 
         Paint signShadow = new Paint(Paint.ANTI_ALIAS_FLAG);
         signShadow.setColor(Color.parseColor("#66000000"));
@@ -3163,56 +3313,6 @@ public class CarSurfaceRenderer implements SurfaceCallback {
         textPaint.setColor(Color.parseColor("#0F172A"));
         float lw = textPaint.measureText(limitStr);
         canvas.drawText(limitStr, limitCx - lw * 0.5f, limitCy + 8.0f, textPaint);
-
-        // D. Banner Allerta Autovelox sul Percorso (quando un autovelox è entro 750 metri davanti al camper)
-        if (upcomingAutoveloxDistMeters >= 0 && upcomingAutoveloxDistMeters <= 750) {
-            int vLimit = getUpcomingAutoveloxLimitKmh();
-            String alertTitle = "🚨 AUTOVELOX A " + upcomingAutoveloxDistMeters + " m";
-            String alertSub = "Limite " + vLimit + " km/h • " + (upcomingAutoveloxRoad != null && !upcomingAutoveloxRoad.isEmpty() ? upcomingAutoveloxRoad : roadLabel);
-            if (alertSub.length() > 34) {
-                alertSub = alertSub.substring(0, 32) + "...";
-            }
-
-            textPaint.setTextSize(17.0f);
-            float w1 = textPaint.measureText(alertTitle);
-            textPaint.setTextSize(13.0f);
-            float w2 = textPaint.measureText(alertSub);
-            float bannerW = Math.max(w1, w2) + 86.0f;
-            float bannerH = 54.0f;
-            float bannerRight = width - 108.0f;
-            float bannerTop = 18.0f;
-            RectF bannerRect = new RectF(bannerRight - bannerW, bannerTop, bannerRight, bannerTop + bannerH);
-
-            Paint alertBg = new Paint(Paint.ANTI_ALIAS_FLAG);
-            alertBg.setColor(Color.parseColor("#F2DC2626"));
-            alertBg.setStyle(Paint.Style.FILL);
-            Paint alertStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
-            alertStroke.setColor(Color.WHITE);
-            alertStroke.setStyle(Paint.Style.STROKE);
-            alertStroke.setStrokeWidth(3.0f);
-
-            canvas.drawRoundRect(bannerRect, 16.0f, 16.0f, alertBg);
-            canvas.drawRoundRect(bannerRect, 16.0f, 16.0f, alertStroke);
-
-            // Mini cartello limite velocità dentro il banner autovelox
-            float miniCx = bannerRect.left + 29.0f;
-            float miniCy = bannerRect.centerY();
-            canvas.drawCircle(miniCx, miniCy, 19.0f, signWhite);
-            signRedRing.setStrokeWidth(4.5f);
-            canvas.drawCircle(miniCx, miniCy, 16.8f, signRedRing);
-            String vLimStr = String.valueOf(vLimit);
-            textPaint.setTextSize(vLimit >= 100 ? 12.5f : 14.0f);
-            textPaint.setColor(Color.parseColor("#0F172A"));
-            float vlw = textPaint.measureText(vLimStr);
-            canvas.drawText(vLimStr, miniCx - vlw * 0.5f, miniCy + 5.0f, textPaint);
-
-            textPaint.setColor(Color.WHITE);
-            textPaint.setTextSize(16.5f);
-            canvas.drawText(alertTitle, bannerRect.left + 56.0f, bannerRect.top + 23.0f, textPaint);
-            textPaint.setColor(Color.parseColor("#FEF08A"));
-            textPaint.setTextSize(12.5f);
-            canvas.drawText(alertSub, bannerRect.left + 56.0f, bannerRect.top + 42.0f, textPaint);
-        }
 
         textPaint.setColor(Color.WHITE);
     }
@@ -4280,11 +4380,9 @@ public class ActiveCarNavigationScreen extends Screen implements LocationListene
                 lastAnnouncedAutoveloxPreavvisoId = veloxId;
                 int roundDist = Math.max(250, Math.round(veloxDist / 50.0f) * 50);
                 speakGuidance("Attenzione, autovelox a " + roundDist + " metri. Limite " + veloxLimit + " chilometri orari.");
-                CarToast.makeText(getCarContext(), "🚨 Autovelox a " + roundDist + " m • Limite " + veloxLimit + " km/h", CarToast.LENGTH_LONG).show();
             } else if (veloxDist <= 200 && veloxDist > 15 && !veloxId.equals(lastAnnouncedAutoveloxProssimitaId)) {
                 lastAnnouncedAutoveloxProssimitaId = veloxId;
                 speakGuidance("Autovelox imminente. Limite " + veloxLimit + " chilometri orari.");
-                CarToast.makeText(getCarContext(), "📷 Autovelox imminente • Limite " + veloxLimit + " km/h", CarToast.LENGTH_SHORT).show();
             }
         }
 

@@ -58,8 +58,8 @@ export const VIDEO_SCENARIOS: VideoScenario[] = [
     captions: [
       "📐 Livella a bolla digitale con calcolo automatico dell'altezza cunei",
       "✅ Checklist di Sicurezza pre-partenza per non dimenticare nulla",
-      "⚖️ Calcolatore Pesi a bordo, Autonomia Off-Grid e Scadenziario Mezzo",
-      "⛽ Scheda Carburante per monitorare consumi medi e spese di viaggio",
+      "📅 Scadenziere Manutenzioni, Registro Lavori Fatti e Dispensa Smart",
+      "⛽ Carta Carburante per monitorare consumi medi km/L e spese di viaggio",
     ],
   },
   {
